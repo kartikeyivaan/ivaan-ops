@@ -4,6 +4,7 @@ import { Suspense, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Shield } from "lucide-react";
+import { getLoginErrorMessage, parseLoginErrorCode } from "@/lib/account-lockout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -24,7 +25,7 @@ function LoginForm() {
     setError(null);
 
     const result = await signIn("credentials", {
-      email,
+      email: email.trim(),
       password,
       redirect: false,
     });
@@ -37,7 +38,13 @@ function LoginForm() {
           "Database is not configured yet. Add DATABASE_URL to .env, run migrations, then seed data.",
         );
       } else {
-        setError("Invalid email or password, or account is inactive.");
+        const parsed = parseLoginErrorCode(result.code ?? result.error);
+        setError(
+          getLoginErrorMessage(parsed.code, {
+            attemptsRemaining: parsed.attemptsRemaining,
+            minutesRemaining: parsed.minutesRemaining,
+          }),
+        );
       }
       return;
     }

@@ -20,6 +20,20 @@ Prompt 02 (Customers) docs: [docs/PROMPT_02_CUSTOMERS.md](docs/PROMPT_02_CUSTOME
 
 Prompt 03 (Products) docs: [docs/PROMPT_03_PRODUCTS.md](docs/PROMPT_03_PRODUCTS.md)
 
+Prompt 04 (Inventory) docs: [docs/PROMPT_04_INVENTORY.md](docs/PROMPT_04_INVENTORY.md)
+
+Prompt 05 (Transfers) docs: [docs/PROMPT_05_TRANSFERS.md](docs/PROMPT_05_TRANSFERS.md)
+
+Prompt 06 (Quotations) docs: [docs/PROMPT_06_QUOTATIONS.md](docs/PROMPT_06_QUOTATIONS.md)
+
+Prompt 07 (PI & Payments) docs: [docs/PROMPT_07_PROFORMA_PAYMENTS.md](docs/PROMPT_07_PROFORMA_PAYMENTS.md)
+
+Prompt 08 (Dispatch) docs: [docs/PROMPT_08_DISPATCH.md](docs/PROMPT_08_DISPATCH.md)
+
+Prompt 09 (Reports) docs: [docs/PROMPT_09_REPORTS.md](docs/PROMPT_09_REPORTS.md)
+
+Prompt 10 (UAT Tests) docs: [docs/PROMPT_10_UAT.md](docs/PROMPT_10_UAT.md)
+
 ## PRD
 
 Place all specification documents in `/PRD`. Reference the relevant PRD file before each Cursor prompt.

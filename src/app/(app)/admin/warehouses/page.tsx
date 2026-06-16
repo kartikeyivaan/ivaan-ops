@@ -2,17 +2,8 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasRole, isSuperAdmin, ROLES } from "@/lib/rbac";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { WarehouseForm } from "@/components/admin/warehouse-form";
+import { WarehousesList } from "@/components/admin/warehouses-list";
 
 export default async function WarehousesAdminPage() {
   const session = await auth();
@@ -42,6 +33,8 @@ export default async function WarehousesAdminPage() {
     }),
   ]);
 
+  const canManage = isSuperAdmin(session.user.roles);
+
   return (
     <div className="space-y-6">
       <div>
@@ -49,41 +42,13 @@ export default async function WarehousesAdminPage() {
         <p className="text-sm text-slate-500">Warehouse master by company.</p>
       </div>
 
-      {isSuperAdmin(session.user.roles) ? (
-        <WarehouseForm companies={companies} />
-      ) : null}
+      {canManage ? <WarehouseForm companies={companies} /> : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Warehouse List</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Company</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Code</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {warehouses.map((warehouse) => (
-                <TableRow key={warehouse.id}>
-                  <TableCell>{warehouse.company.code}</TableCell>
-                  <TableCell className="font-medium">{warehouse.name}</TableCell>
-                  <TableCell>{warehouse.code ?? "—"}</TableCell>
-                  <TableCell>
-                    <Badge variant={warehouse.isActive ? "success" : "danger"}>
-                      {warehouse.isActive ? "Active" : "Inactive"}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      <WarehousesList
+        warehouses={warehouses}
+        companies={companies}
+        canManage={canManage}
+      />
     </div>
   );
 }

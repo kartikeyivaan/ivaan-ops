@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -23,11 +24,13 @@ type CustomerFormProps = {
   salesExecutives: SalesExecutive[];
   initialValues?: {
     customerName: string;
+    contactPersonName: string;
     customerType: "DEALER" | "PROJECT";
     gstNumber: string;
     address: string;
     city: string;
     state: string;
+    pinCode: string;
     mobile: string;
     email: string;
     assignedSalesUserId: string;
@@ -51,6 +54,9 @@ export function CustomerForm({
 }: CustomerFormProps) {
   const router = useRouter();
   const [customerName, setCustomerName] = useState(initialValues?.customerName ?? "");
+  const [contactPersonName, setContactPersonName] = useState(
+    initialValues?.contactPersonName ?? "",
+  );
   const [customerType, setCustomerType] = useState<"DEALER" | "PROJECT">(
     initialValues?.customerType ?? "DEALER",
   );
@@ -58,6 +64,7 @@ export function CustomerForm({
   const [address, setAddress] = useState(initialValues?.address ?? "");
   const [city, setCity] = useState(initialValues?.city ?? "");
   const [state, setState] = useState(initialValues?.state ?? "");
+  const [pinCode, setPinCode] = useState(initialValues?.pinCode ?? "");
   const [mobile, setMobile] = useState(initialValues?.mobile ?? "");
   const [email, setEmail] = useState(initialValues?.email ?? "");
   const [assignedSalesUserId, setAssignedSalesUserId] = useState(
@@ -80,6 +87,10 @@ export function CustomerForm({
     );
   }
 
+  function removeContact(index: number) {
+    setContacts((current) => current.filter((_, i) => i !== index));
+  }
+
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setLoading(true);
@@ -87,11 +98,13 @@ export function CustomerForm({
 
     const payload = {
       customerName,
+      contactPersonName: contactPersonName || undefined,
       customerType,
       gstNumber,
       address,
       city,
       state,
+      pinCode: pinCode || undefined,
       mobile,
       email,
       assignedSalesUserId,
@@ -134,12 +147,21 @@ export function CustomerForm({
       <CardContent>
         <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2 md:col-span-2">
-            <Label htmlFor="customerName">Customer Name</Label>
+            <Label htmlFor="customerName">Firm Name</Label>
             <Input
               id="customerName"
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
               required
+            />
+          </div>
+          <div className="space-y-2 md:col-span-2">
+            <Label htmlFor="contactPersonName">Contact Person Name</Label>
+            <Input
+              id="contactPersonName"
+              value={contactPersonName}
+              onChange={(e) => setContactPersonName(e.target.value)}
+              placeholder="Primary contact at the firm"
             />
           </div>
           <div className="space-y-2">
@@ -177,6 +199,17 @@ export function CustomerForm({
           <div className="space-y-2">
             <Label htmlFor="state">State</Label>
             <Input id="state" value={state} onChange={(e) => setState(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="pinCode">PIN Code</Label>
+            <Input
+              id="pinCode"
+              value={pinCode}
+              onChange={(e) => setPinCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              inputMode="numeric"
+              placeholder="6-digit PIN"
+              maxLength={6}
+            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="mobile">Mobile</Label>
@@ -220,41 +253,61 @@ export function CustomerForm({
           <div className="space-y-3 md:col-span-2">
             <div className="flex items-center justify-between">
               <Label>Optional Contacts</Label>
-              <Button type="button" variant="outline" size="sm" onClick={() => setContacts([...contacts, emptyContact()])}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setContacts([...contacts, emptyContact()])}
+              >
                 Add contact
               </Button>
             </div>
             {contacts.map((contact, index) => (
-              <div key={index} className="grid gap-3 rounded-md border p-3 md:grid-cols-2">
-                <Input
-                  placeholder="Contact name"
-                  value={contact.name}
-                  onChange={(e) => updateContact(index, "name", e.target.value)}
-                />
-                <Input
-                  placeholder="Designation"
-                  value={contact.designation}
-                  onChange={(e) => updateContact(index, "designation", e.target.value)}
-                />
-                <Input
-                  placeholder="Mobile"
-                  value={contact.mobile}
-                  onChange={(e) => updateContact(index, "mobile", e.target.value)}
-                />
-                <Input
-                  placeholder="Email"
-                  value={contact.email}
-                  onChange={(e) => updateContact(index, "email", e.target.value)}
-                />
+              <div key={index} className="rounded-md border p-3">
+                <div className="mb-3 flex items-center justify-between">
+                  <p className="text-sm font-medium text-slate-700">Contact {index + 1}</p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 p-0 text-slate-500 hover:text-red-600"
+                    aria-label={`Remove contact ${index + 1}`}
+                    onClick={() => removeContact(index)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Input
+                    placeholder="Contact name"
+                    value={contact.name}
+                    onChange={(e) => updateContact(index, "name", e.target.value)}
+                  />
+                  <Input
+                    placeholder="Designation"
+                    value={contact.designation}
+                    onChange={(e) => updateContact(index, "designation", e.target.value)}
+                  />
+                  <Input
+                    placeholder="Mobile"
+                    value={contact.mobile}
+                    onChange={(e) => updateContact(index, "mobile", e.target.value)}
+                  />
+                  <Input
+                    placeholder="Email"
+                    value={contact.email}
+                    onChange={(e) => updateContact(index, "email", e.target.value)}
+                  />
+                </div>
               </div>
             ))}
           </div>
 
-          <div className="md:col-span-2">
+          <div className="flex flex-wrap items-center gap-3 md:col-span-2">
             <Button type="submit" disabled={loading}>
               {loading ? "Saving..." : mode === "create" ? "Create customer" : "Save changes"}
             </Button>
-            {message ? <p className="mt-2 text-sm text-red-600">{message}</p> : null}
+            {message ? <p className="w-full text-sm text-red-600">{message}</p> : null}
           </div>
         </form>
       </CardContent>

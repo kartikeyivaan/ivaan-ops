@@ -21,7 +21,9 @@ export function UserForm({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [mobile, setMobile] = useState("");
+  const [officialContactNumber, setOfficialContactNumber] = useState("");
+  const [personalContactNumber, setPersonalContactNumber] = useState("");
+  const [digitalVisitingCardUrl, setDigitalVisitingCardUrl] = useState("");
   const [roleIds, setRoleIds] = useState<string[]>([]);
   const [companyIds, setCompanyIds] = useState<string[]>([]);
   const [message, setMessage] = useState<string | null>(null);
@@ -43,14 +45,22 @@ export function UserForm({
         name,
         email,
         password,
-        mobile,
+        officialContactNumber: officialContactNumber || undefined,
+        personalContactNumber: personalContactNumber || undefined,
+        digitalVisitingCardUrl: digitalVisitingCardUrl || undefined,
         status: "ACTIVE",
         roleIds,
         companyIds,
       }),
     });
 
-    const data = await response.json();
+    const rawBody = await response.text();
+    let data: { message?: string } = {};
+    try {
+      data = rawBody ? (JSON.parse(rawBody) as { message?: string }) : {};
+    } catch {
+      data = {};
+    }
     setLoading(false);
 
     if (!response.ok) {
@@ -62,7 +72,9 @@ export function UserForm({
     setName("");
     setEmail("");
     setPassword("");
-    setMobile("");
+    setOfficialContactNumber("");
+    setPersonalContactNumber("");
+    setDigitalVisitingCardUrl("");
     setRoleIds([]);
     setCompanyIds([]);
     router.refresh();
@@ -74,6 +86,9 @@ export function UserForm({
         <CardTitle>Create User</CardTitle>
       </CardHeader>
       <CardContent>
+        <p className="mb-4 text-sm text-slate-600">
+          New users must set their own strong password on first sign-in.
+        </p>
         <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="name">Name</Label>
@@ -88,8 +103,32 @@ export function UserForm({
             <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="mobile">Mobile</Label>
-            <Input id="mobile" value={mobile} onChange={(e) => setMobile(e.target.value)} />
+            <Label htmlFor="officialContactNumber">Official Contact Number</Label>
+            <Input
+              id="officialContactNumber"
+              value={officialContactNumber}
+              onChange={(e) => setOfficialContactNumber(e.target.value)}
+              placeholder="Work / office number"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="personalContactNumber">Personal Contact Number</Label>
+            <Input
+              id="personalContactNumber"
+              value={personalContactNumber}
+              onChange={(e) => setPersonalContactNumber(e.target.value)}
+              placeholder="Personal mobile number"
+            />
+          </div>
+          <div className="space-y-2 md:col-span-2">
+            <Label htmlFor="digitalVisitingCardUrl">Link of Digital Visiting Card</Label>
+            <Input
+              id="digitalVisitingCardUrl"
+              type="url"
+              value={digitalVisitingCardUrl}
+              onChange={(e) => setDigitalVisitingCardUrl(e.target.value)}
+              placeholder="https://"
+            />
           </div>
           <div className="space-y-2 md:col-span-2">
             <Label>Roles</Label>

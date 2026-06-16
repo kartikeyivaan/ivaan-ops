@@ -1,13 +1,22 @@
 "use client";
 
+import { parseApiJson } from "@/lib/api-response";
 import { useState } from "react";
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { MoreVertical, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Table,
   TableBody,
@@ -32,11 +41,14 @@ export function ProductsList({
   brands: MasterOption[];
   canEdit: boolean;
 }) {
+  const router = useRouter();
   const [products, setProducts] = useState(initialProducts);
   const [q, setQ] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [brandId, setBrandId] = useState("");
   const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   async function applyFilters() {
     setLoading(true);
@@ -49,6 +61,42 @@ export function ProductsList({
     const data = await response.json();
     setLoading(false);
     if (response.ok) setProducts(data);
+  }
+
+  async function handleDelete(product: ProductListItem) {
+    const confirmed = window.confirm(
+      `Delete ${product.displayName}? Products with existing records will be deactivated instead.`,
+    );
+    if (!confirmed) return;
+
+    setDeletingId(product.id);
+    setMessage(null);
+
+    const response = await fetch(`/api/products/${product.id}`, { method: "DELETE" });
+    const data = await parseApiJson<{ message?: string; deactivated?: boolean }>(response);
+    setDeletingId(null);
+
+    if (!response.ok) {
+      setMessage(data.message ?? "Failed to delete product.");
+      return;
+    }
+
+    if (data.deactivated) {
+      setMessage(
+        data.message ??
+          "Product has existing inventory, sales, or transaction records and was deactivated instead of permanently deleted.",
+      );
+      setProducts((current) =>
+        current.map((item) =>
+          item.id === product.id ? { ...item, isActive: false } : item,
+        ),
+      );
+    } else {
+      setMessage(`${product.displayName} was permanently deleted.`);
+      setProducts((current) => current.filter((item) => item.id !== product.id));
+    }
+
+    router.refresh();
   }
 
   return (
@@ -126,6 +174,7 @@ export function ProductsList({
 
       <Card>
         <CardContent className="pt-6">
+          {message ? <p className="mb-4 text-sm text-slate-600">{message}</p> : null}
           <Table>
             <TableHeader>
               <TableRow>
@@ -138,6 +187,8 @@ export function ProductsList({
                 <TableHead>Booked</TableHead>
                 <TableHead>Current Price</TableHead>
                 <TableHead>Pricing</TableHead>
+                <TableHead>Status</TableHead>
+                {canEdit ? <TableHead className="text-right">Actions</TableHead> : null}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -170,11 +221,48 @@ export function ProductsList({
                   <TableCell>
                     <Badge>{formatPricingType(product.pricingType)}</Badge>
                   </TableCell>
+                  <TableCell>
+                    <Badge variant={product.isActive ? "success" : "danger"}>
+                      {product.isActive ? "Active" : "Inactive"}
+                    </Badge>
+                  </TableCell>
+                  {canEdit ? (
+                    <TableCell className="text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            aria-label={`More options for ${product.displayName}`}
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem asChild>
+                            <Link href={`/masters/products/${product.id}`}>Edit Product</Link>
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className="text-red-600 focus:bg-red-50 focus:text-red-700"
+                            disabled={deletingId === product.id}
+                            onClick={() => handleDelete(product)}
+                          >
+                            {deletingId === product.id ? "Deleting..." : "Delete Product"}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  ) : null}
                 </TableRow>
               ))}
               {products.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center text-slate-500">
+                  <TableCell
+                    colSpan={canEdit ? 11 : 10}
+                    className="text-center text-slate-500"
+                  >
                     No products found.
                   </TableCell>
                 </TableRow>

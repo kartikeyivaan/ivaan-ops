@@ -21,10 +21,21 @@ describe("customers", () => {
     expect(isValidGstFormat("INVALID")).toBe(false);
   });
 
-  it("returns outstanding placeholder until PI module exists", () => {
-    const metrics = calculateCustomerOutstanding();
-    expect(metrics.outstandingValue).toBe(0);
-    expect(metrics.openPiCount).toBe(0);
+  it("returns outstanding metrics with optional PI values", () => {
+    expect(calculateCustomerOutstanding()).toEqual({
+      outstandingValue: 0,
+      openPiCount: 0,
+      openQuotationCount: 0,
+      totalDispatchValueThisYear: 0,
+    });
+    expect(
+      calculateCustomerOutstanding({ outstandingValue: 25000, openPiCount: 2 }),
+    ).toEqual({
+      outstandingValue: 25000,
+      openPiCount: 2,
+      openQuotationCount: 0,
+      totalDispatchValueThisYear: 0,
+    });
   });
 });
 

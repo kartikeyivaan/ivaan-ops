@@ -6,10 +6,12 @@ import {
 } from "@prisma/client";
 import {
   generateDisplayName,
-  getStockPlaceholder,
   resolvePricingType,
   resolveSerialTracking,
 } from "@/lib/products";
+import { decimalToNumber, type StockSummary } from "@/lib/inventory";
+import { getProductStockSummary } from "@/lib/inventory-service";
+import { isProductPriceEffectiveOn } from "@/lib/quotations";
 
 const productInclude = {
   category: true,
@@ -21,11 +23,73 @@ const productInclude = {
 };
 
 type ProductRecord = Prisma.ProductGetPayload<{ include: typeof productInclude }>;
+type ProductPriceRecord = ProductRecord["prices"][number];
 
-export type ProductListItem = ProductRecord & {
-  currentPrice: ProductRecord["prices"][number] | null;
-  stock: ReturnType<typeof getStockPlaceholder>;
-};
+function serializeMasterRecord(record: {
+  id: string;
+  name: string;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}) {
+  return {
+    id: record.id,
+    name: record.name,
+    isActive: record.isActive,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString(),
+  };
+}
+
+function serializeProductPrice(price: ProductPriceRecord) {
+  return {
+    id: price.id,
+    productId: price.productId,
+    companyId: price.companyId,
+    landingCost: decimalToNumber(price.landingCost),
+    standardPrice: decimalToNumber(price.standardPrice),
+    minimumPrice: decimalToNumber(price.minimumPrice),
+    effectiveFrom: price.effectiveFrom.toISOString(),
+    effectiveTo: price.effectiveTo?.toISOString() ?? null,
+    createdAt: price.createdAt.toISOString(),
+    updatedAt: price.updatedAt.toISOString(),
+  };
+}
+
+function serializeProductRecord(
+  product: ProductRecord,
+  companyId: string,
+  stock: StockSummary,
+) {
+  const currentPrice = getCurrentPrice(product.prices, companyId);
+
+  return {
+    id: product.id,
+    categoryId: product.categoryId,
+    brandId: product.brandId,
+    technologyId: product.technologyId,
+    capacity: decimalToNumber(product.capacity),
+    capacityUnit: product.capacityUnit,
+    displayName: product.displayName,
+    pricingType: product.pricingType,
+    hsn: product.hsn,
+    gstRate: decimalToNumber(product.gstRate),
+    serialTracking: product.serialTracking,
+    isActive: product.isActive,
+    createdAt: product.createdAt.toISOString(),
+    updatedAt: product.updatedAt.toISOString(),
+    category: serializeMasterRecord(product.category),
+    brand: serializeMasterRecord(product.brand),
+    technology: product.technology
+      ? serializeMasterRecord(product.technology)
+      : null,
+    prices: product.prices.map(serializeProductPrice),
+    currentPrice: currentPrice ? serializeProductPrice(currentPrice) : null,
+    stock,
+  };
+}
+
+export type ProductListItem = ReturnType<typeof serializeProductRecord>;
 
 function getCurrentPrice(
   prices: ProductRecord["prices"],
@@ -34,23 +98,22 @@ function getCurrentPrice(
   const now = new Date();
   return (
     prices.find(
-      (price) =>
-        price.companyId === companyId &&
-        price.effectiveFrom <= now &&
-        (price.effectiveTo === null || price.effectiveTo >= now),
+      (price) => price.companyId === companyId && isProductPriceEffectiveOn(price, now),
     ) ?? null
   );
 }
 
-export function serializeProduct(
+export async function serializeProduct(
+  prisma: PrismaClient,
   product: ProductRecord,
   companyId: string,
-): ProductListItem {
-  return {
-    ...product,
-    currentPrice: getCurrentPrice(product.prices, companyId),
-    stock: getStockPlaceholder(),
-  };
+  stock?: StockSummary,
+): Promise<ProductListItem> {
+  return serializeProductRecord(
+    product,
+    companyId,
+    stock ?? (await getProductStockSummary(prisma, companyId, product.id)),
+  );
 }
 
 export async function listProducts(
@@ -84,7 +147,7 @@ export async function listProducts(
     orderBy: { displayName: "asc" },
   });
 
-  return products.map((product) => serializeProduct(product, companyId));
+  return Promise.all(products.map((product) => serializeProduct(prisma, product, companyId)));
 }
 
 export async function getProductById(
@@ -96,7 +159,7 @@ export async function getProductById(
     where: { id: productId },
     include: productInclude,
   });
-  return product ? serializeProduct(product, companyId) : null;
+  return product ? serializeProduct(prisma, product, companyId) : null;
 }
 
 async function upsertBrand(prisma: PrismaClient, name: string) {
@@ -313,5 +376,9 @@ export async function listMasters(prisma: PrismaClient) {
     prisma.brand.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     prisma.productTechnology.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
   ]);
-  return { categories, brands, technologies };
+  return {
+    categories: categories.map(serializeMasterRecord),
+    brands: brands.map(serializeMasterRecord),
+    technologies: technologies.map(serializeMasterRecord),
+  };
 }

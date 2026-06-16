@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { companySchema, loginSchema, userSchema, warehouseSchema } from "@/lib/validations";
+import {
+  changePasswordSchema,
+  companySchema,
+  loginSchema,
+  userSchema,
+  warehouseSchema,
+} from "@/lib/validations";
 
 describe("validations", () => {
   it("validates login input", () => {
@@ -49,5 +55,21 @@ describe("validations", () => {
       isActive: true,
     });
     expect(result.success).toBe(true);
+  });
+
+  it("requires matching passwords for change password", () => {
+    const result = changePasswordSchema.safeParse({
+      password: "Admin@123",
+      confirmPassword: "Admin@456",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("requires a strong password for admin reset", () => {
+    const result = changePasswordSchema.safeParse({
+      password: "weakpass",
+      confirmPassword: "weakpass",
+    });
+    expect(result.success).toBe(false);
   });
 });

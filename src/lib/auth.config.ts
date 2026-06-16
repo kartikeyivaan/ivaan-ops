@@ -1,4 +1,5 @@
 import type { NextAuthConfig } from "next-auth";
+import { getPasswordChangeRequirement } from "@/lib/password-policy";
 
 export const authConfig = {
   trustHost: true,
@@ -21,6 +22,8 @@ export const authConfig = {
           code: string;
         }>;
         token.activeCompanyId = user.activeCompanyId as string | null;
+        token.mustChangePassword = user.mustChangePassword as boolean;
+        token.passwordChangedAt = user.passwordChangedAt as string | null;
       }
 
       if (trigger === "update" && session?.activeCompanyId) {
@@ -30,6 +33,11 @@ export const authConfig = {
         if (companyIds.includes(session.activeCompanyId)) {
           token.activeCompanyId = session.activeCompanyId;
         }
+      }
+
+      if (trigger === "update" && session?.passwordUpdated) {
+        token.mustChangePassword = false;
+        token.passwordChangedAt = new Date().toISOString();
       }
 
       return token;
@@ -44,6 +52,15 @@ export const authConfig = {
           code: string;
         }>;
         session.user.activeCompanyId = token.activeCompanyId as string | null;
+
+        const requirement = getPasswordChangeRequirement({
+          mustChangePassword: Boolean(token.mustChangePassword),
+          passwordChangedAt: token.passwordChangedAt
+            ? new Date(token.passwordChangedAt as string)
+            : null,
+        });
+        session.user.passwordChangeRequired = requirement.required;
+        session.user.passwordChangeReason = requirement.reason;
       }
       return session;
     },

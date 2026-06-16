@@ -26,10 +26,27 @@ export type CustomerListItem = CustomerWithRelations & {
   metrics: ReturnType<typeof calculateCustomerOutstanding>;
 };
 
-export function serializeCustomer(customer: CustomerWithRelations): CustomerListItem {
+export async function serializeCustomer(
+  prisma: PrismaClient,
+  customer: CustomerWithRelations,
+): Promise<CustomerListItem> {
+  const { getCustomerQuotationMetrics } = await import("@/lib/quotation-service");
+  const { getCustomerPiMetrics } = await import("@/lib/pi-service");
+  const { getCustomerDispatchMetrics } = await import("@/lib/dispatch-service");
+  const [quotationMetrics, piMetrics, dispatchMetrics] = await Promise.all([
+    getCustomerQuotationMetrics(prisma, customer.companyId, customer.id),
+    getCustomerPiMetrics(prisma, customer.companyId, customer.id),
+    getCustomerDispatchMetrics(prisma, customer.companyId, customer.id),
+  ]);
+
   return {
     ...customer,
-    metrics: calculateCustomerOutstanding(),
+    metrics: {
+      outstandingValue: piMetrics.outstandingValue,
+      openPiCount: piMetrics.openPiCount,
+      openQuotationCount: quotationMetrics.openQuotationCount,
+      totalDispatchValueThisYear: dispatchMetrics.totalDispatchValueThisYear,
+    },
   };
 }
 
@@ -77,7 +94,7 @@ export async function listCustomers(
     orderBy: { customerName: "asc" },
   });
 
-  return customers.map(serializeCustomer);
+  return Promise.all(customers.map((customer) => serializeCustomer(prisma, customer)));
 }
 
 export async function getCustomerById(
@@ -95,7 +112,7 @@ export async function getCustomerById(
     },
   });
 
-  return customer ? serializeCustomer(customer) : null;
+  return customer ? serializeCustomer(prisma, customer) : null;
 }
 
 async function assertUniqueGst(
@@ -121,11 +138,13 @@ export async function createCustomer(
     companyCode: string;
     createdById: string;
     customerName: string;
+    contactPersonName?: string;
     customerType: CustomerType;
     gstNumber: string;
     address?: string;
     city?: string;
     state?: string;
+    pinCode?: string;
     mobile?: string;
     email?: string;
     assignedSalesUserId: string;
@@ -159,11 +178,13 @@ export async function createCustomer(
       companyId: input.companyId,
       customerCode,
       customerName: input.customerName,
+      contactPersonName: input.contactPersonName || null,
       customerType: input.customerType,
       gstNumber,
       address: input.address,
       city: input.city,
       state: input.state,
+      pinCode: input.pinCode || null,
       mobile: input.mobile,
       email: input.email || null,
       assignedSalesUserId: input.assignedSalesUserId,
@@ -195,11 +216,13 @@ export async function updateCustomer(
   companyId: string,
   input: {
     customerName?: string;
+    contactPersonName?: string;
     customerType?: CustomerType;
     gstNumber?: string;
     address?: string;
     city?: string;
     state?: string;
+    pinCode?: string;
     mobile?: string;
     email?: string;
     assignedSalesUserId?: string;
@@ -253,11 +276,13 @@ export async function updateCustomer(
       where: { id: customerId },
       data: {
         customerName: input.customerName,
+        contactPersonName: input.contactPersonName === "" ? null : input.contactPersonName,
         customerType: input.customerType,
         gstNumber,
         address: input.address,
         city: input.city,
         state: input.state,
+        pinCode: input.pinCode === "" ? null : input.pinCode,
         mobile: input.mobile,
         email: input.email === "" ? null : input.email,
         assignedSalesUserId: input.assignedSalesUserId,

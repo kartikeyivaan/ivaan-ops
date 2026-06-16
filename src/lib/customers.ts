@@ -26,18 +26,21 @@ export async function generateCustomerCode(
 }
 
 /**
- * Placeholder until PI and Payments modules exist (Prompt 07).
  * Outstanding = PI Value - Payments Received per BR-012.
+ * Use getCustomerPiMetrics in pi-service for live values.
  */
-export function calculateCustomerOutstanding(): {
+export function calculateCustomerOutstanding(metrics?: {
+  outstandingValue: number;
+  openPiCount: number;
+}): {
   outstandingValue: number;
   openPiCount: number;
   openQuotationCount: number;
   totalDispatchValueThisYear: number;
 } {
   return {
-    outstandingValue: 0,
-    openPiCount: 0,
+    outstandingValue: metrics?.outstandingValue ?? 0,
+    openPiCount: metrics?.openPiCount ?? 0,
     openQuotationCount: 0,
     totalDispatchValueThisYear: 0,
   };

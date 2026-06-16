@@ -80,11 +80,13 @@ export async function PATCH(request: Request, context: RouteContext) {
   try {
     const customer = await updateCustomer(prisma, id, companyId, {
       customerName: parsed.data.customerName,
+      contactPersonName: parsed.data.contactPersonName,
       customerType: parsed.data.customerType as CustomerType | undefined,
       gstNumber: parsed.data.gstNumber,
       address: parsed.data.address,
       city: parsed.data.city,
       state: parsed.data.state,
+      pinCode: parsed.data.pinCode,
       mobile: parsed.data.mobile,
       email: parsed.data.email,
       assignedSalesUserId: parsed.data.assignedSalesUserId,

@@ -7,18 +7,70 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CustomerForm } from "@/components/customers/customer-form";
 import { formatCustomerType } from "@/lib/customers";
+import { formatPaymentMode, formatProformaStatus } from "@/lib/proforma-invoices";
+import { formatDispatchStatus } from "@/lib/dispatches";
+import { formatQuotationStatus } from "@/lib/quotations";
 import type { CustomerListItem } from "@/lib/customer-service";
 
 type SalesExecutive = { id: string; name: string; email: string };
 
+type CustomerQuotation = {
+  id: string;
+  quotationNo: string;
+  revisionNo: number;
+  status: string;
+  quotationDate: string;
+  expiryDate: string;
+  totalValue: number;
+};
+
+type CustomerProformaInvoice = {
+  id: string;
+  piNo: string;
+  status: string;
+  piDate: string;
+  totalValue: number;
+  paymentSummary: { outstanding: number };
+};
+
+type CustomerPayment = {
+  id: string;
+  amount: number;
+  paymentDate: string;
+  paymentMode: string;
+  referenceNo?: string | null;
+  proformaInvoice: { piNo: string };
+};
+
+type CustomerDispatch = {
+  id: string;
+  dcNo: string;
+  status: string;
+  dispatchDate: string;
+  totalValue: number;
+  proformaInvoice: { piNo: string };
+};
+
 export function CustomerProfile({
   customer,
   salesExecutives,
+  customerQuotations,
+  customerProformaInvoices,
+  customerPayments,
+  customerDispatches,
   canEdit,
+  canManageQuotations,
+  canManageProformaInvoices,
 }: {
   customer: CustomerListItem;
   salesExecutives: SalesExecutive[];
+  customerQuotations: CustomerQuotation[];
+  customerProformaInvoices: CustomerProformaInvoice[];
+  customerPayments: CustomerPayment[];
+  customerDispatches: CustomerDispatch[];
   canEdit: boolean;
+  canManageQuotations: boolean;
+  canManageProformaInvoices: boolean;
 }) {
   return (
     <div className="space-y-6">
@@ -82,6 +134,14 @@ export function CustomerProfile({
           <Card>
             <CardContent className="grid gap-4 pt-6 md:grid-cols-2">
               <div>
+                <p className="text-xs uppercase text-slate-500">Firm Name</p>
+                <p className="font-medium">{customer.customerName}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase text-slate-500">Contact Person</p>
+                <p className="font-medium">{customer.contactPersonName ?? "—"}</p>
+              </div>
+              <div>
                 <p className="text-xs uppercase text-slate-500">GST</p>
                 <p className="font-medium">{customer.gstNumber}</p>
               </div>
@@ -92,6 +152,10 @@ export function CustomerProfile({
               <div>
                 <p className="text-xs uppercase text-slate-500">City</p>
                 <p className="font-medium">{customer.city ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase text-slate-500">PIN Code</p>
+                <p className="font-medium">{customer.pinCode ?? "—"}</p>
               </div>
               <div>
                 <p className="text-xs uppercase text-slate-500">Status</p>
@@ -135,16 +199,135 @@ export function CustomerProfile({
         </TabsContent>
 
         <TabsContent value="quotations">
-          <PlaceholderTab module="Quotations" prompt="Prompt 06" />
+          <Card>
+            <CardContent className="space-y-3 pt-6">
+              {canManageQuotations ? (
+                <Button asChild size="sm">
+                  <Link href={`/sales/quotations/new?customerId=${customer.id}`}>
+                    New Quotation
+                  </Link>
+                </Button>
+              ) : null}
+              {customerQuotations.length === 0 ? (
+                <p className="text-sm text-slate-500">No quotations for this customer yet.</p>
+              ) : (
+                customerQuotations.map((quotation) => (
+                  <div
+                    key={quotation.id}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3"
+                  >
+                    <div>
+                      <p className="font-medium">
+                        {quotation.quotationNo}
+                        {quotation.revisionNo > 1 ? ` (R${quotation.revisionNo})` : ""}
+                      </p>
+                      <p className="text-sm text-slate-500">
+                        {quotation.quotationDate.slice(0, 10)} · Valid until{" "}
+                        {quotation.expiryDate.slice(0, 10)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Badge>{formatQuotationStatus(quotation.status)}</Badge>
+                      <p className="font-medium">₹{quotation.totalValue.toLocaleString("en-IN")}</p>
+                      <Button variant="outline" size="sm" asChild>
+                        <Link href={`/sales/quotations/${quotation.id}`}>View</Link>
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
         <TabsContent value="pi">
-          <PlaceholderTab module="Proforma Invoices" prompt="Prompt 07" />
+          <Card>
+            <CardContent className="space-y-3 pt-6">
+              {canManageProformaInvoices ? (
+                <Button asChild size="sm">
+                  <Link href={`/sales/proforma-invoices/new?customerId=${customer.id}`}>
+                    New PI
+                  </Link>
+                </Button>
+              ) : null}
+              {customerProformaInvoices.length === 0 ? (
+                <p className="text-sm text-slate-500">No proforma invoices for this customer yet.</p>
+              ) : (
+                customerProformaInvoices.map((pi) => (
+                  <div
+                    key={pi.id}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3"
+                  >
+                    <div>
+                      <p className="font-medium">{pi.piNo}</p>
+                      <p className="text-sm text-slate-500">{pi.piDate}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Badge>{formatProformaStatus(pi.status)}</Badge>
+                      <p className="font-medium">₹{pi.totalValue.toLocaleString("en-IN")}</p>
+                      <Button variant="outline" size="sm" asChild>
+                        <Link href={`/sales/proforma-invoices/${pi.id}`}>View</Link>
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
         <TabsContent value="payments">
-          <PlaceholderTab module="Payments" prompt="Prompt 07" />
+          <Card>
+            <CardContent className="space-y-3 pt-6">
+              {customerPayments.length === 0 ? (
+                <p className="text-sm text-slate-500">No payments recorded for this customer yet.</p>
+              ) : (
+                customerPayments.map((payment) => (
+                  <div
+                    key={payment.id}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3"
+                  >
+                    <div>
+                      <p className="font-medium">{payment.proformaInvoice.piNo}</p>
+                      <p className="text-sm text-slate-500">
+                        {payment.paymentDate} · {formatPaymentMode(payment.paymentMode)}
+                        {payment.referenceNo ? ` · ${payment.referenceNo}` : ""}
+                      </p>
+                    </div>
+                    <p className="font-medium">₹{payment.amount.toLocaleString("en-IN")}</p>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
         <TabsContent value="dispatches">
-          <PlaceholderTab module="Dispatches" prompt="Prompt 08" />
+          <Card>
+            <CardContent className="space-y-3 pt-6">
+              {customerDispatches.length === 0 ? (
+                <p className="text-sm text-slate-500">No dispatches for this customer yet.</p>
+              ) : (
+                customerDispatches.map((dispatch) => (
+                  <div
+                    key={dispatch.id}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3"
+                  >
+                    <div>
+                      <p className="font-medium">{dispatch.dcNo}</p>
+                      <p className="text-sm text-slate-500">
+                        {dispatch.dispatchDate} · {dispatch.proformaInvoice.piNo}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Badge>{formatDispatchStatus(dispatch.status)}</Badge>
+                      <p className="font-medium">₹{dispatch.totalValue.toLocaleString("en-IN")}</p>
+                      <Button variant="outline" size="sm" asChild>
+                        <Link href={`/inventory/dispatches/${dispatch.id}`}>View</Link>
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {canEdit ? (
@@ -155,11 +338,13 @@ export function CustomerProfile({
               salesExecutives={salesExecutives}
               initialValues={{
                 customerName: customer.customerName,
+                contactPersonName: customer.contactPersonName ?? "",
                 customerType: customer.customerType,
                 gstNumber: customer.gstNumber,
                 address: customer.address ?? "",
                 city: customer.city ?? "",
                 state: customer.state ?? "",
+                pinCode: customer.pinCode ?? "",
                 mobile: customer.mobile ?? "",
                 email: customer.email ?? "",
                 assignedSalesUserId: customer.assignedSalesUserId,
@@ -176,15 +361,5 @@ export function CustomerProfile({
         ) : null}
       </Tabs>
     </div>
-  );
-}
-
-function PlaceholderTab({ module, prompt }: { module: string; prompt: string }) {
-  return (
-    <Card>
-      <CardContent className="pt-6 text-sm text-slate-500">
-        {module} history will appear here after {prompt} is implemented.
-      </CardContent>
-    </Card>
   );
 }

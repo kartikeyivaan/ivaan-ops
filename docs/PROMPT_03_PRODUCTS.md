@@ -12,7 +12,7 @@ Implements Sprint 1 product module per PRD v3.0.
 - Serial tracking flag auto-set for Modules/Inverters
 - Company-wise price history (landing, standard, minimum)
 - No maximum price (BR-030)
-- Stock columns placeholder until Prompt 04
+- Stock columns show live inventory from lots/serials
 - RBAC + audit logs
 
 ## Routes
@@ -59,4 +59,4 @@ Applies `20250614140000_products` and seeds sample products with ISE/PCMV prices
 
 ## Next prompt
 
-Prompt 04 — Inventory (lot-based stock, inwarding, serial capture).
+Prompt 04 — Transfers (inter-warehouse / inter-company).

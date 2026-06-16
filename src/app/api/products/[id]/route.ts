@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { CapacityUnit } from "@prisma/client";
 import { auth } from "@/lib/auth";
+import { isReferentialConstraintError } from "@/lib/api-response";
 import { writeAuditLog } from "@/lib/audit";
 import { canEditProducts, canViewProducts } from "@/lib/product-permissions";
 import { getProductById, updateProduct } from "@/lib/product-service";
@@ -89,5 +90,77 @@ export async function PATCH(request: Request, context: RouteContext) {
       return errorResponse("NOT_FOUND", "Product category not found.", 404);
     }
     throw error;
+  }
+}
+
+export async function DELETE(_request: Request, context: RouteContext) {
+  const session = await auth();
+  if (!session?.user || !canEditProducts(session.user.roles)) {
+    return errorResponse("FORBIDDEN", "You do not have permission for this action.", 403);
+  }
+
+  let companyId: string;
+  try {
+    companyId = requireActiveCompany(session);
+  } catch {
+    return errorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
+  }
+
+  const { id } = await context.params;
+  const existing = await prisma.product.findUnique({ where: { id } });
+  if (!existing) {
+    return errorResponse("NOT_FOUND", "Product not found.", 404);
+  }
+
+  try {
+    await prisma.product.delete({ where: { id } });
+
+    await writeAuditLog({
+      tableName: "products",
+      recordId: id,
+      action: "CANCEL",
+      performedBy: session.user.id,
+      companyId,
+      oldValue: existing,
+      newValue: { deleted: true },
+    });
+
+    return NextResponse.json({ deleted: true });
+  } catch (error) {
+    if (!isReferentialConstraintError(error)) {
+      console.error("DELETE /api/products/[id] failed:", error);
+      return errorResponse(
+        "SERVER_ERROR",
+        error instanceof Error ? error.message : "Failed to delete product.",
+        500,
+      );
+    }
+
+    const product = await prisma.product.update({
+      where: { id },
+      data: { isActive: false },
+    });
+
+    await writeAuditLog({
+      tableName: "products",
+      recordId: product.id,
+      action: "UPDATE",
+      performedBy: session.user.id,
+      companyId,
+      oldValue: existing,
+      newValue: {
+        displayName: product.displayName,
+        isActive: product.isActive,
+        deactivated: true,
+        reason: "Product has existing records and cannot be permanently deleted.",
+      },
+    });
+
+    return NextResponse.json({
+      deleted: false,
+      deactivated: true,
+      message:
+        "Product has existing inventory, sales, or transaction records and was deactivated instead of permanently deleted.",
+    });
   }
 }

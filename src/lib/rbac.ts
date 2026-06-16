@@ -32,6 +32,68 @@ export const NAV_ITEMS: NavItem[] = [
     ],
   },
   {
+    label: "Quotations",
+    href: "/sales/quotations",
+    roles: [
+      ROLES.SUPER_ADMIN,
+      ROLES.SALES_MANAGER,
+      ROLES.SALES_EXECUTIVE,
+      ROLES.WAREHOUSE,
+      ROLES.ACCOUNTS,
+    ],
+  },
+  {
+    label: "Proforma Invoices",
+    href: "/sales/proforma-invoices",
+    roles: [
+      ROLES.SUPER_ADMIN,
+      ROLES.SALES_MANAGER,
+      ROLES.SALES_EXECUTIVE,
+      ROLES.WAREHOUSE,
+      ROLES.ACCOUNTS,
+    ],
+  },
+  {
+    label: "Inventory",
+    href: "/inventory",
+    roles: [
+      ROLES.SUPER_ADMIN,
+      ROLES.SALES_MANAGER,
+      ROLES.SALES_EXECUTIVE,
+      ROLES.WAREHOUSE,
+      ROLES.PURCHASE,
+      ROLES.ACCOUNTS,
+    ],
+  },
+  {
+    label: "Purchase",
+    href: "/purchase",
+    roles: [ROLES.SUPER_ADMIN, ROLES.PURCHASE],
+  },
+  {
+    label: "Dispatch",
+    href: "/inventory/dispatches",
+    roles: [
+      ROLES.SUPER_ADMIN,
+      ROLES.SALES_MANAGER,
+      ROLES.SALES_EXECUTIVE,
+      ROLES.WAREHOUSE,
+      ROLES.ACCOUNTS,
+    ],
+  },
+  {
+    label: "Reports",
+    href: "/reports",
+    roles: [
+      ROLES.SUPER_ADMIN,
+      ROLES.SALES_MANAGER,
+      ROLES.SALES_EXECUTIVE,
+      ROLES.WAREHOUSE,
+      ROLES.PURCHASE,
+      ROLES.ACCOUNTS,
+    ],
+  },
+  {
     label: "Products",
     href: "/masters/products",
     roles: [

@@ -111,7 +111,7 @@ export function PurchaseIncomingList({
                       {isEditableIncomingLot(lot) ? (
                         <Button
                           type="button"
-                          variant="link"
+                          variant="default"
                           className="h-auto p-0 font-medium text-emerald-700"
                           onClick={() => setEditingLot(lot)}
                         >

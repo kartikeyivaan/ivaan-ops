@@ -1,6 +1,5 @@
 import {
   CapacityUnit,
-  PricingType,
   Prisma,
   type PrismaClient,
 } from "@prisma/client";

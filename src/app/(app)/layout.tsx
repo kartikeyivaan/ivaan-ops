@@ -1,4 +1,4 @@
-import { AppShell } from "@/components/layout/app-shell";
+import AppShell from "@/components/layout/app-shell";
 import { PasswordChangeGate } from "@/components/auth/password-change-gate";
 
 export const dynamic = "force-dynamic";

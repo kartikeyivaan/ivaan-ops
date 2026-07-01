@@ -35,40 +35,50 @@ export default async function DashboardPage() {
   if (session?.user.activeCompanyId) {
     const companyId = requireActiveCompany(session);
 
-    if (roles.includes(ROLES.WAREHOUSE)) {
-      pendingTransfers = await countPendingIncomingTransfers(prisma, companyId);
-      todaysDispatches = await countTodaysDispatches(prisma, companyId);
-    }
-
-    if (
+    const isWarehouse = roles.includes(ROLES.WAREHOUSE);
+    const isSalesish =
       roles.includes(ROLES.SALES_EXECUTIVE) ||
       roles.includes(ROLES.SALES_MANAGER) ||
-      roles.includes(ROLES.SUPER_ADMIN)
-    ) {
-      openQuotations = await countOpenQuotations(
-        prisma,
-        companyId,
-        roles.includes(ROLES.SALES_EXECUTIVE) ? session.user.id : undefined,
-      );
-    }
+      roles.includes(ROLES.SUPER_ADMIN);
+    const isManagerish =
+      roles.includes(ROLES.SALES_MANAGER) || roles.includes(ROLES.SUPER_ADMIN);
+    const isAccountsish =
+      roles.includes(ROLES.SUPER_ADMIN) || roles.includes(ROLES.ACCOUNTS);
 
-    if (roles.includes(ROLES.SALES_MANAGER) || roles.includes(ROLES.SUPER_ADMIN)) {
-      pendingApprovals = await countPendingQuotationApprovals(prisma, companyId);
-      pendingApprovals += await countPendingBookingApprovals(prisma, companyId);
-      pendingApprovals += await countPendingDispatchCancels(prisma, companyId);
-    }
+    const [
+      pendingTransfersResult,
+      todaysDispatchesResult,
+      openQuotationsResult,
+      pendingApprovalsResult,
+      bookedOrdersResult,
+      pendingPaymentsResult,
+    ] = await Promise.all([
+      isWarehouse ? countPendingIncomingTransfers(prisma, companyId) : Promise.resolve(null),
+      isWarehouse ? countTodaysDispatches(prisma, companyId) : Promise.resolve(null),
+      isSalesish
+        ? countOpenQuotations(
+            prisma,
+            companyId,
+            roles.includes(ROLES.SALES_EXECUTIVE) ? session.user.id : undefined,
+          )
+        : Promise.resolve(null),
+      isManagerish
+        ? Promise.all([
+            countPendingQuotationApprovals(prisma, companyId),
+            countPendingBookingApprovals(prisma, companyId),
+            countPendingDispatchCancels(prisma, companyId),
+          ]).then((counts) => counts.reduce((sum, value) => sum + value, 0))
+        : Promise.resolve(null),
+      isSalesish ? countBookedOrders(prisma, companyId) : Promise.resolve(null),
+      isAccountsish ? countPendingPayments(prisma, companyId) : Promise.resolve(null),
+    ]);
 
-    if (
-      roles.includes(ROLES.SALES_EXECUTIVE) ||
-      roles.includes(ROLES.SALES_MANAGER) ||
-      roles.includes(ROLES.SUPER_ADMIN)
-    ) {
-      bookedOrders = await countBookedOrders(prisma, companyId);
-    }
-
-    if (roles.includes(ROLES.SUPER_ADMIN) || roles.includes(ROLES.ACCOUNTS)) {
-      pendingPayments = await countPendingPayments(prisma, companyId);
-    }
+    pendingTransfers = pendingTransfersResult;
+    todaysDispatches = todaysDispatchesResult;
+    openQuotations = openQuotationsResult;
+    pendingApprovals = pendingApprovalsResult;
+    bookedOrders = bookedOrdersResult;
+    pendingPayments = pendingPaymentsResult;
   }
 
   const widgets =

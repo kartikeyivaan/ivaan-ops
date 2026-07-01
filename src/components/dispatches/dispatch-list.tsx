@@ -123,7 +123,7 @@ export function DispatchList({
               <p>No dispatches found.</p>
             </div>
           ) : (
-            <Table>
+            <Table responsive>
               <TableHeader>
                 <TableRow>
                   <TableHead>DC No</TableHead>
@@ -142,16 +142,16 @@ export function DispatchList({
                     className="cursor-pointer"
                     onClick={() => router.push(`/inventory/dispatches/${row.id}`)}
                   >
-                    <TableCell className="font-medium">{row.dcNo}</TableCell>
-                    <TableCell>{row.proformaInvoice.piNo}</TableCell>
-                    <TableCell>{row.customer.customerName}</TableCell>
-                    <TableCell>{row.dispatchDate}</TableCell>
-                    <TableCell>
+                    <TableCell data-label="DC No" className="font-medium">{row.dcNo}</TableCell>
+                    <TableCell data-label="PI">{row.proformaInvoice.piNo}</TableCell>
+                    <TableCell data-label="Customer">{row.customer.customerName}</TableCell>
+                    <TableCell data-label="Date">{row.dispatchDate}</TableCell>
+                    <TableCell data-label="Status">
                       <Badge variant={statusVariant(row.status)}>
                         {formatDispatchStatus(row.status)}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right">{formatCurrency(row.totalValue)}</TableCell>
+                    <TableCell data-label="Value" className="text-right">{formatCurrency(row.totalValue)}</TableCell>
                     <TableCell>
                       <Button variant="outline" size="sm" asChild onClick={(e) => e.stopPropagation()}>
                         <Link href={`/inventory/dispatches/${row.id}`}>View</Link>

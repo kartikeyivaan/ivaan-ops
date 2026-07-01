@@ -158,7 +158,7 @@ export function CustomersList({
 
       <Card>
         <CardContent className="pt-6">
-          <Table>
+          <Table responsive>
             <TableHeader>
               <TableRow>
                 {canReassign ? <TableHead className="w-10" /> : null}
@@ -183,7 +183,7 @@ export function CustomersList({
                       />
                     </TableCell>
                   ) : null}
-                  <TableCell>
+                  <TableCell data-label="Customer">
                     <Link
                       href={`/sales/customers/${customer.id}`}
                       className="font-medium text-emerald-700 hover:underline"
@@ -192,12 +192,14 @@ export function CustomersList({
                     </Link>
                     <p className="text-xs text-slate-500">{customer.customerCode}</p>
                   </TableCell>
-                  <TableCell>{customer.city ?? "—"}</TableCell>
-                  <TableCell>{customer.gstNumber}</TableCell>
-                  <TableCell>{formatCustomerType(customer.customerType)}</TableCell>
-                  <TableCell>{customer.assignedSalesUser.name}</TableCell>
-                  <TableCell>₹{customer.metrics.outstandingValue.toLocaleString("en-IN")}</TableCell>
-                  <TableCell>
+                  <TableCell data-label="City">{customer.city ?? "—"}</TableCell>
+                  <TableCell data-label="GST">{customer.gstNumber}</TableCell>
+                  <TableCell data-label="Type">{formatCustomerType(customer.customerType)}</TableCell>
+                  <TableCell data-label="Executive">{customer.assignedSalesUser.name}</TableCell>
+                  <TableCell data-label="Outstanding">
+                    ₹{customer.metrics.outstandingValue.toLocaleString("en-IN")}
+                  </TableCell>
+                  <TableCell data-label="Status">
                     <Badge variant={customer.status === "ACTIVE" ? "success" : "danger"}>
                       {customer.status}
                     </Badge>

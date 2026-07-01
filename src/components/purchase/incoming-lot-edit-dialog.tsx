@@ -6,7 +6,7 @@ import { calculateTotalPurchaseCost } from "@/lib/inventory";
 import { evaluateCellInput } from "@/lib/cell-formula";
 import type { SerializedInventoryLot } from "@/lib/inventory-service";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Modal, ModalBody, ModalFooter, ModalForm, ModalHeader } from "@/components/ui/modal";
 import { FormulaInput, resolveFormulaField } from "@/components/ui/formula-input";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -213,19 +213,10 @@ export function IncomingLotEditDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <Card className="max-h-[90vh] w-full max-w-3xl overflow-y-auto">
-        <CardHeader className="flex flex-row items-center justify-between gap-3">
-          <div>
-            <CardTitle>Edit Incoming Lot</CardTitle>
-            <p className="text-sm text-slate-500">{lot.lotNumber}</p>
-          </div>
-          <Button variant="outline" onClick={onClose}>
-            Close
-          </Button>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2">
+    <Modal onClose={onClose} size="xl">
+      <ModalHeader title="Edit Incoming Lot" description={lot.lotNumber} onClose={onClose} />
+      <ModalForm onSubmit={handleSubmit}>
+        <ModalBody className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label>Company</Label>
               <Input value={`${lot.company.name} (${lot.company.code})`} readOnly />
@@ -315,24 +306,23 @@ export function IncomingLotEditDialog({
               </div>
             </div>
             {error ? <p className="text-sm text-red-600 md:col-span-2">{error}</p> : null}
-            <div className="flex flex-wrap gap-2 md:col-span-2">
-              <Button type="submit" disabled={loading || deleting}>
-                {loading ? "Saving..." : "Save changes"}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                disabled={loading || deleting}
-                onClick={handleDelete}
-              >
-                {deleting ? "Deleting..." : "Delete lot"}
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
+        </ModalBody>
+        <ModalFooter>
+          <Button type="submit" disabled={loading || deleting}>
+            {loading ? "Saving..." : "Save changes"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="text-red-600 hover:bg-red-50 hover:text-red-700"
+            disabled={loading || deleting}
+            onClick={handleDelete}
+          >
+            {deleting ? "Deleting..." : "Delete lot"}
+          </Button>
+        </ModalFooter>
+      </ModalForm>
+    </Modal>
   );
 }
 

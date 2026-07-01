@@ -135,7 +135,7 @@ export function ProformaInvoicesList({
               <p>No proforma invoices found.</p>
             </div>
           ) : (
-            <Table>
+            <Table responsive>
               <TableHeader>
                 <TableRow>
                   <TableHead>PI No</TableHead>
@@ -154,16 +154,16 @@ export function ProformaInvoicesList({
                     className="cursor-pointer"
                     onClick={() => router.push(`/sales/proforma-invoices/${row.id}`)}
                   >
-                    <TableCell className="font-medium">{row.piNo}</TableCell>
-                    <TableCell>{row.customer.customerName}</TableCell>
-                    <TableCell>{row.piDate}</TableCell>
-                    <TableCell>
+                    <TableCell data-label="PI No" className="font-medium">{row.piNo}</TableCell>
+                    <TableCell data-label="Customer">{row.customer.customerName}</TableCell>
+                    <TableCell data-label="Date">{row.piDate}</TableCell>
+                    <TableCell data-label="Status">
                       <Badge variant={statusVariant(row.status)}>
                         {formatProformaStatus(row.status)}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right">{formatCurrency(row.totalValue)}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell data-label="Total" className="text-right">{formatCurrency(row.totalValue)}</TableCell>
+                    <TableCell data-label="Outstanding" className="text-right">
                       {formatCurrency(row.paymentSummary.outstanding)}
                     </TableCell>
                     <TableCell>

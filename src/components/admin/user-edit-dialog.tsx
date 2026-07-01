@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Modal, ModalBody, ModalFooter, ModalForm, ModalHeader } from "@/components/ui/modal";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -108,16 +108,10 @@ export function UserEditDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <Card className="max-h-[90vh] w-full max-w-2xl overflow-y-auto">
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Edit User</CardTitle>
-          <Button variant="outline" onClick={onClose}>
-            Close
-          </Button>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2">
+    <Modal onClose={onClose} size="lg">
+      <ModalHeader title="Edit User" onClose={onClose} />
+      <ModalForm onSubmit={handleSubmit}>
+        <ModalBody className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="edit-name">Name</Label>
               <Input
@@ -221,15 +215,14 @@ export function UserEditDialog({
                 ))}
               </div>
             </div>
-            <div className="md:col-span-2">
-              <Button type="submit" disabled={loading}>
-                {loading ? "Saving..." : "Save changes"}
-              </Button>
-              {message ? <p className="mt-2 text-sm text-red-600">{message}</p> : null}
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
+            {message ? <p className="text-sm text-red-600 md:col-span-2">{message}</p> : null}
+        </ModalBody>
+        <ModalFooter>
+          <Button type="submit" disabled={loading}>
+            {loading ? "Saving..." : "Save changes"}
+          </Button>
+        </ModalFooter>
+      </ModalForm>
+    </Modal>
   );
 }

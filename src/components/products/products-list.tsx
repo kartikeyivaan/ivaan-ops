@@ -175,7 +175,7 @@ export function ProductsList({
       <Card>
         <CardContent className="pt-6">
           {message ? <p className="mb-4 text-sm text-slate-600">{message}</p> : null}
-          <Table>
+          <Table responsive>
             <TableHeader>
               <TableRow>
                 <TableHead>Product</TableHead>
@@ -194,7 +194,7 @@ export function ProductsList({
             <TableBody>
               {products.map((product) => (
                 <TableRow key={product.id}>
-                  <TableCell>
+                  <TableCell data-label="Product">
                     <Link
                       href={`/masters/products/${product.id}`}
                       className="font-medium text-emerald-700 hover:underline"
@@ -205,23 +205,23 @@ export function ProductsList({
                       <p className="text-xs text-slate-500">Serial tracked</p>
                     ) : null}
                   </TableCell>
-                  <TableCell>{product.brand.name}</TableCell>
-                  <TableCell>{product.category.name}</TableCell>
-                  <TableCell>
+                  <TableCell data-label="Brand">{product.brand.name}</TableCell>
+                  <TableCell data-label="Category">{product.category.name}</TableCell>
+                  <TableCell data-label="Capacity">
                     {product.capacity.toString()} {formatCapacityUnit(product.capacityUnit)}
                   </TableCell>
-                  <TableCell>{product.stock.availableStock}</TableCell>
-                  <TableCell>{product.stock.incomingStock}</TableCell>
-                  <TableCell>{product.stock.bookedStock}</TableCell>
-                  <TableCell>
+                  <TableCell data-label="Available">{product.stock.availableStock}</TableCell>
+                  <TableCell data-label="Incoming">{product.stock.incomingStock}</TableCell>
+                  <TableCell data-label="Booked">{product.stock.bookedStock}</TableCell>
+                  <TableCell data-label="Current Price">
                     {product.currentPrice
                       ? `₹${Number(product.currentPrice.standardPrice).toLocaleString("en-IN")}`
                       : "—"}
                   </TableCell>
-                  <TableCell>
+                  <TableCell data-label="Pricing">
                     <Badge>{formatPricingType(product.pricingType)}</Badge>
                   </TableCell>
-                  <TableCell>
+                  <TableCell data-label="Status">
                     <Badge variant={product.isActive ? "success" : "danger"}>
                       {product.isActive ? "Active" : "Inactive"}
                     </Badge>

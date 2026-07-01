@@ -1,9 +1,16 @@
 import { cn } from "@/lib/utils";
 
-export function Table({ className, ...props }: React.HTMLAttributes<HTMLTableElement>) {
+export function Table({
+  className,
+  responsive = false,
+  ...props
+}: React.HTMLAttributes<HTMLTableElement> & { responsive?: boolean }) {
   return (
     <div className="w-full overflow-auto">
-      <table className={cn("w-full caption-bottom text-sm", className)} {...props} />
+      <table
+        className={cn("w-full caption-bottom text-sm", responsive && "responsive-table", className)}
+        {...props}
+      />
     </div>
   );
 }

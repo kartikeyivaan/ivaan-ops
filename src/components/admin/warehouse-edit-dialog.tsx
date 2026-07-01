@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Modal, ModalBody, ModalFooter, ModalForm, ModalHeader } from "@/components/ui/modal";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -67,67 +67,62 @@ export function WarehouseEditDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <Card className="w-full max-w-lg">
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Edit Warehouse</CardTitle>
-          <Button variant="outline" onClick={onClose}>
-            Close
+    <Modal onClose={onClose} size="md">
+      <ModalHeader title="Edit Warehouse" onClose={onClose} />
+      <ModalForm onSubmit={handleSubmit}>
+        <ModalBody className="grid gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="edit-company">Company</Label>
+            <select
+              id="edit-company"
+              className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
+              value={companyId}
+              onChange={(e) => setCompanyId(e.target.value)}
+            >
+              {companies.map((company) => (
+                <option key={company.id} value={company.id}>
+                  {company.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit-warehouse-name">Name</Label>
+            <Input
+              id="edit-warehouse-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit-warehouse-code">Code</Label>
+            <Input
+              id="edit-warehouse-code"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit-warehouse-status">Status</Label>
+            <select
+              id="edit-warehouse-status"
+              className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
+              value={isActive ? "active" : "inactive"}
+              onChange={(e) => setIsActive(e.target.value === "active")}
+            >
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </div>
+          {message ? <p className="text-sm text-red-600">{message}</p> : null}
+        </ModalBody>
+        <ModalFooter>
+          <Button type="submit" disabled={loading}>
+            {loading ? "Saving..." : "Save changes"}
           </Button>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="grid gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="edit-company">Company</Label>
-              <select
-                id="edit-company"
-                className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
-                value={companyId}
-                onChange={(e) => setCompanyId(e.target.value)}
-              >
-                {companies.map((company) => (
-                  <option key={company.id} value={company.id}>
-                    {company.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-warehouse-name">Name</Label>
-              <Input
-                id="edit-warehouse-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-warehouse-code">Code</Label>
-              <Input
-                id="edit-warehouse-code"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-warehouse-status">Status</Label>
-              <select
-                id="edit-warehouse-status"
-                className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
-                value={isActive ? "active" : "inactive"}
-                onChange={(e) => setIsActive(e.target.value === "active")}
-              >
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-              </select>
-            </div>
-            <Button type="submit" disabled={loading}>
-              {loading ? "Saving..." : "Save changes"}
-            </Button>
-            {message ? <p className="text-sm text-red-600">{message}</p> : null}
-          </form>
-        </CardContent>
-      </Card>
-    </div>
+        </ModalFooter>
+      </ModalForm>
+    </Modal>
   );
 }

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { formatApiErrorMessage, parseApiJson, type ApiErrorPayload } from "@/lib/api-response";
 import { CUSTOMER_TYPES } from "@/lib/customers";
 
 type SalesExecutive = { id: string; name: string; email: string };
@@ -93,6 +94,11 @@ export function CustomerForm({
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
+    if (!assignedSalesUserId) {
+      setMessage("Select an assigned sales executive.");
+      return;
+    }
+
     setLoading(true);
     setMessage(null);
 
@@ -119,24 +125,34 @@ export function CustomerForm({
         })),
     };
 
-    const response = await fetch(
-      mode === "create" ? "/api/customers" : `/api/customers/${customerId}`,
-      {
-        method: mode === "create" ? "POST" : "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      },
-    );
-    const data = await response.json();
-    setLoading(false);
+    try {
+      const response = await fetch(
+        mode === "create" ? "/api/customers" : `/api/customers/${customerId}`,
+        {
+          method: mode === "create" ? "POST" : "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+      );
+      const data = await parseApiJson<ApiErrorPayload & { id?: string }>(response);
 
-    if (!response.ok) {
-      setMessage(data.message ?? "Failed to save customer.");
-      return;
+      if (!response.ok) {
+        setMessage(formatApiErrorMessage(data, "Failed to save customer."));
+        return;
+      }
+
+      if (!data.id) {
+        setMessage("Customer saved, but the response was incomplete. Refresh the customer list.");
+        return;
+      }
+
+      router.push(`/sales/customers/${data.id}`);
+      router.refresh();
+    } catch {
+      setMessage("Could not reach the server. Check your connection and try again.");
+    } finally {
+      setLoading(false);
     }
-
-    router.push(`/sales/customers/${data.id}`);
-    router.refresh();
   }
 
   return (
@@ -221,19 +237,25 @@ export function CustomerForm({
           </div>
           <div className="space-y-2">
             <Label htmlFor="assignedSalesUserId">Assigned Sales Executive</Label>
-            <select
-              id="assignedSalesUserId"
-              className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
-              value={assignedSalesUserId}
-              onChange={(e) => setAssignedSalesUserId(e.target.value)}
-              required
-            >
-              {salesExecutives.map((user) => (
-                <option key={user.id} value={user.id}>
-                  {user.name}
-                </option>
-              ))}
-            </select>
+            {salesExecutives.length === 0 ? (
+              <p className="text-sm text-red-600">
+                No active sales executives found. Ask an admin to create or activate one first.
+              </p>
+            ) : (
+              <select
+                id="assignedSalesUserId"
+                className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
+                value={assignedSalesUserId}
+                onChange={(e) => setAssignedSalesUserId(e.target.value)}
+                required
+              >
+                {salesExecutives.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.name}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
           {mode === "edit" ? (
             <div className="space-y-2">
@@ -304,7 +326,7 @@ export function CustomerForm({
           </div>
 
           <div className="flex flex-wrap items-center gap-3 md:col-span-2">
-            <Button type="submit" disabled={loading}>
+            <Button type="submit" disabled={loading || salesExecutives.length === 0}>
               {loading ? "Saving..." : mode === "create" ? "Create customer" : "Save changes"}
             </Button>
             {message ? <p className="w-full text-sm text-red-600">{message}</p> : null}

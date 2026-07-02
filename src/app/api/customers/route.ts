@@ -10,6 +10,7 @@ import {
 import { createCustomer, listCustomers } from "@/lib/customer-service";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
+import { mapPrismaCustomerError } from "@/lib/api-response";
 import { customerSchema, customerSearchSchema } from "@/lib/validations";
 
 function errorResponse(code: string, message: string, status: number, details?: unknown) {
@@ -127,6 +128,12 @@ export async function POST(request: Request) {
         return errorResponse("INVALID_GST", "GST number format is invalid.", 400);
       }
     }
+
+    const prismaError = mapPrismaCustomerError(error);
+    if (prismaError) {
+      return errorResponse(prismaError.code, prismaError.message, prismaError.status);
+    }
+
     throw error;
   }
 }

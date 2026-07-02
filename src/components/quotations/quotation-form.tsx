@@ -54,13 +54,24 @@ export function QuotationForm({
   defaultCustomerId,
   salesExecutives,
   defaultSalesUserId,
+  mode = "create",
+  quotationId,
+  quotationNo,
+  initialLines,
+  initialNotes,
 }: {
   customers: Customer[];
   products: Product[];
   defaultCustomerId?: string;
   salesExecutives: SalesExecutive[];
   defaultSalesUserId: string;
+  mode?: "create" | "revise";
+  quotationId?: string;
+  quotationNo?: string;
+  initialLines?: LineDraft[];
+  initialNotes?: string;
 }) {
+  const isRevise = mode === "revise";
   const router = useRouter();
   const [customerId, setCustomerId] = useState(defaultCustomerId ?? customers[0]?.id ?? "");
   const [salesUserId, setSalesUserId] = useState(
@@ -69,8 +80,10 @@ export function QuotationForm({
       : (salesExecutives[0]?.id ?? defaultSalesUserId),
   );
   const defaultProduct = products[0];
-  const [notes, setNotes] = useState("");
-  const [lines, setLines] = useState<LineDraft[]>([defaultProductLine(defaultProduct)]);
+  const [notes, setNotes] = useState(initialNotes ?? "");
+  const [lines, setLines] = useState<LineDraft[]>(
+    initialLines && initialLines.length > 0 ? initialLines : [defaultProductLine(defaultProduct)],
+  );
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -163,19 +176,18 @@ export function QuotationForm({
 
     setLoading(true);
 
-    const payload = {
-      customerId,
-      salesUserId,
-      notes: notes || undefined,
-      send,
-      lines: lines.map((line) => ({
-        productId: line.productId,
-        qty: Number(line.qty),
-        rate: Number(line.rate),
-      })),
-    };
+    const mappedLines = lines.map((line) => ({
+      productId: line.productId,
+      qty: Number(line.qty),
+      rate: Number(line.rate),
+    }));
 
-    const response = await fetch("/api/quotations", {
+    const endpoint = isRevise ? `/api/quotations/${quotationId}/revise` : "/api/quotations";
+    const payload = isRevise
+      ? { notes: notes || undefined, send, lines: mappedLines }
+      : { customerId, salesUserId, notes: notes || undefined, send, lines: mappedLines };
+
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -196,15 +208,19 @@ export function QuotationForm({
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Quotation Builder</h1>
+          <h1 className="text-2xl font-bold text-slate-900">
+            {isRevise ? `Revise ${quotationNo ?? "Quotation"}` : "Quotation Builder"}
+          </h1>
           <p className="text-sm text-slate-500">
-            Validity is fixed at {QUOTATION_VALIDITY_DAYS} days from quotation date.
+            {isRevise
+              ? "Saving creates a new revision. The original is kept for history."
+              : `Validity is fixed at ${QUOTATION_VALIDITY_DAYS} days from quotation date.`}
           </p>
         </div>
         <Button variant="outline" asChild>
-          <Link href="/sales/quotations">
+          <Link href={isRevise && quotationId ? `/sales/quotations/${quotationId}` : "/sales/quotations"}>
             <ArrowLeft className="h-4 w-4" />
-            Back to list
+            {isRevise ? "Back to quotation" : "Back to list"}
           </Link>
         </Button>
       </div>
@@ -216,33 +232,44 @@ export function QuotationForm({
         <CardContent className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="customer">Customer</Label>
-            <select
-              id="customer"
-              value={customerId}
-              onChange={(event) => setCustomerId(event.target.value)}
-              className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
-            >
-              {customers.map((customer) => (
-                <option key={customer.id} value={customer.id}>
-                  {customer.customerName}
-                </option>
-              ))}
-            </select>
+            {isRevise ? (
+              <Input value={selectedCustomer?.customerName ?? ""} readOnly />
+            ) : (
+              <select
+                id="customer"
+                value={customerId}
+                onChange={(event) => setCustomerId(event.target.value)}
+                className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
+              >
+                {customers.map((customer) => (
+                  <option key={customer.id} value={customer.id}>
+                    {customer.customerName}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="salesUserId">Sales Executive</Label>
-            <select
-              id="salesUserId"
-              value={salesUserId}
-              onChange={(event) => setSalesUserId(event.target.value)}
-              className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
-            >
-              {salesExecutives.map((user) => (
-                <option key={user.id} value={user.id}>
-                  {user.name}
-                </option>
-              ))}
-            </select>
+            {isRevise ? (
+              <Input
+                value={salesExecutives.find((user) => user.id === salesUserId)?.name ?? ""}
+                readOnly
+              />
+            ) : (
+              <select
+                id="salesUserId"
+                value={salesUserId}
+                onChange={(event) => setSalesUserId(event.target.value)}
+                className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
+              >
+                {salesExecutives.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.name}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
           {selectedCustomer ? (
             <>
@@ -374,10 +401,10 @@ export function QuotationForm({
             </p>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" disabled={loading} onClick={() => submit(false)}>
-                Save Draft
+                {isRevise ? "Save Revision as Draft" : "Save Draft"}
               </Button>
               <Button disabled={loading} onClick={() => submit(true)}>
-                Save & Send
+                {isRevise ? "Save & Send Revision" : "Save & Send"}
               </Button>
             </div>
           </div>

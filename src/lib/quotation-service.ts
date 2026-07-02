@@ -12,10 +12,13 @@ import {
   QUOTATION_VALIDITY_DAYS,
   addDays,
   calculateLineAmounts,
+  diffQuotationLines,
   formatRevisionQuotationNo,
   generateQuotationNumber,
   roundMoney,
   toDateOnly,
+  type QuotationLineChange,
+  type QuotationLineSnapshot,
 } from "@/lib/quotations";
 
 const quotationInclude = {
@@ -96,7 +99,6 @@ type BuildLineResult = {
 async function getCurrentMinimumPrice(
   prisma: PrismaClient | Prisma.TransactionClient,
   productId: string,
-  companyId: string,
   asOf: Date,
 ) {
   const asOfDay = toDateOnly(asOf);
@@ -105,7 +107,6 @@ async function getCurrentMinimumPrice(
   return prisma.productPrice.findFirst({
     where: {
       productId,
-      companyId,
       effectiveFrom: { lt: nextDay },
       OR: [{ effectiveTo: null }, { effectiveTo: { gte: asOfDay } }],
     },
@@ -134,7 +135,6 @@ async function buildQuotationLines(
     const price = await getCurrentMinimumPrice(
       prisma,
       line.productId,
-      input.companyId,
       input.quotationDate,
     );
     if (!price) throw new Error("PRODUCT_PRICE_NOT_FOUND");
@@ -266,10 +266,46 @@ export async function getQuotationById(
     orderBy: { revisionNo: "asc" },
   });
 
-  return serializeQuotation({
-    ...quotation,
-    revisions: revisionChain,
-  });
+  const previousRevision = revisionChain
+    .filter((revision) => revision.revisionNo < quotation.revisionNo)
+    .sort((a, b) => b.revisionNo - a.revisionNo)[0];
+
+  let changesFromPrevious: QuotationLineChange[] | null = null;
+  let previousRevisionNo: number | null = null;
+
+  if (previousRevision) {
+    const previousItems = await prisma.quotationItem.findMany({
+      where: { quotationId: previousRevision.id },
+      include: { product: { select: { id: true, displayName: true } } },
+    });
+
+    const previousSnapshot: QuotationLineSnapshot[] = previousItems.map((item) => ({
+      productId: item.productId,
+      productName: item.product.displayName,
+      qty: decimalToNumber(item.qty),
+      rate: decimalToNumber(item.rate),
+      lineTotal: decimalToNumber(item.lineTotal),
+    }));
+    const currentSnapshot: QuotationLineSnapshot[] = quotation.items.map((item) => ({
+      productId: item.productId,
+      productName: item.product.displayName,
+      qty: decimalToNumber(item.qty),
+      rate: decimalToNumber(item.rate),
+      lineTotal: decimalToNumber(item.lineTotal),
+    }));
+
+    changesFromPrevious = diffQuotationLines(previousSnapshot, currentSnapshot);
+    previousRevisionNo = previousRevision.revisionNo;
+  }
+
+  return {
+    ...serializeQuotation({
+      ...quotation,
+      revisions: revisionChain,
+    }),
+    changesFromPrevious,
+    previousRevisionNo,
+  };
 }
 
 export async function countOpenQuotations(
@@ -471,6 +507,39 @@ export async function reviseQuotation(
   const quotationNo = formatRevisionQuotationNo(baseNo, nextRevisionNo);
   const status = input.send ? QuotationStatus.SENT : QuotationStatus.DRAFT;
 
+  const productNames = await prisma.product.findMany({
+    where: {
+      id: {
+        in: [
+          ...new Set([
+            ...source.items.map((item) => item.productId),
+            ...builtLines.map((line) => line.productId),
+          ]),
+        ],
+      },
+    },
+    select: { id: true, displayName: true },
+  });
+  const nameById = new Map(productNames.map((product) => [product.id, product.displayName]));
+  const previousSnapshot: QuotationLineSnapshot[] = source.items.map((item) => ({
+    productId: item.productId,
+    productName: nameById.get(item.productId) ?? item.productId,
+    qty: decimalToNumber(item.qty),
+    rate: decimalToNumber(item.rate),
+    lineTotal: decimalToNumber(item.lineTotal),
+  }));
+  const nextSnapshot: QuotationLineSnapshot[] = builtLines.map((line) => ({
+    productId: line.productId,
+    productName: nameById.get(line.productId) ?? line.productId,
+    qty: line.qty,
+    rate: line.rate,
+    lineTotal: line.lineTotal,
+  }));
+  const lineChanges = diffQuotationLines(previousSnapshot, nextSnapshot);
+  const previousTotal = roundMoney(
+    source.items.reduce((sum, item) => sum + decimalToNumber(item.lineTotal), 0),
+  );
+
   return prisma.$transaction(async (tx) => {
     const quotation = await tx.quotation.create({
       data: {
@@ -508,11 +577,21 @@ export async function reviseQuotation(
     await writeAuditLogTx(tx, {
       tableName: "quotations",
       recordId: quotation.id,
-      action: "CREATE",
+      action: "UPDATE",
+      oldValue: {
+        quotationId: source.id,
+        quotationNo: source.quotationNo,
+        revisionNo: source.revisionNo,
+        totalValue: previousTotal,
+        lines: previousSnapshot,
+      },
       newValue: {
         quotationNo: quotation.quotationNo,
         revisionNo: quotation.revisionNo,
         parentQuotationId: rootId,
+        totalValue,
+        lines: nextSnapshot,
+        changes: lineChanges,
       },
       performedBy: input.createdById,
       companyId: input.companyId,

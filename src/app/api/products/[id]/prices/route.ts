@@ -19,16 +19,9 @@ export async function GET(_request: Request, context: RouteContext) {
     return errorResponse("FORBIDDEN", "You do not have permission for this action.", 403);
   }
 
-  let companyId: string;
-  try {
-    companyId = requireActiveCompany(session);
-  } catch {
-    return errorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
-  }
-
   const { id } = await context.params;
   const prices = await prisma.productPrice.findMany({
-    where: { productId: id, companyId },
+    where: { productId: id },
     orderBy: { effectiveFrom: "desc" },
   });
 
@@ -65,7 +58,6 @@ export async function POST(request: Request, context: RouteContext) {
 
   try {
     const price = await addProductPrice(prisma, id, {
-      companyId,
       landingCost: parsed.data.landingCost,
       standardPrice: parsed.data.standardPrice,
       minimumPrice: parsed.data.minimumPrice,

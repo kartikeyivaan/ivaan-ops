@@ -111,3 +111,106 @@ export function formatCurrency(value: number): string {
     maximumFractionDigits: 2,
   }).format(value);
 }
+
+export type QuotationLineSnapshot = {
+  productId: string;
+  productName: string;
+  qty: number;
+  rate: number;
+  lineTotal: number;
+};
+
+export type QuotationFieldChange = {
+  field: "qty" | "rate" | "lineTotal";
+  from: number;
+  to: number;
+};
+
+export type QuotationLineChange = {
+  productId: string;
+  productName: string;
+  type: "ADDED" | "REMOVED" | "MODIFIED";
+  fields: QuotationFieldChange[];
+};
+
+/**
+ * Compares two sets of quotation lines (previous vs. next revision) and returns a
+ * per-product change summary. Lines are keyed by productId; if a product appears on
+ * multiple lines its quantities/totals are aggregated for the comparison.
+ */
+export function diffQuotationLines(
+  previous: QuotationLineSnapshot[],
+  next: QuotationLineSnapshot[],
+): QuotationLineChange[] {
+  const aggregate = (lines: QuotationLineSnapshot[]) => {
+    const map = new Map<string, QuotationLineSnapshot>();
+    for (const line of lines) {
+      const existing = map.get(line.productId);
+      if (existing) {
+        existing.qty += line.qty;
+        existing.lineTotal = roundMoney(existing.lineTotal + line.lineTotal);
+        existing.rate = line.rate;
+      } else {
+        map.set(line.productId, { ...line });
+      }
+    }
+    return map;
+  };
+
+  const prevMap = aggregate(previous);
+  const nextMap = aggregate(next);
+  const changes: QuotationLineChange[] = [];
+
+  for (const [productId, nextLine] of nextMap) {
+    const prevLine = prevMap.get(productId);
+    if (!prevLine) {
+      changes.push({
+        productId,
+        productName: nextLine.productName,
+        type: "ADDED",
+        fields: [
+          { field: "qty", from: 0, to: nextLine.qty },
+          { field: "rate", from: 0, to: nextLine.rate },
+          { field: "lineTotal", from: 0, to: nextLine.lineTotal },
+        ],
+      });
+      continue;
+    }
+
+    const fields: QuotationFieldChange[] = [];
+    if (prevLine.qty !== nextLine.qty) {
+      fields.push({ field: "qty", from: prevLine.qty, to: nextLine.qty });
+    }
+    if (prevLine.rate !== nextLine.rate) {
+      fields.push({ field: "rate", from: prevLine.rate, to: nextLine.rate });
+    }
+    if (prevLine.lineTotal !== nextLine.lineTotal) {
+      fields.push({ field: "lineTotal", from: prevLine.lineTotal, to: nextLine.lineTotal });
+    }
+    if (fields.length > 0) {
+      changes.push({
+        productId,
+        productName: nextLine.productName,
+        type: "MODIFIED",
+        fields,
+      });
+    }
+  }
+
+  for (const [productId, prevLine] of prevMap) {
+    if (!nextMap.has(productId)) {
+      changes.push({
+        productId,
+        productName: prevLine.productName,
+        type: "REMOVED",
+        fields: [
+          { field: "qty", from: prevLine.qty, to: 0 },
+          { field: "rate", from: prevLine.rate, to: 0 },
+          { field: "lineTotal", from: prevLine.lineTotal, to: 0 },
+        ],
+      });
+    }
+  }
+
+  return changes;
+}

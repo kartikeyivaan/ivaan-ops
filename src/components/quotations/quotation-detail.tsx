@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { ArrowLeft, Download, FileInput, Send, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Download, FileInput, Pencil, Send, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -58,7 +58,48 @@ type QuotationDetailData = {
       pricingType: "WP" | "UNIT";
     };
   }>;
+  changesFromPrevious?: QuotationLineChange[] | null;
+  previousRevisionNo?: number | null;
 };
+
+type QuotationLineChange = {
+  productId: string;
+  productName: string;
+  type: "ADDED" | "REMOVED" | "MODIFIED";
+  fields: Array<{
+    field: "qty" | "rate" | "lineTotal";
+    from: number;
+    to: number;
+  }>;
+};
+
+const CHANGE_FIELD_LABEL: Record<QuotationLineChange["fields"][number]["field"], string> = {
+  qty: "Qty",
+  rate: "Rate",
+  lineTotal: "Line Total",
+};
+
+function formatChangeValue(
+  field: QuotationLineChange["fields"][number]["field"],
+  value: number,
+): string {
+  if (field === "qty") return value.toLocaleString("en-IN");
+  return `₹${value.toLocaleString("en-IN")}`;
+}
+
+function changeBadgeVariant(
+  type: QuotationLineChange["type"],
+): "default" | "success" | "warning" | "danger" {
+  if (type === "ADDED") return "success";
+  if (type === "REMOVED") return "danger";
+  return "warning";
+}
+
+function changeBadgeLabel(type: QuotationLineChange["type"]): string {
+  if (type === "ADDED") return "Added";
+  if (type === "REMOVED") return "Removed";
+  return "Changed";
+}
 
 function statusVariant(status: string): "default" | "success" | "warning" | "danger" {
   if (status === "SENT") return "success";
@@ -161,6 +202,14 @@ export function QuotationDetail({
             <Button variant="secondary" disabled={loading} onClick={handleApprovePricing}>
               <ShieldCheck className="h-4 w-4" />
               Approve Pricing
+            </Button>
+          ) : null}
+          {canManage && (quotation.status === "SENT" || quotation.status === "EXPIRED") ? (
+            <Button variant="outline" asChild>
+              <Link href={`/sales/quotations/${quotation.id}/revise`}>
+                <Pencil className="h-4 w-4" />
+                Revise
+              </Link>
             </Button>
           ) : null}
           {canManage && quotation.status === "SENT" ? (
@@ -298,6 +347,56 @@ export function QuotationDetail({
           </CardContent>
         </Card>
       )}
+
+      {quotation.changesFromPrevious && quotation.changesFromPrevious.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              Changes from Revision {quotation.previousRevisionNo}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {quotation.changesFromPrevious.map((change) => (
+              <div
+                key={change.productId}
+                className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="flex items-center gap-2">
+                  <Badge variant={changeBadgeVariant(change.type)}>
+                    {changeBadgeLabel(change.type)}
+                  </Badge>
+                  <span className="font-medium">{change.productName}</span>
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-600">
+                  {change.type === "MODIFIED" ? (
+                    change.fields.map((field) => (
+                      <span key={field.field}>
+                        {CHANGE_FIELD_LABEL[field.field]}:{" "}
+                        <span className="text-slate-400 line-through">
+                          {formatChangeValue(field.field, field.from)}
+                        </span>{" "}
+                        <span className="font-medium text-slate-900">
+                          {formatChangeValue(field.field, field.to)}
+                        </span>
+                      </span>
+                    ))
+                  ) : (
+                    <span>
+                      {change.fields
+                        .filter((field) => field.field !== "lineTotal")
+                        .map((field) => {
+                          const value = change.type === "ADDED" ? field.to : field.from;
+                          return `${CHANGE_FIELD_LABEL[field.field]}: ${formatChangeValue(field.field, value)}`;
+                        })
+                        .join(" · ")}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
 
       {quotation.revisions.length > 1 ? (
         <Card>

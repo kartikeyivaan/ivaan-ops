@@ -91,7 +91,6 @@ export async function POST(request: Request) {
       isActive: parsed.data.isActive,
       initialPrice: parsed.data.initialPrice
         ? {
-            companyId,
             landingCost: parsed.data.initialPrice.landingCost,
             standardPrice: parsed.data.initialPrice.standardPrice,
             minimumPrice: parsed.data.initialPrice.minimumPrice,

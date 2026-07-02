@@ -32,7 +32,6 @@ export default async function ProductDetailPage({ params }: PageProps) {
   return (
     <ProductProfile
       product={product}
-      companyId={companyId}
       categories={masters.categories}
       brands={masters.brands}
       technologies={masters.technologies}

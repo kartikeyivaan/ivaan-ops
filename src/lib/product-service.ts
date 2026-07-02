@@ -44,7 +44,6 @@ function serializeProductPrice(price: ProductPriceRecord) {
   return {
     id: price.id,
     productId: price.productId,
-    companyId: price.companyId,
     landingCost: decimalToNumber(price.landingCost),
     standardPrice: decimalToNumber(price.standardPrice),
     minimumPrice: decimalToNumber(price.minimumPrice),
@@ -57,10 +56,9 @@ function serializeProductPrice(price: ProductPriceRecord) {
 
 function serializeProductRecord(
   product: ProductRecord,
-  companyId: string,
   stock: StockSummary,
 ) {
-  const currentPrice = getCurrentPrice(product.prices, companyId);
+  const currentPrice = getCurrentPrice(product.prices);
 
   return {
     id: product.id,
@@ -92,14 +90,9 @@ export type ProductListItem = ReturnType<typeof serializeProductRecord>;
 
 function getCurrentPrice(
   prices: ProductRecord["prices"],
-  companyId: string,
 ): ProductRecord["prices"][number] | null {
   const now = new Date();
-  return (
-    prices.find(
-      (price) => price.companyId === companyId && isProductPriceEffectiveOn(price, now),
-    ) ?? null
-  );
+  return prices.find((price) => isProductPriceEffectiveOn(price, now)) ?? null;
 }
 
 export async function serializeProduct(
@@ -110,7 +103,6 @@ export async function serializeProduct(
 ): Promise<ProductListItem> {
   return serializeProductRecord(
     product,
-    companyId,
     stock ?? (await getProductStockSummary(prisma, companyId, product.id)),
   );
 }
@@ -190,7 +182,6 @@ export async function createProduct(
     gstRate: number;
     isActive?: boolean;
     initialPrice?: {
-      companyId: string;
       landingCost: number;
       standardPrice: number;
       minimumPrice: number;
@@ -236,7 +227,6 @@ export async function createProduct(
       await tx.productPrice.create({
         data: {
           productId: product.id,
-          companyId: input.initialPrice.companyId,
           landingCost: input.initialPrice.landingCost,
           standardPrice: input.initialPrice.standardPrice,
           minimumPrice: input.initialPrice.minimumPrice,
@@ -322,7 +312,6 @@ export async function addProductPrice(
   prisma: PrismaClient,
   productId: string,
   input: {
-    companyId: string;
     landingCost: number;
     standardPrice: number;
     minimumPrice: number;
@@ -342,7 +331,6 @@ export async function addProductPrice(
     const activePrices = await tx.productPrice.findMany({
       where: {
         productId,
-        companyId: input.companyId,
         OR: [{ effectiveTo: null }, { effectiveTo: { gte: effectiveFrom } }],
       },
     });
@@ -359,7 +347,6 @@ export async function addProductPrice(
     return tx.productPrice.create({
       data: {
         productId,
-        companyId: input.companyId,
         landingCost: input.landingCost,
         standardPrice: input.standardPrice,
         minimumPrice: input.minimumPrice,

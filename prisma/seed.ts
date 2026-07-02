@@ -359,8 +359,7 @@ async function main() {
       hsn: "85414011",
       gstRate: 12,
       serialTracking: true,
-      isePrice: { landingCost: 18, standardPrice: 22, minimumPrice: 20 },
-      pcmvPrice: { landingCost: 18.5, standardPrice: 22.5, minimumPrice: 20.5 },
+      price: { landingCost: 18, standardPrice: 22, minimumPrice: 20 },
     },
     {
       key: "inverter-10kw",
@@ -374,8 +373,7 @@ async function main() {
       hsn: "85044090",
       gstRate: 12,
       serialTracking: true,
-      isePrice: { landingCost: 45000, standardPrice: 52000, minimumPrice: 48000 },
-      pcmvPrice: { landingCost: 45500, standardPrice: 52500, minimumPrice: 48500 },
+      price: { landingCost: 45000, standardPrice: 52000, minimumPrice: 48000 },
     },
     {
       key: "cable-4sq",
@@ -389,8 +387,7 @@ async function main() {
       hsn: "85444999",
       gstRate: 18,
       serialTracking: false,
-      isePrice: { landingCost: 45, standardPrice: 65, minimumPrice: 55 },
-      pcmvPrice: { landingCost: 46, standardPrice: 66, minimumPrice: 56 },
+      price: { landingCost: 45, standardPrice: 65, minimumPrice: 55 },
     },
   ];
 
@@ -416,32 +413,23 @@ async function main() {
       });
     }
 
-    const pricePairs = [
-      { companyId: ise.id, price: item.isePrice },
-      { companyId: pcmv.id, price: item.pcmvPrice },
-    ];
+    const existingPrice = await prisma.productPrice.findFirst({
+      where: {
+        productId: product.id,
+        effectiveTo: null,
+      },
+    });
 
-    for (const pair of pricePairs) {
-      const existingPrice = await prisma.productPrice.findFirst({
-        where: {
+    if (!existingPrice) {
+      await prisma.productPrice.create({
+        data: {
           productId: product.id,
-          companyId: pair.companyId,
-          effectiveTo: null,
+          landingCost: item.price.landingCost,
+          standardPrice: item.price.standardPrice,
+          minimumPrice: item.price.minimumPrice,
+          effectiveFrom: new Date(),
         },
       });
-
-      if (!existingPrice) {
-        await prisma.productPrice.create({
-          data: {
-            productId: product.id,
-            companyId: pair.companyId,
-            landingCost: pair.price.landingCost,
-            standardPrice: pair.price.standardPrice,
-            minimumPrice: pair.price.minimumPrice,
-            effectiveFrom: new Date(),
-          },
-        });
-      }
     }
   }
 

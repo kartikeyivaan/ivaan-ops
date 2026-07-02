@@ -29,7 +29,6 @@ type MasterOption = { id: string; name: string };
 
 export function ProductProfile({
   product,
-  companyId,
   categories,
   brands,
   technologies,
@@ -37,7 +36,6 @@ export function ProductProfile({
   canManagePricing,
 }: {
   product: ProductListItem;
-  companyId: string;
   categories: MasterOption[];
   brands: MasterOption[];
   technologies: MasterOption[];
@@ -51,7 +49,7 @@ export function ProductProfile({
   const [priceMessage, setPriceMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const companyPrices = product.prices.filter((price) => price.companyId === companyId);
+  const priceHistory = product.prices;
 
   async function handleAddPrice(event: React.FormEvent) {
     event.preventDefault();
@@ -230,7 +228,7 @@ export function ProductProfile({
 
             <Card>
               <CardHeader>
-                <CardTitle>Company Price History</CardTitle>
+                <CardTitle>Price History</CardTitle>
               </CardHeader>
               <CardContent>
                 <Table>
@@ -244,7 +242,7 @@ export function ProductProfile({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {companyPrices.map((price) => (
+                    {priceHistory.map((price) => (
                       <TableRow key={price.id}>
                         <TableCell>{formatDate(price.effectiveFrom)}</TableCell>
                         <TableCell>
@@ -255,10 +253,10 @@ export function ProductProfile({
                         <TableCell>₹{Number(price.minimumPrice).toLocaleString("en-IN")}</TableCell>
                       </TableRow>
                     ))}
-                    {companyPrices.length === 0 ? (
+                    {priceHistory.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={5} className="text-center text-slate-500">
-                          No prices configured for active company.
+                          No prices configured yet.
                         </TableCell>
                       </TableRow>
                     ) : null}

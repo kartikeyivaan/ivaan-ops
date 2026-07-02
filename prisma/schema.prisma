@@ -140,7 +140,6 @@ model Company {
   warehouses   Warehouse[]
   userCompanies UserCompany[]
   customers    Customer[]
-  productPrices ProductPrice[]
   inventoryLots InventoryLot[]
   inventoryTransactions InventoryTransaction[]
   transfersFrom InventoryTransfer[] @relation("TransferFromCompany")
@@ -518,7 +517,6 @@ model InventoryTransaction {
 model ProductPrice {
   id            String    @id @default(uuid()) @db.Uuid
   productId     String    @map("product_id") @db.Uuid
-  companyId     String    @map("company_id") @db.Uuid
   landingCost   Decimal   @map("landing_cost") @db.Decimal(12, 2)
   standardPrice Decimal   @map("standard_price") @db.Decimal(12, 2)
   minimumPrice  Decimal   @map("minimum_price") @db.Decimal(12, 2)
@@ -528,9 +526,8 @@ model ProductPrice {
   updatedAt     DateTime  @updatedAt @map("updated_at")
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-  company Company @relation(fields: [companyId], references: [id])
 
-  @@index([productId, companyId, effectiveFrom])
+  @@index([productId, effectiveFrom])
   @@map("product_prices")
 }
 

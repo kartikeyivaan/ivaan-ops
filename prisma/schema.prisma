@@ -131,6 +131,14 @@ model Company {
   code                 String   @unique
   logoUrl              String?  @map("logo_url")
   digitalSignatureUrl  String?  @map("digital_signature_url")
+  address              String?
+  city                 String?
+  state                String?
+  pincode              String?
+  phone                String?
+  email                String?
+  gstNumber            String?  @map("gst_number")
+  tagline              String?
   bankDetails          String?  @map("bank_details")
   termsAndConditions   String?  @map("terms_and_conditions")
   isActive             Boolean  @default(true) @map("is_active")

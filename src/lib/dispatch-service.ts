@@ -19,7 +19,23 @@ import { deductNonSerialStock } from "@/lib/transfer-service";
 import { roundMoney } from "@/lib/quotations";
 
 const dispatchInclude = {
-  company: { select: { id: true, name: true, code: true, termsAndConditions: true } },
+  company: {
+    select: {
+      id: true,
+      name: true,
+      code: true,
+      address: true,
+      city: true,
+      state: true,
+      pincode: true,
+      phone: true,
+      email: true,
+      gstNumber: true,
+      tagline: true,
+      bankDetails: true,
+      termsAndConditions: true,
+    },
+  },
   customer: {
     select: {
       id: true,

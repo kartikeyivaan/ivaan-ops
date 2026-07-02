@@ -33,26 +33,53 @@ async function main() {
 
   const roleMap = Object.fromEntries(roles.map((role) => [role.name, role.id]));
 
+  const defaultTerms = [
+    "Payment: 100% advance before dispatch.",
+    "Taxes: As per Govt. norms.",
+    "Transportation: Extra at actual; unloading in client scope.",
+    "Warranty: As per OEM terms.",
+    "PO Cancellation Charges: 5% of the total value of the PI/Invoice.",
+  ].join("\n");
+
+  const iseProfile = {
+    name: "Ivaan Solar Energy",
+    address: "Waaree Solar Center, Opp. K. U. Kolhe School,\nOld Nashirabad Road, Near Kalika Mata Mandir Chowk",
+    city: "Jalgaon",
+    state: "Maharashtra",
+    pincode: "425001",
+    phone: "+91 8888 555 832",
+    email: "connect@ivaansolar.com",
+    gstNumber: "27AAJFI3520N1Z5",
+    tagline: "Authorised Waaree Franchise",
+    bankDetails:
+      "Bank: State Bank of India\nA/c No: 41649096711   IFSC: SBIN0018300\nBranch: Kalika Mandir, Jalgaon",
+    termsAndConditions: defaultTerms,
+  };
+  const pcmvProfile = {
+    name: "PCM Ventures",
+    address: "Opp. K. U. Kolhe School, Old Nashirabad Road,\nNear Kalika Mata Mandir Chowk",
+    city: "Jalgaon",
+    state: "Maharashtra",
+    pincode: "425001",
+    phone: "+91 7385 1589 47",
+    email: "pcmventures@outlook.com",
+    gstNumber: "27ABHFP7656F1ZU",
+    tagline: null,
+    bankDetails:
+      "Bank: State Bank of India\nA/c No: 44431999106   IFSC: SBIN0018300\nUPI: pcmventures@sbi\nBranch: Kalika Mandir, Jalgaon",
+    termsAndConditions: defaultTerms,
+  };
+
   const ise = await prisma.company.upsert({
     where: { code: "ISE" },
-    update: {},
-    create: {
-      name: "Ivaan Solar Energy",
-      code: "ISE",
-      bankDetails: "ISE bank details placeholder",
-      termsAndConditions: "ISE terms and conditions placeholder",
-    },
+    update: iseProfile,
+    create: { code: "ISE", ...iseProfile },
   });
 
   const pcmv = await prisma.company.upsert({
     where: { code: "PCMV" },
-    update: {},
-    create: {
-      name: "PCM Ventures",
-      code: "PCMV",
-      bankDetails: "PCMV bank details placeholder",
-      termsAndConditions: "PCMV terms and conditions placeholder",
-    },
+    update: pcmvProfile,
+    create: { code: "PCMV", ...pcmvProfile },
   });
 
   const warehouses = [

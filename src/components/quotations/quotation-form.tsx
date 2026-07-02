@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { QUOTATION_VALIDITY_DAYS, calculateLineAmounts } from "@/lib/quotations";
 import { formatPricingType } from "@/lib/products";
+import { buildQuotationWhatsappUrl } from "@/lib/whatsapp";
 
 type Customer = {
   id: string;
@@ -174,6 +175,11 @@ export function QuotationForm({
       return;
     }
 
+    // Open the WhatsApp tab synchronously on click (before any await) so the
+    // browser does not block it as a popup. We redirect it once we have the
+    // saved quotation, or close it if saving fails / there's no mobile number.
+    const shareWindow = send ? window.open("", "_blank") : null;
+
     setLoading(true);
 
     const mappedLines = lines.map((line) => ({
@@ -197,8 +203,18 @@ export function QuotationForm({
     setLoading(false);
 
     if (!response.ok) {
+      shareWindow?.close();
       setError(data.message ?? "Unable to save quotation.");
       return;
+    }
+
+    if (shareWindow) {
+      const waUrl = buildQuotationWhatsappUrl(data, window.location.origin);
+      if (waUrl) {
+        shareWindow.location.href = waUrl;
+      } else {
+        shareWindow.close();
+      }
     }
 
     router.push(`/sales/quotations/${data.id}`);

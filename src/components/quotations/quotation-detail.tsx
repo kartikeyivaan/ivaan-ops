@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { ArrowLeft, Download, FileInput, Pencil, Send, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Download, FileInput, MessageCircle, Pencil, Send, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/table";
 import { formatPricingType } from "@/lib/products";
 import { formatQuotationStatus } from "@/lib/quotations";
+import { buildQuotationWhatsappUrl } from "@/lib/whatsapp";
 
 type QuotationDetailData = {
   id: string;
@@ -34,9 +35,11 @@ type QuotationDetailData = {
     address?: string | null;
     city?: string | null;
     state?: string | null;
+    mobile?: string | null;
   };
   salesUser: { name: string; email: string };
   company: {
+    name: string;
     bankDetails?: string | null;
     termsAndConditions?: string | null;
   };
@@ -123,6 +126,18 @@ export function QuotationDetail({
 
   const hasPendingApproval = quotation.items.some((item) => item.approvalStatus === "PENDING");
 
+  function handleShareWhatsapp() {
+    setError("");
+    const url = buildQuotationWhatsappUrl(quotation, window.location.origin);
+    if (!url) {
+      setError(
+        "This customer has no valid mobile number on record. Add one to share on WhatsApp.",
+      );
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
   async function handleSend() {
     setLoading(true);
     setError("");
@@ -187,11 +202,17 @@ export function QuotationDetail({
             </Link>
           </Button>
           <Button variant="outline" asChild>
-            <a href={`/api/quotations/${quotation.id}/pdf`} target="_blank" rel="noreferrer">
+            <a href={`/api/quotations/${quotation.id}/pdf`} download>
               <Download className="h-4 w-4" />
               PDF
             </a>
           </Button>
+          {quotation.customer.mobile ? (
+            <Button variant="outline" onClick={handleShareWhatsapp}>
+              <MessageCircle className="h-4 w-4" />
+              Share on WhatsApp
+            </Button>
+          ) : null}
           {canManage && quotation.status === "DRAFT" ? (
             <Button disabled={loading} onClick={handleSend}>
               <Send className="h-4 w-4" />

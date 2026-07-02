@@ -100,10 +100,19 @@ export async function GET(_request: Request, context: RouteContext) {
 
   const pdf = await generateQuotationPdf(quotation);
 
+  const rawName = `${quotation.quotationNo} - ${quotation.customer.customerName}`;
+  // Strip characters that are illegal in file names on common OSes, then build
+  // both an ASCII-safe `filename` and a UTF-8 `filename*` (RFC 5987) so the
+  // download keeps the "<Quotation No> - <Customer Name>.pdf" name everywhere.
+  const safeName = rawName.replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim();
+  const asciiName = safeName.replace(/[^\x20-\x7E]/g, "_");
+
   return new NextResponse(new Uint8Array(pdf), {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="${quotation.quotationNo}.pdf"`,
+      "Content-Disposition": `attachment; filename="${asciiName}.pdf"; filename*=UTF-8''${encodeURIComponent(
+        `${safeName}.pdf`,
+      )}`,
     },
   });
 }

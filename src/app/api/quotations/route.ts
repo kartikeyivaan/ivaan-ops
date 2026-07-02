@@ -6,6 +6,7 @@ import {
   canViewQuotations,
 } from "@/lib/quotation-permissions";
 import { createQuotation, listQuotations } from "@/lib/quotation-service";
+import { buildQuotationWhatsappUrl } from "@/lib/quotation-share";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
 import { createQuotationSchema, quotationSearchSchema } from "@/lib/validations";
@@ -88,7 +89,9 @@ export async function POST(request: Request) {
       lines: parsed.data.lines,
     });
 
-    return NextResponse.json(quotation, { status: 201 });
+    const whatsappUrl = parsed.data.send ? buildQuotationWhatsappUrl(quotation) : null;
+
+    return NextResponse.json({ ...quotation, whatsappUrl }, { status: 201 });
   } catch (error) {
     if (error instanceof Error) {
       if (error.message === "CUSTOMER_NOT_FOUND") {

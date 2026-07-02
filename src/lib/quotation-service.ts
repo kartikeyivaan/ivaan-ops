@@ -21,7 +21,7 @@ import {
   type QuotationLineSnapshot,
 } from "@/lib/quotations";
 
-const quotationInclude = {
+export const quotationInclude = {
   company: {
     select: {
       id: true,
@@ -394,8 +394,8 @@ export async function createQuotation(
   });
   if (!company) throw new Error("COMPANY_NOT_FOUND");
 
-  const customer = await prisma.customer.findFirst({
-    where: { id: input.customerId, companyId: input.companyId },
+  const customer = await prisma.customer.findUnique({
+    where: { id: input.customerId },
   });
   if (!customer) throw new Error("CUSTOMER_NOT_FOUND");
 

@@ -255,9 +255,7 @@ async function main() {
 
   const sampleCustomers = [
     {
-      companyId: ise.id,
-      companyCode: ise.code,
-      customerCode: "ISE-CUST-00001",
+      customerCode: "CUST-00001",
       customerName: "Sunrise Solar Dealers",
       customerType: "DEALER" as const,
       gstNumber: "27AABCI1234A1Z5",
@@ -269,9 +267,7 @@ async function main() {
       createdById: admin.id,
     },
     {
-      companyId: ise.id,
-      companyCode: ise.code,
-      customerCode: "ISE-CUST-00002",
+      customerCode: "CUST-00002",
       customerName: "Greenfield Projects Pvt Ltd",
       customerType: "PROJECT" as const,
       gstNumber: "27AABCI5678B2Z6",
@@ -283,9 +279,7 @@ async function main() {
       createdById: admin.id,
     },
     {
-      companyId: pcmv.id,
-      companyCode: pcmv.code,
-      customerCode: "PCMV-CUST-00001",
+      customerCode: "CUST-00003",
       customerName: "Western Electricals",
       customerType: "DEALER" as const,
       gstNumber: "27AABCI9012C3Z7",
@@ -300,15 +294,9 @@ async function main() {
 
   for (const customer of sampleCustomers) {
     await prisma.customer.upsert({
-      where: {
-        companyId_gstNumber: {
-          companyId: customer.companyId,
-          gstNumber: customer.gstNumber,
-        },
-      },
+      where: { gstNumber: customer.gstNumber },
       update: {},
       create: {
-        companyId: customer.companyId,
         customerCode: customer.customerCode,
         customerName: customer.customerName,
         customerType: customer.customerType,
@@ -587,7 +575,7 @@ async function main() {
 async function seedSampleQuotations() {
   const ise = await prisma.company.findUniqueOrThrow({ where: { code: "ISE" } });
   const customer = await prisma.customer.findFirst({
-    where: { companyId: ise.id, customerCode: "ISE-CUST-00001" },
+    where: { customerCode: "CUST-00001" },
   });
   const salesExecutive = await prisma.user.findUniqueOrThrow({
     where: { email: "sales@ivaansolar.com" },
@@ -663,7 +651,7 @@ async function seedSampleQuotations() {
   });
 
   const pendingCustomer = await prisma.customer.findFirst({
-    where: { companyId: ise.id, customerCode: "ISE-CUST-00002" },
+    where: { customerCode: "CUST-00002" },
   });
 
   if (pendingCustomer) {
@@ -718,7 +706,7 @@ async function seedSampleQuotations() {
 async function seedSampleProformaInvoices() {
   const ise = await prisma.company.findUniqueOrThrow({ where: { code: "ISE" } });
   const customer = await prisma.customer.findFirst({
-    where: { companyId: ise.id, customerCode: "ISE-CUST-00001" },
+    where: { customerCode: "CUST-00001" },
   });
   const salesExecutive = await prisma.user.findUniqueOrThrow({
     where: { email: "sales@ivaansolar.com" },
@@ -863,7 +851,7 @@ async function seedSampleProformaInvoices() {
 async function seedSampleDispatches() {
   const ise = await prisma.company.findUniqueOrThrow({ where: { code: "ISE" } });
   const customer = await prisma.customer.findFirst({
-    where: { companyId: ise.id, customerCode: "ISE-CUST-00001" },
+    where: { customerCode: "CUST-00001" },
   });
   const salesExecutive = await prisma.user.findUniqueOrThrow({
     where: { email: "sales@ivaansolar.com" },

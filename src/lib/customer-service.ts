@@ -18,7 +18,6 @@ type CustomerWithRelations = Prisma.CustomerGetPayload<{
     assignedSalesUser: { select: { id: true; name: true; email: true } };
     createdBy: { select: { id: true; name: true } };
     contacts: true;
-    company: { select: { id: true; code: true; name: true } };
   };
 }>;
 
@@ -26,17 +25,21 @@ export type CustomerListItem = CustomerWithRelations & {
   metrics: ReturnType<typeof calculateCustomerOutstanding>;
 };
 
+// Customers are a global master shared by every company. Metrics (outstanding,
+// open PIs/quotations, dispatch value) are still scoped to the active company so
+// each company sees its own dealings with the shared customer.
 export async function serializeCustomer(
   prisma: PrismaClient,
   customer: CustomerWithRelations,
+  companyId: string,
 ): Promise<CustomerListItem> {
   const { getCustomerQuotationMetrics } = await import("@/lib/quotation-service");
   const { getCustomerPiMetrics } = await import("@/lib/pi-service");
   const { getCustomerDispatchMetrics } = await import("@/lib/dispatch-service");
   const [quotationMetrics, piMetrics, dispatchMetrics] = await Promise.all([
-    getCustomerQuotationMetrics(prisma, customer.companyId, customer.id),
-    getCustomerPiMetrics(prisma, customer.companyId, customer.id),
-    getCustomerDispatchMetrics(prisma, customer.companyId, customer.id),
+    getCustomerQuotationMetrics(prisma, companyId, customer.id),
+    getCustomerPiMetrics(prisma, companyId, customer.id),
+    getCustomerDispatchMetrics(prisma, companyId, customer.id),
   ]);
 
   return {
@@ -62,7 +65,6 @@ export async function listCustomers(
   },
 ) {
   const where: Prisma.CustomerWhereInput = {
-    companyId,
     ...(filters.status ? { status: filters.status } : {}),
     ...(filters.customerType ? { customerType: filters.customerType } : {}),
     ...(filters.assignedSalesUserId
@@ -89,12 +91,11 @@ export async function listCustomers(
       assignedSalesUser: { select: { id: true, name: true, email: true } },
       createdBy: { select: { id: true, name: true } },
       contacts: true,
-      company: { select: { id: true, code: true, name: true } },
     },
     orderBy: { customerName: "asc" },
   });
 
-  return Promise.all(customers.map((customer) => serializeCustomer(prisma, customer)));
+  return Promise.all(customers.map((customer) => serializeCustomer(prisma, customer, companyId)));
 }
 
 export async function getCustomerById(
@@ -102,28 +103,25 @@ export async function getCustomerById(
   companyId: string,
   customerId: string,
 ) {
-  const customer = await prisma.customer.findFirst({
-    where: { id: customerId, companyId },
+  const customer = await prisma.customer.findUnique({
+    where: { id: customerId },
     include: {
       assignedSalesUser: { select: { id: true, name: true, email: true } },
       createdBy: { select: { id: true, name: true } },
       contacts: true,
-      company: { select: { id: true, code: true, name: true } },
     },
   });
 
-  return customer ? serializeCustomer(prisma, customer) : null;
+  return customer ? serializeCustomer(prisma, customer, companyId) : null;
 }
 
 async function assertUniqueGst(
   prisma: PrismaClient,
-  companyId: string,
   gstNumber: string,
   excludeCustomerId?: string,
 ) {
   const existing = await prisma.customer.findFirst({
     where: {
-      companyId,
       gstNumber,
       ...(excludeCustomerId ? { NOT: { id: excludeCustomerId } } : {}),
     },
@@ -134,8 +132,6 @@ async function assertUniqueGst(
 export async function createCustomer(
   prisma: PrismaClient,
   input: {
-    companyId: string;
-    companyCode: string;
     createdById: string;
     customerName: string;
     contactPersonName?: string;
@@ -162,22 +158,17 @@ export async function createCustomer(
     throw new Error("INVALID_GST");
   }
 
-  const duplicate = await assertUniqueGst(prisma, input.companyId, gstNumber);
+  const duplicate = await assertUniqueGst(prisma, gstNumber);
   if (duplicate) {
     throw new Error("DUPLICATE_GST");
   }
 
-  const customerCode = await generateCustomerCode(
-    prisma,
-    input.companyId,
-    input.companyCode,
-  );
+  const customerCode = await generateCustomerCode(prisma);
 
   return prisma.customer.create({
     data: {
-      companyId: input.companyId,
       customerCode,
-      customerName: input.customerName,
+      customerName: input.customerName.trim().toUpperCase(),
       contactPersonName: input.contactPersonName || null,
       customerType: input.customerType,
       gstNumber,
@@ -205,7 +196,6 @@ export async function createCustomer(
       assignedSalesUser: { select: { id: true, name: true, email: true } },
       createdBy: { select: { id: true, name: true } },
       contacts: true,
-      company: { select: { id: true, code: true, name: true } },
     },
   });
 }
@@ -213,7 +203,6 @@ export async function createCustomer(
 export async function updateCustomer(
   prisma: PrismaClient,
   customerId: string,
-  companyId: string,
   input: {
     customerName?: string;
     contactPersonName?: string;
@@ -236,8 +225,8 @@ export async function updateCustomer(
     }>;
   },
 ) {
-  const existing = await prisma.customer.findFirst({
-    where: { id: customerId, companyId },
+  const existing = await prisma.customer.findUnique({
+    where: { id: customerId },
     include: { contacts: true },
   });
   if (!existing) {
@@ -250,7 +239,7 @@ export async function updateCustomer(
     if (!isValidGstFormat(gstNumber)) {
       throw new Error("INVALID_GST");
     }
-    const duplicate = await assertUniqueGst(prisma, companyId, gstNumber, customerId);
+    const duplicate = await assertUniqueGst(prisma, gstNumber, customerId);
     if (duplicate) {
       throw new Error("DUPLICATE_GST");
     }
@@ -275,7 +264,10 @@ export async function updateCustomer(
     return tx.customer.update({
       where: { id: customerId },
       data: {
-        customerName: input.customerName,
+        customerName:
+          input.customerName === undefined
+            ? undefined
+            : input.customerName.trim().toUpperCase(),
         contactPersonName: input.contactPersonName === "" ? null : input.contactPersonName,
         customerType: input.customerType,
         gstNumber,
@@ -292,7 +284,6 @@ export async function updateCustomer(
         assignedSalesUser: { select: { id: true, name: true, email: true } },
         createdBy: { select: { id: true, name: true } },
         contacts: true,
-        company: { select: { id: true, code: true, name: true } },
       },
     });
   });
@@ -300,13 +291,11 @@ export async function updateCustomer(
 
 export async function reassignCustomers(
   prisma: PrismaClient,
-  companyId: string,
   customerIds: string[],
   assignedSalesUserId: string,
 ) {
   const result = await prisma.customer.updateMany({
     where: {
-      companyId,
       id: { in: customerIds },
     },
     data: { assignedSalesUserId },
@@ -317,13 +306,11 @@ export async function reassignCustomers(
 
 export async function previewCustomerImport(
   prisma: PrismaClient,
-  companyId: string,
   rows: CustomerImportRow[],
 ): Promise<CustomerImportPreviewRow[]> {
   const salesUsers = await prisma.user.findMany({
     where: {
       status: "ACTIVE",
-      companies: { some: { companyId } },
       roles: {
         some: {
           role: {
@@ -339,7 +326,6 @@ export async function previewCustomerImport(
   );
 
   const existingGst = await prisma.customer.findMany({
-    where: { companyId },
     select: { gstNumber: true },
   });
   const gstSet = new Set(existingGst.map((c) => c.gstNumber));
@@ -351,12 +337,12 @@ export async function previewCustomerImport(
 
     if (!row.customerName?.trim()) errors.push("Customer name is required.");
     if (!isValidGstFormat(gstNumber)) errors.push("Invalid GST format.");
-    if (gstSet.has(gstNumber)) errors.push("GST already exists in company.");
+    if (gstSet.has(gstNumber)) errors.push("GST already exists.");
     if (importGstSet.has(gstNumber)) errors.push("Duplicate GST in import file.");
     importGstSet.add(gstNumber);
 
     const salesUserId = salesByEmail.get(row.assignedSalesEmail.toLowerCase());
-    if (!salesUserId) errors.push("Assigned sales email not found for this company.");
+    if (!salesUserId) errors.push("Assigned sales email not found.");
 
     return {
       ...row,
@@ -369,12 +355,10 @@ export async function previewCustomerImport(
 
 export async function importCustomers(
   prisma: PrismaClient,
-  companyId: string,
-  companyCode: string,
   createdById: string,
   rows: CustomerImportRow[],
 ) {
-  const preview = await previewCustomerImport(prisma, companyId, rows);
+  const preview = await previewCustomerImport(prisma, rows);
   const validRows = preview.filter((row) => row.isValid);
   if (validRows.length === 0) {
     throw new Error("NO_VALID_ROWS");
@@ -382,7 +366,6 @@ export async function importCustomers(
 
   const salesUsers = await prisma.user.findMany({
     where: {
-      companies: { some: { companyId } },
       roles: {
         some: {
           role: {
@@ -401,8 +384,6 @@ export async function importCustomers(
   for (const row of validRows) {
     const assignedSalesUserId = salesByEmail.get(row.assignedSalesEmail.toLowerCase())!;
     const customer = await createCustomer(prisma, {
-      companyId,
-      companyCode,
       createdById,
       customerName: row.customerName,
       customerType: row.customerType,

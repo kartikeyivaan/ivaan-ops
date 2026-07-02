@@ -6,6 +6,7 @@ import {
   canViewQuotations,
 } from "@/lib/quotation-permissions";
 import { getQuotationById } from "@/lib/quotation-service";
+import { buildQuotationWhatsappUrl } from "@/lib/quotation-share";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
 import { QuotationDetail } from "@/components/quotations/quotation-detail";
@@ -36,6 +37,7 @@ export default async function QuotationDetailPage({ params }: PageProps) {
   return (
     <QuotationDetail
       quotation={JSON.parse(JSON.stringify(quotation))}
+      whatsappUrl={buildQuotationWhatsappUrl(quotation)}
       canManage={canManageQuotations(session.user.roles)}
       canApprovePricing={canApproveQuotationPricing(session.user.roles)}
     />

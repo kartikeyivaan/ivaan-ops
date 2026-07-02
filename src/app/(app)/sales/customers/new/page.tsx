@@ -16,11 +16,10 @@ export default async function NewCustomerPage() {
     redirect("/sales/customers");
   }
 
-  const companyId = requireActiveCompany(session);
+  requireActiveCompany(session);
   const salesExecutives = await prisma.user.findMany({
     where: {
       status: "ACTIVE",
-      companies: { some: { companyId } },
       roles: {
         some: {
           role: {
@@ -40,7 +39,7 @@ export default async function NewCustomerPage() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">New Customer</h1>
-          <p className="text-sm text-slate-500">Create a company-owned customer record.</p>
+          <p className="text-sm text-slate-500">Create a shared customer record available to all companies.</p>
         </div>
         <Button asChild variant="outline">
           <a href={GST_TAXPAYER_SEARCH_URL} target="_blank" rel="noopener noreferrer">

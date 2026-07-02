@@ -46,36 +46,3 @@ export function buildQuotationWhatsappMessage(input: {
     `Valid for ${validity} days. — ${input.salespersonName}`
   );
 }
-
-type QuotationWhatsappInput = {
-  id: string;
-  quotationNo: string;
-  customer: { customerName: string; mobile?: string | null };
-  company: { name: string };
-  salesUser: { name: string };
-};
-
-/**
- * Builds a wa.me click-to-chat URL that opens the rep's logged-in WhatsApp
- * (Web/Desktop) with a pre-filled message + link to the quotation PDF.
- *
- * Returns null when the customer has no usable mobile number.
- */
-export function buildQuotationWhatsappUrl(
-  quotation: QuotationWhatsappInput,
-  origin: string,
-): string | null {
-  const number = normalizeMobileForWhatsapp(quotation.customer.mobile);
-  if (!number) return null;
-
-  const pdfUrl = `${origin.replace(/\/$/, "")}/api/quotations/${quotation.id}/pdf`;
-  const message = buildQuotationWhatsappMessage({
-    customerName: quotation.customer.customerName,
-    companyName: quotation.company.name,
-    quotationNo: quotation.quotationNo,
-    pdfUrl,
-    salespersonName: quotation.salesUser.name,
-  });
-
-  return `https://wa.me/${number}?text=${encodeURIComponent(message)}`;
-}

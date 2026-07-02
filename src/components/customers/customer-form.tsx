@@ -151,7 +151,7 @@ export function CustomerForm({
             <Input
               id="customerName"
               value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
+              onChange={(e) => setCustomerName(e.target.value.toUpperCase())}
               required
             />
           </div>

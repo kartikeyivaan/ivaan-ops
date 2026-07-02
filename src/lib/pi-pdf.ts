@@ -164,7 +164,7 @@ export async function generateProformaInvoicePdf(pi: ProformaInvoiceRecord): Pro
   doc.font(fonts.regular).fontSize(9).fillColor("#D8D8D8").text("Total Amount Payable", payableX + 14, y + 8, {
     width: payableWidth - 28,
   });
-  doc.font(fonts.bold).fontSize(16).fillColor(palette.accent).text(money(grandTotal), payableX + 14, y + 5, {
+  doc.font(fonts.bold).fontSize(16).fillColor(palette.primaryText).text(money(grandTotal), payableX + 14, y + 5, {
     width: payableWidth - 28,
     align: "right",
   });

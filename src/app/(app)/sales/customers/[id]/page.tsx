@@ -28,7 +28,6 @@ export default async function CustomerDetailPage({ params }: PageProps) {
     prisma.user.findMany({
       where: {
         status: "ACTIVE",
-        companies: { some: { companyId } },
         roles: {
           some: {
             role: {

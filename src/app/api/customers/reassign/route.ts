@@ -47,16 +47,14 @@ export async function POST(request: Request) {
     where: {
       id: parsed.data.assignedSalesUserId,
       status: "ACTIVE",
-      companies: { some: { companyId } },
     },
   });
   if (!assignee) {
-    return errorResponse("NOT_FOUND", "Assigned sales user not found for this company.", 404);
+    return errorResponse("NOT_FOUND", "Assigned sales user not found.", 404);
   }
 
   const count = await reassignCustomers(
     prisma,
-    companyId,
     parsed.data.customerIds,
     parsed.data.assignedSalesUserId,
   );

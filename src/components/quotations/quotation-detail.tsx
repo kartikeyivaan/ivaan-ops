@@ -17,7 +17,6 @@ import {
 } from "@/components/ui/table";
 import { formatPricingType } from "@/lib/products";
 import { formatQuotationStatus } from "@/lib/quotations";
-import { buildQuotationWhatsappUrl } from "@/lib/whatsapp";
 
 type QuotationDetailData = {
   id: string;
@@ -113,10 +112,12 @@ function statusVariant(status: string): "default" | "success" | "warning" | "dan
 
 export function QuotationDetail({
   quotation,
+  whatsappUrl,
   canManage,
   canApprovePricing,
 }: {
   quotation: QuotationDetailData;
+  whatsappUrl?: string | null;
   canManage: boolean;
   canApprovePricing: boolean;
 }) {
@@ -127,15 +128,8 @@ export function QuotationDetail({
   const hasPendingApproval = quotation.items.some((item) => item.approvalStatus === "PENDING");
 
   function handleShareWhatsapp() {
-    setError("");
-    const url = buildQuotationWhatsappUrl(quotation, window.location.origin);
-    if (!url) {
-      setError(
-        "This customer has no valid mobile number on record. Add one to share on WhatsApp.",
-      );
-      return;
-    }
-    window.open(url, "_blank", "noopener,noreferrer");
+    if (!whatsappUrl) return;
+    window.open(whatsappUrl, "_blank", "noopener,noreferrer");
   }
 
   async function handleSend() {
@@ -207,7 +201,7 @@ export function QuotationDetail({
               PDF
             </a>
           </Button>
-          {quotation.customer.mobile ? (
+          {whatsappUrl ? (
             <Button variant="outline" onClick={handleShareWhatsapp}>
               <MessageCircle className="h-4 w-4" />
               Share on WhatsApp

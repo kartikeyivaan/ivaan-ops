@@ -309,8 +309,8 @@ export async function createProformaInvoice(
     lines: PiLineInput[];
   },
 ) {
-  const customer = await prisma.customer.findFirst({
-    where: { id: input.customerId, companyId: input.companyId },
+  const customer = await prisma.customer.findUnique({
+    where: { id: input.customerId },
   });
   if (!customer) throw new Error("CUSTOMER_NOT_FOUND");
 

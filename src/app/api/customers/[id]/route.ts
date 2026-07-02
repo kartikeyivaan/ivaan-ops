@@ -64,8 +64,8 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   const { id } = await context.params;
-  const existing = await prisma.customer.findFirst({
-    where: { id, companyId },
+  const existing = await prisma.customer.findUnique({
+    where: { id },
   });
   if (!existing) {
     return errorResponse("NOT_FOUND", "Customer not found.", 404);
@@ -78,7 +78,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   try {
-    const customer = await updateCustomer(prisma, id, companyId, {
+    const customer = await updateCustomer(prisma, id, {
       customerName: parsed.data.customerName,
       contactPersonName: parsed.data.contactPersonName,
       customerType: parsed.data.customerType as CustomerType | undefined,

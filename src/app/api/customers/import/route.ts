@@ -44,7 +44,7 @@ export async function POST(request: Request) {
   }
 
   if (parsed.data.mode === "preview") {
-    const preview = await previewCustomerImport(prisma, companyId, parsed.data.rows);
+    const preview = await previewCustomerImport(prisma, parsed.data.rows);
     return NextResponse.json({
       rows: preview,
       validCount: preview.filter((row) => row.isValid).length,
@@ -52,16 +52,9 @@ export async function POST(request: Request) {
     });
   }
 
-  const company = await prisma.company.findUnique({ where: { id: companyId } });
-  if (!company) {
-    return errorResponse("NOT_FOUND", "Company not found.", 404);
-  }
-
   try {
     const result = await importCustomers(
       prisma,
-      companyId,
-      company.code,
       session.user.id,
       parsed.data.rows,
     );

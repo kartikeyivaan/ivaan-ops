@@ -82,15 +82,8 @@ export async function POST(request: Request) {
     return errorResponse("VALIDATION_ERROR", "Invalid customer data.", 400, parsed.error.flatten());
   }
 
-  const company = await prisma.company.findUnique({ where: { id: companyId } });
-  if (!company) {
-    return errorResponse("NOT_FOUND", "Company not found.", 404);
-  }
-
   try {
     const customer = await createCustomer(prisma, {
-      companyId,
-      companyCode: company.code,
       createdById: session.user.id,
       customerName: parsed.data.customerName,
       contactPersonName: parsed.data.contactPersonName,

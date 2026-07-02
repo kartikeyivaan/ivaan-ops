@@ -239,7 +239,6 @@ export async function getSalesExecutiveReport(
         }),
         prisma.customer.count({
           where: {
-            companyId,
             assignedSalesUserId: user.id,
             ...(filters.customerType ? { customerType: filters.customerType } : {}),
             ...(fromDate || toDate

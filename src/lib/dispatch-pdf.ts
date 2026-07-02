@@ -12,7 +12,6 @@ import {
   drawFooter,
   drawParties,
   drawTable,
-  makeMoney,
   resolvePalette,
   resolveProfile,
   sectionTitle,
@@ -35,7 +34,6 @@ export async function generateDispatchPdf(dispatch: DispatchRecord): Promise<Buf
   const doc = new PDFDocument(createDocOptions());
   const fonts = setupFonts(doc);
   const palette = resolvePalette(dispatch.company.code);
-  const money = makeMoney(fonts.rupee);
   const ctx: DocContext = { doc, palette, fonts };
 
   const profile = resolveProfile(dispatch.company);
@@ -79,11 +77,8 @@ export async function generateDispatchPdf(dispatch: DispatchRecord): Promise<Buf
     { key: "serials", label: "Serial Numbers", width: 256, align: "left" },
   ];
 
-  let totalValue = 0;
   const rows = dispatch.lines.map((line, i) => {
     const qty = decimalToNumber(line.qty);
-    const rate = decimalToNumber(line.proformaInvoiceItem.rate);
-    totalValue += qty * rate;
 
     const itemLabel = line.product.hsn
       ? `${line.product.displayName}\nHSN: ${line.product.hsn}`
@@ -106,15 +101,6 @@ export async function generateDispatchPdf(dispatch: DispatchRecord): Promise<Buf
   });
 
   let y = tableBottom + 12;
-
-  doc.font(fonts.regular).fontSize(9).fillColor(palette.muted).text("Value (for transit reference only)", CONTENT_LEFT, y, {
-    width: 300,
-  });
-  doc.font(fonts.bold).fontSize(10).fillColor(palette.ink).text(money(totalValue), CONTENT_RIGHT - 200, y, {
-    width: 200,
-    align: "right",
-  });
-  y = doc.y + 16;
 
   if (dispatch.notes) {
     const after = sectionTitle(ctx, "Notes", CONTENT_LEFT, y);

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { canManageQuotations } from "@/lib/quotation-permissions";
 import { reviseQuotation } from "@/lib/quotation-service";
+import { buildQuotationWhatsappUrl } from "@/lib/quotation-share";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
 import { reviseQuotationSchema } from "@/lib/validations";
@@ -47,7 +48,9 @@ export async function POST(request: Request, context: RouteContext) {
       send: parsed.data.send,
       lines: parsed.data.lines,
     });
-    return NextResponse.json(quotation, { status: 201 });
+    const whatsappUrl = parsed.data.send ? buildQuotationWhatsappUrl(quotation) : null;
+
+    return NextResponse.json({ ...quotation, whatsappUrl }, { status: 201 });
   } catch (error) {
     if (error instanceof Error) {
       if (error.message === "NOT_FOUND") {

@@ -17,12 +17,10 @@ export function isValidGstFormat(gst: string): boolean {
 
 export async function generateCustomerCode(
   prisma: PrismaClient,
-  companyId: string,
-  companyCode: string,
 ): Promise<string> {
-  const count = await prisma.customer.count({ where: { companyId } });
+  const count = await prisma.customer.count();
   const sequence = String(count + 1).padStart(5, "0");
-  return `${companyCode}-CUST-${sequence}`;
+  return `CUST-${sequence}`;
 }
 
 /**

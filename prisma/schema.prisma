@@ -147,7 +147,6 @@ model Company {
 
   warehouses   Warehouse[]
   userCompanies UserCompany[]
-  customers    Customer[]
   inventoryLots InventoryLot[]
   inventoryTransactions InventoryTransaction[]
   transfersFrom InventoryTransfer[] @relation("TransferFromCompany")
@@ -301,12 +300,11 @@ model DocumentSequence {
 
 model Customer {
   id                   String         @id @default(uuid()) @db.Uuid
-  companyId            String         @map("company_id") @db.Uuid
-  customerCode         String         @map("customer_code")
+  customerCode         String         @unique @map("customer_code")
   customerName         String         @map("customer_name")
   contactPersonName    String?        @map("contact_person_name")
   customerType         CustomerType   @map("customer_type")
-  gstNumber            String         @map("gst_number")
+  gstNumber            String         @unique @map("gst_number")
   address              String?
   city                 String?
   state                String?
@@ -319,7 +317,6 @@ model Customer {
   createdAt            DateTime       @default(now()) @map("created_at")
   updatedAt            DateTime       @updatedAt @map("updated_at")
 
-  company              Company          @relation(fields: [companyId], references: [id])
   assignedSalesUser    User             @relation("AssignedSalesExecutive", fields: [assignedSalesUserId], references: [id])
   createdBy            User             @relation("CustomerCreatedBy", fields: [createdById], references: [id])
   contacts             CustomerContact[]
@@ -328,10 +325,8 @@ model Customer {
   payments             Payment[]
   dispatches           Dispatch[]
 
-  @@unique([companyId, customerCode])
-  @@unique([companyId, gstNumber])
-  @@index([companyId, customerName])
-  @@index([companyId, city])
+  @@index([customerName])
+  @@index([city])
   @@index([assignedSalesUserId])
   @@map("customers")
 }

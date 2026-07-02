@@ -10,7 +10,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { QUOTATION_VALIDITY_DAYS, calculateLineAmounts } from "@/lib/quotations";
 import { formatPricingType } from "@/lib/products";
-import { buildQuotationWhatsappUrl } from "@/lib/whatsapp";
 
 type Customer = {
   id: string;
@@ -209,7 +208,7 @@ export function QuotationForm({
     }
 
     if (shareWindow) {
-      const waUrl = buildQuotationWhatsappUrl(data, window.location.origin);
+      const waUrl: string | null = data.whatsappUrl ?? null;
       if (waUrl) {
         shareWindow.location.href = waUrl;
       } else {

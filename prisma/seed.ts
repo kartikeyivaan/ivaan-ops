@@ -34,11 +34,15 @@ async function main() {
   const roleMap = Object.fromEntries(roles.map((role) => [role.name, role.id]));
 
   const defaultTerms = [
-    "Payment: 100% advance before dispatch.",
-    "Taxes: As per Govt. norms.",
-    "Transportation: Extra at actual; unloading in client scope.",
-    "Warranty: As per OEM terms.",
-    "PO Cancellation Charges: 5% of the total value of the PI/Invoice.",
+    "Payment: 100% advance payment is required prior to dispatch of goods.",
+    "Taxes: GST and other applicable taxes shall be charged as per prevailing government norms.",
+    "Transportation: Transportation charges are extra, at actual cost. Unloading and transit insurance are in the client's scope.",
+    "Warranty: Warranty is as per respective OEM / manufacturer terms and conditions.",
+    "Order Cancellation: Cancellation after order confirmation attracts charges of 5% of the total PI / Invoice value.",
+    "Inspection of Goods: Fragile or damage-prone items must be inspected at the time of dispatch / delivery. No claims for transit or handling damage shall be entertained after dispatch.",
+    "Quotation Validity: This quotation is valid for the period stated on the document. Prices and availability are subject to revision thereafter.",
+    "Delivery: Delivery timelines are indicative and subject to stock availability and logistics conditions.",
+    "Title & Risk: Title and risk in the goods pass to the client upon dispatch from our warehouse.",
   ].join("\n");
 
   const iseProfile = {

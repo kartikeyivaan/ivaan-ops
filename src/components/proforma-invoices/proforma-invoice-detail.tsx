@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/table";
 import { BOOKING_ADVANCE_PERCENT, formatPaymentMode, formatProformaStatus } from "@/lib/proforma-invoices";
 import { formatCurrency } from "@/lib/quotations";
+import { formatDocumentDate } from "@/lib/utils";
 import { formatPricingType } from "@/lib/products";
 
 type Warehouse = { id: string; name: string; code: string | null };
@@ -32,7 +33,7 @@ type ProformaInvoiceDetailData = {
   notes?: string | null;
   bookedAt?: string | null;
   customer: { id: string; customerName: string; gstNumber: string };
-  salesUser: { name: string; email: string };
+  salesUser: { name: string };
   quotation?: { quotationNo: string } | null;
   warehouse?: { name: string } | null;
   bookedBy?: { name: string } | null;
@@ -213,7 +214,7 @@ export function ProformaInvoiceDetail({
           <CardHeader>
             <CardTitle className="text-sm">PI Date</CardTitle>
           </CardHeader>
-          <CardContent>{pi.piDate}</CardContent>
+          <CardContent>{formatDocumentDate(pi.piDate)}</CardContent>
         </Card>
         <Card>
           <CardHeader>

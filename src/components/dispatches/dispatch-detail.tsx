@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/table";
 import { formatDispatchStatus } from "@/lib/dispatches";
 import { formatCurrency } from "@/lib/quotations";
+import { formatDocumentDate } from "@/lib/utils";
 
 type DispatchDetailData = {
   id: string;
@@ -164,7 +165,7 @@ export function DispatchDetail({
           <CardHeader>
             <CardTitle className="text-sm">Date</CardTitle>
           </CardHeader>
-          <CardContent>{dispatch.dispatchDate}</CardContent>
+          <CardContent>{formatDocumentDate(dispatch.dispatchDate)}</CardContent>
         </Card>
         <Card>
           <CardHeader>

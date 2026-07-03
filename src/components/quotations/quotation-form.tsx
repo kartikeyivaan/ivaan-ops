@@ -1,13 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { useSession } from "next-auth/react";
+import { AlertTriangle, ArrowLeft, Building2, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { TypeaheadSelect } from "@/components/ui/typeahead-select";
 import { QUOTATION_VALIDITY_DAYS, calculateLineAmounts } from "@/lib/quotations";
 import { formatPricingType } from "@/lib/products";
 
@@ -40,17 +42,21 @@ type LineDraft = {
 
 type SalesExecutive = { id: string; name: string; email: string };
 
-function defaultProductLine(product: Product | undefined): LineDraft {
+type CompanyOption = { id: string; name: string; code: string };
+
+function emptyProductLine(): LineDraft {
   return {
-    productId: product?.id ?? "",
+    productId: "",
     qty: "",
-    rate: product?.currentPrice ? String(product.currentPrice.standardPrice) : "",
+    rate: "",
   };
 }
 
 export function QuotationForm({
   customers,
   products,
+  companies = [],
+  selectedCompanyId,
   defaultCustomerId,
   salesExecutives,
   defaultSalesUserId,
@@ -62,6 +68,8 @@ export function QuotationForm({
 }: {
   customers: Customer[];
   products: Product[];
+  companies?: CompanyOption[];
+  selectedCompanyId?: string;
   defaultCustomerId?: string;
   salesExecutives: SalesExecutive[];
   defaultSalesUserId: string;
@@ -73,21 +81,67 @@ export function QuotationForm({
 }) {
   const isRevise = mode === "revise";
   const router = useRouter();
-  const [customerId, setCustomerId] = useState(defaultCustomerId ?? customers[0]?.id ?? "");
+  const { update } = useSession();
+  const companySelected = isRevise || Boolean(selectedCompanyId);
+  const [customerId, setCustomerId] = useState(defaultCustomerId ?? "");
   const [salesUserId, setSalesUserId] = useState(
     salesExecutives.some((user) => user.id === defaultSalesUserId)
       ? defaultSalesUserId
       : (salesExecutives[0]?.id ?? defaultSalesUserId),
   );
-  const defaultProduct = products[0];
   const [notes, setNotes] = useState(initialNotes ?? "");
   const [lines, setLines] = useState<LineDraft[]>(
-    initialLines && initialLines.length > 0 ? initialLines : [defaultProductLine(defaultProduct)],
+    initialLines && initialLines.length > 0 ? initialLines : [emptyProductLine()],
   );
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [companyLoading, setCompanyLoading] = useState(false);
+  const prevCompanyIdRef = useRef(selectedCompanyId);
+
+  useEffect(() => {
+    setCompanyLoading(false);
+
+    if (
+      !isRevise &&
+      selectedCompanyId &&
+      selectedCompanyId !== prevCompanyIdRef.current
+    ) {
+      prevCompanyIdRef.current = selectedCompanyId;
+      setCustomerId(defaultCustomerId ?? "");
+      setSalesUserId(
+        salesExecutives.some((user) => user.id === defaultSalesUserId)
+          ? defaultSalesUserId
+          : (salesExecutives[0]?.id ?? defaultSalesUserId),
+      );
+      setLines([emptyProductLine()]);
+    }
+  }, [
+    selectedCompanyId,
+    customers,
+    products,
+    salesExecutives,
+    defaultCustomerId,
+    defaultSalesUserId,
+    isRevise,
+  ]);
+
+  const selectedCompany = companies.find((company) => company.id === selectedCompanyId);
 
   const selectedCustomer = customers.find((customer) => customer.id === customerId);
+
+  const customerOptions = useMemo(
+    () => customers.map((customer) => ({ value: customer.id, label: customer.customerName })),
+    [customers],
+  );
+
+  const productOptions = useMemo(
+    () =>
+      products.map((product) => ({
+        value: product.id,
+        label: `${product.displayName}${product.currentPrice ? "" : " (price not configured)"}`,
+      })),
+    [products],
+  );
 
   const computedLines = useMemo(() => {
     return lines.map((line) => {
@@ -120,7 +174,32 @@ export function QuotationForm({
 
   const grandTotal = computedLines.reduce((sum, line) => sum + line.lineTotal, 0);
 
-  if (products.length === 0) {
+  async function handleCompanyChange(companyId: string) {
+    if (!companyId || companyId === selectedCompanyId) {
+      return;
+    }
+
+    setCompanyLoading(true);
+    setError("");
+
+    try {
+      await update({ activeCompanyId: companyId });
+    } catch {
+      setCompanyLoading(false);
+      setError("Unable to switch company. Please try again.");
+      return;
+    }
+
+    const params = new URLSearchParams();
+    params.set("companyId", companyId);
+    if (defaultCustomerId) {
+      params.set("customerId", defaultCustomerId);
+    }
+
+    window.location.assign(`/sales/quotations/new?${params.toString()}`);
+  }
+
+  if (companySelected && products.length === 0) {
     return (
       <div className="space-y-6">
         <div>
@@ -147,7 +226,7 @@ export function QuotationForm({
   }
 
   function addLine() {
-    setLines((current) => [...current, defaultProductLine(products[0])]);
+    setLines((current) => [...current, emptyProductLine()]);
   }
 
   function removeLine(index: number) {
@@ -164,6 +243,22 @@ export function QuotationForm({
 
   async function submit(send: boolean) {
     setError("");
+
+    if (!isRevise && !selectedCompanyId) {
+      setError("Select a company (ISE or PCM) before saving the quotation.");
+      return;
+    }
+
+    if (!isRevise && !customerId) {
+      setError("Select a customer before saving the quotation.");
+      return;
+    }
+
+    const incompleteLine = lines.find((line) => !line.productId || !line.qty || !line.rate);
+    if (incompleteLine) {
+      setError("Complete all line items with product, quantity, and rate.");
+      return;
+    }
 
     const invalidLine = lines.find((line) => {
       const product = products.find((item) => item.id === line.productId);
@@ -240,28 +335,79 @@ export function QuotationForm({
         </Button>
       </div>
 
+      {!isRevise ? (
+        <Card className="border-amber-300 bg-amber-50/60 shadow-sm">
+          <CardHeader>
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-800">
+                <Building2 className="h-5 w-5" />
+              </div>
+              <div>
+                <CardTitle className="text-base">Company *</CardTitle>
+                <p className="mt-1 text-sm text-amber-900/80">
+                  Select whether this quotation is for ISE or PCM. This choice is required and
+                  cannot be skipped.
+                </p>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="quotation-company">Quotation company</Label>
+              <select
+                id="quotation-company"
+                value={selectedCompanyId ?? ""}
+                disabled={companyLoading}
+                onChange={(event) => handleCompanyChange(event.target.value)}
+                className="flex h-11 w-full max-w-md rounded-md border border-amber-300 bg-white px-3 text-sm font-medium text-slate-900"
+              >
+                <option value="">Select company (ISE / PCM)</option>
+                {companies.map((company) => (
+                  <option key={company.id} value={company.id}>
+                    {company.name} ({company.code})
+                  </option>
+                ))}
+              </select>
+            </div>
+            {!selectedCompanyId ? (
+              <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-white/80 px-3 py-2 text-sm text-amber-900">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>Choose the correct company before entering customer and line item details.</p>
+              </div>
+            ) : (
+              <p className="text-sm font-medium text-emerald-800">
+                Quotation will be created for {selectedCompany?.name} ({selectedCompany?.code}).
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <fieldset
+        disabled={!companySelected}
+        className={!companySelected ? "space-y-6 opacity-60" : "space-y-6"}
+      >
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Header</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
-            <Label htmlFor="customer">Customer</Label>
             {isRevise ? (
-              <Input value={selectedCustomer?.customerName ?? ""} readOnly />
+              <>
+                <Label htmlFor="customer">Customer</Label>
+                <Input id="customer" value={selectedCustomer?.customerName ?? ""} readOnly />
+              </>
             ) : (
-              <select
+              <TypeaheadSelect
                 id="customer"
+                label="Customer"
+                options={customerOptions}
                 value={customerId}
-                onChange={(event) => setCustomerId(event.target.value)}
-                className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
-              >
-                {customers.map((customer) => (
-                  <option key={customer.id} value={customer.id}>
-                    {customer.customerName}
-                  </option>
-                ))}
-              </select>
+                onChange={setCustomerId}
+                placeholder="Type customer name..."
+                required
+              />
             )}
           </div>
           <div className="space-y-2">
@@ -329,19 +475,14 @@ export function QuotationForm({
                 className="grid gap-3 rounded-md border border-slate-200 p-4 md:grid-cols-[2fr_1fr_1fr_1fr_1fr_auto]"
               >
                 <div className="space-y-2">
-                  <Label>Product</Label>
-                  <select
+                  <TypeaheadSelect
+                    label="Product"
+                    options={productOptions}
                     value={line.productId}
-                    onChange={(event) => handleProductChange(index, event.target.value)}
-                    className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
-                  >
-                    {products.map((product) => (
-                      <option key={product.id} value={product.id}>
-                        {product.displayName}
-                        {product.currentPrice ? "" : " (price not configured)"}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(productId) => handleProductChange(index, productId)}
+                    placeholder="Type product name..."
+                    required
+                  />
                   {missingPrice ? (
                     <p className="text-xs text-amber-700">
                       Configure a price for this product under Products before saving.
@@ -426,6 +567,7 @@ export function QuotationForm({
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
         </CardContent>
       </Card>
+      </fieldset>
     </div>
   );
 }

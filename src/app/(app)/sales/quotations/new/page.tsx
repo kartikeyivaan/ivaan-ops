@@ -5,11 +5,10 @@ import { listCustomers } from "@/lib/customer-service";
 import { listProducts } from "@/lib/product-service";
 import { prisma } from "@/lib/prisma";
 import { ROLES } from "@/lib/rbac";
-import { requireActiveCompany } from "@/lib/session";
 import { QuotationForm } from "@/components/quotations/quotation-form";
 
 type PageProps = {
-  searchParams: Promise<{ customerId?: string }>;
+  searchParams: Promise<{ customerId?: string; companyId?: string }>;
 };
 
 export const dynamic = "force-dynamic";
@@ -20,50 +19,64 @@ export default async function NewQuotationPage({ searchParams }: PageProps) {
     redirect("/dashboard");
   }
 
-  let companyId: string;
-  try {
-    companyId = requireActiveCompany(session);
-  } catch {
-    redirect("/select-company");
+  const params = await searchParams;
+  const userCompanies = session.user.companies;
+  const selectedCompany = params.companyId
+    ? userCompanies.find((company) => company.id === params.companyId)
+    : undefined;
+
+  if (params.companyId && !selectedCompany) {
+    redirect("/sales/quotations/new");
   }
 
-  const params = await searchParams;
-  const [customers, products, salesExecutives] = await Promise.all([
-    listCustomers(prisma, companyId, { status: "ACTIVE" }),
-    listProducts(prisma, companyId, { isActive: true }),
-    prisma.user.findMany({
-      where: {
-        status: "ACTIVE",
-        companies: { some: { companyId } },
-        roles: {
-          some: {
-            role: {
-              name: {
-                in: [ROLES.SALES_EXECUTIVE, ROLES.SALES_MANAGER, ROLES.SUPER_ADMIN],
+  const companyId = selectedCompany?.id;
+
+  const [customers, products, salesExecutives] = companyId
+    ? await Promise.all([
+        listCustomers(prisma, companyId, { status: "ACTIVE" }),
+        listProducts(prisma, companyId, { isActive: true }),
+        prisma.user.findMany({
+          where: {
+            status: "ACTIVE",
+            companies: { some: { companyId } },
+            roles: {
+              some: {
+                role: {
+                  name: {
+                    in: [ROLES.SALES_EXECUTIVE, ROLES.SALES_MANAGER, ROLES.SUPER_ADMIN],
+                  },
+                },
               },
             },
           },
-        },
-      },
-      select: { id: true, name: true, email: true },
-      orderBy: { name: "asc" },
-    }),
-  ]);
+          select: { id: true, name: true, email: true },
+          orderBy: { name: "asc" },
+        }),
+      ])
+    : [[], [], []];
 
   const currentUserInList = salesExecutives.some((user) => user.id === session.user.id);
   const salesExecutiveOptions = currentUserInList
     ? salesExecutives
-    : [
-        {
-          id: session.user.id,
-          name: session.user.name ?? session.user.email ?? "Current User",
-          email: session.user.email ?? "",
-        },
-        ...salesExecutives,
-      ];
+    : companyId
+      ? [
+          {
+            id: session.user.id,
+            name: session.user.name ?? session.user.email ?? "Current User",
+            email: session.user.email ?? "",
+          },
+          ...salesExecutives,
+        ]
+      : [];
 
   return (
     <QuotationForm
+      companies={userCompanies.map((company) => ({
+        id: company.id,
+        name: company.name,
+        code: company.code,
+      }))}
+      selectedCompanyId={companyId}
       customers={customers.map((customer) => ({
         id: customer.id,
         customerName: customer.customerName,

@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/table";
 import { formatDispatchStatus } from "@/lib/dispatches";
 import { formatCurrency } from "@/lib/quotations";
+import { formatDocumentDate } from "@/lib/utils";
 
 type DispatchListItem = {
   id: string;
@@ -145,7 +146,7 @@ export function DispatchList({
                     <TableCell data-label="DC No" className="font-medium">{row.dcNo}</TableCell>
                     <TableCell data-label="PI">{row.proformaInvoice.piNo}</TableCell>
                     <TableCell data-label="Customer">{row.customer.customerName}</TableCell>
-                    <TableCell data-label="Date">{row.dispatchDate}</TableCell>
+                    <TableCell data-label="Date">{formatDocumentDate(row.dispatchDate)}</TableCell>
                     <TableCell data-label="Status">
                       <Badge variant={statusVariant(row.status)}>
                         {formatDispatchStatus(row.status)}

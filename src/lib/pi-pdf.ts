@@ -1,5 +1,6 @@
 import PDFDocument from "pdfkit";
 import type { ProformaInvoiceRecord } from "@/lib/pi-service";
+import { formatDocumentDate } from "@/lib/utils";
 import {
   CELL_PAD,
   CONTENT_LEFT,
@@ -49,7 +50,7 @@ export async function generateProformaInvoicePdf(pi: ProformaInvoiceRecord): Pro
 
   const meta: Array<[string, string]> = [
     ["PI #", pi.piNo],
-    ["Date", pi.piDate.toISOString().slice(0, 10)],
+    ["Date", formatDocumentDate(pi.piDate)],
   ];
   if (pi.quotation) meta.push(["Quotation", pi.quotation.quotationNo]);
 
@@ -70,8 +71,7 @@ export async function generateProformaInvoicePdf(pi: ProformaInvoiceRecord): Pro
   if (customerContact) customerLines.push(customerContact);
 
   const execContact = pi.salesUser.officialContactNumber ?? pi.salesUser.mobile ?? null;
-  const execLines = [pi.salesUser.email];
-  if (execContact) execLines.push(execContact);
+  const execLines = execContact ? [execContact] : [];
 
   const partiesBottom = drawParties(ctx, {
     top: headerBottom + 22,
@@ -180,25 +180,27 @@ export async function generateProformaInvoicePdf(pi: ProformaInvoiceRecord): Pro
   y = Math.max(y + payableHeight, doc.y) + 22;
 
   const infoTop = y;
-  const colWidth = (CONTENT_WIDTH - 20) / 2;
-  const bankDetails = pi.company.bankDetails || profile.bankDetails;
-  if (bankDetails) {
-    const after = sectionTitle(ctx, "Bank Details", CONTENT_LEFT, infoTop, colWidth);
-    doc.font(fonts.regular).fontSize(9).fillColor(palette.ink).text(bankDetails, CONTENT_LEFT, after + 2, {
-      width: colWidth,
-    });
-  }
+  const colGap = 20;
+  const colWidth = (CONTENT_WIDTH - colGap) / 2;
+  const bankX = CONTENT_LEFT + colWidth + colGap;
 
   const terms = pi.company.termsAndConditions
     ? pi.company.termsAndConditions.split("\n").filter(Boolean)
     : profile.terms;
-  const termsX = CONTENT_LEFT + colWidth + 20;
-  let termsY = sectionTitle(ctx, "Terms & Conditions", termsX, infoTop, colWidth) + 2;
+  let termsY = sectionTitle(ctx, "Terms & Conditions", CONTENT_LEFT, infoTop, colWidth) + 2;
   doc.font(fonts.regular).fontSize(8.5).fillColor(palette.ink);
   for (const term of terms) {
-    doc.text("•", termsX, termsY, { width: 10 });
-    doc.text(term, termsX + 10, termsY, { width: colWidth - 10 });
+    doc.text("•", CONTENT_LEFT, termsY, { width: 10 });
+    doc.text(term, CONTENT_LEFT + 10, termsY, { width: colWidth - 10 });
     termsY = doc.y + 2;
+  }
+
+  const bankDetails = pi.company.bankDetails || profile.bankDetails;
+  if (bankDetails) {
+    const after = sectionTitle(ctx, "Bank Details", bankX, infoTop, colWidth);
+    doc.font(fonts.regular).fontSize(9).fillColor(palette.ink).text(bankDetails, bankX, after + 2, {
+      width: colWidth,
+    });
   }
 
   if (pi.notes) {

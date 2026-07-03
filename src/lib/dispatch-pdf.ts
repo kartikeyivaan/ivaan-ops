@@ -1,6 +1,7 @@
 import PDFDocument from "pdfkit";
 import type { DispatchRecord } from "@/lib/dispatch-service";
 import { decimalToNumber } from "@/lib/inventory";
+import { formatDocumentDate } from "@/lib/utils";
 import {
   CONTENT_LEFT,
   CONTENT_RIGHT,
@@ -42,7 +43,7 @@ export async function generateDispatchPdf(dispatch: DispatchRecord): Promise<Buf
 
   const meta: Array<[string, string]> = [
     ["Challan #", dispatch.dcNo],
-    ["Date", dispatch.dispatchDate.toISOString().slice(0, 10)],
+    ["Date", formatDocumentDate(dispatch.dispatchDate)],
     ["PI #", dispatch.proformaInvoice.piNo],
   ];
 

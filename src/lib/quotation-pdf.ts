@@ -1,5 +1,6 @@
 import PDFDocument from "pdfkit";
 import type { QuotationRecord } from "@/lib/quotation-service";
+import { formatDocumentDate } from "@/lib/utils";
 import {
   CELL_PAD,
   CONTENT_LEFT,
@@ -50,8 +51,8 @@ export async function generateQuotationPdf(quotation: QuotationRecord): Promise<
   // ---- Header -------------------------------------------------------------
   const meta: Array<[string, string]> = [
     ["Quotation #", quotation.quotationNo],
-    ["Date", quotation.quotationDate.toISOString().slice(0, 10)],
-    ["Valid Until", quotation.expiryDate.toISOString().slice(0, 10)],
+    ["Date", formatDocumentDate(quotation.quotationDate)],
+    ["Valid Until", formatDocumentDate(quotation.expiryDate)],
   ];
   if (quotation.revisionNo > 1) meta.push(["Revision", String(quotation.revisionNo)]);
 
@@ -76,8 +77,7 @@ export async function generateQuotationPdf(quotation: QuotationRecord): Promise<
 
   const execContact =
     quotation.salesUser.officialContactNumber ?? quotation.salesUser.mobile ?? null;
-  const execLines = [quotation.salesUser.email];
-  if (execContact) execLines.push(execContact);
+  const execLines = execContact ? [execContact] : [];
 
   const partiesBottom = drawParties(ctx, {
     top: headerBottom + 22,
@@ -189,27 +189,29 @@ export async function generateQuotationPdf(quotation: QuotationRecord): Promise<
 
   y = Math.max(y + payableHeight, doc.y) + 22;
 
-  // ---- Bank details & terms ----------------------------------------------
+  // ---- Terms & bank details ----------------------------------------------
   const infoTop = y;
-  const colWidth = (CONTENT_WIDTH - 20) / 2;
-  const bankDetails = quotation.company.bankDetails || profile.bankDetails;
-  if (bankDetails) {
-    const after = sectionTitle(ctx, "Bank Details", CONTENT_LEFT, infoTop, colWidth);
-    doc.font(fonts.regular).fontSize(9).fillColor(palette.ink).text(bankDetails, CONTENT_LEFT, after + 2, {
-      width: colWidth,
-    });
-  }
+  const colGap = 20;
+  const colWidth = (CONTENT_WIDTH - colGap) / 2;
+  const bankX = CONTENT_LEFT + colWidth + colGap;
 
   const terms = quotation.company.termsAndConditions
     ? quotation.company.termsAndConditions.split("\n").filter(Boolean)
     : profile.terms;
-  const termsX = CONTENT_LEFT + colWidth + 20;
-  let termsY = sectionTitle(ctx, "Terms & Conditions", termsX, infoTop, colWidth) + 2;
+  let termsY = sectionTitle(ctx, "Terms & Conditions", CONTENT_LEFT, infoTop, colWidth) + 2;
   doc.font(fonts.regular).fontSize(8.5).fillColor(palette.ink);
   for (const term of terms) {
-    doc.text("•", termsX, termsY, { width: 10 });
-    doc.text(term, termsX + 10, termsY, { width: colWidth - 10 });
+    doc.text("•", CONTENT_LEFT, termsY, { width: 10 });
+    doc.text(term, CONTENT_LEFT + 10, termsY, { width: colWidth - 10 });
     termsY = doc.y + 2;
+  }
+
+  const bankDetails = quotation.company.bankDetails || profile.bankDetails;
+  if (bankDetails) {
+    const after = sectionTitle(ctx, "Bank Details", bankX, infoTop, colWidth);
+    doc.font(fonts.regular).fontSize(9).fillColor(palette.ink).text(bankDetails, bankX, after + 2, {
+      width: colWidth,
+    });
   }
 
   if (quotation.notes) {

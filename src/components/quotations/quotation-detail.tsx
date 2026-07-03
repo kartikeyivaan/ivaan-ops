@@ -15,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { formatDocumentDate } from "@/lib/utils";
 import { formatPricingType } from "@/lib/products";
 import { formatQuotationStatus } from "@/lib/quotations";
 
@@ -36,7 +37,7 @@ type QuotationDetailData = {
     state?: string | null;
     mobile?: string | null;
   };
-  salesUser: { name: string; email: string };
+  salesUser: { name: string };
   company: {
     name: string;
     bankDetails?: string | null;
@@ -251,13 +252,13 @@ export function QuotationDetail({
           <CardHeader>
             <CardTitle className="text-sm">Quotation Date</CardTitle>
           </CardHeader>
-          <CardContent>{quotation.quotationDate.slice(0, 10)}</CardContent>
+          <CardContent>{formatDocumentDate(quotation.quotationDate)}</CardContent>
         </Card>
         <Card>
           <CardHeader>
             <CardTitle className="text-sm">Valid Until</CardTitle>
           </CardHeader>
-          <CardContent>{quotation.expiryDate.slice(0, 10)}</CardContent>
+          <CardContent>{formatDocumentDate(quotation.expiryDate)}</CardContent>
         </Card>
         <Card>
           <CardHeader>
@@ -282,7 +283,6 @@ export function QuotationDetail({
           <div>
             <p className="text-xs uppercase text-slate-500">Sales Executive</p>
             <p className="font-medium">{quotation.salesUser.name}</p>
-            <p className="text-sm text-slate-500">{quotation.salesUser.email}</p>
           </div>
         </CardContent>
       </Card>

@@ -10,6 +10,7 @@ import { formatCustomerType } from "@/lib/customers";
 import { formatPaymentMode, formatProformaStatus } from "@/lib/proforma-invoices";
 import { formatDispatchStatus } from "@/lib/dispatches";
 import { formatQuotationStatus } from "@/lib/quotations";
+import { formatDocumentDate } from "@/lib/utils";
 import type { CustomerListItem } from "@/lib/customer-service";
 
 type SalesExecutive = { id: string; name: string; email: string };
@@ -222,8 +223,8 @@ export function CustomerProfile({
                         {quotation.revisionNo > 1 ? ` (R${quotation.revisionNo})` : ""}
                       </p>
                       <p className="text-sm text-slate-500">
-                        {quotation.quotationDate.slice(0, 10)} · Valid until{" "}
-                        {quotation.expiryDate.slice(0, 10)}
+                        {formatDocumentDate(quotation.quotationDate)} · Valid until{" "}
+                        {formatDocumentDate(quotation.expiryDate)}
                       </p>
                     </div>
                     <div className="flex items-center gap-3">
@@ -259,7 +260,7 @@ export function CustomerProfile({
                   >
                     <div>
                       <p className="font-medium">{pi.piNo}</p>
-                      <p className="text-sm text-slate-500">{pi.piDate}</p>
+                      <p className="text-sm text-slate-500">{formatDocumentDate(pi.piDate)}</p>
                     </div>
                     <div className="flex items-center gap-3">
                       <Badge>{formatProformaStatus(pi.status)}</Badge>
@@ -313,7 +314,7 @@ export function CustomerProfile({
                     <div>
                       <p className="font-medium">{dispatch.dcNo}</p>
                       <p className="text-sm text-slate-500">
-                        {dispatch.dispatchDate} · {dispatch.proformaInvoice.piNo}
+                        {formatDocumentDate(dispatch.dispatchDate)} · {dispatch.proformaInvoice.piNo}
                       </p>
                     </div>
                     <div className="flex items-center gap-3">

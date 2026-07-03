@@ -120,7 +120,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <CompanySwitcher />
+            {!pathname.startsWith("/sales/quotations/new") ? <CompanySwitcher /> : null}
             <div className="hidden text-right sm:block">
               <p className="text-sm font-medium text-slate-900">{session?.user?.name}</p>
               <p className="text-xs text-slate-500">{roles.join(", ")}</p>

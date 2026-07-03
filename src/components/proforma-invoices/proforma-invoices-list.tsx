@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/table";
 import { formatProformaStatus } from "@/lib/proforma-invoices";
 import { formatCurrency } from "@/lib/quotations";
+import { formatDocumentDate } from "@/lib/utils";
 
 type ProformaInvoiceListItem = {
   id: string;
@@ -156,7 +157,7 @@ export function ProformaInvoicesList({
                   >
                     <TableCell data-label="PI No" className="font-medium">{row.piNo}</TableCell>
                     <TableCell data-label="Customer">{row.customer.customerName}</TableCell>
-                    <TableCell data-label="Date">{row.piDate}</TableCell>
+                    <TableCell data-label="Date">{formatDocumentDate(row.piDate)}</TableCell>
                     <TableCell data-label="Status">
                       <Badge variant={statusVariant(row.status)}>
                         {formatProformaStatus(row.status)}

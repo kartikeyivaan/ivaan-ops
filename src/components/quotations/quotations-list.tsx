@@ -18,6 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatQuotationStatus } from "@/lib/quotations";
+import { formatDocumentDate } from "@/lib/utils";
 
 type QuotationListItem = {
   id: string;
@@ -152,8 +153,8 @@ export function QuotationsList({
                     </TableCell>
                     <TableCell>{quotation.customer.customerName}</TableCell>
                     <TableCell>{quotation.salesUser.name}</TableCell>
-                    <TableCell>{quotation.quotationDate.slice(0, 10)}</TableCell>
-                    <TableCell>{quotation.expiryDate.slice(0, 10)}</TableCell>
+                    <TableCell>{formatDocumentDate(quotation.quotationDate)}</TableCell>
+                    <TableCell>{formatDocumentDate(quotation.expiryDate)}</TableCell>
                     <TableCell>
                       <Badge variant={statusVariant(quotation.status)}>
                         {formatQuotationStatus(quotation.status)}

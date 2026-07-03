@@ -17,6 +17,7 @@ import { ROLES } from "../src/lib/rbac";
 import { PRODUCT_CATEGORY_NAMES } from "../src/lib/products";
 import { generateLotNumber, getFinancialYear } from "../src/lib/inventory";
 import { addDays, toDateOnly } from "../src/lib/quotations";
+import { seedProjectProposalMasters } from "./seed-project-proposal-masters";
 
 const prisma = new PrismaClient();
 
@@ -32,6 +33,8 @@ async function main() {
   );
 
   const roleMap = Object.fromEntries(roles.map((role) => [role.name, role.id]));
+
+  await seedProjectProposalMasters(prisma);
 
   const defaultTerms = [
     "Payment: 100% advance payment is required prior to dispatch of goods.",
@@ -187,6 +190,42 @@ async function main() {
       ...seedPasswordMeta,
       roles: {
         create: [{ roleId: roleMap[ROLES.SALES_EXECUTIVE] }],
+      },
+      companies: {
+        create: [{ companyId: ise.id }],
+      },
+    },
+  });
+
+  const projectsManagerPassword = await bcrypt.hash("ProjectsManager@123", 12);
+  await prisma.user.upsert({
+    where: { email: "projects.manager@ivaansolar.com" },
+    update: seedUserUpdate(projectsManagerPassword),
+    create: {
+      name: "Projects Manager",
+      email: "projects.manager@ivaansolar.com",
+      passwordHash: projectsManagerPassword,
+      ...seedPasswordMeta,
+      roles: {
+        create: [{ roleId: roleMap[ROLES.PROJECTS_MANAGER] }],
+      },
+      companies: {
+        create: [{ companyId: ise.id }],
+      },
+    },
+  });
+
+  const projectsSalesPassword = await bcrypt.hash("ProjectsSales@123", 12);
+  await prisma.user.upsert({
+    where: { email: "projects.sales@ivaansolar.com" },
+    update: seedUserUpdate(projectsSalesPassword),
+    create: {
+      name: "Projects Sales Executive",
+      email: "projects.sales@ivaansolar.com",
+      passwordHash: projectsSalesPassword,
+      ...seedPasswordMeta,
+      roles: {
+        create: [{ roleId: roleMap[ROLES.PROJECTS_SALES_EXECUTIVE] }],
       },
       companies: {
         create: [{ companyId: ise.id }],

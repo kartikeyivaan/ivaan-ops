@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 
 const { auth } = NextAuth(authConfig);
 
-const publicPaths = ["/login", "/api/auth", "/api/dev"];
+const publicPaths = ["/login", "/api/auth", "/api/dev", "/api/share"];
 const passwordChangePaths = ["/change-password", "/api/users/me/password", "/api/users/me/password-status"];
 
 export default auth((request) => {

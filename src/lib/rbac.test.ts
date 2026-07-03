@@ -12,8 +12,10 @@ describe("rbac", () => {
     expect(hasRole([ROLES.ACCOUNTS], [ROLES.WAREHOUSE])).toBe(false);
   });
 
-  it("exposes all sprint 1 roles", () => {
-    expect(ALL_ROLES).toHaveLength(6);
+  it("exposes all configured roles", () => {
+    expect(ALL_ROLES).toHaveLength(8);
+    expect(ALL_ROLES).toContain(ROLES.PROJECTS_MANAGER);
+    expect(ALL_ROLES).toContain(ROLES.PROJECTS_SALES_EXECUTIVE);
   });
 
   it("restricts admin navigation to super admin", () => {

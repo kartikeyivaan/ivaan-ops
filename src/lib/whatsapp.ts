@@ -1,4 +1,12 @@
+import { PROJECT_PROPOSAL_VALIDITY_DAYS } from "@/lib/project-proposal-pricing";
 import { QUOTATION_VALIDITY_DAYS } from "@/lib/quotations";
+
+export const PROJECT_PROPOSAL_PDF_LINK_PLACEHOLDER =
+  "[Proposal PDF link will be shared separately]";
+
+export function formatWhatsappIndianMoney(value: number): string {
+  return value.toLocaleString("en-IN", { maximumFractionDigits: 0 });
+}
 
 /**
  * Normalizes a stored mobile number into a bare, country-coded digit string
@@ -45,4 +53,40 @@ export function buildQuotationWhatsappMessage(input: {
     `Please find your quotation ${input.quotationNo} here: ${input.pdfUrl}. ` +
     `Valid for ${validity} days. — ${input.salespersonName}`
   );
+}
+
+export function buildProjectProposalWhatsappMessage(input: {
+  customerName: string;
+  proposalNo: string;
+  finalAmount: number;
+  subsidyAmount: number;
+  effectivePrice: number;
+  pdfUrl?: string | null;
+  validityDays?: number;
+}): string {
+  const validity = input.validityDays ?? PROJECT_PROPOSAL_VALIDITY_DAYS;
+  const pdfLine = input.pdfUrl?.trim()
+    ? `Proposal PDF: ${input.pdfUrl}`
+    : `Proposal PDF: ${PROJECT_PROPOSAL_PDF_LINK_PLACEHOLDER}`;
+
+  return [
+    `Dear ${input.customerName},`,
+    "",
+    "Thank you for choosing Ivaan Solar Energy.",
+    "",
+    "Please find your Solar Project Proposal.",
+    "",
+    `Proposal No: ${input.proposalNo}`,
+    `Amount: ₹${formatWhatsappIndianMoney(input.finalAmount)}`,
+    `Estimated Subsidy: ₹${formatWhatsappIndianMoney(input.subsidyAmount)}`,
+    `Effective Customer Investment: ₹${formatWhatsappIndianMoney(input.effectivePrice)}`,
+    `Validity: ${validity} Days`,
+    "",
+    pdfLine,
+    "",
+    "Please contact us for any queries.",
+    "",
+    "Regards,",
+    "Ivaan Solar Energy",
+  ].join("\n");
 }

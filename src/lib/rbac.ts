@@ -2,6 +2,8 @@ export const ROLES = {
   SUPER_ADMIN: "Super Admin",
   SALES_MANAGER: "Sales Manager",
   SALES_EXECUTIVE: "Sales Executive",
+  PROJECTS_MANAGER: "Projects Manager",
+  PROJECTS_SALES_EXECUTIVE: "Projects Sales Executive",
   WAREHOUSE: "Warehouse",
   PURCHASE: "Purchase",
   ACCOUNTS: "Accounts",
@@ -51,6 +53,15 @@ export const NAV_ITEMS: NavItem[] = [
       ROLES.SALES_EXECUTIVE,
       ROLES.WAREHOUSE,
       ROLES.ACCOUNTS,
+    ],
+  },
+  {
+    label: "Projects",
+    href: "/projects/proposals",
+    roles: [
+      ROLES.SUPER_ADMIN,
+      ROLES.PROJECTS_MANAGER,
+      ROLES.PROJECTS_SALES_EXECUTIVE,
     ],
   },
   {

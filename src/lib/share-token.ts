@@ -11,7 +11,8 @@ import { createHmac, timingSafeEqual } from "crypto";
 
 const DEFAULT_TTL_DAYS = 5;
 
-type SharePayload = { q: string; e: number };
+type QuotationSharePayload = { q: string; e: number };
+type ProjectProposalSharePayload = { p: string; e: number };
 
 function getSecret(): string {
   const secret = process.env.AUTH_SECRET;
@@ -25,21 +26,10 @@ function sign(data: string): string {
   return createHmac("sha256", getSecret()).update(data).digest("base64url");
 }
 
-export function signQuotationShareToken(
-  quotationId: string,
-  ttlDays = DEFAULT_TTL_DAYS,
-): string {
-  const payload: SharePayload = {
-    q: quotationId,
-    e: Date.now() + ttlDays * 24 * 60 * 60 * 1000,
-  };
-  const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
-  return `${encoded}.${sign(encoded)}`;
-}
-
-export function verifyQuotationShareToken(
+function verifySignedPayload<T extends Record<string, unknown>>(
   token: string,
-): { quotationId: string } | null {
+  field: keyof T,
+): T | null {
   const parts = token.split(".");
   if (parts.length !== 2) return null;
 
@@ -55,17 +45,61 @@ export function verifyQuotationShareToken(
     return null;
   }
 
-  let payload: SharePayload;
+  let payload: T;
   try {
     payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
   } catch {
     return null;
   }
 
-  if (!payload || typeof payload.q !== "string" || typeof payload.e !== "number") {
+  if (
+    !payload ||
+    typeof payload[field] !== "string" ||
+    typeof payload.e !== "number"
+  ) {
     return null;
   }
   if (Date.now() > payload.e) return null;
 
+  return payload;
+}
+
+export function signQuotationShareToken(
+  quotationId: string,
+  ttlDays = DEFAULT_TTL_DAYS,
+): string {
+  const payload: QuotationSharePayload = {
+    q: quotationId,
+    e: Date.now() + ttlDays * 24 * 60 * 60 * 1000,
+  };
+  const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  return `${encoded}.${sign(encoded)}`;
+}
+
+export function verifyQuotationShareToken(
+  token: string,
+): { quotationId: string } | null {
+  const payload = verifySignedPayload<QuotationSharePayload>(token, "q");
+  if (!payload) return null;
   return { quotationId: payload.q };
+}
+
+export function signProjectProposalShareToken(
+  proposalId: string,
+  ttlDays = DEFAULT_TTL_DAYS,
+): string {
+  const payload: ProjectProposalSharePayload = {
+    p: proposalId,
+    e: Date.now() + ttlDays * 24 * 60 * 60 * 1000,
+  };
+  const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  return `${encoded}.${sign(encoded)}`;
+}
+
+export function verifyProjectProposalShareToken(
+  token: string,
+): { proposalId: string } | null {
+  const payload = verifySignedPayload<ProjectProposalSharePayload>(token, "p");
+  if (!payload) return null;
+  return { proposalId: payload.p };
 }

@@ -119,6 +119,38 @@ enum ApprovalModuleType {
   DC_CANCEL
 }
 
+enum ProjectProposalStatus {
+  DRAFT
+  SENT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  CONVERTED
+  EXPIRED
+}
+
+enum ProjectProposalApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ProposalConnectionPhase {
+  SINGLE_PHASE
+  THREE_PHASE
+}
+
+enum ProposalStructureType {
+  CUSTOM_FABRICATED
+  PREFAB_C_CHANNEL
+  MONO_RAIL
+}
+
+enum ProposalBuildingType {
+  APARTMENT
+  BUNGALOW
+}
+
 enum ApprovalRequestStatus {
   PENDING
   APPROVED
@@ -155,6 +187,7 @@ model Company {
   proformaInvoices ProformaInvoice[]
   payments      Payment[]
   dispatches    Dispatch[]
+  projectProposals ProjectProposal[]
 
   @@map("companies")
 }
@@ -195,6 +228,15 @@ model User {
   dispatchedOrders   Dispatch[] @relation("DispatchDispatchedBy")
   approvalRequests   ApprovalRequest[] @relation("ApprovalRequestedBy")
   approvalDecisions  ApprovalRequest[] @relation("ApprovalDecidedBy")
+  salesProjectProposals ProjectProposal[] @relation("ProjectProposalSalesUser")
+  createdProjectProposals ProjectProposal[] @relation("ProjectProposalCreatedBy")
+  updatedProjectProposals ProjectProposal[] @relation("ProjectProposalUpdatedBy")
+  convertedProjectProposals ProjectProposal[] @relation("ProjectProposalConvertedBy")
+  createdProjectProposalRevisions ProjectProposalRevision[] @relation("ProjectProposalRevisionCreatedBy")
+  updatedProjectProposalRevisions ProjectProposalRevision[] @relation("ProjectProposalRevisionUpdatedBy")
+  projectProposalStatusChanges ProjectProposalStatusHistory[] @relation("ProjectProposalStatusChangedBy")
+  projectProposalApprovalsRequested ProjectProposalApproval[] @relation("ProjectProposalApprovalRequestedBy")
+  projectProposalApprovalsDecided ProjectProposalApproval[] @relation("ProjectProposalApprovalDecidedBy")
 
   @@map("users")
 }
@@ -801,4 +843,176 @@ model DispatchLineSerial {
 
   @@unique([lineId, serialId])
   @@map("dispatch_line_serials")
+}
+
+model ProposalPackageMaster {
+  id                    String   @id @default(uuid()) @db.Uuid
+  code                  String   @unique
+  name                  String
+  description           String?
+  panelWp               Int      @map("panel_wp")
+  panelCount            Int      @map("panel_count")
+  systemKw              Decimal  @map("system_kw") @db.Decimal(6, 2)
+  defaultInverterBrands Json     @map("default_inverter_brands")
+  basePrice             Decimal  @map("base_price") @db.Decimal(14, 2)
+  isActive              Boolean  @default(true) @map("is_active")
+  isComingSoon          Boolean  @default(false) @map("is_coming_soon")
+  sortOrder             Int      @default(0) @map("sort_order")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  revisions ProjectProposalRevision[]
+
+  @@map("proposal_package_master")
+}
+
+model ProposalInverterUpgradeMaster {
+  id                String   @id @default(uuid()) @db.Uuid
+  packagePanelCount Int      @map("package_panel_count")
+  upgradeKw         Decimal  @map("upgrade_kw") @db.Decimal(6, 2)
+  label             String
+  upgradeAmount     Decimal  @map("upgrade_amount") @db.Decimal(14, 2)
+  isActive          Boolean  @default(true) @map("is_active")
+  sortOrder         Int      @default(0) @map("sort_order")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  revisions ProjectProposalRevision[]
+
+  @@map("proposal_inverter_upgrade_master")
+}
+
+model ProposalInverterBrandMaster {
+  id                 String   @id @default(uuid()) @db.Uuid
+  code               String   @unique
+  name               String
+  brandUpgradeAmount Decimal  @default(0) @map("brand_upgrade_amount") @db.Decimal(14, 2)
+  isActive           Boolean  @default(true) @map("is_active")
+  isComingSoon       Boolean  @default(false) @map("is_coming_soon")
+  sortOrder          Int      @default(0) @map("sort_order")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@map("proposal_inverter_brand_master")
+}
+
+model ProjectProposal {
+  id                String                @id @default(uuid()) @db.Uuid
+  proposalNo        String                @unique @map("proposal_no")
+  companyId         String                @map("company_id") @db.Uuid
+  salesUserId       String                @map("sales_user_id") @db.Uuid
+  status            ProjectProposalStatus
+  currentRevisionNo Int                   @default(0) @map("current_revision_no")
+  convertedAt       DateTime?             @map("converted_at")
+  convertedById     String?               @map("converted_by") @db.Uuid
+  createdById       String                @map("created_by") @db.Uuid
+  updatedById       String                @map("updated_by") @db.Uuid
+  createdAt         DateTime              @default(now()) @map("created_at")
+  updatedAt         DateTime              @updatedAt @map("updated_at")
+
+  company     Company                      @relation(fields: [companyId], references: [id])
+  salesUser   User                         @relation("ProjectProposalSalesUser", fields: [salesUserId], references: [id])
+  convertedBy User?                        @relation("ProjectProposalConvertedBy", fields: [convertedById], references: [id])
+  createdBy   User                         @relation("ProjectProposalCreatedBy", fields: [createdById], references: [id])
+  updatedBy   User                         @relation("ProjectProposalUpdatedBy", fields: [updatedById], references: [id])
+  revisions   ProjectProposalRevision[]
+  statusHistory ProjectProposalStatusHistory[]
+  approvals   ProjectProposalApproval[]
+
+  @@index([companyId, status])
+  @@index([salesUserId])
+  @@map("project_proposals")
+}
+
+model ProjectProposalRevision {
+  id                         String                  @id @default(uuid()) @db.Uuid
+  proposalId                 String                  @map("proposal_id") @db.Uuid
+  revisionNo                 Int                     @map("revision_no")
+  customerName               String                  @map("customer_name")
+  customerMobile             String                  @map("customer_mobile")
+  shortAddress               String                  @map("short_address")
+  proposalDate               DateTime                @map("proposal_date") @db.Date
+  validityDate               DateTime                @map("validity_date") @db.Date
+  packageId                  String                  @map("package_id") @db.Uuid
+  connectionPhase            ProposalConnectionPhase @map("connection_phase")
+  inverterBrands             Json                    @map("inverter_brands")
+  inverterUpgradeId          String?                 @map("inverter_upgrade_id") @db.Uuid
+  structureType              ProposalStructureType   @map("structure_type")
+  buildingType               ProposalBuildingType    @map("building_type")
+  extraFloors                Int                     @default(0) @map("extra_floors")
+  ndcrAdditionalPanels       Int                     @default(0) @map("ndcr_additional_panels")
+  futureStructurePanels      Int                     @default(0) @map("future_structure_panels")
+  basePackageAmount          Decimal                 @map("base_package_amount") @db.Decimal(14, 2)
+  brandUpgradeAmount         Decimal                 @default(0) @map("brand_upgrade_amount") @db.Decimal(14, 2)
+  inverterUpgradeAmount      Decimal                 @default(0) @map("inverter_upgrade_amount") @db.Decimal(14, 2)
+  threePhaseAmount           Decimal                 @default(0) @map("three_phase_amount") @db.Decimal(14, 2)
+  structureAdjustmentAmount  Decimal                 @default(0) @map("structure_adjustment_amount") @db.Decimal(14, 2)
+  extraFloorAmount           Decimal                 @default(0) @map("extra_floor_amount") @db.Decimal(14, 2)
+  futureStructureAmount      Decimal                 @default(0) @map("future_structure_amount") @db.Decimal(14, 2)
+  ndcrPanelAmount            Decimal                 @default(0) @map("ndcr_panel_amount") @db.Decimal(14, 2)
+  discountAmount             Decimal                 @default(0) @map("discount_amount") @db.Decimal(14, 2)
+  subsidyEstimate            Decimal                 @default(0) @map("subsidy_estimate") @db.Decimal(14, 2)
+  finalAmount                Decimal                 @map("final_amount") @db.Decimal(14, 2)
+  effectiveCustomerInvestment Decimal                @map("effective_customer_investment") @db.Decimal(14, 2)
+  notes                      String?
+  createdById                String                  @map("created_by") @db.Uuid
+  updatedById                String                  @map("updated_by") @db.Uuid
+  createdAt                  DateTime                @default(now()) @map("created_at")
+  updatedAt                  DateTime                @updatedAt @map("updated_at")
+
+  proposal        ProjectProposal                @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  package         ProposalPackageMaster          @relation(fields: [packageId], references: [id])
+  inverterUpgrade ProposalInverterUpgradeMaster? @relation(fields: [inverterUpgradeId], references: [id])
+  createdBy       User                           @relation("ProjectProposalRevisionCreatedBy", fields: [createdById], references: [id])
+  updatedBy       User                           @relation("ProjectProposalRevisionUpdatedBy", fields: [updatedById], references: [id])
+  statusHistory   ProjectProposalStatusHistory[]
+  approvals       ProjectProposalApproval[]
+
+  @@unique([proposalId, revisionNo])
+  @@index([proposalId])
+  @@index([packageId])
+  @@index([customerMobile])
+  @@index([customerName])
+  @@map("project_proposal_revisions")
+}
+
+model ProjectProposalStatusHistory {
+  id          String                 @id @default(uuid()) @db.Uuid
+  proposalId  String                 @map("proposal_id") @db.Uuid
+  revisionId  String?                @map("revision_id") @db.Uuid
+  fromStatus  ProjectProposalStatus? @map("from_status")
+  toStatus    ProjectProposalStatus  @map("to_status")
+  changedById String                 @map("changed_by") @db.Uuid
+  remarks     String?
+  createdAt   DateTime               @default(now()) @map("created_at")
+
+  proposal  ProjectProposal          @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  revision  ProjectProposalRevision? @relation(fields: [revisionId], references: [id], onDelete: SetNull)
+  changedBy User                     @relation("ProjectProposalStatusChangedBy", fields: [changedById], references: [id])
+
+  @@index([proposalId, createdAt])
+  @@index([revisionId])
+  @@map("project_proposal_status_history")
+}
+
+model ProjectProposalApproval {
+  id             String                        @id @default(uuid()) @db.Uuid
+  proposalId     String                        @map("proposal_id") @db.Uuid
+  revisionId     String                        @map("revision_id") @db.Uuid
+  status         ProjectProposalApprovalStatus
+  discountAmount Decimal                       @map("discount_amount") @db.Decimal(14, 2)
+  requestedById  String                        @map("requested_by") @db.Uuid
+  decidedById    String?                       @map("decided_by") @db.Uuid
+  remarks        String?
+  createdAt      DateTime                      @default(now()) @map("created_at")
+  updatedAt      DateTime                      @updatedAt @map("updated_at")
+
+  proposal    ProjectProposal         @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  revision    ProjectProposalRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  requestedBy User                    @relation("ProjectProposalApprovalRequestedBy", fields: [requestedById], references: [id])
+  decidedBy   User?                   @relation("ProjectProposalApprovalDecidedBy", fields: [decidedById], references: [id])
+
+  @@index([proposalId, status])
+  @@index([revisionId])
+  @@map("project_proposal_approvals")
 }

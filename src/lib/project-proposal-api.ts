@@ -1,0 +1,63 @@
+import { NextResponse } from "next/server";
+
+const PRICING_ERRORS: Record<string, string> = {
+  PACKAGE_NOT_FOUND: "Package not found.",
+  PACKAGE_UNAVAILABLE: "Selected package is unavailable.",
+  INVERTER_BRANDS_REQUIRED: "Select at least one inverter brand.",
+  INVERTER_BRAND_NOT_FOUND: "One or more inverter brands were not found.",
+  INVERTER_BRAND_UNAVAILABLE: "One or more selected inverter brands are unavailable.",
+  INVERTER_UPGRADE_NOT_FOUND: "Inverter upgrade not found.",
+  INVERTER_UPGRADE_UNAVAILABLE: "Selected inverter upgrade is unavailable.",
+  INVERTER_UPGRADE_NOT_APPLICABLE: "Selected inverter upgrade does not apply to this package.",
+  NDCR_NOT_APPLICABLE: "NDCR panels are only available for 570+Wp packages.",
+};
+
+const SERVICE_ERRORS: Record<string, { message: string; status: number }> = {
+  COMPANY_NOT_FOUND: { message: "Company not found.", status: 404 },
+  PROPOSAL_NOT_FOUND: { message: "Project proposal not found.", status: 404 },
+  REVISION_NOT_FOUND: { message: "Proposal revision not found.", status: 404 },
+  FORBIDDEN: { message: "You do not have access to this proposal.", status: 403 },
+  PROPOSAL_NOT_EDITABLE: { message: "Only draft or rejected proposals can be edited.", status: 400 },
+  INVALID_STATUS: { message: "This action is not allowed for the current proposal status.", status: 400 },
+  DISCOUNT_APPROVAL_REQUIRED: {
+    message: "Discount above ₹5,000 requires manager approval before sending.",
+    status: 400,
+  },
+  APPROVAL_NOT_REQUIRED: {
+    message: "Manager approval is only required when discount exceeds ₹5,000.",
+    status: 400,
+  },
+  APPROVAL_NOT_PENDING: { message: "No pending approval request found.", status: 400 },
+  NOT_APPROVED: { message: "Only approved proposals can be converted to a project.", status: 400 },
+  ALREADY_CONVERTED: { message: "Proposal has already been converted.", status: 400 },
+  DRAFT_CANNOT_REVISE: { message: "Revise a sent or approved proposal, not a draft.", status: 400 },
+  REJECT_REASON_REQUIRED: { message: "A rejection reason is required.", status: 400 },
+  PROPOSAL_NOT_SHAREABLE: {
+    message: "Only approved proposals can be downloaded or shared.",
+    status: 400,
+  },
+};
+
+export function projectProposalErrorResponse(
+  code: string,
+  message: string,
+  status: number,
+  details?: unknown,
+) {
+  return NextResponse.json({ code, message, details }, { status });
+}
+
+export function mapProjectProposalError(error: unknown) {
+  if (!(error instanceof Error)) return null;
+
+  if (PRICING_ERRORS[error.message]) {
+    return projectProposalErrorResponse(error.message, PRICING_ERRORS[error.message], 400);
+  }
+
+  const mapped = SERVICE_ERRORS[error.message];
+  if (mapped) {
+    return projectProposalErrorResponse(error.message, mapped.message, mapped.status);
+  }
+
+  return null;
+}

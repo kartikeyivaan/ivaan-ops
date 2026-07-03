@@ -382,6 +382,62 @@ export const approveDispatchCancelSchema = z.object({
   remarks: z.string().optional(),
 });
 
+export const projectProposalPricingSchema = z.object({
+  packageId: z.string().uuid(),
+  connectionPhase: z.enum(["SINGLE_PHASE", "THREE_PHASE"]),
+  inverterBrandCodes: z.array(z.string().min(1)).min(1),
+  inverterUpgradeId: z.string().uuid().nullable().optional(),
+  structureType: z.enum(["CUSTOM_FABRICATED", "PREFAB_C_CHANNEL", "MONO_RAIL"]),
+  buildingType: z.enum(["APARTMENT", "BUNGALOW"]),
+  extraFloors: z.coerce.number().int().min(0).default(0),
+  ndcrAdditionalPanels: z.coerce.number().int().min(0).default(0),
+  futureStructurePanels: z.coerce.number().int().min(0).default(0),
+  discountAmount: z.coerce.number().min(0).default(0),
+});
+
+export const createProjectProposalSchema = projectProposalPricingSchema.extend({
+  customerName: z.string().min(2),
+  customerMobile: z.string().min(10),
+  shortAddress: z.string().optional(),
+  salesUserId: z.string().uuid().optional(),
+  proposalDate: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+export const updateProjectProposalSchema = createProjectProposalSchema.omit({
+  salesUserId: true,
+});
+
+export const projectProposalSearchSchema = z.object({
+  q: z.string().optional(),
+  status: z
+    .enum([
+      "DRAFT",
+      "SENT",
+      "PENDING_APPROVAL",
+      "APPROVED",
+      "REJECTED",
+      "CONVERTED",
+      "EXPIRED",
+    ])
+    .optional(),
+  salesUserId: z.string().uuid().optional(),
+  packageId: z.string().uuid().optional(),
+  customerMobile: z.string().optional(),
+  fromDate: z.string().optional(),
+  toDate: z.string().optional(),
+});
+
+export const approveProjectProposalSchema = z.object({
+  remarks: z.string().optional(),
+});
+
+export const rejectProjectProposalSchema = z.object({
+  reason: z.string().min(3),
+});
+
+export const reviseProjectProposalSchema = updateProjectProposalSchema;
+
 export type LoginInput = z.infer<typeof loginSchema>;
 export type CompanyInput = z.infer<typeof companySchema>;
 export type WarehouseInput = z.infer<typeof warehouseSchema>;

@@ -5,10 +5,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { LayoutDashboard, Menu, Shield, X } from "lucide-react";
+import { LayoutDashboard, Menu, X } from "lucide-react";
 import { canAccessNav, NAV_ITEMS } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import { CompanySwitcher } from "@/components/layout/company-switcher";
+import { IvaanLogo } from "@/components/layout/ivaan-logo";
 import { SignOutButton } from "@/components/layout/sign-out-button";
 
 type NavItem = (typeof NAV_ITEMS)[number];
@@ -81,9 +82,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 >
                   <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4">
                     <Dialog.Title className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-600 text-white">
-                        <Shield className="h-5 w-5" />
-                      </div>
+                      <IvaanLogo />
                       <div>
                         <p className="text-sm font-semibold text-slate-900">IvaanOps</p>
                         <p className="text-xs text-slate-500">Operational source of truth</p>
@@ -110,9 +109,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </Dialog.Portal>
             </Dialog.Root>
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-600 text-white">
-                <Shield className="h-5 w-5" />
-              </div>
+              <IvaanLogo />
               <div>
                 <p className="text-sm font-semibold text-slate-900">IvaanOps</p>
                 <p className="text-xs text-slate-500">Operational source of truth</p>

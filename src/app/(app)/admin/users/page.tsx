@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { isSuperAdmin } from "@/lib/rbac";
+import { ensureSystemRoles } from "@/lib/system-roles";
 import { UserForm } from "@/components/admin/user-form";
 import { UsersList } from "@/components/admin/users-list";
 
@@ -10,6 +11,8 @@ export default async function UsersAdminPage() {
   if (!session?.user || !isSuperAdmin(session.user.roles)) {
     redirect("/dashboard");
   }
+
+  await ensureSystemRoles(prisma);
 
   const [users, roles, companies] = await Promise.all([
     prisma.user.findMany({

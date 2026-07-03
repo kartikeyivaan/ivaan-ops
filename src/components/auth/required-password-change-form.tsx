@@ -3,13 +3,13 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Shield } from "lucide-react";
 import {
   getPasswordChangeMessage,
   getPasswordStrengthIssues,
   STRONG_PASSWORD_HINT,
   type PasswordChangeReason,
 } from "@/lib/password-policy";
+import { IvaanLogo } from "@/components/layout/ivaan-logo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -93,9 +93,7 @@ export function RequiredPasswordChangeForm({
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-900 px-4">
       <Card className="w-full max-w-lg">
         <CardHeader>
-          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-600 text-white">
-            <Shield className="h-6 w-6" />
-          </div>
+          <IvaanLogo size="md" className="mb-2" />
           <CardTitle>Update your password</CardTitle>
           <CardDescription>{getPasswordChangeMessage(reason)}</CardDescription>
         </CardHeader>

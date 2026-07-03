@@ -3,8 +3,8 @@
 import { Suspense, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Shield } from "lucide-react";
 import { getLoginErrorMessage, parseLoginErrorCode } from "@/lib/account-lockout";
+import { IvaanLogo } from "@/components/layout/ivaan-logo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -57,9 +57,7 @@ function LoginForm() {
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-900 px-4">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-600 text-white">
-            <Shield className="h-6 w-6" />
-          </div>
+          <IvaanLogo size="md" className="mb-2" />
           <CardTitle>Sign in to IvaanOps</CardTitle>
           <CardDescription>
             Ivaan Solar Energy and PCM Ventures operations platform

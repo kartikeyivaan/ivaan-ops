@@ -65,6 +65,7 @@ export type ProjectProposalFormValues = {
   extraFloors: string;
   futureStructurePanels: string;
   ndcrAdditionalPanels: string;
+  ndcrPanelWp: string;
   discountAmount: string;
   notes: string;
 };
@@ -138,6 +139,7 @@ export function ProjectProposalForm({
   const [ndcrAdditionalPanels, setNdcrAdditionalPanels] = useState(
     initialValues?.ndcrAdditionalPanels ?? "0",
   );
+  const [ndcrPanelWp, setNdcrPanelWp] = useState(initialValues?.ndcrPanelWp ?? "580");
   const [discountAmount, setDiscountAmount] = useState(initialValues?.discountAmount ?? "0");
   const [notes, setNotes] = useState(initialValues?.notes ?? "");
 
@@ -225,6 +227,7 @@ export function ProjectProposalForm({
           extraFloors: Number(extraFloors) || 0,
           futureStructurePanels: Number(futureStructurePanels) || 0,
           ndcrAdditionalPanels: ndcrApplicable ? Number(ndcrAdditionalPanels) || 0 : 0,
+          ndcrPanelWp: ndcrApplicable ? Number(ndcrPanelWp) || 580 : 580,
           discountAmount: Number(discountAmount) || 0,
         }),
       });
@@ -260,6 +263,7 @@ export function ProjectProposalForm({
     extraFloors,
     futureStructurePanels,
     ndcrAdditionalPanels,
+    ndcrPanelWp,
     discountAmount,
     ndcrApplicable,
     selectedPackage,
@@ -301,6 +305,7 @@ export function ProjectProposalForm({
       extraFloors: Number(extraFloors) || 0,
       futureStructurePanels: Number(futureStructurePanels) || 0,
       ndcrAdditionalPanels: ndcrApplicable ? Number(ndcrAdditionalPanels) || 0 : 0,
+      ndcrPanelWp: ndcrApplicable ? Number(ndcrPanelWp) || 580 : 580,
       discountAmount: Number(discountAmount) || 0,
       notes: notes.trim() || undefined,
     };
@@ -697,6 +702,20 @@ export function ProjectProposalForm({
                     : "Available only for 570+Wp packages."}
                 </p>
               </div>
+              {ndcrApplicable && Number(ndcrAdditionalPanels) > 0 ? (
+                <div className="space-y-2">
+                  <Label htmlFor="ndcrPanelWp">NDCR Panel Rating (Wp)</Label>
+                  <Input
+                    id="ndcrPanelWp"
+                    type="number"
+                    min={570}
+                    max={650}
+                    value={ndcrPanelWp}
+                    onChange={(event) => setNdcrPanelWp(event.target.value)}
+                  />
+                  <p className="text-xs text-slate-500">Default 580+ Wp; shown separately from DCR panels on proposal PDF.</p>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 

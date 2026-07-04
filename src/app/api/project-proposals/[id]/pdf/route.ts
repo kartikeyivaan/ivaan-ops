@@ -1,18 +1,25 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { mapProjectProposalError, projectProposalErrorResponse } from "@/lib/project-proposal-api";
-import { generateProjectProposalPdf, projectProposalPdfInclude } from "@/lib/project-proposal-pdf";
 import {
-  assertProjectProposalAccess,
-  assertProjectProposalShareable,
-} from "@/lib/project-proposal-service";
+  generateProjectProposalPdfByFormat,
+  projectProposalPdfInclude,
+  type ProjectProposalPdfFormat,
+} from "@/lib/project-proposal-pdf";
+import { assertProjectProposalAccess } from "@/lib/project-proposal-service";
 import { canViewProjectProposals } from "@/lib/project-proposal-permissions";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-export async function GET(_request: Request, context: RouteContext) {
+function resolvePdfFormat(request: Request): ProjectProposalPdfFormat {
+  const url = new URL(request.url);
+  const format = url.searchParams.get("format");
+  return format === "card" ? "card" : "full";
+}
+
+export async function GET(request: Request, context: RouteContext) {
   const session = await auth();
   if (!session?.user || !canViewProjectProposals(session.user.roles)) {
     return projectProposalErrorResponse(
@@ -30,6 +37,7 @@ export async function GET(_request: Request, context: RouteContext) {
   }
 
   const { id } = await context.params;
+  const format = resolvePdfFormat(request);
 
   try {
     const proposal = await prisma.projectProposal.findFirst({
@@ -42,14 +50,14 @@ export async function GET(_request: Request, context: RouteContext) {
     }
 
     assertProjectProposalAccess(session.user.roles, session.user.id, proposal);
-    assertProjectProposalShareable(proposal);
 
-    const pdf = await generateProjectProposalPdf(proposal);
+    const pdf = await generateProjectProposalPdfByFormat(proposal, format);
     const revision =
       proposal.revisions.find((entry) => entry.revisionNo === proposal.currentRevisionNo) ??
       proposal.revisions[proposal.revisions.length - 1];
     const customerName = revision?.customerName ?? "Customer";
-    const rawName = `${proposal.proposalNo} - ${customerName}`;
+    const suffix = format === "card" ? " Quote Card" : " Proposal";
+    const rawName = `${proposal.proposalNo}${suffix} - ${customerName}`;
     const safeName = rawName.replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim();
     const asciiName = safeName.replace(/[^\x20-\x7E]/g, "_");
 

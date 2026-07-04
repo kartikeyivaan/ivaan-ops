@@ -153,6 +153,7 @@ export function ProjectProposalDetail({
   const canSendDraft = canManage && proposal.status === "DRAFT" && !requiresApproval;
   const canSubmitForApproval = canManage && proposal.status === "DRAFT" && requiresApproval;
   const canDownloadOrShare = canShareProjectProposal(proposal.status);
+  const canDownloadPdf = canManage || canDownloadOrShare;
 
   async function shareWhatsapp() {
     setLoading(true);
@@ -341,17 +342,30 @@ export function ProjectProposalDetail({
             Submit for Manager Approval
           </Button>
         ) : null}
-        {canDownloadOrShare ? (
+        {canDownloadPdf ? (
           <>
             <Button asChild variant="outline" className="w-full sm:w-auto">
               <a
-                href={`/api/project-proposals/${proposal.id}/pdf`}
+                href={`/api/project-proposals/${proposal.id}/pdf?format=card`}
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                Download PDF
+                Quote Card
               </a>
             </Button>
+            <Button asChild variant="outline" className="w-full sm:w-auto">
+              <a
+                href={`/api/project-proposals/${proposal.id}/pdf?format=full`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Full Proposal
+              </a>
+            </Button>
+          </>
+        ) : null}
+        {canDownloadOrShare ? (
+          <>
             <Button
               variant="outline"
               onClick={() => void shareWhatsapp()}

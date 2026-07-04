@@ -72,9 +72,15 @@ export function readAsset(filePath: string): Buffer | null {
   }
 }
 
+const LOGO_WAAREE = path.join(ASSET_ROOT, "branding", "waaree-logo.png");
+
 export function companyLogo(companyCode: string | null | undefined): Buffer | null {
   if (companyCode === "PCMV") return readAsset(LOGO_PCM);
   return readAsset(LOGO_ISE);
+}
+
+export function waareeLogo(): Buffer | null {
+  return readAsset(LOGO_WAAREE);
 }
 
 export type PdfFonts = { regular: string; bold: string; rupee: string };
@@ -266,6 +272,100 @@ export function drawDocumentHeader(
   return Math.max(addrY, metaY);
 }
 
+/** Project quote card header: dual logos, PI-style firm block, meta under Waaree, centered title. */
+export function drawProjectQuotationHeader(
+  ctx: DocContext,
+  opts: {
+    logo: Buffer | null;
+    waareeLogo: Buffer | null;
+    companyName: string;
+    title: string;
+    profile: CompanyProfile;
+    meta: Array<[string, string]>;
+    contactPhone?: string;
+    compact?: boolean;
+  },
+): number {
+  const { doc, palette, fonts } = ctx;
+  const top = MARGIN_TOP;
+  const logoW = opts.compact ? 100 : 110;
+  const logoH = opts.compact ? 44 : 48;
+
+  if (opts.logo) {
+    doc.image(opts.logo, CONTENT_LEFT, top, { fit: [logoW, logoH] });
+  } else {
+    doc.font(fonts.bold).fontSize(20).fillColor(palette.ink).text(opts.companyName, CONTENT_LEFT, top);
+  }
+
+  if (opts.waareeLogo) {
+    doc.image(opts.waareeLogo, CONTENT_RIGHT - logoW, top, { fit: [logoW, logoH] });
+  }
+
+  const detailsTop = top + logoH + (opts.compact ? 4 : 8);
+  const leftColW = CONTENT_WIDTH * 0.55;
+  const metaLabelW = 95;
+  const metaValueW = 120;
+  const metaX = CONTENT_RIGHT - metaLabelW - metaValueW;
+
+  let leftY = detailsTop;
+  doc.font(fonts.bold).fontSize(11).fillColor(palette.ink).text(opts.companyName, CONTENT_LEFT, leftY, {
+    width: leftColW,
+  });
+  leftY = doc.y + 1;
+
+  if (opts.profile.tagline) {
+    doc.font(fonts.bold).fontSize(8.5).fillColor(palette.accent).text(opts.profile.tagline, CONTENT_LEFT, leftY, {
+      width: leftColW,
+    });
+    leftY = doc.y + 1;
+  }
+
+  doc.font(fonts.regular).fontSize(8.5).fillColor(palette.muted);
+  for (const line of opts.profile.addressLines) {
+    doc.text(line, CONTENT_LEFT, leftY, { width: leftColW });
+    leftY = doc.y;
+  }
+
+  const phone = opts.contactPhone ?? opts.profile.phone;
+  const contactBits = [phone, opts.profile.email].filter(Boolean).join("  |  ");
+  if (contactBits) {
+    doc.font(fonts.regular).fillColor(palette.muted).text(contactBits, CONTENT_LEFT, leftY, { width: leftColW });
+    leftY = doc.y;
+  }
+
+  if (opts.profile.gst) {
+    doc.font(fonts.bold).fillColor(palette.ink).text(`GSTIN: ${opts.profile.gst}`, CONTENT_LEFT, leftY, {
+      width: leftColW,
+    });
+    leftY = doc.y;
+  }
+
+  let metaY = detailsTop;
+  doc.fontSize(9);
+  for (const [label, value] of opts.meta) {
+    doc.font(fonts.regular).fillColor(palette.muted).text(label, metaX, metaY, {
+      width: metaLabelW,
+      align: "right",
+    });
+    doc.font(fonts.bold).fillColor(palette.ink).text(value, metaX + metaLabelW + 4, metaY, {
+      width: metaValueW,
+      align: "right",
+    });
+    metaY += 14;
+  }
+
+  const blockBottom = Math.max(leftY, metaY);
+  const titleY = blockBottom + (opts.compact ? 6 : 12);
+
+  doc
+    .font(fonts.bold)
+    .fontSize(opts.compact ? 17 : 20)
+    .fillColor(palette.primary)
+    .text(opts.title.toUpperCase(), CONTENT_LEFT, titleY, { width: CONTENT_WIDTH, align: "center" });
+
+  return doc.y + (opts.compact ? 2 : 6);
+}
+
 export type PartyInfo = { label: string; name: string; lines: string[] };
 
 /**
@@ -275,18 +375,20 @@ export type PartyInfo = { label: string; name: string; lines: string[] };
  */
 export function drawParties(
   ctx: DocContext,
-  opts: { top: number; left: PartyInfo; right?: PartyInfo },
+  opts: { top: number; left: PartyInfo; right?: PartyInfo; skipTopRule?: boolean },
 ): number {
   const { doc, palette, fonts } = ctx;
 
-  doc
-    .moveTo(CONTENT_LEFT, opts.top)
-    .lineTo(CONTENT_RIGHT, opts.top)
-    .lineWidth(0.75)
-    .strokeColor(palette.border)
-    .stroke();
+  if (!opts.skipTopRule) {
+    doc
+      .moveTo(CONTENT_LEFT, opts.top)
+      .lineTo(CONTENT_RIGHT, opts.top)
+      .lineWidth(0.75)
+      .strokeColor(palette.border)
+      .stroke();
+  }
 
-  const labelY = opts.top + 14;
+  const labelY = opts.top + (opts.skipTopRule ? 2 : 14);
   const colWidth = CONTENT_WIDTH * 0.55;
 
   doc.font(fonts.bold).fontSize(9).fillColor(palette.faint).text(opts.left.label, CONTENT_LEFT, labelY);
@@ -322,9 +424,16 @@ export function drawParties(
   return Math.max(leftY, rightY);
 }
 
-export function sectionTitle(ctx: DocContext, text: string, x: number, y: number, width?: number): number {
+export function sectionTitle(
+  ctx: DocContext,
+  text: string,
+  x: number,
+  y: number,
+  width?: number,
+  fontSize = 9,
+): number {
   const { doc, palette, fonts } = ctx;
-  doc.font(fonts.bold).fontSize(9).fillColor(palette.accent).text(text.toUpperCase(), x, y, {
+  doc.font(fonts.bold).fontSize(fontSize).fillColor(palette.accent).text(text.toUpperCase(), x, y, {
     width: width ?? CONTENT_WIDTH,
   });
   return doc.y;

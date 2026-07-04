@@ -109,6 +109,7 @@ export async function PATCH(request: Request, context: RouteContext) {
           buildingType: parsed.data.buildingType,
           extraFloors: parsed.data.extraFloors,
           ndcrAdditionalPanels: parsed.data.ndcrAdditionalPanels,
+          ndcrPanelWp: parsed.data.ndcrPanelWp,
           futureStructurePanels: parsed.data.futureStructurePanels,
           discountAmount: parsed.data.discountAmount,
         },

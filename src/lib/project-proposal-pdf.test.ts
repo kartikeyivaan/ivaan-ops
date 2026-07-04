@@ -5,7 +5,7 @@ import {
   ProposalStructureType,
 } from "@prisma/client";
 import { Prisma } from "@prisma/client";
-import { generateProjectProposalPdf, type ProjectProposalPdfRecord } from "@/lib/project-proposal-pdf";
+import { generateProjectProposalPdf, generateProjectProposalQuoteCardPdf, type ProjectProposalPdfRecord } from "@/lib/project-proposal-pdf";
 
 function buildProposalFixture(): ProjectProposalPdfRecord {
   return {
@@ -60,6 +60,7 @@ function buildProposalFixture(): ProjectProposalPdfRecord {
         buildingType: ProposalBuildingType.BUNGALOW,
         extraFloors: 1,
         ndcrAdditionalPanels: 2,
+        ndcrPanelWp: 580,
         futureStructurePanels: 1,
         basePackageAmount: new Prisma.Decimal(195000),
         brandUpgradeAmount: new Prisma.Decimal(0),
@@ -82,9 +83,11 @@ function buildProposalFixture(): ProjectProposalPdfRecord {
           id: "55555555-5555-5555-5555-555555555555",
           code: "P2",
           name: "570+Wp × 6 panels",
+          description: "570+Wp × 6 Panels, 3.3kW Polycab/Deye",
           panelWp: 570,
           panelCount: 6,
           systemKw: new Prisma.Decimal(3.3),
+          defaultInverterBrands: ["Polycab", "Deye"],
           basePrice: new Prisma.Decimal(195000),
           sortOrder: 2,
           isActive: true,
@@ -99,8 +102,15 @@ function buildProposalFixture(): ProjectProposalPdfRecord {
 }
 
 describe("project proposal pdf", () => {
-  it("generates a non-empty PDF buffer", async () => {
+  it("generates a non-empty full proposal PDF buffer", async () => {
     const pdf = await generateProjectProposalPdf(buildProposalFixture());
+    expect(pdf).toBeInstanceOf(Buffer);
+    expect(pdf.length).toBeGreaterThan(1000);
+    expect(pdf.subarray(0, 4).toString()).toBe("%PDF");
+  });
+
+  it("generates a non-empty quote card PDF buffer", async () => {
+    const pdf = await generateProjectProposalQuoteCardPdf(buildProposalFixture());
     expect(pdf).toBeInstanceOf(Buffer);
     expect(pdf.length).toBeGreaterThan(1000);
     expect(pdf.subarray(0, 4).toString()).toBe("%PDF");

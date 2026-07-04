@@ -941,6 +941,7 @@ model ProjectProposalRevision {
   buildingType               ProposalBuildingType    @map("building_type")
   extraFloors                Int                     @default(0) @map("extra_floors")
   ndcrAdditionalPanels       Int                     @default(0) @map("ndcr_additional_panels")
+  ndcrPanelWp                Int                     @default(580) @map("ndcr_panel_wp")
   futureStructurePanels      Int                     @default(0) @map("future_structure_panels")
   basePackageAmount          Decimal                 @map("base_package_amount") @db.Decimal(14, 2)
   brandUpgradeAmount         Decimal                 @default(0) @map("brand_upgrade_amount") @db.Decimal(14, 2)

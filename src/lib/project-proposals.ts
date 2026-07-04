@@ -4,7 +4,12 @@ import { addDays, toDateOnly } from "@/lib/quotations";
 import { PROJECT_PROPOSAL_VALIDITY_DAYS } from "@/lib/project-proposal-pricing";
 
 export function formatRevisionProposalLabel(revisionNo: number): string {
-  return `Rev${revisionNo}`;
+  return `R${revisionNo}`;
+}
+
+export function formatProposalDocumentNumber(proposalNo: string, revisionNo: number): string {
+  if (revisionNo <= 0) return proposalNo;
+  return `${proposalNo}-R${revisionNo}`;
 }
 
 export function formatProjectProposalStatus(status: string): string {

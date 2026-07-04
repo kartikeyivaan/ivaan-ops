@@ -391,6 +391,7 @@ export const projectProposalPricingSchema = z.object({
   buildingType: z.enum(["APARTMENT", "BUNGALOW"]),
   extraFloors: z.coerce.number().int().min(0).default(0),
   ndcrAdditionalPanels: z.coerce.number().int().min(0).default(0),
+  ndcrPanelWp: z.coerce.number().int().min(570).max(650).default(580),
   futureStructurePanels: z.coerce.number().int().min(0).default(0),
   discountAmount: z.coerce.number().min(0).default(0),
 });

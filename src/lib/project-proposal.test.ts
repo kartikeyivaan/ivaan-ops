@@ -363,8 +363,8 @@ describe("Projects Proposal QA checklist", () => {
   it("15. Revision increments correctly", () => {
     expect(getNextProjectProposalRevisionNo(0)).toBe(1);
     expect(getNextProjectProposalRevisionNo(1)).toBe(2);
-    expect(formatRevisionProposalLabel(0)).toBe("Rev0");
-    expect(formatRevisionProposalLabel(getNextProjectProposalRevisionNo(1))).toBe("Rev2");
+    expect(formatRevisionProposalLabel(0)).toBe("R0");
+    expect(formatRevisionProposalLabel(getNextProjectProposalRevisionNo(1))).toBe("R2");
   });
 });
 

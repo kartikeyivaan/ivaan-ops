@@ -149,7 +149,7 @@ async function main() {
     create: {
       name: "Kartikey",
       email: "kartikey.ivaan@gmail.com",
-      officialContactNumber: "9999999999",
+      officialContactNumber: "7385158947",
       passwordHash: kartikeyPassword,
       ...seedPasswordMeta,
       roles: {

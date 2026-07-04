@@ -18,6 +18,7 @@ type RevisionLike = {
   extraFloors: number;
   futureStructurePanels: number;
   ndcrAdditionalPanels: number;
+  ndcrPanelWp?: number;
   discountAmount: number;
   notes?: string | null;
 };
@@ -65,6 +66,7 @@ export function mapRevisionToFormValues(
     extraFloors: String(revision.extraFloors),
     futureStructurePanels: String(revision.futureStructurePanels),
     ndcrAdditionalPanels: String(revision.ndcrAdditionalPanels),
+    ndcrPanelWp: String(revision.ndcrPanelWp ?? 580),
     discountAmount: String(revision.discountAmount),
     notes: revision.notes ?? "",
   };

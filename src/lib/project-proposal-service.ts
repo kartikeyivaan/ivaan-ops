@@ -31,6 +31,7 @@ export type ResolveProjectProposalPricingInput = {
   buildingType: ProjectProposalPricingInput["buildingType"];
   extraFloors?: number;
   ndcrAdditionalPanels?: number;
+  ndcrPanelWp?: number;
   futureStructurePanels?: number;
   discountAmount?: number;
 };
@@ -220,6 +221,7 @@ async function buildRevisionWriteData(
       buildingType: input.pricing.buildingType,
       extraFloors: input.pricing.extraFloors ?? 0,
       ndcrAdditionalPanels: input.pricing.ndcrAdditionalPanels ?? 0,
+      ndcrPanelWp: input.pricing.ndcrPanelWp ?? 580,
       futureStructurePanels: input.pricing.futureStructurePanels ?? 0,
       ...snapshot,
       notes: input.notes,
@@ -568,6 +570,7 @@ export async function createProjectProposal(
             buildingType: input.pricing.buildingType,
             extraFloors: input.pricing.extraFloors ?? 0,
             ndcrAdditionalPanels: input.pricing.ndcrAdditionalPanels ?? 0,
+            ndcrPanelWp: input.pricing.ndcrPanelWp ?? 580,
             futureStructurePanels: input.pricing.futureStructurePanels ?? 0,
             ...snapshot,
             notes: input.notes,

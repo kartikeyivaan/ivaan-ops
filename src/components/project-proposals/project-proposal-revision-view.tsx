@@ -27,7 +27,6 @@ type RevisionView = {
   futureStructureAmount: number;
   ndcrPanelAmount: number;
   dcrPanelAmount: number;
-  discountAmount: number;
   additionalCostAmount: number;
   package: { code: string; name: string; panelWp: number; panelCount: number };
   connectionPhase: string;

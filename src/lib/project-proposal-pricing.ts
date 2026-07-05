@@ -13,6 +13,9 @@ export const SUBSIDY_AMOUNT = 78_000;
 export const SUBSIDY_MIN_SYSTEM_KW = 3;
 export const NDCR_PANEL_CHARGE = 11_500;
 export const NDCR_MIN_PANEL_WP = 570;
+export const DCR_PANEL_CHARGE_570 = 17_000;
+export const DCR_PANEL_CHARGE_530 = 15_000;
+export const DCR_MIN_PANEL_WP = 530;
 export const FUTURE_STRUCTURE_CHARGE_PER_PANEL = 3_000;
 export const EXTRA_FLOOR_CHARGE = 2_000;
 export const PREFAB_C_CHANNEL_PER_KW = 500;
@@ -57,8 +60,10 @@ export type ProjectProposalPricingInput = {
   buildingType: ProposalBuildingType;
   extraFloors: number;
   ndcrAdditionalPanels: number;
+  dcrAdditionalPanels: number;
   futureStructurePanels: number;
   discountAmount: number;
+  additionalCostAmount: number;
 };
 
 export type ProjectProposalGstPdfBreakdown = {
@@ -82,8 +87,10 @@ export type ProjectProposalPricingBreakdown = {
   extraFloorAmount: number;
   futureStructureAmount: number;
   ndcrPanelAmount: number;
+  dcrPanelAmount: number;
   subtotalBeforeDiscount: number;
   discountAmount: number;
+  additionalCostAmount: number;
   finalAmount: number;
   subsidyEstimate: number;
   effectiveCustomerInvestment: number;
@@ -148,6 +155,27 @@ export function calculateNdcrPanelAmount(
   return roundMoney(ndcrAdditionalPanels * NDCR_PANEL_CHARGE);
 }
 
+export function getDcrPanelCharge(panelWp: number): number {
+  if (panelWp >= NDCR_MIN_PANEL_WP) {
+    return DCR_PANEL_CHARGE_570;
+  }
+  if (panelWp >= DCR_MIN_PANEL_WP) {
+    return DCR_PANEL_CHARGE_530;
+  }
+  return 0;
+}
+
+export function calculateDcrPanelAmount(
+  panelWp: number,
+  dcrAdditionalPanels: number,
+): number {
+  const charge = getDcrPanelCharge(panelWp);
+  if (charge <= 0 || dcrAdditionalPanels <= 0) {
+    return 0;
+  }
+  return roundMoney(dcrAdditionalPanels * charge);
+}
+
 export function calculateSubsidyEstimate(systemKw: number): number {
   return systemKw >= SUBSIDY_MIN_SYSTEM_KW ? SUBSIDY_AMOUNT : 0;
 }
@@ -199,7 +227,12 @@ export function calculateProjectProposalPricing(
     input.package.panelWp,
     input.ndcrAdditionalPanels,
   );
+  const dcrPanelAmount = calculateDcrPanelAmount(
+    input.package.panelWp,
+    input.dcrAdditionalPanels,
+  );
   const discountAmount = roundMoney(Math.max(0, input.discountAmount));
+  const additionalCostAmount = roundMoney(Math.max(0, input.additionalCostAmount));
 
   const subtotalBeforeDiscount = roundMoney(
     basePackageAmount +
@@ -209,10 +242,13 @@ export function calculateProjectProposalPricing(
       structureAdjustmentAmount +
       extraFloorAmount +
       futureStructureAmount +
-      ndcrPanelAmount,
+      ndcrPanelAmount +
+      dcrPanelAmount,
   );
 
-  const finalAmount = roundMoney(Math.max(0, subtotalBeforeDiscount - discountAmount));
+  const finalAmount = roundMoney(
+    Math.max(0, subtotalBeforeDiscount - discountAmount + additionalCostAmount),
+  );
   const subsidyEstimate = calculateSubsidyEstimate(systemKw);
   const effectiveCustomerInvestment = roundMoney(
     Math.max(0, finalAmount - subsidyEstimate),
@@ -227,8 +263,10 @@ export function calculateProjectProposalPricing(
     extraFloorAmount,
     futureStructureAmount,
     ndcrPanelAmount,
+    dcrPanelAmount,
     subtotalBeforeDiscount,
     discountAmount,
+    additionalCostAmount,
     finalAmount,
     subsidyEstimate,
     effectiveCustomerInvestment,
@@ -249,7 +287,9 @@ export type ProjectProposalRevisionPricingSnapshot = {
   extraFloorAmount: number;
   futureStructureAmount: number;
   ndcrPanelAmount: number;
+  dcrPanelAmount: number;
   discountAmount: number;
+  additionalCostAmount: number;
   subsidyEstimate: number;
   finalAmount: number;
   effectiveCustomerInvestment: number;
@@ -267,7 +307,9 @@ export function toRevisionPricingSnapshot(
     extraFloorAmount: breakdown.extraFloorAmount,
     futureStructureAmount: breakdown.futureStructureAmount,
     ndcrPanelAmount: breakdown.ndcrPanelAmount,
+    dcrPanelAmount: breakdown.dcrPanelAmount,
     discountAmount: breakdown.discountAmount,
+    additionalCostAmount: breakdown.additionalCostAmount,
     subsidyEstimate: breakdown.subsidyEstimate,
     finalAmount: breakdown.finalAmount,
     effectiveCustomerInvestment: breakdown.effectiveCustomerInvestment,

@@ -41,6 +41,7 @@ describe("proposal bom", () => {
       panelWp: 570,
       panelCount: 6,
       systemKw: 3.3,
+      dcrAdditionalPanels: 0,
       ndcrAdditionalPanels: 1,
       ndcrPanelWp: 580,
       inverterBrand: "Polycab",
@@ -60,6 +61,7 @@ describe("proposal bom", () => {
       calculateProposedSystemKwp({
         panelWp: 570,
         panelCount: 9,
+        dcrAdditionalPanels: 0,
         ndcrPanelWp: 580,
         ndcrAdditionalPanels: 1,
         futureStructurePanels: 0,
@@ -68,6 +70,7 @@ describe("proposal bom", () => {
     expect(
       totalProposedPanelCount({
         panelCount: 9,
+        dcrAdditionalPanels: 0,
         ndcrAdditionalPanels: 1,
         futureStructurePanels: 2,
       }),

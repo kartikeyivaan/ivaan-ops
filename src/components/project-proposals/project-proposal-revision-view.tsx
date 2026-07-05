@@ -26,12 +26,16 @@ type RevisionView = {
   extraFloorAmount: number;
   futureStructureAmount: number;
   ndcrPanelAmount: number;
+  dcrPanelAmount: number;
+  discountAmount: number;
+  additionalCostAmount: number;
   package: { code: string; name: string; panelWp: number; panelCount: number };
   connectionPhase: string;
   structureType: string;
   buildingType: string;
   extraFloors: number;
   futureStructurePanels: number;
+  dcrAdditionalPanels: number;
   ndcrAdditionalPanels: number;
   inverterBrands: string[];
   inverterUpgrade?: { label: string } | null;
@@ -185,12 +189,20 @@ export function ProjectProposalRevisionView({
               {formatMoney(revision.futureStructureAmount)} ({revision.futureStructurePanels} panels)
             </p>
             <p>
+              <span className="text-slate-500">DCR panels:</span>{" "}
+              {formatMoney(revision.dcrPanelAmount)} ({revision.dcrAdditionalPanels} additional)
+            </p>
+            <p>
               <span className="text-slate-500">NDCR panels:</span>{" "}
               {formatMoney(revision.ndcrPanelAmount)} ({revision.ndcrAdditionalPanels} panels)
             </p>
             <p>
               <span className="text-slate-500">Discount:</span>{" "}
               {formatMoney(revision.discountAmount)}
+            </p>
+            <p>
+              <span className="text-slate-500">Additional cost:</span>{" "}
+              {formatMoney(revision.additionalCostAmount)}
             </p>
             <p className="border-t border-slate-200 pt-2 font-medium">
               <span className="text-slate-500">Final amount:</span>{" "}

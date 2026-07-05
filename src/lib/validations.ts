@@ -392,8 +392,10 @@ export const projectProposalPricingSchema = z.object({
   extraFloors: z.coerce.number().int().min(0).default(0),
   ndcrAdditionalPanels: z.coerce.number().int().min(0).default(0),
   ndcrPanelWp: z.coerce.number().int().min(570).max(650).default(580),
+  dcrAdditionalPanels: z.coerce.number().int().min(0).default(0),
   futureStructurePanels: z.coerce.number().int().min(0).default(0),
   discountAmount: z.coerce.number().min(0).default(0),
+  additionalCostAmount: z.coerce.number().min(0).default(0),
 });
 
 export const createProjectProposalSchema = projectProposalPricingSchema.extend({

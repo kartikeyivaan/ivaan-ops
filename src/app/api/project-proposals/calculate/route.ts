@@ -48,7 +48,9 @@ export async function POST(request: Request) {
       extraFloors: parsed.data.extraFloors,
       ndcrAdditionalPanels: parsed.data.ndcrAdditionalPanels,
       futureStructurePanels: parsed.data.futureStructurePanels,
+      dcrAdditionalPanels: parsed.data.dcrAdditionalPanels,
       discountAmount: parsed.data.discountAmount,
+      additionalCostAmount: parsed.data.additionalCostAmount,
     });
 
     return NextResponse.json({

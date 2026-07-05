@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, ArrowLeft, Save } from "lucide-react";
-import { DISCOUNT_APPROVAL_THRESHOLD, PROJECT_PROPOSAL_VALIDITY_DAYS } from "@/lib/project-proposal-pricing";
+import { DISCOUNT_APPROVAL_THRESHOLD, getDcrPanelCharge, PROJECT_PROPOSAL_VALIDITY_DAYS } from "@/lib/project-proposal-pricing";
 import { formatRevisionProposalLabel } from "@/lib/project-proposals";
 import { formatDocumentDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -44,6 +44,7 @@ type UpgradeMaster = {
 type PricingSummary = {
   subtotalBeforeDiscount: number;
   discountAmount: number;
+  additionalCostAmount: number;
   finalAmount: number;
   subsidyEstimate: number;
   effectiveCustomerInvestment: number;
@@ -64,9 +65,11 @@ export type ProjectProposalFormValues = {
   buildingType: "APARTMENT" | "BUNGALOW";
   extraFloors: string;
   futureStructurePanels: string;
+  dcrAdditionalPanels: string;
   ndcrAdditionalPanels: string;
   ndcrPanelWp: string;
   discountAmount: string;
+  additionalCostAmount: string;
   notes: string;
 };
 
@@ -136,11 +139,17 @@ export function ProjectProposalForm({
   const [futureStructurePanels, setFutureStructurePanels] = useState(
     initialValues?.futureStructurePanels ?? "0",
   );
+  const [dcrAdditionalPanels, setDcrAdditionalPanels] = useState(
+    initialValues?.dcrAdditionalPanels ?? "0",
+  );
   const [ndcrAdditionalPanels, setNdcrAdditionalPanels] = useState(
     initialValues?.ndcrAdditionalPanels ?? "0",
   );
   const [ndcrPanelWp, setNdcrPanelWp] = useState(initialValues?.ndcrPanelWp ?? "580");
   const [discountAmount, setDiscountAmount] = useState(initialValues?.discountAmount ?? "0");
+  const [additionalCostAmount, setAdditionalCostAmount] = useState(
+    initialValues?.additionalCostAmount ?? "0",
+  );
   const [notes, setNotes] = useState(initialValues?.notes ?? "");
 
   const [pricing, setPricing] = useState<PricingSummary | null>(null);
@@ -156,6 +165,8 @@ export function ProjectProposalForm({
 
   const selectedPackage = packages.find((pkg) => pkg.id === packageId) ?? null;
   const ndcrApplicable = (selectedPackage?.panelWp ?? 0) >= 570;
+  const dcrApplicable = (selectedPackage?.panelWp ?? 0) >= 530;
+  const dcrPanelCharge = selectedPackage ? getDcrPanelCharge(selectedPackage.panelWp) : 0;
 
   const applicableUpgrades = useMemo(() => {
     if (!selectedPackage) return [];
@@ -226,9 +237,11 @@ export function ProjectProposalForm({
           buildingType,
           extraFloors: Number(extraFloors) || 0,
           futureStructurePanels: Number(futureStructurePanels) || 0,
+          dcrAdditionalPanels: dcrApplicable ? Number(dcrAdditionalPanels) || 0 : 0,
           ndcrAdditionalPanels: ndcrApplicable ? Number(ndcrAdditionalPanels) || 0 : 0,
           ndcrPanelWp: ndcrApplicable ? Number(ndcrPanelWp) || 580 : 580,
           discountAmount: Number(discountAmount) || 0,
+          additionalCostAmount: Number(additionalCostAmount) || 0,
         }),
       });
 
@@ -245,6 +258,7 @@ export function ProjectProposalForm({
       setPricing({
         subtotalBeforeDiscount: breakdown.subtotalBeforeDiscount,
         discountAmount: breakdown.discountAmount,
+        additionalCostAmount: breakdown.additionalCostAmount,
         finalAmount: breakdown.finalAmount,
         subsidyEstimate: breakdown.subsidyEstimate,
         effectiveCustomerInvestment: breakdown.effectiveCustomerInvestment,
@@ -262,10 +276,13 @@ export function ProjectProposalForm({
     buildingType,
     extraFloors,
     futureStructurePanels,
+    dcrAdditionalPanels,
     ndcrAdditionalPanels,
     ndcrPanelWp,
     discountAmount,
+    additionalCostAmount,
     ndcrApplicable,
+    dcrApplicable,
     selectedPackage,
   ]);
 
@@ -280,6 +297,12 @@ export function ProjectProposalForm({
       setNdcrAdditionalPanels("0");
     }
   }, [ndcrApplicable]);
+
+  useEffect(() => {
+    if (!dcrApplicable) {
+      setDcrAdditionalPanels("0");
+    }
+  }, [dcrApplicable]);
 
   function toggleBrand(code: string, enabled: boolean) {
     setInverterBrandCodes((current) => {
@@ -304,9 +327,11 @@ export function ProjectProposalForm({
       buildingType,
       extraFloors: Number(extraFloors) || 0,
       futureStructurePanels: Number(futureStructurePanels) || 0,
+      dcrAdditionalPanels: dcrApplicable ? Number(dcrAdditionalPanels) || 0 : 0,
       ndcrAdditionalPanels: ndcrApplicable ? Number(ndcrAdditionalPanels) || 0 : 0,
       ndcrPanelWp: ndcrApplicable ? Number(ndcrPanelWp) || 580 : 580,
       discountAmount: Number(discountAmount) || 0,
+      additionalCostAmount: Number(additionalCostAmount) || 0,
       notes: notes.trim() || undefined,
     };
   }
@@ -412,18 +437,6 @@ export function ProjectProposalForm({
                   value={customerMobile}
                   onChange={(event) => setCustomerMobile(event.target.value)}
                   placeholder="10-digit mobile number"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="proposalNo">Proposal Number</Label>
-                <Input
-                  id="proposalNo"
-                  value={
-                    proposalNo ??
-                    (mode === "create" ? "Auto-generated on save" : "—")
-                  }
-                  readOnly
-                  className="bg-slate-50"
                 />
               </div>
               {mode === "revise" && nextRevisionNo !== undefined ? (
@@ -687,6 +700,38 @@ export function ProjectProposalForm({
                 <p className="text-xs text-slate-500">₹3,000 per additional future panel.</p>
               </div>
               <div className="space-y-2">
+                <Label htmlFor="dcrAdditionalPanels">Additional DCR Panels</Label>
+                <Input
+                  id="dcrAdditionalPanels"
+                  type="number"
+                  min={0}
+                  value={dcrAdditionalPanels}
+                  onChange={(event) => setDcrAdditionalPanels(event.target.value)}
+                  disabled={!dcrApplicable}
+                />
+                <p className="text-xs text-slate-500">
+                  {dcrApplicable
+                    ? dcrPanelCharge === 17_000
+                      ? "₹17,000 per additional DCR panel for 570+Wp packages."
+                      : "₹15,000 per additional DCR panel for 530+Wp packages."
+                    : "Available only for 530+Wp packages."}
+                </p>
+              </div>
+              {dcrApplicable && Number(dcrAdditionalPanels) > 0 && selectedPackage ? (
+                <div className="space-y-2">
+                  <Label htmlFor="dcrPanelWp">DCR Panel Rating (Wp)</Label>
+                  <Input
+                    id="dcrPanelWp"
+                    value={`${selectedPackage.panelWp}+`}
+                    readOnly
+                    className="bg-slate-50"
+                  />
+                  <p className="text-xs text-slate-500">
+                    Same as selected package ({selectedPackage.panelWp}+ Wp).
+                  </p>
+                </div>
+              ) : null}
+              <div className="space-y-2">
                 <Label htmlFor="ndcrAdditionalPanels">Additional NDCR Panels</Label>
                 <Input
                   id="ndcrAdditionalPanels"
@@ -752,6 +797,17 @@ export function ProjectProposalForm({
                 />
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="additionalCostAmount">Additional Cost</Label>
+                <Input
+                  id="additionalCostAmount"
+                  type="number"
+                  min={0}
+                  value={additionalCostAmount}
+                  onChange={(event) => setAdditionalCostAmount(event.target.value)}
+                />
+              </div>
+
               {pricing?.requiresManagerApproval ? (
                 <div className="flex gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -775,6 +831,12 @@ export function ProjectProposalForm({
                   <span className="text-slate-600">Discount</span>
                   <span className="font-medium text-slate-900">
                     {pricing ? formatMoney(pricing.discountAmount) : pricingLoading ? "…" : "—"}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-slate-600">Additional cost</span>
+                  <span className="font-medium text-slate-900">
+                    {pricing ? formatMoney(pricing.additionalCostAmount) : pricingLoading ? "…" : "—"}
                   </span>
                 </div>
                 <div className="flex justify-between gap-3 border-t border-slate-200 pt-2">

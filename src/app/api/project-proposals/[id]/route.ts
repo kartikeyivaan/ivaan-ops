@@ -110,8 +110,10 @@ export async function PATCH(request: Request, context: RouteContext) {
           extraFloors: parsed.data.extraFloors,
           ndcrAdditionalPanels: parsed.data.ndcrAdditionalPanels,
           ndcrPanelWp: parsed.data.ndcrPanelWp,
+          dcrAdditionalPanels: parsed.data.dcrAdditionalPanels,
           futureStructurePanels: parsed.data.futureStructurePanels,
           discountAmount: parsed.data.discountAmount,
+          additionalCostAmount: parsed.data.additionalCostAmount,
         },
       },
     });

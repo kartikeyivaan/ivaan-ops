@@ -99,8 +99,10 @@ function buildPricingInput(
     buildingType: ProposalBuildingType.BUNGALOW,
     extraFloors: 0,
     ndcrAdditionalPanels: 0,
+    dcrAdditionalPanels: 0,
     futureStructurePanels: 0,
     discountAmount: 0,
+    additionalCostAmount: 0,
     ...overrides,
   };
 }
@@ -157,8 +159,10 @@ const validProposalPayload = {
   buildingType: "BUNGALOW" as const,
   extraFloors: 0,
   ndcrAdditionalPanels: 0,
+  dcrAdditionalPanels: 0,
   futureStructurePanels: 0,
   discountAmount: 0,
+  additionalCostAmount: 0,
 };
 
 describe("Projects Proposal QA checklist", () => {

@@ -10,6 +10,7 @@ const PRICING_ERRORS: Record<string, string> = {
   INVERTER_UPGRADE_UNAVAILABLE: "Selected inverter upgrade is unavailable.",
   INVERTER_UPGRADE_NOT_APPLICABLE: "Selected inverter upgrade does not apply to this package.",
   NDCR_NOT_APPLICABLE: "NDCR panels are only available for 570+Wp packages.",
+  DCR_NOT_APPLICABLE: "Additional DCR panels are only available for 530+Wp packages.",
 };
 
 const SERVICE_ERRORS: Record<string, { message: string; status: number }> = {

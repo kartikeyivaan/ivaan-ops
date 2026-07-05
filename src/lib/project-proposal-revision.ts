@@ -17,9 +17,11 @@ type RevisionLike = {
   buildingType: "APARTMENT" | "BUNGALOW";
   extraFloors: number;
   futureStructurePanels: number;
+  dcrAdditionalPanels: number;
   ndcrAdditionalPanels: number;
   ndcrPanelWp?: number;
   discountAmount: number;
+  additionalCostAmount: number;
   notes?: string | null;
 };
 
@@ -65,9 +67,11 @@ export function mapRevisionToFormValues(
     buildingType: revision.buildingType,
     extraFloors: String(revision.extraFloors),
     futureStructurePanels: String(revision.futureStructurePanels),
+    dcrAdditionalPanels: String(revision.dcrAdditionalPanels),
     ndcrAdditionalPanels: String(revision.ndcrAdditionalPanels),
     ndcrPanelWp: String(revision.ndcrPanelWp ?? 580),
     discountAmount: String(revision.discountAmount),
+    additionalCostAmount: String(revision.additionalCostAmount),
     notes: revision.notes ?? "",
   };
 }

@@ -32,8 +32,10 @@ export type ResolveProjectProposalPricingInput = {
   extraFloors?: number;
   ndcrAdditionalPanels?: number;
   ndcrPanelWp?: number;
+  dcrAdditionalPanels?: number;
   futureStructurePanels?: number;
   discountAmount?: number;
+  additionalCostAmount?: number;
 };
 
 export const projectProposalRevisionInclude = {
@@ -85,7 +87,9 @@ function serializeRevision(
     extraFloorAmount: decimalToNumber(revision.extraFloorAmount),
     futureStructureAmount: decimalToNumber(revision.futureStructureAmount),
     ndcrPanelAmount: decimalToNumber(revision.ndcrPanelAmount),
+    dcrPanelAmount: decimalToNumber(revision.dcrPanelAmount),
     discountAmount: decimalToNumber(revision.discountAmount),
+    additionalCostAmount: decimalToNumber(revision.additionalCostAmount),
     subsidyEstimate: decimalToNumber(revision.subsidyEstimate),
     finalAmount: decimalToNumber(revision.finalAmount),
     effectiveCustomerInvestment: decimalToNumber(revision.effectiveCustomerInvestment),
@@ -222,6 +226,7 @@ async function buildRevisionWriteData(
       extraFloors: input.pricing.extraFloors ?? 0,
       ndcrAdditionalPanels: input.pricing.ndcrAdditionalPanels ?? 0,
       ndcrPanelWp: input.pricing.ndcrPanelWp ?? 580,
+      dcrAdditionalPanels: input.pricing.dcrAdditionalPanels ?? 0,
       futureStructurePanels: input.pricing.futureStructurePanels ?? 0,
       ...snapshot,
       notes: input.notes,
@@ -485,6 +490,11 @@ export async function resolveProjectProposalPricing(
     throw new Error("NDCR_NOT_APPLICABLE");
   }
 
+  const dcrAdditionalPanels = input.dcrAdditionalPanels ?? 0;
+  if (pkg.panelWp < 530 && dcrAdditionalPanels > 0) {
+    throw new Error("DCR_NOT_APPLICABLE");
+  }
+
   return calculateProjectProposalPricing({
     package: mapPackage(pkg),
     connectionPhase: input.connectionPhase,
@@ -494,8 +504,10 @@ export async function resolveProjectProposalPricing(
     buildingType: input.buildingType,
     extraFloors: input.extraFloors ?? 0,
     ndcrAdditionalPanels,
+    dcrAdditionalPanels,
     futureStructurePanels: input.futureStructurePanels ?? 0,
     discountAmount: input.discountAmount ?? 0,
+    additionalCostAmount: input.additionalCostAmount ?? 0,
   });
 }
 
@@ -571,6 +583,7 @@ export async function createProjectProposal(
             extraFloors: input.pricing.extraFloors ?? 0,
             ndcrAdditionalPanels: input.pricing.ndcrAdditionalPanels ?? 0,
             ndcrPanelWp: input.pricing.ndcrPanelWp ?? 580,
+            dcrAdditionalPanels: input.pricing.dcrAdditionalPanels ?? 0,
             futureStructurePanels: input.pricing.futureStructurePanels ?? 0,
             ...snapshot,
             notes: input.notes,

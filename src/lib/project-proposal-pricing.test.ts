@@ -14,6 +14,7 @@ import {
   calculateExtraFloorAmount,
   calculateFutureStructureAmount,
   calculateNdcrPanelAmount,
+  calculateDcrPanelAmount,
   calculateProjectProposalPricing,
   calculateStructureAdjustmentAmount,
   calculateSubsidyEstimate,
@@ -65,8 +66,10 @@ function buildInput(
     buildingType: ProposalBuildingType.BUNGALOW,
     extraFloors: 0,
     ndcrAdditionalPanels: 0,
+    dcrAdditionalPanels: 0,
     futureStructurePanels: 0,
     discountAmount: 0,
+    additionalCostAmount: 0,
     ...overrides,
   };
 }
@@ -124,10 +127,13 @@ describe("project proposal pricing", () => {
     expect(calculateExtraFloorAmount(2)).toBe(4_000);
   });
 
-  it("calculates future structure and NDCR panel costs", () => {
+  it("calculates future structure, NDCR and DCR panel costs", () => {
     expect(calculateFutureStructureAmount(2)).toBe(6_000);
     expect(calculateNdcrPanelAmount(570, 1)).toBe(11_500);
     expect(calculateNdcrPanelAmount(530, 2)).toBe(0);
+    expect(calculateDcrPanelAmount(570, 1)).toBe(17_000);
+    expect(calculateDcrPanelAmount(530, 2)).toBe(30_000);
+    expect(calculateDcrPanelAmount(520, 1)).toBe(0);
   });
 
   it("flags manager approval when discount exceeds threshold", () => {
@@ -162,6 +168,14 @@ describe("project proposal pricing", () => {
       195_000 + 5_000 + 15_000 + 25_000 + 1_650 + 2_000 + 3_000 + 11_500,
     );
     expect(result.finalAmount).toBe(result.subtotalBeforeDiscount - 3_000);
+  });
+
+  it("adds additional cost after discount", () => {
+    const result = calculateProjectProposalPricing(
+      buildInput({ discountAmount: 2_000, additionalCostAmount: 5_000 }),
+    );
+
+    expect(result.finalAmount).toBe(195_000 - 2_000 + 5_000);
   });
 
   it("does not grant subsidy below 3kW systems", () => {

@@ -38,12 +38,13 @@ export function resolveInverterKw(
 export function calculateProposedSystemKwp(input: {
   panelWp: number;
   panelCount: number;
+  dcrAdditionalPanels: number;
   ndcrPanelWp: number;
   ndcrAdditionalPanels: number;
   futureStructurePanels: number;
 }): number {
   const totalWp =
-    input.panelWp * input.panelCount +
+    input.panelWp * (input.panelCount + input.dcrAdditionalPanels) +
     input.ndcrPanelWp * input.ndcrAdditionalPanels +
     input.panelWp * input.futureStructurePanels;
   return Math.round((totalWp / 1000) * 10) / 10;
@@ -51,10 +52,16 @@ export function calculateProposedSystemKwp(input: {
 
 export function totalProposedPanelCount(input: {
   panelCount: number;
+  dcrAdditionalPanels: number;
   ndcrAdditionalPanels: number;
   futureStructurePanels: number;
 }): number {
-  return input.panelCount + input.ndcrAdditionalPanels + input.futureStructurePanels;
+  return (
+    input.panelCount +
+    input.dcrAdditionalPanels +
+    input.ndcrAdditionalPanels +
+    input.futureStructurePanels
+  );
 }
 
 export function formatInverterCapacity(kw: number, connectionPhase: string): string {
@@ -66,6 +73,7 @@ export function buildProposalBom(input: {
   panelWp: number;
   panelCount: number;
   systemKw: number;
+  dcrAdditionalPanels: number;
   ndcrAdditionalPanels: number;
   ndcrPanelWp: number;
   inverterBrand: string;
@@ -74,12 +82,13 @@ export function buildProposalBom(input: {
   structureType: ProposalStructureType | string;
 }): BomLine[] {
   const lines: BomLine[] = [];
+  const totalDcrPanels = input.panelCount + input.dcrAdditionalPanels;
 
   lines.push({
     sr: 1,
     item: "Solar PV Module",
     description: `Waaree TOPCON DCR Bi-${input.panelWp}Wp+ Modules`,
-    qty: String(input.panelCount),
+    qty: String(totalDcrPanels),
     capacity: `${input.panelWp}Wp+`,
     make: "Waaree",
   });

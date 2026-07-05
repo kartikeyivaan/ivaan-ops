@@ -218,6 +218,7 @@ function prepareProposal(proposal: ProjectProposalPdfRecord, money: (v: number) 
       panelWp,
       panelCount,
       systemKw,
+      dcrAdditionalPanels: revision.dcrAdditionalPanels,
       ndcrAdditionalPanels: revision.ndcrAdditionalPanels,
       ndcrPanelWp,
       inverterBrand,
@@ -314,12 +315,14 @@ export async function generateProjectProposalQuoteCardPdf(
   const proposedKwp = calculateProposedSystemKwp({
     panelWp: data.panelWp,
     panelCount: data.panelCount,
+    dcrAdditionalPanels: revision.dcrAdditionalPanels,
     ndcrPanelWp: data.ndcrPanelWp,
     ndcrAdditionalPanels: revision.ndcrAdditionalPanels,
     futureStructurePanels: revision.futureStructurePanels,
   });
   const totalPanels = totalProposedPanelCount({
     panelCount: data.panelCount,
+    dcrAdditionalPanels: revision.dcrAdditionalPanels,
     ndcrAdditionalPanels: revision.ndcrAdditionalPanels,
     futureStructurePanels: revision.futureStructurePanels,
   });
@@ -371,7 +374,7 @@ export async function generateProjectProposalQuoteCardPdf(
   );
   y = doc.y + 5;
 
-  const dcrLine = `DCR: Waaree ${data.panelWp}+Wp × ${data.panelCount}`;
+  const dcrLine = `DCR: Waaree ${data.panelWp}+Wp × ${data.panelCount + revision.dcrAdditionalPanels}`;
   const ndcrLine =
     revision.ndcrAdditionalPanels > 0
       ? ` | NDCR: Waaree ${data.ndcrPanelWp}+Wp × ${revision.ndcrAdditionalPanels}`

@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "vercel-build": "prisma migrate deploy && next build",
+    "vercel-build": "node scripts/vercel-build.mjs",
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
@@ -16,7 +16,7 @@
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
     "db:setup:local": "powershell -ExecutionPolicy Bypass -File scripts/setup-local-db.ps1",
-    "postinstall": "prisma generate"
+    "postinstall": "node scripts/prisma-generate.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

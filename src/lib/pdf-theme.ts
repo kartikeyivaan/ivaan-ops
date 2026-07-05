@@ -519,8 +519,13 @@ export function drawTable(
   return { y, columnX };
 }
 
+export type FooterOptions = {
+  documentNo?: string;
+  website?: string;
+};
+
 /** Footer drawn on every page: company contact line + page numbers. No third-party branding. */
-export function drawFooter(ctx: DocContext, companyLine: string): void {
+export function drawFooter(ctx: DocContext, companyLine: string, opts?: FooterOptions): void {
   const { doc, palette, fonts } = ctx;
   const range = doc.bufferedPageRange();
   for (let i = range.start; i < range.start + range.count; i += 1) {
@@ -538,11 +543,12 @@ export function drawFooter(ctx: DocContext, companyLine: string): void {
       .strokeColor(palette.border)
       .stroke();
 
+    const footerText = opts?.website ? `${companyLine}  |  ${opts.website}` : companyLine;
     doc
       .font(fonts.regular)
       .fontSize(8)
       .fillColor(palette.muted)
-      .text(companyLine, CONTENT_LEFT, footerY + 9, {
+      .text(footerText, CONTENT_LEFT, footerY + 9, {
         width: rightEdge - CONTENT_LEFT,
         align: "center",
         lineBreak: false,
@@ -557,6 +563,18 @@ export function drawFooter(ctx: DocContext, companyLine: string): void {
         align: "left",
         lineBreak: false,
       });
+
+    if (opts?.documentNo) {
+      doc
+        .font(fonts.regular)
+        .fontSize(7.5)
+        .fillColor(palette.faint)
+        .text(`Proposal ${opts.documentNo}`, CONTENT_LEFT, footerY + 9, {
+          width: rightEdge - CONTENT_LEFT,
+          align: "right",
+          lineBreak: false,
+        });
+    }
   }
 }
 

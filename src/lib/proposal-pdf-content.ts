@@ -5,6 +5,26 @@ export const WAAREE_INTRO = [
   "With state-of-the-art manufacturing facilities and an annual production capacity exceeding 1.5 GW, Waaree delivers reliable on-grid and off-grid solar systems backed by decades of engineering excellence.",
 ];
 
+/** Short highlight blocks for premium PDF brand card (derived from WAAREE_INTRO). */
+export const WAAREE_HIGHLIGHTS = [
+  "India's leading solar PV manufacturer",
+  "Tier-1 rated module supplier",
+  "MNRE channel partner",
+  "Turnkey EPC expertise",
+  "1.5 GW+ manufacturing capacity",
+];
+
+/** Process milestones for delivery timeline visualization. */
+export const DELIVERY_PROCESS_STEPS = [
+  "Purchase Order",
+  "Advance Payment",
+  "Material Booking / Fabrication",
+  "Dispatch",
+  "Installation",
+  "Commissioning",
+  "Net Metering",
+];
+
 export const IVAAN_SCOPE_ITEMS = [
   "Design and engineering of the rooftop solar power system",
   "Supply of all equipment including packaging, forwarding, freight, and transit insurance",

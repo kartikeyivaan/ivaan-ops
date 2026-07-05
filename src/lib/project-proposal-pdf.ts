@@ -22,22 +22,37 @@ import {
   calculateMonthlyGeneration,
 } from "@/lib/proposal-generation";
 import {
-  CLIENT_SCOPE_ITEMS,
-  CANCELLATION_POLICY,
   DELIVERY_TIMELINE,
   GENERATION_DISCLAIMER,
-  IVAAN_SCOPE_ITEMS,
   PAYMENT_MILESTONES,
-  PROPOSAL_TERMS,
   PROJECT_DOCUMENTS_PHONE,
   SUBSIDY_NOTE,
-  WAAREE_FRANCHISEE_TAGLINE,
-  WAAREE_INTRO,
   WARRANTY_FOOTNOTE,
   WARRANTY_ROWS,
 } from "@/lib/proposal-pdf-content";
 import {
-  CELL_PAD,
+  drawBankDetailsCard,
+  drawCoverLetterPremium,
+  drawDeliveryTimeline,
+  drawDualBrandProposalHeader,
+  drawGenerationKpiCards,
+  drawGstBreakupSection,
+  drawImpactCards,
+  drawPaymentTimeline,
+  drawPremiumBarChart,
+  drawPremiumBomTable,
+  drawPremiumSectionTitle,
+  drawPricingCard,
+  drawProjectSummaryCards,
+  drawScopeCards,
+  drawSignatureBlock,
+  drawTermsSection,
+  drawWaareeBrandCard,
+  drawWarrantyCards,
+  drawKpiGrid,
+  type ProposalLayoutContext,
+} from "@/lib/proposal-pdf-components";
+import {
   companyLogo,
   CONTENT_LEFT,
   CONTENT_RIGHT,
@@ -220,68 +235,6 @@ function formatQuoteCardWarranty(): string {
   return lines.join("\n");
 }
 
-function drawDualBrandHeader(
-  ctx: DocContext,
-  opts: {
-    companyCode: string;
-    companyName: string;
-    title: string;
-    meta: Array<[string, string]>;
-    compact?: boolean;
-  },
-): number {
-  const { doc, palette, fonts } = ctx;
-  const top = MARGIN_TOP;
-  const iseLogo = companyLogo(opts.companyCode);
-  const waaree = waareeLogo();
-  const logoH = opts.compact ? 42 : 48;
-
-  if (iseLogo) {
-    doc.image(iseLogo, CONTENT_LEFT, top, { fit: [150, logoH] });
-  } else {
-    doc.font(fonts.bold).fontSize(14).fillColor(palette.ink).text(opts.companyName, CONTENT_LEFT, top);
-  }
-
-  if (waaree) {
-    doc.image(waaree, CONTENT_RIGHT - 120, top, { fit: [110, logoH] });
-  }
-
-  const titleY = top + logoH + (opts.compact ? 4 : 8);
-  doc
-    .font(fonts.bold)
-    .fontSize(opts.compact ? 14 : 17)
-    .fillColor(palette.primary)
-    .text(opts.title.toUpperCase(), CONTENT_LEFT, titleY, { width: CONTENT_WIDTH, align: "center" });
-
-  doc
-    .font(fonts.bold)
-    .fontSize(opts.compact ? 7.5 : 8.5)
-    .fillColor(palette.accent)
-    .text(WAAREE_FRANCHISEE_TAGLINE, CONTENT_LEFT, doc.y + 2, {
-      width: CONTENT_WIDTH,
-      align: "center",
-    });
-
-  let metaY = doc.y + (opts.compact ? 6 : 10);
-  doc.fontSize(opts.compact ? 8 : 8.5);
-  for (const [label, value] of opts.meta) {
-    doc.font(fonts.regular).fillColor(palette.muted).text(label, CONTENT_LEFT, metaY, { width: 130 });
-    doc.font(fonts.bold).fillColor(palette.ink).text(value, CONTENT_LEFT + 132, metaY, {
-      width: CONTENT_WIDTH - 132,
-    });
-    metaY += opts.compact ? 12 : 13;
-  }
-
-  doc
-    .moveTo(CONTENT_LEFT, metaY + 2)
-    .lineTo(CONTENT_RIGHT, metaY + 2)
-    .lineWidth(0.75)
-    .strokeColor(palette.border)
-    .stroke();
-
-  return metaY + 8;
-}
-
 function drawCommercialBlock(
   ctx: DocContext,
   data: PreparedProposal,
@@ -343,238 +296,6 @@ function drawCommercialBlock(
   );
 
   return doc.y + (compact ? 8 : 10);
-}
-
-function drawBulletList(
-  ctx: DocContext,
-  items: string[],
-  x: number,
-  y: number,
-  width: number,
-  fontSize = 8.5,
-): number {
-  const { doc, palette, fonts } = ctx;
-  doc.font(fonts.regular).fontSize(fontSize).fillColor(palette.ink);
-  for (const item of items) {
-    doc.text("•", x, y, { width: 10 });
-    doc.text(item, x + 10, y, { width: width - 10 });
-    y = doc.y + 2;
-  }
-  return y;
-}
-
-function monthAbbrev(month: string): string {
-  return month.slice(0, 3);
-}
-
-function drawMonthlyGenerationBarChart(
-  ctx: DocContext,
-  rows: PreparedProposal["monthlyRows"],
-  top: number,
-  pageBottom: number,
-): number {
-  const { doc, palette, fonts } = ctx;
-  const chartHeight = 72;
-  const labelHeight = 16;
-  const captionHeight = 12;
-  const totalHeight = chartHeight + labelHeight + captionHeight + 10;
-
-  let y = top;
-  if (y + totalHeight > pageBottom) {
-    doc.addPage();
-    y = MARGIN_TOP;
-  }
-
-  const values = rows.map((row) => row.acEnergyKwh);
-  const maxValue = Math.max(...values);
-  const yAxisWidth = 34;
-  const chartLeft = CONTENT_LEFT + yAxisWidth;
-  const chartWidth = CONTENT_WIDTH - yAxisWidth;
-  const barGap = 4;
-  const barWidth = (chartWidth - barGap * (rows.length + 1)) / rows.length;
-  const chartTop = y + captionHeight;
-  const baseline = chartTop + chartHeight;
-
-  doc
-    .font(fonts.regular)
-    .fontSize(7.5)
-    .fillColor(palette.muted)
-    .text("Monthly Est. AC Generation (kWh) — Jalgaon, Maharashtra", CONTENT_LEFT, y, {
-      width: CONTENT_WIDTH,
-    });
-
-  doc
-    .font(fonts.regular)
-    .fontSize(6.5)
-    .fillColor(palette.faint)
-    .text(maxValue.toLocaleString("en-IN"), CONTENT_LEFT, chartTop + 2, {
-      width: yAxisWidth - 4,
-      align: "right",
-    });
-  doc.text("0", CONTENT_LEFT, baseline - 8, { width: yAxisWidth - 4, align: "right" });
-
-  doc
-    .moveTo(chartLeft, baseline)
-    .lineTo(chartLeft + chartWidth, baseline)
-    .lineWidth(0.5)
-    .strokeColor(palette.border)
-    .stroke();
-
-  rows.forEach((row, index) => {
-    const barX = chartLeft + barGap + index * (barWidth + barGap);
-    const barH = maxValue > 0 ? (row.acEnergyKwh / maxValue) * chartHeight : 0;
-    const barY = baseline - barH;
-    doc.rect(barX, barY, barWidth, barH).fill(palette.accent);
-    doc
-      .font(fonts.regular)
-      .fontSize(6.5)
-      .fillColor(palette.muted)
-      .text(monthAbbrev(row.month), barX, baseline + 3, { width: barWidth, align: "center" });
-  });
-
-  return baseline + labelHeight + 8;
-}
-
-function drawBomTable(ctx: DocContext, data: PreparedProposal, top: number, pageBottom: number): number {
-  const { doc, palette, fonts } = ctx;
-  const left = CONTENT_LEFT;
-  const scopeW = 52;
-  const tableW = CONTENT_WIDTH - scopeW;
-  const cols = [
-    { key: "sr", label: "Sr.", w: 22 },
-    { key: "item", label: "Item", w: 72 },
-    { key: "desc", label: "Description", w: 168 },
-    { key: "qty", label: "Qty", w: 42 },
-    { key: "cap", label: "Capacity", w: 58 },
-    { key: "make", label: "Make", w: 46 },
-  ] as const;
-
-  const colX: Record<string, number> = {};
-  let x = left;
-  for (const col of cols) {
-    colX[col.key] = x;
-    x += col.w;
-  }
-
-  const headerH = 20;
-  doc.rect(left, top, tableW, headerH).fill(palette.primary);
-  doc.font(fonts.bold).fontSize(7.5).fillColor(palette.primaryText);
-  for (const col of cols) {
-    doc.text(col.label, colX[col.key] + CELL_PAD, top + 6, {
-      width: col.w - CELL_PAD * 2,
-      align: col.key === "sr" || col.key === "qty" || col.key === "cap" ? "center" : "left",
-    });
-  }
-
-  let y = top + headerH;
-  const detailSpanW = cols.slice(2).reduce((sum, col) => sum + col.w, 0);
-
-  data.bom.forEach((line, index) => {
-    let rowH = 18;
-    const descW = line.spanDetailColumns ? detailSpanW - CELL_PAD * 2 : cols[2].w - CELL_PAD * 2;
-    const descH = doc.heightOfString(line.description, { width: descW }) + 8;
-    if (descH > rowH) rowH = descH;
-
-    if (y + rowH > pageBottom) {
-      doc.addPage();
-      y = MARGIN_TOP;
-      doc.rect(left, y, tableW, headerH).fill(palette.primary);
-      doc.font(fonts.bold).fontSize(7.5).fillColor(palette.primaryText);
-      for (const col of cols) {
-        doc.text(col.label, colX[col.key] + CELL_PAD, y + 6, {
-          width: col.w - CELL_PAD * 2,
-          align: col.key === "sr" || col.key === "qty" || col.key === "cap" ? "center" : "left",
-        });
-      }
-      y += headerH;
-    }
-
-    if (index % 2 === 1) {
-      doc.rect(left, y, tableW, rowH).fill(palette.zebra);
-    }
-
-    doc.font(fonts.regular).fontSize(7.5).fillColor(palette.ink);
-    if (!line.isModuleVariant) {
-      doc.text(String(line.sr), colX.sr + CELL_PAD, y + 5, { width: cols[0].w - CELL_PAD * 2, align: "center" });
-      doc.text(line.item, colX.item + CELL_PAD, y + 5, { width: cols[1].w - CELL_PAD * 2 });
-    }
-
-    if (line.spanDetailColumns) {
-      doc.text(line.description, colX.desc + CELL_PAD, y + 5, { width: detailSpanW - CELL_PAD * 2 });
-    } else {
-      doc.text(line.description, colX.desc + CELL_PAD, y + 5, { width: cols[2].w - CELL_PAD * 2 });
-      doc.text(line.qty, colX.qty + CELL_PAD, y + 5, { width: cols[3].w - CELL_PAD * 2, align: "center" });
-      doc.text(line.capacity, colX.cap + CELL_PAD, y + 5, { width: cols[4].w - CELL_PAD * 2, align: "center" });
-      doc.text(line.make, colX.make + CELL_PAD, y + 5, { width: cols[5].w - CELL_PAD * 2, align: "center" });
-    }
-
-    y += rowH;
-    doc.moveTo(left, y).lineTo(left + tableW, y).lineWidth(0.5).strokeColor(palette.border).stroke();
-  });
-
-  const tableBottom = y;
-  const tableTop = top;
-  const scopeX = left + tableW;
-  doc.rect(scopeX, tableTop, scopeW, tableBottom - tableTop).strokeColor(palette.border).stroke();
-  doc.save();
-  doc.font(fonts.bold).fontSize(8).fillColor(palette.ink);
-  const scopeText = data.proposal.company.name.toUpperCase();
-  doc.translate(scopeX + scopeW / 2, tableTop + (tableBottom - tableTop) / 2);
-  doc.rotate(-90);
-  doc.text(scopeText, -((tableBottom - tableTop) / 2) + 10, -4, {
-    width: tableBottom - tableTop - 20,
-    align: "center",
-  });
-  doc.restore();
-
-  return tableBottom + 4;
-}
-
-function drawSignatureBlock(ctx: DocContext, companyName: string, top: number, fontSize = 9): number {
-  const { doc, palette, fonts } = ctx;
-  doc.font(fonts.regular).fontSize(fontSize).fillColor(palette.muted).text(`For ${companyName}`, CONTENT_RIGHT - 200, top, {
-    width: 200,
-    align: "right",
-  });
-  doc.font(fonts.bold).fontSize(fontSize).fillColor(palette.ink).text("Authorised Signatory", CONTENT_RIGHT - 200, top + 30, {
-    width: 200,
-    align: "right",
-  });
-  return top + 48;
-}
-
-function drawCoverLetter(ctx: DocContext, data: PreparedProposal, top: number): number {
-  const { doc, palette, fonts } = ctx;
-  let y = top;
-  const { revision } = data;
-
-  doc.font(fonts.regular).fontSize(9.5).fillColor(palette.ink);
-  doc.text(formatDocumentDate(revision.proposalDate), CONTENT_LEFT, y);
-  y = doc.y + 6;
-
-  doc.font(fonts.bold).text(`Dear ${revision.customerName},`, CONTENT_LEFT, y);
-  y = doc.y + 6;
-
-  const subject = `Subject: Techno-Commercial Proposal for ${data.systemKw} kWp On-Grid Rooftop Solar (SRTPV) System.`;
-  doc.font(fonts.bold).fontSize(9).text(subject, CONTENT_LEFT, y, { width: CONTENT_WIDTH });
-  y = doc.y + 6;
-
-  const paragraphs = [
-    "With reference to our meeting and discussions, we are pleased to submit our offer for the above-mentioned on-grid solar rooftop system as per the scope defined herein.",
-    "We trust this techno-commercial proposal meets your requirements. Please feel free to contact us for any further information.",
-    "We look forward to a valuable association.",
-  ];
-  doc.font(fonts.regular).fontSize(9.5);
-  for (const paragraph of paragraphs) {
-    doc.text(paragraph, CONTENT_LEFT, y, { width: CONTENT_WIDTH });
-    y = doc.y + 6;
-  }
-
-  doc.text("Thanking you,", CONTENT_LEFT, y);
-  y = doc.y + 3;
-  doc.font(fonts.bold).text(`For ${data.proposal.company.name}`, CONTENT_LEFT, y);
-
-  return doc.y;
 }
 
 export async function generateProjectProposalQuoteCardPdf(
@@ -691,7 +412,7 @@ export async function generateProjectProposalQuoteCardPdf(
 
   const infoTop = y;
   const warrantyText = formatQuoteCardWarranty();
-  let warrantyY = sectionTitle(ctx, "Warranty", CONTENT_LEFT, infoTop, colW, 10) + 3;
+  const warrantyY = sectionTitle(ctx, "Warranty", CONTENT_LEFT, infoTop, colW, 10) + 3;
   doc.font(fonts.regular).fontSize(8.5).fillColor(palette.ink).text(warrantyText, CONTENT_LEFT, warrantyY, {
     width: colW,
   });
@@ -700,7 +421,7 @@ export async function generateProjectProposalQuoteCardPdf(
   const bankDetails = proposal.company.bankDetails || profile.bankDetails;
   let bankBottom = infoTop;
   if (bankDetails) {
-    let bankY = sectionTitle(ctx, "Bank Details", rightColX, infoTop, colW, 10) + 3;
+    const bankY = sectionTitle(ctx, "Bank Details", rightColX, infoTop, colW, 10) + 3;
     doc.font(fonts.regular).fontSize(8.5).fillColor(palette.ink).text(bankDetails, rightColX, bankY, {
       width: colW,
     });
@@ -708,7 +429,7 @@ export async function generateProjectProposalQuoteCardPdf(
   }
 
   y = Math.max(warrantyBottom, bankBottom) + 10;
-  drawSignatureBlock(ctx, proposal.company.name, y, 10);
+  drawSignatureBlock(ctx, proposal.company.name, y);
 
   const companyLine = [proposal.company.name, PROJECT_DOCUMENTS_PHONE, profile.email]
     .filter(Boolean)
@@ -728,84 +449,94 @@ export async function generateProjectProposalPdf(
   const ctx: DocContext = { doc, palette, fonts };
   const data = prepareProposal(proposal, money);
   const pageBottom = doc.page.height - MARGIN_BOTTOM;
+  const layout: ProposalLayoutContext = { ...ctx, pageBottom };
+  const { revision } = data;
 
-  // Page 1 — cover letter + project summary + BOM
-  const headerBottom = drawDualBrandHeader(ctx, {
+  const headerMeta: Array<[string, string]> = [
+    ["Proposal No.", data.documentNo],
+    ["Proposal Date", formatDocumentDate(revision.proposalDate)],
+    ["Valid Until", formatDocumentDate(revision.validityDate)],
+    ["Customer Name", revision.customerName],
+    ["Project Capacity", `${data.systemKw} kWp`],
+  ];
+  if (revision.revisionNo > 0) {
+    headerMeta.push(["Proposal Version", `Rev. ${revision.revisionNo}`]);
+  }
+
+  const headerBottom = drawDualBrandProposalHeader(ctx, {
     companyCode: proposal.company.code,
     companyName: proposal.company.name,
     title: "Techno-Commercial Proposal",
-    meta: [
-      ["Proposal No.", data.documentNo],
-      ["Date", formatDocumentDate(data.revision.proposalDate)],
-      ["Valid Until", formatDocumentDate(data.revision.validityDate)],
-    ],
+    meta: headerMeta,
   });
 
-  let y = drawCoverLetter(ctx, data, headerBottom + 4);
+  let y = drawCoverLetterPremium(
+    ctx,
+    {
+      proposalDate: revision.proposalDate,
+      customerName: revision.customerName,
+      systemKw: data.systemKw,
+      companyName: proposal.company.name,
+    },
+    headerBottom + 4,
+  );
 
-  y += 4;
-  y = sectionTitle(ctx, "Project Summary", CONTENT_LEFT, y) + 2;
+  y = drawKpiGrid(layout, [
+    { label: "Plant Capacity", value: `${data.systemKw} kWp On-Grid` },
+    { label: "Panel Technology", value: `Waaree TOPCON DCR Bi-${data.panelWp}Wp+` },
+    { label: "Inverter", value: `${data.inverterBrand} ${data.inverterKw} kW` },
+    { label: "Structure", value: structureLabel(revision.structureType) },
+    {
+      label: "Annual Generation",
+      value: `${data.generation.annualGenerationKwh.toLocaleString("en-IN")} kWh`,
+    },
+    { label: "Net Effective Investment", value: data.money(data.effectiveInvestment) },
+  ], y);
 
-  const summaryRows: Array<[string, string]> = [
+  y = drawPremiumSectionTitle(ctx, "Commercial Offer", CONTENT_LEFT, y);
+  y = drawPricingCard(layout, {
+    finalAmount: data.finalAmount,
+    subsidyEstimate: data.subsidyEstimate,
+    effectiveInvestment: data.effectiveInvestment,
+    money: data.money,
+    gstSplitNote: `GST split: ${Math.round(GST_SPLIT_LOW_WEIGHT * 100)}% supply @ ${GST_SPLIT_LOW_RATE}% (${data.money(data.gst.bucketAt5Percent)}) · ${Math.round(GST_SPLIT_HIGH_WEIGHT * 100)}% installation @ ${GST_SPLIT_HIGH_RATE}% (${data.money(data.gst.bucketAt18Percent)})`,
+  }, y);
+
+  y = drawPremiumSectionTitle(ctx, "Project Summary", CONTENT_LEFT, y);
+  y = drawProjectSummaryCards(layout, [
     ["Plant Capacity", `${data.systemKw} kWp On-Grid Rooftop`],
     ["Panel Technology", `Waaree TOPCON DCR Bi-${data.panelWp}Wp+`],
     ["Inverter", `${data.inverterBrand} ${data.inverterKw} kW On-Grid String`],
-    ["Structure", structureLabel(data.revision.structureType)],
-    ["Connection", connectionLabel(data.revision.connectionPhase)],
+    ["Structure", structureLabel(revision.structureType)],
+    ["Connection", connectionLabel(revision.connectionPhase)],
     ["Scheme", "Turnkey EPC with Net Metering (included)"],
     ["Est. Annual Generation", `${data.generation.annualGenerationKwh.toLocaleString("en-IN")} kWh`],
     ["Performance Ratio (est.)", `~${data.generation.performanceRatioPercent}%`],
-  ];
+  ], y);
 
-  doc.font(fonts.regular).fontSize(8.5).fillColor(palette.ink);
-  for (const [label, value] of summaryRows) {
-    doc.font(fonts.regular).fillColor(palette.muted).text(label, CONTENT_LEFT, y, { width: 160 });
-    doc.font(fonts.bold).fillColor(palette.ink).text(value, CONTENT_LEFT + 164, y, {
-      width: CONTENT_WIDTH - 164,
-    });
-    y = doc.y + 3;
-  }
+  y = drawPremiumSectionTitle(ctx, "Bill of Materials", CONTENT_LEFT, y);
+  y = drawPremiumBomTable(layout, { bom: data.bom, companyName: proposal.company.name }, y);
 
-  y += 4;
-  y = sectionTitle(ctx, "Bill of Materials", CONTENT_LEFT, y) + 2;
-  y = drawBomTable(ctx, data, y, pageBottom);
+  y = drawScopeCards(layout, y);
 
-  // Scope + commercial (continues after BOM; may start on page 2 if BOM overflowed)
-  y = sectionTitle(ctx, "Scope of Work (Ivaan Solar Energy)", CONTENT_LEFT, y) + 2;
-  y = drawBulletList(ctx, IVAAN_SCOPE_ITEMS, CONTENT_LEFT, y, CONTENT_WIDTH);
+  y = drawPremiumSectionTitle(ctx, "Generation Estimate", CONTENT_LEFT, y);
+  y = drawGenerationKpiCards(layout, [
+    { label: "Annual Production", value: `${data.generation.annualGenerationKwh.toLocaleString("en-IN")} kWh` },
+    { label: "Monthly Average", value: `${data.generation.monthlyAverageKwh.toLocaleString("en-IN")} kWh` },
+    {
+      label: "Specific Generation",
+      value: `${data.generation.specificGenerationKwhPerKwp.toLocaleString("en-IN")} kWh/kWp/yr`,
+    },
+    { label: "Performance Ratio", value: `~${data.generation.performanceRatioPercent}%` },
+  ], y);
 
-  y = sectionTitle(ctx, "Client Scope", CONTENT_LEFT, y) + 2;
-  y = drawBulletList(ctx, CLIENT_SCOPE_ITEMS, CONTENT_LEFT, y, CONTENT_WIDTH);
-
-  y = drawCommercialBlock(ctx, data, y, pageBottom);
-
-  // Generation + environment (continue or new page)
-  if (y + 40 > pageBottom) {
-    doc.addPage();
-    y = MARGIN_TOP;
-  } else {
-    y += 4;
-  }
-  y = sectionTitle(ctx, "Generation Estimate", CONTENT_LEFT, y) + 2;
-
-  const genMetrics: Array<[string, string]> = [
-    ["Annual Production", `${data.generation.annualGenerationKwh.toLocaleString("en-IN")} kWh`],
-    ["Monthly Average", `${data.generation.monthlyAverageKwh.toLocaleString("en-IN")} kWh`],
-    ["Specific Generation", `${data.generation.specificGenerationKwhPerKwp.toLocaleString("en-IN")} kWh/kWp/year`],
-    ["Performance Ratio", `~${data.generation.performanceRatioPercent}%`],
-  ];
-  for (const [label, value] of genMetrics) {
-    doc.font(fonts.regular).fillColor(palette.muted).text(label, CONTENT_LEFT, y, { width: 180 });
-    doc.font(fonts.bold).fillColor(palette.ink).text(value, CONTENT_LEFT + 184, y, { width: CONTENT_WIDTH - 184 });
-    y = doc.y + 3;
-  }
-  y += 2;
-  doc.font(fonts.regular).fontSize(7.5).fillColor(palette.muted).text(GENERATION_DISCLAIMER, CONTENT_LEFT, y, {
+  const { doc: pdfDoc, palette: pal } = ctx;
+  pdfDoc.font(fonts.regular).fontSize(7.5).fillColor(pal.muted).text(GENERATION_DISCLAIMER, CONTENT_LEFT, y, {
     width: CONTENT_WIDTH,
   });
-  y = doc.y + 6;
+  y = pdfDoc.y + 8;
 
-  y = drawMonthlyGenerationBarChart(ctx, data.monthlyRows, y, pageBottom);
+  y = drawPremiumBarChart(layout, data.monthlyRows, y);
 
   const monthColumns: TableColumn[] = [
     { key: "month", label: "Month", width: 90, align: "left", bold: true },
@@ -821,131 +552,54 @@ export async function generateProjectProposalPdf(
     rows: monthTableRows,
     pageBottom,
   });
-  y = monthTable.y + 8;
+  y = monthTable.y + 10;
 
-  y = sectionTitle(ctx, "Environmental Impact (25 Years)", CONTENT_LEFT, y) + 2;
-  const envMetrics: Array<[string, string]> = [
-    ["CO₂ Offset", `${data.environmental.co2OffsetMetricTons.toLocaleString("en-IN")} metric tons`],
-    ["Equivalent Trees Planted", data.environmental.equivalentTreesPlanted.toLocaleString("en-IN")],
-    ["Coal Burn Avoided", `${data.environmental.coalBurnAvoidedMetricTons.toLocaleString("en-IN")} metric tons`],
-    ["Petrol Consumption Avoided", `${data.environmental.petrolLitresAvoided.toLocaleString("en-IN")} litres`],
-    ["Equivalent km Driven", `${data.environmental.equivalentKmDriven.toLocaleString("en-IN")} km`],
-    ["Equivalent Acres of Forest", `${data.environmental.equivalentAcresOfForest.toLocaleString("en-IN")} acres/year`],
-  ];
-  for (const [label, value] of envMetrics) {
-    doc.font(fonts.regular).fillColor(palette.muted).text(label, CONTENT_LEFT, y, { width: 200 });
-    doc.font(fonts.bold).fillColor(palette.ink).text(value, CONTENT_LEFT + 204, y, { width: CONTENT_WIDTH - 204 });
-    y = doc.y + 3;
-  }
-
-  // GST, warranty, payment, Waaree intro, T&C
-  if (y + 40 > pageBottom) {
-    doc.addPage();
-    y = MARGIN_TOP;
-  } else {
-    y += 4;
-  }
-
-  y = sectionTitle(ctx, "GST Breakup", CONTENT_LEFT, y) + 2;
-  doc.font(fonts.regular).fontSize(8).fillColor(palette.muted).text(
-    `Final amount is GST inclusive. ${Math.round(GST_SPLIT_LOW_WEIGHT * 100)}% taxable at ${GST_SPLIT_LOW_RATE}% and ${Math.round(GST_SPLIT_HIGH_WEIGHT * 100)}% taxable at ${GST_SPLIT_HIGH_RATE}%.`,
-    CONTENT_LEFT,
-    y,
-    { width: CONTENT_WIDTH },
-  );
-  y = doc.y + 4;
-
-  const gstColumns: TableColumn[] = [
-    { key: "component", label: "Component", width: 170, align: "left", bold: true },
-    { key: "inclusive", label: "GST Inclusive", width: 90, align: "right" },
-    { key: "taxable", label: "Taxable Value", width: 90, align: "right" },
-    { key: "gst", label: "GST Amount", width: 90, align: "right" },
-    { key: "rate", label: "Rate", width: 55, align: "center" },
-  ];
-  const gstRows = [
+  y = drawPremiumSectionTitle(ctx, "Environmental Impact (25 Years)", CONTENT_LEFT, y);
+  y = drawImpactCards(layout, [
     {
-      component: `${Math.round(GST_SPLIT_LOW_WEIGHT * 100)}% Supply`,
-      inclusive: data.money(data.gst.bucketAt5Percent),
-      taxable: data.money(data.gst.taxableAt5Percent),
-      gst: data.money(data.gst.gstAt5Percent),
-      rate: `${GST_SPLIT_LOW_RATE}%`,
+      label: "CO₂ Offset",
+      value: `${data.environmental.co2OffsetMetricTons.toLocaleString("en-IN")} MT`,
     },
     {
-      component: `${Math.round(GST_SPLIT_HIGH_WEIGHT * 100)}% Installation`,
-      inclusive: data.money(data.gst.bucketAt18Percent),
-      taxable: data.money(data.gst.taxableAt18Percent),
-      gst: data.money(data.gst.gstAt18Percent),
-      rate: `${GST_SPLIT_HIGH_RATE}%`,
+      label: "Equivalent Trees Planted",
+      value: data.environmental.equivalentTreesPlanted.toLocaleString("en-IN"),
     },
     {
-      component: "Total",
-      inclusive: data.money(data.gst.grandTotal),
-      taxable: data.money(data.gst.totalTaxable),
-      gst: data.money(data.gst.totalGst),
-      rate: "—",
+      label: "Coal Burn Avoided",
+      value: `${data.environmental.coalBurnAvoidedMetricTons.toLocaleString("en-IN")} MT`,
     },
-  ];
-  const gstTable = drawTable(ctx, { top: y, columns: gstColumns, rows: gstRows, pageBottom });
-  y = gstTable.y + 6;
+    {
+      label: "Petrol Consumption Avoided",
+      value: `${data.environmental.petrolLitresAvoided.toLocaleString("en-IN")} L`,
+    },
+    {
+      label: "Equivalent KM Driven",
+      value: `${data.environmental.equivalentKmDriven.toLocaleString("en-IN")} km`,
+    },
+    {
+      label: "Equivalent Acres of Forest",
+      value: `${data.environmental.equivalentAcresOfForest.toLocaleString("en-IN")} ac/yr`,
+    },
+  ], y);
 
-  y = sectionTitle(ctx, "Warranty", CONTENT_LEFT, y) + 2;
-  const warrantyColumns: TableColumn[] = [
-    { key: "component", label: "Component", width: 140, align: "left", bold: true },
-    { key: "details", label: "Warranty Details", width: CONTENT_WIDTH - 140, align: "left" },
-  ];
-  const warrantyTable = drawTable(ctx, {
-    top: y,
-    columns: warrantyColumns,
-    rows: WARRANTY_ROWS.map(([component, details]) => ({ component, details })),
-    pageBottom,
-  });
-  y = warrantyTable.y + 2;
-  doc.font(fonts.regular).fontSize(8).fillColor(palette.muted).text(WARRANTY_FOOTNOTE, CONTENT_LEFT, y);
-  y = doc.y + 6;
-
-  y = sectionTitle(ctx, "Payment Schedule", CONTENT_LEFT, y) + 2;
-  y = drawBulletList(
-    ctx,
-    PAYMENT_MILESTONES.map(([milestone, detail]) => `${milestone}: ${detail}`),
-    CONTENT_LEFT,
-    y,
-    CONTENT_WIDTH,
-    8,
-  );
-
-  y = sectionTitle(ctx, "Delivery Timeline", CONTENT_LEFT, y) + 2;
-  y = drawBulletList(ctx, DELIVERY_TIMELINE, CONTENT_LEFT, y, CONTENT_WIDTH, 8);
-
-  doc.font(fonts.regular).fontSize(8.5).fillColor(palette.ink).text(`Cancellation: ${CANCELLATION_POLICY}`, CONTENT_LEFT, y, {
-    width: CONTENT_WIDTH,
-  });
-  y = doc.y + 6;
-
-  y = sectionTitle(ctx, "About Waaree", CONTENT_LEFT, y) + 2;
-  doc.font(fonts.regular).fontSize(8.5).fillColor(palette.ink);
-  for (const paragraph of WAAREE_INTRO) {
-    doc.text(paragraph, CONTENT_LEFT, y, { width: CONTENT_WIDTH });
-    y = doc.y + 4;
-  }
-
-  y = sectionTitle(ctx, "Terms & Conditions", CONTENT_LEFT, y) + 2;
-  y = drawBulletList(ctx, PROPOSAL_TERMS, CONTENT_LEFT, y, CONTENT_WIDTH, 8);
+  y = drawGstBreakupSection(layout, { money: data.money, gst: data.gst }, y);
+  y = drawWarrantyCards(layout, y);
+  y = drawPaymentTimeline(layout, y);
+  y = drawDeliveryTimeline(layout, y);
+  y = drawWaareeBrandCard(layout, y);
+  y = drawTermsSection(layout, y);
 
   const bankDetails = proposal.company.bankDetails || data.profile.bankDetails;
   if (bankDetails) {
-    y = sectionTitle(ctx, "Bank Details", CONTENT_LEFT, y) + 2;
-    doc.font(fonts.regular).fontSize(8.5).fillColor(palette.ink).text(bankDetails, CONTENT_LEFT, y, {
-      width: CONTENT_WIDTH,
-    });
-    y = doc.y + 6;
+    y = drawBankDetailsCard(layout, bankDetails, proposal.company.name, y);
+  } else {
+    y = drawSignatureBlock(ctx, proposal.company.name, y);
   }
-
-  drawSignatureBlock(ctx, proposal.company.name, y);
 
   const companyLine = [proposal.company.name, PROJECT_DOCUMENTS_PHONE, data.profile.email]
     .filter(Boolean)
-    .join("  ||  ");
-  drawFooter(ctx, companyLine);
+    .join("  |  ");
+  drawFooter(ctx, companyLine, { documentNo: data.documentNo });
 
   return collectPdfBuffer(doc);
 }

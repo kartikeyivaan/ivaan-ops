@@ -80,9 +80,12 @@ export function calculateMonthlyGeneration(annualGenerationKwh: number): Monthly
   const roundedSum = rows.reduce((sum, row) => sum + row.acEnergyKwh, 0);
   const delta = annualGenerationKwh - roundedSum;
   if (delta !== 0) {
-    const peakIndex = JALGAON_MONTHLY_SOLAR_FACTORS.indexOf(
-      Math.max(...JALGAON_MONTHLY_SOLAR_FACTORS),
-    );
+    let peakIndex = 0;
+    for (let i = 1; i < JALGAON_MONTHLY_SOLAR_FACTORS.length; i++) {
+      if (JALGAON_MONTHLY_SOLAR_FACTORS[i]! > JALGAON_MONTHLY_SOLAR_FACTORS[peakIndex]!) {
+        peakIndex = i;
+      }
+    }
     rows[peakIndex]!.acEnergyKwh += delta;
   }
 

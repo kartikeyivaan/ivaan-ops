@@ -6,7 +6,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { MoreVertical, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { CollapsibleFilterCard } from "@/components/ui/collapsible-filter-card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -118,11 +119,7 @@ export function ProductsList({
         ) : null}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Search & Filter</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-3">
+      <CollapsibleFilterCard title="Search & Filter" contentClassName="grid gap-4 md:grid-cols-3">
           <div className="space-y-2">
             <Label htmlFor="q">Search</Label>
             <Input
@@ -169,8 +166,7 @@ export function ProductsList({
               {loading ? "Searching..." : "Apply filters"}
             </Button>
           </div>
-        </CardContent>
-      </Card>
+      </CollapsibleFilterCard>
 
       <Card>
         <CardContent className="pt-6">

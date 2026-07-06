@@ -18,7 +18,8 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { CollapsibleFilterCard } from "@/components/ui/collapsible-filter-card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -423,11 +424,7 @@ export function ProjectProposalsList({
         </div>
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Filters</CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+      <CollapsibleFilterCard contentClassName="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
           <div className="space-y-2">
             <Label htmlFor="fromDate">From Date</Label>
             <Input
@@ -521,8 +518,7 @@ export function ProjectProposalsList({
               Apply Filters
             </Button>
           </div>
-        </CardContent>
-      </Card>
+      </CollapsibleFilterCard>
 
       <Card>
         <CardContent className="pt-6">

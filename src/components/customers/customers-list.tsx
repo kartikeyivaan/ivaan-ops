@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus, Upload, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { CollapsibleFilterCard } from "@/components/ui/collapsible-filter-card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -103,11 +104,7 @@ export function CustomersList({
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Search & Filter</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-4">
+      <CollapsibleFilterCard title="Search & Filter" contentClassName="grid gap-4 md:grid-cols-4">
           <div className="space-y-2">
             <Label htmlFor="q">Search</Label>
             <Input id="q" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, GST, code" />
@@ -153,8 +150,7 @@ export function CustomersList({
               {loading ? "Searching..." : "Apply filters"}
             </Button>
           </div>
-        </CardContent>
-      </Card>
+      </CollapsibleFilterCard>
 
       <Card>
         <CardContent className="pt-6">

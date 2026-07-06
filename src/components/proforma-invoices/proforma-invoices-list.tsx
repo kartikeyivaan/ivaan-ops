@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation";
 import { FileText, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { CollapsibleFilterCard } from "@/components/ui/collapsible-filter-card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -89,11 +90,7 @@ export function ProformaInvoicesList({
         ) : null}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Filters</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-4">
+      <CollapsibleFilterCard contentClassName="grid gap-4 md:grid-cols-4">
           <div className="space-y-2">
             <Label htmlFor="q">Search</Label>
             <Input
@@ -125,8 +122,7 @@ export function ProformaInvoicesList({
               {loading ? "Loading..." : "Apply"}
             </Button>
           </div>
-        </CardContent>
-      </Card>
+      </CollapsibleFilterCard>
 
       <Card>
         <CardContent className="pt-6">

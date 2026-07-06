@@ -48,77 +48,67 @@ function NavLinks({
   );
 }
 
+function BrandBlock({ compact = false }: { compact?: boolean }) {
+  return (
+    <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+      <IvaanLogo />
+      <div className="min-w-0">
+        <p className="truncate text-sm font-semibold text-slate-900">IvaanOps</p>
+        {!compact ? (
+          <p className="hidden text-xs text-slate-500 sm:block">Operational source of truth</p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function NavMenuButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label="Open navigation menu"
+      onClick={onClick}
+      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900 lg:hidden"
+    >
+      <Menu className="h-5 w-5" />
+    </button>
+  );
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { data: session } = useSession();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const roles = session?.user?.roles ?? [];
   const navItems = NAV_ITEMS.filter((item) => canAccessNav(roles, item));
+  const showCompanySwitcher = !pathname.startsWith("/sales/quotations/new");
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen w-full bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
-          <div className="flex items-center gap-3">
-            <Dialog.Root open={drawerOpen} onOpenChange={setDrawerOpen}>
-              <Dialog.Trigger asChild>
-                <button
-                  type="button"
-                  aria-label="Open navigation menu"
-                  className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900 lg:hidden"
-                >
-                  <Menu className="h-5 w-5" />
-                </button>
-              </Dialog.Trigger>
-              <Dialog.Portal>
-                <Dialog.Overlay
-                  data-drawer-overlay
-                  className="fixed inset-0 z-40 bg-slate-900/40 lg:hidden"
-                />
-                <Dialog.Content
-                  data-drawer-content
-                  aria-describedby={undefined}
-                  className="fixed inset-y-0 left-0 z-50 flex w-72 max-w-[80vw] flex-col border-r border-slate-200 bg-white shadow-xl lg:hidden"
-                >
-                  <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4">
-                    <Dialog.Title className="flex items-center gap-3">
-                      <IvaanLogo />
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">IvaanOps</p>
-                        <p className="text-xs text-slate-500">Operational source of truth</p>
-                      </div>
-                    </Dialog.Title>
-                    <Dialog.Close asChild>
-                      <button
-                        type="button"
-                        aria-label="Close navigation menu"
-                        className="flex h-9 w-9 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
-                      >
-                        <X className="h-5 w-5" />
-                      </button>
-                    </Dialog.Close>
-                  </div>
-                  <div className="flex-1 overflow-y-auto p-3">
-                    <NavLinks
-                      items={navItems}
-                      pathname={pathname}
-                      onNavigate={() => setDrawerOpen(false)}
-                    />
-                  </div>
-                </Dialog.Content>
-              </Dialog.Portal>
-            </Dialog.Root>
-            <div className="flex items-center gap-3">
-              <IvaanLogo />
-              <div>
-                <p className="text-sm font-semibold text-slate-900">IvaanOps</p>
-                <p className="text-xs text-slate-500">Operational source of truth</p>
-              </div>
+        <div className="mx-auto w-full max-w-7xl px-4 py-3 sm:hidden">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2">
+              <NavMenuButton onClick={() => setDrawerOpen(true)} />
+              <BrandBlock compact />
             </div>
+            <SignOutButton compact />
           </div>
-          <div className="flex items-center gap-3">
-            {!pathname.startsWith("/sales/quotations/new") ? <CompanySwitcher /> : null}
-            <div className="hidden text-right sm:block">
+          {showCompanySwitcher ? (
+            <div className="mt-2">
+              <CompanySwitcher />
+            </div>
+          ) : null}
+        </div>
+
+        <div className="mx-auto hidden w-full max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:flex sm:px-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <NavMenuButton onClick={() => setDrawerOpen(true)} />
+            <BrandBlock />
+          </div>
+          <div className="flex shrink-0 items-center gap-3">
+            {showCompanySwitcher ? <CompanySwitcher /> : null}
+            <div className="hidden text-right md:block">
               <p className="text-sm font-medium text-slate-900">{session?.user?.name}</p>
               <p className="text-xs text-slate-500">{roles.join(", ")}</p>
             </div>
@@ -127,11 +117,51 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 lg:grid-cols-[220px_1fr] sm:px-6">
-        <aside className="hidden h-fit rounded-xl border border-slate-200 bg-white p-3 lg:block">
+      <Dialog.Root open={drawerOpen} onOpenChange={setDrawerOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay
+            data-drawer-overlay
+            className="fixed inset-0 z-40 bg-slate-900/40 lg:hidden"
+          />
+          <Dialog.Content
+            data-drawer-content
+            aria-describedby={undefined}
+            className="fixed inset-y-0 left-0 z-50 flex w-72 max-w-[80vw] flex-col border-r border-slate-200 bg-white shadow-xl lg:hidden"
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4">
+              <Dialog.Title className="flex items-center gap-3">
+                <IvaanLogo />
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">IvaanOps</p>
+                  <p className="text-xs text-slate-500">Operational source of truth</p>
+                </div>
+              </Dialog.Title>
+              <Dialog.Close asChild>
+                <button
+                  type="button"
+                  aria-label="Close navigation menu"
+                  className="flex h-9 w-9 items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </Dialog.Close>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3">
+              <NavLinks
+                items={navItems}
+                pathname={pathname}
+                onNavigate={() => setDrawerOpen(false)}
+              />
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-4 sm:px-6 sm:py-6 lg:flex-row">
+        <aside className="hidden h-fit w-full shrink-0 rounded-xl border border-slate-200 bg-white p-3 lg:block lg:w-[220px]">
           <NavLinks items={navItems} pathname={pathname} />
         </aside>
-        <main>{children}</main>
+        <main className="min-w-0 w-full flex-1">{children}</main>
       </div>
     </div>
   );

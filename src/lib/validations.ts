@@ -382,7 +382,7 @@ export const approveDispatchCancelSchema = z.object({
   remarks: z.string().optional(),
 });
 
-export const projectProposalPricingSchema = z.object({
+const projectProposalPricingBaseSchema = z.object({
   packageId: z.string().uuid(),
   connectionPhase: z.enum(["SINGLE_PHASE", "THREE_PHASE"]),
   inverterBrandCodes: z.array(z.string().min(1)).min(1),
@@ -394,22 +394,53 @@ export const projectProposalPricingSchema = z.object({
   ndcrPanelWp: z.coerce.number().int().min(570).max(650).default(580),
   dcrAdditionalPanels: z.coerce.number().int().min(0).default(0),
   futureStructurePanels: z.coerce.number().int().min(0).default(0),
+  moduleProductId: z.string().uuid().nullable().optional(),
+  moduleQty: z.coerce.number().int().min(0).nullable().optional(),
+  inverterCapacityKw: z.coerce.number().min(0).nullable().optional(),
   discountAmount: z.coerce.number().min(0).default(0),
   additionalCostAmount: z.coerce.number().min(0).default(0),
 });
 
-export const createProjectProposalSchema = projectProposalPricingSchema.extend({
-  customerName: z.string().min(2),
-  customerMobile: z.string().min(10),
-  shortAddress: z.string().optional(),
-  salesUserId: z.string().uuid().optional(),
-  proposalDate: z.string().optional(),
-  notes: z.string().optional(),
-});
+function withStructureProvisionRule<T extends z.ZodTypeAny>(schema: T) {
+  return schema.superRefine((data, ctx) => {
+    if (data.moduleProductId) {
+      return;
+    }
+    const minStructureProvision = data.dcrAdditionalPanels + data.ndcrAdditionalPanels;
+    if (data.futureStructurePanels < minStructureProvision) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Additional structure provision must be at least ${minStructureProvision} (additional DCR + NDCR panels).`,
+        path: ["futureStructurePanels"],
+      });
+    }
+  });
+}
 
-export const updateProjectProposalSchema = createProjectProposalSchema.omit({
-  salesUserId: true,
-});
+export const projectProposalPricingSchema = withStructureProvisionRule(
+  projectProposalPricingBaseSchema,
+);
+
+export const createProjectProposalSchema = withStructureProvisionRule(
+  projectProposalPricingBaseSchema.extend({
+    customerName: z.string().min(2),
+    customerMobile: z.string().min(10),
+    shortAddress: z.string().optional(),
+    salesUserId: z.string().uuid().optional(),
+    proposalDate: z.string().optional(),
+    notes: z.string().optional(),
+  }),
+);
+
+export const updateProjectProposalSchema = withStructureProvisionRule(
+  projectProposalPricingBaseSchema.extend({
+    customerName: z.string().min(2),
+    customerMobile: z.string().min(10),
+    shortAddress: z.string().optional(),
+    proposalDate: z.string().optional(),
+    notes: z.string().optional(),
+  }),
+);
 
 export const projectProposalSearchSchema = z.object({
   q: z.string().optional(),

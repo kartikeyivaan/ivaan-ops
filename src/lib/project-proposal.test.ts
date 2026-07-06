@@ -18,6 +18,7 @@ import {
   SUBSIDY_AMOUNT,
   THREE_PHASE_CHARGE,
   calculateExtraFloorAmount,
+  calculateDcrPanelAmount,
   calculateNdcrPanelAmount,
   calculateProjectProposalPricing,
   calculateStructureAdjustmentAmount,
@@ -258,6 +259,37 @@ describe("Projects Proposal QA checklist", () => {
     ).rejects.toThrow("NDCR_NOT_APPLICABLE");
   });
 
+  it("8b. DCR panel allowed only for 530+ packages", async () => {
+    expect(calculateDcrPanelAmount(520, 1)).toBe(0);
+    expect(calculateDcrPanelAmount(530, 2)).toBe(30_000);
+    expect(calculateDcrPanelAmount(570, 1)).toBe(17_000);
+
+    const prisma520 = createMockPrisma({
+      pkg: {
+        id: "pkg-520",
+        code: "520X6",
+        panelWp: 520,
+        panelCount: 6,
+        systemKw: 3.12,
+        basePrice: 180_000,
+        isActive: true,
+        isComingSoon: false,
+      },
+      brands: [polycabBrand],
+    });
+
+    await expect(
+      resolveProjectProposalPricing(prisma520, {
+        packageId: "pkg-520",
+        connectionPhase: ProposalConnectionPhase.SINGLE_PHASE,
+        inverterBrandCodes: ["POLYCAB"],
+        structureType: ProposalStructureType.CUSTOM_FABRICATED,
+        buildingType: ProposalBuildingType.BUNGALOW,
+        dcrAdditionalPanels: 1,
+      }),
+    ).rejects.toThrow("DCR_NOT_APPLICABLE");
+  });
+
   it("9. Discount above ₹5000 requires approval", () => {
     const withinLimit = calculateProjectProposalPricing(
       buildPricingInput({ discountAmount: DISCOUNT_APPROVAL_THRESHOLD }),
@@ -392,6 +424,24 @@ describe("Projects Proposal validation schemas", () => {
       customerMobile: "123",
     });
     expect(result.success).toBe(false);
+  });
+
+  it("requires additional structure provision to cover additional DCR and NDCR panels", () => {
+    const invalid = projectProposalPricingSchema.safeParse({
+      ...validProposalPayload,
+      dcrAdditionalPanels: 2,
+      ndcrAdditionalPanels: 1,
+      futureStructurePanels: 2,
+    });
+    const valid = projectProposalPricingSchema.safeParse({
+      ...validProposalPayload,
+      dcrAdditionalPanels: 2,
+      ndcrAdditionalPanels: 1,
+      futureStructurePanels: 3,
+    });
+
+    expect(invalid.success).toBe(false);
+    expect(valid.success).toBe(true);
   });
 
   it("requires rejection reason with minimum length", () => {

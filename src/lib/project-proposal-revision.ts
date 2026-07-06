@@ -20,6 +20,9 @@ type RevisionLike = {
   dcrAdditionalPanels: number;
   ndcrAdditionalPanels: number;
   ndcrPanelWp?: number;
+  moduleProductId?: string | null;
+  moduleQty?: number | null;
+  inverterCapacityKw?: number | null;
   discountAmount: number;
   additionalCostAmount: number;
   notes?: string | null;
@@ -70,6 +73,11 @@ export function mapRevisionToFormValues(
     dcrAdditionalPanels: String(revision.dcrAdditionalPanels),
     ndcrAdditionalPanels: String(revision.ndcrAdditionalPanels),
     ndcrPanelWp: String(revision.ndcrPanelWp ?? 580),
+    moduleProductId: revision.moduleProductId ?? "",
+    moduleQty: String(revision.moduleQty ?? ""),
+    inverterCapacityKw: revision.inverterCapacityKw
+      ? String(revision.inverterCapacityKw)
+      : "",
     discountAmount: String(revision.discountAmount),
     additionalCostAmount: String(revision.additionalCostAmount),
     notes: revision.notes ?? "",

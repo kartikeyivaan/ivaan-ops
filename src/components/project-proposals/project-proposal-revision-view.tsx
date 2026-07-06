@@ -184,7 +184,7 @@ export function ProjectProposalRevisionView({
               {formatMoney(revision.extraFloorAmount)}
             </p>
             <p>
-              <span className="text-slate-500">Future structure:</span>{" "}
+              <span className="text-slate-500">Additional structure provision:</span>{" "}
               {formatMoney(revision.futureStructureAmount)} ({revision.futureStructurePanels} panels)
             </p>
             <p>

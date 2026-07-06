@@ -51,6 +51,9 @@ export async function POST(request: Request) {
       dcrAdditionalPanels: parsed.data.dcrAdditionalPanels,
       discountAmount: parsed.data.discountAmount,
       additionalCostAmount: parsed.data.additionalCostAmount,
+      moduleProductId: parsed.data.moduleProductId,
+      moduleQty: parsed.data.moduleQty,
+      inverterCapacityKw: parsed.data.inverterCapacityKw,
     });
 
     return NextResponse.json({

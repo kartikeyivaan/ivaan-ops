@@ -191,4 +191,28 @@ describe("project proposal pricing", () => {
     expect(gst.grandTotal).toBe(247_500);
     expect(gst.totalTaxable + gst.totalGst).toBeCloseTo(247_500, 2);
   });
+
+  it("calculates NDCR complete project with no base price or subsidy", () => {
+    const result = calculateProjectProposalPricing(
+      buildInput({
+        package: {
+          ...basePackage,
+          code: "NDCR_COMPLETE",
+          panelWp: 0,
+          panelCount: 0,
+          systemKw: 0,
+          basePrice: 0,
+        },
+        ndcrComplete: true,
+        inverterCapacityKw: 5,
+        additionalCostAmount: 250_000,
+      }),
+    );
+
+    expect(result.basePackageAmount).toBe(0);
+    expect(result.subsidyEstimate).toBe(0);
+    expect(result.systemKw).toBe(5);
+    expect(result.subtotalBeforeDiscount).toBe(0);
+    expect(result.finalAmount).toBe(250_000);
+  });
 });

@@ -64,6 +64,8 @@ export type ProjectProposalPricingInput = {
   futureStructurePanels: number;
   discountAmount: number;
   additionalCostAmount: number;
+  ndcrComplete?: boolean;
+  inverterCapacityKw?: number;
 };
 
 export type ProjectProposalGstPdfBreakdown = {
@@ -210,27 +212,30 @@ export function backCalculateGstForPdf(
 export function calculateProjectProposalPricing(
   input: ProjectProposalPricingInput,
 ): ProjectProposalPricingBreakdown {
-  const systemKw = input.package.systemKw;
-  const basePackageAmount = roundMoney(input.package.basePrice);
+  const ndcrComplete = input.ndcrComplete === true;
+  const systemKw = ndcrComplete
+    ? (input.inverterCapacityKw ?? 0)
+    : input.package.systemKw;
+  const basePackageAmount = ndcrComplete ? 0 : roundMoney(input.package.basePrice);
   const brandUpgradeAmount = calculateBrandUpgradeAmount(input.inverterBrands);
-  const inverterUpgradeAmount = roundMoney(input.inverterUpgrade?.upgradeAmount ?? 0);
+  const inverterUpgradeAmount = ndcrComplete
+    ? 0
+    : roundMoney(input.inverterUpgrade?.upgradeAmount ?? 0);
   const threePhaseAmount = calculateThreePhaseAmount(input.connectionPhase);
   const structureAdjustmentAmount = calculateStructureAdjustmentAmount(
     input.structureType,
     systemKw,
   );
   const extraFloorAmount = calculateExtraFloorAmount(input.extraFloors);
-  const futureStructureAmount = calculateFutureStructureAmount(
-    input.futureStructurePanels,
-  );
-  const ndcrPanelAmount = calculateNdcrPanelAmount(
-    input.package.panelWp,
-    input.ndcrAdditionalPanels,
-  );
-  const dcrPanelAmount = calculateDcrPanelAmount(
-    input.package.panelWp,
-    input.dcrAdditionalPanels,
-  );
+  const futureStructureAmount = ndcrComplete
+    ? 0
+    : calculateFutureStructureAmount(input.futureStructurePanels);
+  const ndcrPanelAmount = ndcrComplete
+    ? 0
+    : calculateNdcrPanelAmount(input.package.panelWp, input.ndcrAdditionalPanels);
+  const dcrPanelAmount = ndcrComplete
+    ? 0
+    : calculateDcrPanelAmount(input.package.panelWp, input.dcrAdditionalPanels);
   const discountAmount = roundMoney(Math.max(0, input.discountAmount));
   const additionalCostAmount = roundMoney(Math.max(0, input.additionalCostAmount));
 
@@ -249,7 +254,7 @@ export function calculateProjectProposalPricing(
   const finalAmount = roundMoney(
     Math.max(0, subtotalBeforeDiscount - discountAmount + additionalCostAmount),
   );
-  const subsidyEstimate = calculateSubsidyEstimate(systemKw);
+  const subsidyEstimate = ndcrComplete ? 0 : calculateSubsidyEstimate(systemKw);
   const effectiveCustomerInvestment = roundMoney(
     Math.max(0, finalAmount - subsidyEstimate),
   );

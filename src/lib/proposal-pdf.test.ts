@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildProposalBom, calculateProposedSystemKwp, totalProposedPanelCount } from "@/lib/proposal-bom";
+import {
+  buildProposalBom,
+  calculateProposedSystemKwp,
+  calculateStructureCapacity,
+  calculateTotalSystemKw,
+  totalProposedPanelCount,
+} from "@/lib/proposal-bom";
 import {
   calculateEnvironmentalImpact,
   calculateGenerationEstimate,
@@ -75,6 +81,41 @@ describe("proposal bom", () => {
         futureStructurePanels: 2,
       }),
     ).toBe(12);
+  });
+
+  it("calculates total system kW without future structure panels", () => {
+    expect(
+      calculateTotalSystemKw({
+        panelWp: 530,
+        panelCount: 6,
+        dcrAdditionalPanels: 0,
+        ndcrPanelWp: 580,
+        ndcrAdditionalPanels: 0,
+      }),
+    ).toBe(3.18);
+    expect(
+      calculateTotalSystemKw({
+        panelWp: 570,
+        panelCount: 9,
+        dcrAdditionalPanels: 0,
+        ndcrPanelWp: 580,
+        ndcrAdditionalPanels: 0,
+      }),
+    ).toBe(5.13);
+    expect(
+      calculateTotalSystemKw({
+        panelWp: 570,
+        panelCount: 6,
+        dcrAdditionalPanels: 2,
+        ndcrPanelWp: 580,
+        ndcrAdditionalPanels: 1,
+      }),
+    ).toBe(5.14);
+  });
+
+  it("calculates structure capacity from base panels and future provision", () => {
+    expect(calculateStructureCapacity(6, 0)).toBe(6);
+    expect(calculateStructureCapacity(9, 3)).toBe(12);
   });
 });
 

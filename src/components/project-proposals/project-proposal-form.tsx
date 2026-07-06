@@ -5,7 +5,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, ArrowLeft, Save } from "lucide-react";
 import { DISCOUNT_APPROVAL_THRESHOLD, getDcrPanelCharge, PROJECT_PROPOSAL_VALIDITY_DAYS } from "@/lib/project-proposal-pricing";
+import {
+  calculateStructureCapacity,
+  calculateTotalSystemKw,
+  formatDcrPanelLabel,
+  formatNdcrPanelLabel,
+  resolveInverterKw,
+} from "@/lib/proposal-bom";
 import { formatRevisionProposalLabel } from "@/lib/project-proposals";
+import { isNdcrCompletePackage } from "@/lib/project-proposal-packages";
 import { formatDocumentDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,6 +49,13 @@ type UpgradeMaster = {
   upgradeAmount: number;
 };
 
+type ModuleProductMaster = {
+  id: string;
+  displayName: string;
+  capacity: number;
+  capacityUnit: string;
+};
+
 type PricingSummary = {
   subtotalBeforeDiscount: number;
   discountAmount: number;
@@ -68,6 +83,9 @@ export type ProjectProposalFormValues = {
   dcrAdditionalPanels: string;
   ndcrAdditionalPanels: string;
   ndcrPanelWp: string;
+  moduleProductId: string;
+  moduleQty: string;
+  inverterCapacityKw: string;
   discountAmount: string;
   additionalCostAmount: string;
   notes: string;
@@ -88,6 +106,9 @@ function formatMoney(value: number) {
 }
 
 function packageLabel(pkg: PackageMaster) {
+  if (isNdcrCompletePackage(pkg.code)) {
+    return pkg.name;
+  }
   return `${pkg.panelWp}+Wp × ${pkg.panelCount} panels`;
 }
 
@@ -111,6 +132,7 @@ export function ProjectProposalForm({
   const [packages, setPackages] = useState<PackageMaster[]>([]);
   const [brands, setBrands] = useState<BrandMaster[]>([]);
   const [upgrades, setUpgrades] = useState<UpgradeMaster[]>([]);
+  const [moduleProducts, setModuleProducts] = useState<ModuleProductMaster[]>([]);
   const [mastersLoading, setMastersLoading] = useState(true);
 
   const [customerName, setCustomerName] = useState(initialValues?.customerName ?? "");
@@ -146,6 +168,11 @@ export function ProjectProposalForm({
     initialValues?.ndcrAdditionalPanels ?? "0",
   );
   const [ndcrPanelWp, setNdcrPanelWp] = useState(initialValues?.ndcrPanelWp ?? "580");
+  const [moduleProductId, setModuleProductId] = useState(initialValues?.moduleProductId ?? "");
+  const [moduleQty, setModuleQty] = useState(initialValues?.moduleQty ?? "");
+  const [inverterCapacityKw, setInverterCapacityKw] = useState(
+    initialValues?.inverterCapacityKw ?? "",
+  );
   const [discountAmount, setDiscountAmount] = useState(initialValues?.discountAmount ?? "0");
   const [additionalCostAmount, setAdditionalCostAmount] = useState(
     initialValues?.additionalCostAmount ?? "0",
@@ -164,9 +191,29 @@ export function ProjectProposalForm({
   );
 
   const selectedPackage = packages.find((pkg) => pkg.id === packageId) ?? null;
-  const ndcrApplicable = (selectedPackage?.panelWp ?? 0) >= 570;
-  const dcrApplicable = (selectedPackage?.panelWp ?? 0) >= 530;
+  const isNdcrComplete = isNdcrCompletePackage(selectedPackage?.code);
+  const ndcrApplicable = !isNdcrComplete && (selectedPackage?.panelWp ?? 0) >= 570;
+  const dcrApplicable = !isNdcrComplete && (selectedPackage?.panelWp ?? 0) >= 530;
   const dcrPanelCharge = selectedPackage ? getDcrPanelCharge(selectedPackage.panelWp) : 0;
+
+  const minStructureProvision = useMemo(() => {
+    const dcr = dcrApplicable ? Number(dcrAdditionalPanels) || 0 : 0;
+    const ndcr = ndcrApplicable ? Number(ndcrAdditionalPanels) || 0 : 0;
+    return dcr + ndcr;
+  }, [dcrApplicable, dcrAdditionalPanels, ndcrApplicable, ndcrAdditionalPanels]);
+
+  const structureProvisionValue = Number(futureStructurePanels) || 0;
+  const structureProvisionInvalid =
+    !isNdcrComplete && structureProvisionValue < minStructureProvision;
+
+  const selectedModuleProduct =
+    moduleProducts.find((product) => product.id === moduleProductId) ?? null;
+
+  const ndcrFormInvalid =
+    isNdcrComplete &&
+    (!moduleProductId ||
+      (Number(moduleQty) || 0) <= 0 ||
+      (Number(inverterCapacityKw) || 0) <= 0);
 
   const applicableUpgrades = useMemo(() => {
     if (!selectedPackage) return [];
@@ -174,6 +221,84 @@ export function ProjectProposalForm({
       (upgrade) => upgrade.packagePanelCount === selectedPackage.panelCount,
     );
   }, [selectedPackage, upgrades]);
+
+  const selectedInverterUpgrade = applicableUpgrades.find(
+    (upgrade) => upgrade.id === inverterUpgradeId,
+  ) ?? null;
+
+  const systemSummary = useMemo(() => {
+    if (!selectedPackage) return null;
+
+    const inverterBrandNames = brands
+      .filter((brand) => inverterBrandCodes.includes(brand.code))
+      .map((brand) => brand.name);
+
+    if (isNdcrComplete) {
+      const qty = Number(moduleQty) || 0;
+      const panelWp = selectedModuleProduct?.capacity ?? 0;
+      const totalSystemKw =
+        panelWp > 0 && qty > 0
+          ? Math.round(((panelWp * qty) / 1000) * 100) / 100
+          : 0;
+      const capacityKw = Number(inverterCapacityKw) || 0;
+
+      return {
+        totalSystemKw,
+        dcrPanelLabel: selectedModuleProduct?.displayName ?? "Module",
+        dcrQty: qty,
+        ndcrPanelLabel: "",
+        ndcrQty: 0,
+        inverterLabel: inverterBrandNames.length > 0 ? inverterBrandNames.join(" / ") : "—",
+        inverterCapacity: capacityKw > 0 ? `${capacityKw} kW` : "—",
+        structureCapacity: qty,
+      };
+    }
+
+    const dcrAdditional = dcrApplicable ? Number(dcrAdditionalPanels) || 0 : 0;
+    const ndcrQty = ndcrApplicable ? Number(ndcrAdditionalPanels) || 0 : 0;
+    const ndcrWp = ndcrApplicable ? Number(ndcrPanelWp) || 580 : 580;
+    const futurePanels = Number(futureStructurePanels) || 0;
+    const dcrQty = selectedPackage.panelCount + dcrAdditional;
+
+    const totalSystemKw = calculateTotalSystemKw({
+      panelWp: selectedPackage.panelWp,
+      panelCount: selectedPackage.panelCount,
+      dcrAdditionalPanels: dcrAdditional,
+      ndcrPanelWp: ndcrWp,
+      ndcrAdditionalPanels: ndcrQty,
+    });
+
+    const inverterKw = resolveInverterKw(
+      selectedPackage.systemKw,
+      selectedInverterUpgrade?.upgradeKw ?? null,
+    );
+
+    return {
+      totalSystemKw,
+      dcrPanelLabel: formatDcrPanelLabel(selectedPackage.panelWp),
+      dcrQty,
+      ndcrPanelLabel: formatNdcrPanelLabel(ndcrWp),
+      ndcrQty,
+      inverterLabel: inverterBrandNames.length > 0 ? inverterBrandNames.join(" / ") : "—",
+      inverterCapacity: `${inverterKw} kW`,
+      structureCapacity: calculateStructureCapacity(selectedPackage.panelCount, futurePanels),
+    };
+  }, [
+    selectedPackage,
+    isNdcrComplete,
+    selectedModuleProduct,
+    moduleQty,
+    inverterCapacityKw,
+    dcrApplicable,
+    dcrAdditionalPanels,
+    ndcrApplicable,
+    ndcrAdditionalPanels,
+    ndcrPanelWp,
+    futureStructurePanels,
+    brands,
+    inverterBrandCodes,
+    selectedInverterUpgrade,
+  ]);
 
   useEffect(() => {
     async function loadMasters() {
@@ -190,10 +315,12 @@ export function ProjectProposalForm({
       setPackages(data.packages);
       setBrands(data.brands);
       setUpgrades(data.upgrades);
+      setModuleProducts(data.moduleProducts ?? []);
 
       if (mode === "create" && !packageId) {
         const firstActive = data.packages.find(
-          (pkg: PackageMaster) => pkg.isActive && !pkg.isComingSoon,
+          (pkg: PackageMaster) =>
+            pkg.isActive && !pkg.isComingSoon && !isNdcrCompletePackage(pkg.code),
         );
         if (firstActive) {
           setPackageId(firstActive.id);
@@ -201,12 +328,12 @@ export function ProjectProposalForm({
       }
 
       if (mode === "create" && inverterBrandCodes.length === 0) {
-        const defaults = data.brands
-          .filter((brand: BrandMaster) => brand.isActive && !brand.isComingSoon)
-          .filter((brand: BrandMaster) => brand.code === "POLYCAB" || brand.code === "DEYE")
-          .map((brand: BrandMaster) => brand.code);
-        if (defaults.length > 0) {
-          setInverterBrandCodes(defaults);
+        const polycab = data.brands.find(
+          (brand: BrandMaster) =>
+            brand.code === "POLYCAB" && brand.isActive && !brand.isComingSoon,
+        );
+        if (polycab) {
+          setInverterBrandCodes([polycab.code]);
         }
       }
     }
@@ -217,6 +344,11 @@ export function ProjectProposalForm({
 
   useEffect(() => {
     if (!selectedPackage || !packageId || inverterBrandCodes.length === 0) {
+      setPricing(null);
+      return;
+    }
+
+    if (isNdcrComplete && ndcrFormInvalid) {
       setPricing(null);
       return;
     }
@@ -232,14 +364,25 @@ export function ProjectProposalForm({
           packageId,
           connectionPhase,
           inverterBrandCodes,
-          inverterUpgradeId: inverterUpgradeId || null,
+          inverterUpgradeId: isNdcrComplete ? null : inverterUpgradeId || null,
           structureType,
           buildingType,
           extraFloors: Number(extraFloors) || 0,
-          futureStructurePanels: Number(futureStructurePanels) || 0,
-          dcrAdditionalPanels: dcrApplicable ? Number(dcrAdditionalPanels) || 0 : 0,
-          ndcrAdditionalPanels: ndcrApplicable ? Number(ndcrAdditionalPanels) || 0 : 0,
+          futureStructurePanels: isNdcrComplete ? 0 : Number(futureStructurePanels) || 0,
+          dcrAdditionalPanels: isNdcrComplete
+            ? 0
+            : dcrApplicable
+              ? Number(dcrAdditionalPanels) || 0
+              : 0,
+          ndcrAdditionalPanels: isNdcrComplete
+            ? 0
+            : ndcrApplicable
+              ? Number(ndcrAdditionalPanels) || 0
+              : 0,
           ndcrPanelWp: ndcrApplicable ? Number(ndcrPanelWp) || 580 : 580,
+          moduleProductId: isNdcrComplete ? moduleProductId || null : null,
+          moduleQty: isNdcrComplete ? Number(moduleQty) || 0 : null,
+          inverterCapacityKw: isNdcrComplete ? Number(inverterCapacityKw) || 0 : null,
           discountAmount: Number(discountAmount) || 0,
           additionalCostAmount: Number(additionalCostAmount) || 0,
         }),
@@ -284,7 +427,20 @@ export function ProjectProposalForm({
     ndcrApplicable,
     dcrApplicable,
     selectedPackage,
+    isNdcrComplete,
+    ndcrFormInvalid,
+    moduleProductId,
+    moduleQty,
+    inverterCapacityKw,
   ]);
+
+  useEffect(() => {
+    if (!isNdcrComplete) return;
+    setInverterUpgradeId("");
+    setFutureStructurePanels("0");
+    setDcrAdditionalPanels("0");
+    setNdcrAdditionalPanels("0");
+  }, [isNdcrComplete, packageId]);
 
   useEffect(() => {
     if (!applicableUpgrades.some((upgrade) => upgrade.id === inverterUpgradeId)) {
@@ -304,6 +460,14 @@ export function ProjectProposalForm({
     }
   }, [dcrApplicable]);
 
+  useEffect(() => {
+    if (isNdcrComplete) return;
+    const current = Number(futureStructurePanels) || 0;
+    if (current < minStructureProvision) {
+      setFutureStructurePanels(String(minStructureProvision));
+    }
+  }, [minStructureProvision, futureStructurePanels, isNdcrComplete]);
+
   function toggleBrand(code: string, enabled: boolean) {
     setInverterBrandCodes((current) => {
       if (enabled) {
@@ -322,14 +486,25 @@ export function ProjectProposalForm({
       packageId,
       connectionPhase,
       inverterBrandCodes,
-      inverterUpgradeId: inverterUpgradeId || null,
+      inverterUpgradeId: isNdcrComplete ? null : inverterUpgradeId || null,
       structureType,
       buildingType,
       extraFloors: Number(extraFloors) || 0,
-      futureStructurePanels: Number(futureStructurePanels) || 0,
-      dcrAdditionalPanels: dcrApplicable ? Number(dcrAdditionalPanels) || 0 : 0,
-      ndcrAdditionalPanels: ndcrApplicable ? Number(ndcrAdditionalPanels) || 0 : 0,
+      futureStructurePanels: isNdcrComplete ? 0 : Number(futureStructurePanels) || 0,
+      dcrAdditionalPanels: isNdcrComplete
+        ? 0
+        : dcrApplicable
+          ? Number(dcrAdditionalPanels) || 0
+          : 0,
+      ndcrAdditionalPanels: isNdcrComplete
+        ? 0
+        : ndcrApplicable
+          ? Number(ndcrAdditionalPanels) || 0
+          : 0,
       ndcrPanelWp: ndcrApplicable ? Number(ndcrPanelWp) || 580 : 580,
+      moduleProductId: isNdcrComplete ? moduleProductId || null : null,
+      moduleQty: isNdcrComplete ? Number(moduleQty) || 0 : null,
+      inverterCapacityKw: isNdcrComplete ? Number(inverterCapacityKw) || 0 : null,
       discountAmount: Number(discountAmount) || 0,
       additionalCostAmount: Number(additionalCostAmount) || 0,
       notes: notes.trim() || undefined,
@@ -519,13 +694,18 @@ export function ProjectProposalForm({
               ) : (
                 packages.map((pkg) => {
                   const disabled = !pkg.isActive || pkg.isComingSoon;
+                  const ndcrPackage = isNdcrCompletePackage(pkg.code);
                   return (
                     <label
                       key={pkg.id}
                       className={`rounded-lg border p-4 text-sm ${
+                        ndcrPackage ? "md:col-span-2" : ""
+                      } ${
                         packageId === pkg.id
                           ? "border-emerald-500 bg-emerald-50"
-                          : "border-slate-200"
+                          : ndcrPackage
+                            ? "border-sky-200 bg-sky-50/40"
+                            : "border-slate-200"
                       } ${disabled ? "opacity-60" : "cursor-pointer"}`}
                     >
                       <div className="flex items-start gap-3">
@@ -539,9 +719,13 @@ export function ProjectProposalForm({
                         />
                         <div>
                           <p className="font-medium text-slate-900">{packageLabel(pkg)}</p>
-                          <p className="text-slate-600">{pkg.name}</p>
+                          {!isNdcrCompletePackage(pkg.code) ? (
+                            <p className="text-slate-600">{pkg.name}</p>
+                          ) : null}
                           <p className="mt-1 text-slate-500">
-                            {pkg.systemKw} kW · {formatMoney(pkg.basePrice)}
+                            {isNdcrCompletePackage(pkg.code)
+                              ? "Non-subsidy · enter total cost in additional cost"
+                              : `${pkg.systemKw} kW · ${formatMoney(pkg.basePrice)}`}
                           </p>
                           {pkg.isComingSoon ? (
                             <p className="mt-1 text-xs font-medium text-amber-700">Coming Soon</p>
@@ -592,6 +776,54 @@ export function ProjectProposalForm({
             </CardContent>
           </Card>
 
+          {isNdcrComplete ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">NDCR Module & Inverter</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="moduleProductId">Select Panel (Modules)</Label>
+                  <select
+                    id="moduleProductId"
+                    value={moduleProductId}
+                    onChange={(event) => setModuleProductId(event.target.value)}
+                    className={selectClassName}
+                  >
+                    <option value="">Select module product</option>
+                    {moduleProducts.map((product) => (
+                      <option key={product.id} value={product.id}>
+                        {product.displayName} ({product.capacity} {product.capacityUnit})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="moduleQty">Panel Quantity</Label>
+                  <Input
+                    id="moduleQty"
+                    type="number"
+                    min={1}
+                    value={moduleQty}
+                    onChange={(event) => setModuleQty(event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="inverterCapacityKw">Inverter Capacity (kW)</Label>
+                  <Input
+                    id="inverterCapacityKw"
+                    type="number"
+                    min={0}
+                    step={0.1}
+                    value={inverterCapacityKw}
+                    onChange={(event) => setInverterCapacityKw(event.target.value)}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {!isNdcrComplete ? (
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Inverter Upgrade</CardTitle>
@@ -617,6 +849,7 @@ export function ProjectProposalForm({
               ) : null}
             </CardContent>
           </Card>
+          ) : null}
 
           <Card>
             <CardHeader>
@@ -683,21 +916,33 @@ export function ProjectProposalForm({
             </CardContent>
           </Card>
 
+          {!isNdcrComplete ? (
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Add-ons</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="futureStructurePanels">Future Structure Provision Panels</Label>
+                <Label htmlFor="futureStructurePanels">
+                  Additional Structure Provision (# of Panels)
+                </Label>
                 <Input
                   id="futureStructurePanels"
                   type="number"
-                  min={0}
+                  min={minStructureProvision}
                   value={futureStructurePanels}
                   onChange={(event) => setFutureStructurePanels(event.target.value)}
+                  aria-invalid={structureProvisionInvalid}
                 />
-                <p className="text-xs text-slate-500">₹3,000 per additional future panel.</p>
+                <p className="text-xs text-slate-500">
+                  ₹3,000 per panel. Must be ≥ additional DCR + NDCR panel count
+                  {minStructureProvision > 0 ? ` (minimum ${minStructureProvision})` : ""}.
+                </p>
+                {structureProvisionInvalid ? (
+                  <p className="text-xs text-red-600">
+                    Must be at least {minStructureProvision} to cover additional DCR and NDCR panels.
+                  </p>
+                ) : null}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="dcrAdditionalPanels">Additional DCR Panels</Label>
@@ -711,13 +956,11 @@ export function ProjectProposalForm({
                 />
                 <p className="text-xs text-slate-500">
                   {dcrApplicable
-                    ? dcrPanelCharge === 17_000
-                      ? "₹17,000 per additional DCR panel for 570+Wp packages."
-                      : "₹15,000 per additional DCR panel for 530+Wp packages."
-                    : "Available only for 530+Wp packages."}
+                    ? `₹15,000 per panel (530+ Wp), ₹17,000 per panel (570+ Wp). Current rate: ₹${dcrPanelCharge.toLocaleString("en-IN")}.`
+                    : "Available only for 530+ Wp packages."}
                 </p>
               </div>
-              {dcrApplicable && Number(dcrAdditionalPanels) > 0 && selectedPackage ? (
+              {dcrApplicable && selectedPackage ? (
                 <div className="space-y-2">
                   <Label htmlFor="dcrPanelWp">DCR Panel Rating (Wp)</Label>
                   <Input
@@ -727,7 +970,7 @@ export function ProjectProposalForm({
                     className="bg-slate-50"
                   />
                   <p className="text-xs text-slate-500">
-                    Same as selected package ({selectedPackage.panelWp}+ Wp).
+                    Auto-selected from base package ({selectedPackage.panelWp}+ Wp).
                   </p>
                 </div>
               ) : null}
@@ -763,6 +1006,7 @@ export function ProjectProposalForm({
               ) : null}
             </CardContent>
           </Card>
+          ) : null}
 
           <Card>
             <CardHeader>
@@ -798,7 +1042,9 @@ export function ProjectProposalForm({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="additionalCostAmount">Additional Cost</Label>
+                <Label htmlFor="additionalCostAmount">
+                  {isNdcrComplete ? "Total Project Cost" : "Additional Cost"}
+                </Label>
                 <Input
                   id="additionalCostAmount"
                   type="number"
@@ -806,6 +1052,12 @@ export function ProjectProposalForm({
                   value={additionalCostAmount}
                   onChange={(event) => setAdditionalCostAmount(event.target.value)}
                 />
+                {isNdcrComplete ? (
+                  <p className="text-xs text-slate-500">
+                    Enter the complete NDCR project cost here. Connection, structure and brand
+                    charges are added on top.
+                  </p>
+                ) : null}
               </div>
 
               {pricing?.requiresManagerApproval ? (
@@ -834,7 +1086,9 @@ export function ProjectProposalForm({
                   </span>
                 </div>
                 <div className="flex justify-between gap-3">
-                  <span className="text-slate-600">Additional cost</span>
+                  <span className="text-slate-600">
+                    {isNdcrComplete ? "Total project cost" : "Additional cost"}
+                  </span>
                   <span className="font-medium text-slate-900">
                     {pricing ? formatMoney(pricing.additionalCostAmount) : pricingLoading ? "…" : "—"}
                   </span>
@@ -866,7 +1120,14 @@ export function ProjectProposalForm({
               <Button
                 className="hidden w-full xl:flex"
                 onClick={() => void handleSave()}
-                disabled={saving || mastersLoading || !customerName.trim() || !customerMobile.trim()}
+                disabled={
+                  saving ||
+                  mastersLoading ||
+                  !customerName.trim() ||
+                  !customerMobile.trim() ||
+                  structureProvisionInvalid ||
+                  ndcrFormInvalid
+                }
               >
                 <Save className="h-4 w-4" />
                 {saving
@@ -877,6 +1138,48 @@ export function ProjectProposalForm({
                       ? "Save Revision Draft"
                       : "Update Draft"}
               </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">System Summary</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2 rounded-lg bg-slate-50 p-4 text-sm">
+                <div className="flex justify-between gap-3">
+                  <span className="text-slate-600">Total System</span>
+                  <span className="font-medium text-slate-900">
+                    {systemSummary ? `${systemSummary.totalSystemKw} kW` : "—"}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <span className="text-slate-600">{systemSummary?.dcrPanelLabel ?? "DCR Panels"}</span>
+                  <span className="font-medium text-slate-900">
+                    {systemSummary ? `× ${systemSummary.dcrQty}` : "—"}
+                  </span>
+                </div>
+                {systemSummary && systemSummary.ndcrQty > 0 ? (
+                  <div className="flex justify-between gap-3">
+                    <span className="text-slate-600">{systemSummary.ndcrPanelLabel}</span>
+                    <span className="font-medium text-slate-900">× {systemSummary.ndcrQty}</span>
+                  </div>
+                ) : null}
+                <div className="flex justify-between gap-3">
+                  <span className="text-slate-600">Inverter</span>
+                  <span className="text-right font-medium text-slate-900">
+                    {systemSummary
+                      ? `${systemSummary.inverterLabel} — ${systemSummary.inverterCapacity}`
+                      : "—"}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-3 border-t border-slate-200 pt-2">
+                  <span className="text-slate-600">Structure Capacity</span>
+                  <span className="font-medium text-slate-900">
+                    {systemSummary ? `${systemSummary.structureCapacity} Panels` : "—"}
+                  </span>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -893,7 +1196,14 @@ export function ProjectProposalForm({
           <Button
             className="shrink-0"
             onClick={() => void handleSave()}
-            disabled={saving || mastersLoading || !customerName.trim() || !customerMobile.trim()}
+            disabled={
+              saving ||
+              mastersLoading ||
+              !customerName.trim() ||
+              !customerMobile.trim() ||
+              structureProvisionInvalid ||
+              ndcrFormInvalid
+            }
           >
             <Save className="h-4 w-4" />
             {saving ? "Saving…" : "Save"}

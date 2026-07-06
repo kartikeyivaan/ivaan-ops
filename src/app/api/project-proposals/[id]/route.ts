@@ -114,6 +114,9 @@ export async function PATCH(request: Request, context: RouteContext) {
           futureStructurePanels: parsed.data.futureStructurePanels,
           discountAmount: parsed.data.discountAmount,
           additionalCostAmount: parsed.data.additionalCostAmount,
+          moduleProductId: parsed.data.moduleProductId,
+          moduleQty: parsed.data.moduleQty,
+          inverterCapacityKw: parsed.data.inverterCapacityKw,
         },
       },
     });

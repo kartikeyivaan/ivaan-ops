@@ -452,6 +452,7 @@ model Product {
   quotationItems QuotationItem[]
   proformaInvoiceItems ProformaInvoiceItem[]
   dispatchLines        DispatchLine[]
+  projectProposalRevisions ProjectProposalRevision[]
 
   @@index([displayName])
   @@index([categoryId])
@@ -945,6 +946,9 @@ model ProjectProposalRevision {
   ndcrPanelWp                Int                     @default(580) @map("ndcr_panel_wp")
   dcrAdditionalPanels        Int                     @default(0) @map("dcr_additional_panels")
   futureStructurePanels      Int                     @default(0) @map("future_structure_panels")
+  moduleProductId            String?                 @map("module_product_id") @db.Uuid
+  moduleQty                  Int?                    @map("module_qty")
+  inverterCapacityKw         Decimal?                @map("inverter_capacity_kw") @db.Decimal(6, 2)
   basePackageAmount          Decimal                 @map("base_package_amount") @db.Decimal(14, 2)
   brandUpgradeAmount         Decimal                 @default(0) @map("brand_upgrade_amount") @db.Decimal(14, 2)
   inverterUpgradeAmount      Decimal                 @default(0) @map("inverter_upgrade_amount") @db.Decimal(14, 2)
@@ -968,6 +972,7 @@ model ProjectProposalRevision {
   proposal        ProjectProposal                @relation(fields: [proposalId], references: [id], onDelete: Cascade)
   package         ProposalPackageMaster          @relation(fields: [packageId], references: [id])
   inverterUpgrade ProposalInverterUpgradeMaster? @relation(fields: [inverterUpgradeId], references: [id])
+  moduleProduct   Product?                       @relation(fields: [moduleProductId], references: [id])
   createdBy       User                           @relation("ProjectProposalRevisionCreatedBy", fields: [createdById], references: [id])
   updatedBy       User                           @relation("ProjectProposalRevisionUpdatedBy", fields: [updatedById], references: [id])
   statusHistory   ProjectProposalStatusHistory[]

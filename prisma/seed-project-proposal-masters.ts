@@ -66,6 +66,19 @@ const PACKAGE_MASTERS = [
     isComingSoon: true,
     sortOrder: 5,
   },
+  {
+    code: "NDCR_COMPLETE",
+    name: "Non-subsidy Projects",
+    description: "Custom NDCR system — select module product, inverter capacity, and enter total cost in additional cost.",
+    panelWp: 0,
+    panelCount: 0,
+    systemKw: 0,
+    defaultInverterBrands: ["Polycab"],
+    basePrice: 0,
+    isActive: true,
+    isComingSoon: false,
+    sortOrder: 6,
+  },
 ] as const;
 
 const INVERTER_BRAND_MASTERS = [

@@ -11,6 +11,11 @@ const PRICING_ERRORS: Record<string, string> = {
   INVERTER_UPGRADE_NOT_APPLICABLE: "Selected inverter upgrade does not apply to this package.",
   NDCR_NOT_APPLICABLE: "NDCR panels are only available for 570+Wp packages.",
   DCR_NOT_APPLICABLE: "Additional DCR panels are only available for 530+Wp packages.",
+  NDCR_MODULE_REQUIRED: "Select a module product for the NDCR project.",
+  NDCR_MODULE_QTY_REQUIRED: "Enter module quantity for the NDCR project.",
+  NDCR_INVERTER_CAPACITY_REQUIRED: "Enter inverter capacity for the NDCR project.",
+  NDCR_MODULE_NOT_FOUND: "Selected module product was not found.",
+  NDCR_MODULE_INVALID: "Selected product must be from the Modules category.",
 };
 
 const SERVICE_ERRORS: Record<string, { message: string; status: number }> = {

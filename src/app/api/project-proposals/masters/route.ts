@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { decimalToNumber } from "@/lib/inventory";
 import { projectProposalErrorResponse } from "@/lib/project-proposal-api";
 import { canManageProjectProposals } from "@/lib/project-proposal-permissions";
-import { decimalToNumber } from "@/lib/inventory";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
@@ -15,7 +15,7 @@ export async function GET() {
     );
   }
 
-  const [packages, brands, upgrades] = await Promise.all([
+  const [packages, brands, upgrades, modulesCategory] = await Promise.all([
     prisma.proposalPackageMaster.findMany({
       orderBy: { sortOrder: "asc" },
       select: {
@@ -53,7 +53,24 @@ export async function GET() {
         upgradeAmount: true,
       },
     }),
+    prisma.productCategory.findUnique({
+      where: { name: "Modules" },
+      select: { id: true },
+    }),
   ]);
+
+  const moduleProducts = modulesCategory
+    ? await prisma.product.findMany({
+        where: { categoryId: modulesCategory.id, isActive: true },
+        orderBy: { displayName: "asc" },
+        select: {
+          id: true,
+          displayName: true,
+          capacity: true,
+          capacityUnit: true,
+        },
+      })
+    : [];
 
   return NextResponse.json({
     packages: packages.map((pkg) => ({
@@ -69,6 +86,10 @@ export async function GET() {
       ...upgrade,
       upgradeKw: decimalToNumber(upgrade.upgradeKw),
       upgradeAmount: decimalToNumber(upgrade.upgradeAmount),
+    })),
+    moduleProducts: moduleProducts.map((product) => ({
+      ...product,
+      capacity: decimalToNumber(product.capacity),
     })),
   });
 }

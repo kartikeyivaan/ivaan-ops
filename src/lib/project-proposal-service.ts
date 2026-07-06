@@ -20,6 +20,7 @@ import {
 } from "@/lib/project-proposals";
 import { getNextProjectProposalRevisionNo } from "@/lib/project-proposal-revision";
 import { canAccessProjectProposal, canEditProjectProposal } from "@/lib/project-proposal-permissions";
+import { isNdcrCompletePackage } from "@/lib/project-proposal-packages";
 import { toDateOnly } from "@/lib/quotations";
 
 export type ResolveProjectProposalPricingInput = {
@@ -36,11 +37,22 @@ export type ResolveProjectProposalPricingInput = {
   futureStructurePanels?: number;
   discountAmount?: number;
   additionalCostAmount?: number;
+  moduleProductId?: string | null;
+  moduleQty?: number | null;
+  inverterCapacityKw?: number | null;
 };
 
 export const projectProposalRevisionInclude = {
   package: true,
   inverterUpgrade: true,
+  moduleProduct: {
+    select: {
+      id: true,
+      displayName: true,
+      capacity: true,
+      capacityUnit: true,
+    },
+  },
   createdBy: { select: { id: true, name: true, email: true } },
   updatedBy: { select: { id: true, name: true, email: true } },
 } satisfies Prisma.ProjectProposalRevisionInclude;
@@ -106,6 +118,17 @@ function serializeRevision(
         }
       : null,
     inverterBrands: revision.inverterBrands as string[],
+    moduleProductId: revision.moduleProductId,
+    moduleQty: revision.moduleQty,
+    inverterCapacityKw: revision.inverterCapacityKw
+      ? decimalToNumber(revision.inverterCapacityKw)
+      : null,
+    moduleProduct: revision.moduleProduct
+      ? {
+          ...revision.moduleProduct,
+          capacity: decimalToNumber(revision.moduleProduct.capacity),
+        }
+      : null,
   };
 }
 
@@ -228,6 +251,12 @@ async function buildRevisionWriteData(
       ndcrPanelWp: input.pricing.ndcrPanelWp ?? 580,
       dcrAdditionalPanels: input.pricing.dcrAdditionalPanels ?? 0,
       futureStructurePanels: input.pricing.futureStructurePanels ?? 0,
+      moduleProductId: input.pricing.moduleProductId ?? null,
+      moduleQty: input.pricing.moduleQty ?? null,
+      inverterCapacityKw:
+        input.pricing.inverterCapacityKw != null
+          ? input.pricing.inverterCapacityKw
+          : null,
       ...snapshot,
       notes: input.notes,
       updatedById: actorId,
@@ -443,6 +472,8 @@ export async function resolveProjectProposalPricing(
     throw new Error("PACKAGE_UNAVAILABLE");
   }
 
+  const ndcrComplete = isNdcrCompletePackage(pkg.code);
+
   const uniqueBrandCodes = [...new Set(input.inverterBrandCodes)];
   if (uniqueBrandCodes.length === 0) {
     throw new Error("INVERTER_BRANDS_REQUIRED");
@@ -464,7 +495,7 @@ export async function resolveProjectProposalPricing(
   }
 
   let inverterUpgrade: ProjectProposalPricingInput["inverterUpgrade"] = null;
-  if (input.inverterUpgradeId) {
+  if (!ndcrComplete && input.inverterUpgradeId) {
     const upgrade = await prisma.proposalInverterUpgradeMaster.findUnique({
       where: { id: input.inverterUpgradeId },
     });
@@ -485,13 +516,40 @@ export async function resolveProjectProposalPricing(
     };
   }
 
-  const ndcrAdditionalPanels = input.ndcrAdditionalPanels ?? 0;
-  if (pkg.panelWp < 570 && ndcrAdditionalPanels > 0) {
+  let inverterCapacityKw: number | undefined;
+
+  if (ndcrComplete) {
+    if (!input.moduleProductId) {
+      throw new Error("NDCR_MODULE_REQUIRED");
+    }
+    if (!input.moduleQty || input.moduleQty <= 0) {
+      throw new Error("NDCR_MODULE_QTY_REQUIRED");
+    }
+    if (!input.inverterCapacityKw || input.inverterCapacityKw <= 0) {
+      throw new Error("NDCR_INVERTER_CAPACITY_REQUIRED");
+    }
+
+    const moduleProduct = await prisma.product.findUnique({
+      where: { id: input.moduleProductId },
+      include: { category: true },
+    });
+    if (!moduleProduct || !moduleProduct.isActive) {
+      throw new Error("NDCR_MODULE_NOT_FOUND");
+    }
+    if (moduleProduct.category.name !== "Modules") {
+      throw new Error("NDCR_MODULE_INVALID");
+    }
+
+    inverterCapacityKw = input.inverterCapacityKw;
+  }
+
+  const ndcrAdditionalPanels = ndcrComplete ? 0 : (input.ndcrAdditionalPanels ?? 0);
+  if (!ndcrComplete && pkg.panelWp < 570 && ndcrAdditionalPanels > 0) {
     throw new Error("NDCR_NOT_APPLICABLE");
   }
 
-  const dcrAdditionalPanels = input.dcrAdditionalPanels ?? 0;
-  if (pkg.panelWp < 530 && dcrAdditionalPanels > 0) {
+  const dcrAdditionalPanels = ndcrComplete ? 0 : (input.dcrAdditionalPanels ?? 0);
+  if (!ndcrComplete && pkg.panelWp < 530 && dcrAdditionalPanels > 0) {
     throw new Error("DCR_NOT_APPLICABLE");
   }
 
@@ -505,9 +563,11 @@ export async function resolveProjectProposalPricing(
     extraFloors: input.extraFloors ?? 0,
     ndcrAdditionalPanels,
     dcrAdditionalPanels,
-    futureStructurePanels: input.futureStructurePanels ?? 0,
+    futureStructurePanels: ndcrComplete ? 0 : (input.futureStructurePanels ?? 0),
     discountAmount: input.discountAmount ?? 0,
     additionalCostAmount: input.additionalCostAmount ?? 0,
+    ndcrComplete,
+    inverterCapacityKw,
   });
 }
 
@@ -585,6 +645,12 @@ export async function createProjectProposal(
             ndcrPanelWp: input.pricing.ndcrPanelWp ?? 580,
             dcrAdditionalPanels: input.pricing.dcrAdditionalPanels ?? 0,
             futureStructurePanels: input.pricing.futureStructurePanels ?? 0,
+            moduleProductId: input.pricing.moduleProductId ?? null,
+            moduleQty: input.pricing.moduleQty ?? null,
+            inverterCapacityKw:
+              input.pricing.inverterCapacityKw != null
+                ? input.pricing.inverterCapacityKw
+                : null,
             ...snapshot,
             notes: input.notes,
             createdById: input.createdById,

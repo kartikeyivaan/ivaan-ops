@@ -50,6 +50,37 @@ export function calculateProposedSystemKwp(input: {
   return Math.round((totalWp / 1000) * 10) / 10;
 }
 
+/** DC nameplate kWp from base package + additional DCR/NDCR panels (excludes future structure). */
+export function calculateTotalSystemKw(input: {
+  panelWp: number;
+  panelCount: number;
+  dcrAdditionalPanels: number;
+  ndcrPanelWp: number;
+  ndcrAdditionalPanels: number;
+}): number {
+  const totalWp =
+    input.panelWp * input.panelCount +
+    input.panelWp * input.dcrAdditionalPanels +
+    input.ndcrPanelWp * input.ndcrAdditionalPanels;
+  return Math.round((totalWp / 1000) * 100) / 100;
+}
+
+/** Structure panel count: base package panels + additional structure provision. */
+export function calculateStructureCapacity(
+  panelCount: number,
+  futureStructurePanels: number,
+): number {
+  return panelCount + futureStructurePanels;
+}
+
+export function formatDcrPanelLabel(panelWp: number): string {
+  return `Waaree ${panelWp}+Wp DCR`;
+}
+
+export function formatNdcrPanelLabel(ndcrPanelWp: number): string {
+  return `Waaree ${ndcrPanelWp}+Wp NDCR`;
+}
+
 export function totalProposedPanelCount(input: {
   panelCount: number;
   dcrAdditionalPanels: number;

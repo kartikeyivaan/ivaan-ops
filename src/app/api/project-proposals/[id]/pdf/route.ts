@@ -64,6 +64,7 @@ export async function GET(request: Request, context: RouteContext) {
     return new NextResponse(new Uint8Array(pdf), {
       headers: {
         "Content-Type": "application/pdf",
+        "Cache-Control": "no-store, no-cache, must-revalidate",
         "Content-Disposition": `attachment; filename="${asciiName}.pdf"; filename*=UTF-8''${encodeURIComponent(
           `${safeName}.pdf`,
         )}`,

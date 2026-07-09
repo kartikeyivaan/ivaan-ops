@@ -49,6 +49,7 @@ export async function GET(request: Request) {
   return new NextResponse(new Uint8Array(pdf), {
     headers: {
       "Content-Type": "application/pdf",
+      "Cache-Control": "no-store, no-cache, must-revalidate",
       "Content-Disposition": `inline; filename="${asciiName}.pdf"; filename*=UTF-8''${encodeURIComponent(
         `${safeName}.pdf`,
       )}`,

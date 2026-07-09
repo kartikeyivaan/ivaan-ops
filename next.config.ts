@@ -18,6 +18,7 @@ const nextConfig: NextConfig = {
     "/api/**": [
       "./assets/branding/**",
       "./assets/fonts/**",
+      "./assets/installation-timeline/**",
       "./node_modules/pdfkit/js/data/**",
     ],
   },

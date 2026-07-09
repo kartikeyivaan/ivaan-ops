@@ -2,18 +2,30 @@ import type { BomLine } from "@/lib/proposal-bom";
 import {
   CLIENT_SCOPE_ITEMS,
   CANCELLATION_POLICY,
-  DELIVERY_PROCESS_STEPS,
-  DELIVERY_TIMELINE,
   IVAAN_SCOPE_ITEMS,
   PAYMENT_MILESTONES,
   PROPOSAL_TERMS,
-  SUBSIDY_NOTE,
+  formatCommercialOfferSubsidyNote,
   WAAREE_FRANCHISEE_TAGLINE,
   WAAREE_HIGHLIGHTS,
   WAAREE_INTRO,
   WARRANTY_FOOTNOTE,
   WARRANTY_ROWS,
 } from "@/lib/proposal-pdf-content";
+import {
+  INSTALLATION_TIMELINE_FOOTER_NOTE,
+  INSTALLATION_TIMELINE_GRID_COLUMNS,
+  INSTALLATION_TIMELINE_ICON_FILES,
+  INSTALLATION_TIMELINE_PDF_ICONS,
+  INSTALLATION_TIMELINE_ROWS,
+  INSTALLATION_TIMELINE_THEME,
+  INSTALLATION_TIMELINE_TITLE_EMPHASIS,
+  INSTALLATION_TIMELINE_TITLE_LEAD,
+  type InstallationTimelineRow,
+  type InstallationTimelineStep,
+  type InstallationTimelineIcon,
+} from "@/lib/installation-timeline";
+import { buildTimelineRoadmapPath, computeBendOutset, computeMilestoneCenters } from "@/lib/timeline-roadmap-geometry";
 import {
   CELL_PAD,
   companyLogo,
@@ -22,10 +34,12 @@ import {
   CONTENT_WIDTH,
   drawTable,
   MARGIN_TOP,
+  readAsset,
   type DocContext,
   type TableColumn,
   waareeLogo,
 } from "@/lib/pdf-theme";
+import path from "node:path";
 import { formatDocumentDate } from "@/lib/utils";
 import {
   GST_SPLIT_HIGH_RATE,
@@ -33,6 +47,9 @@ import {
   GST_SPLIT_LOW_RATE,
   GST_SPLIT_LOW_WEIGHT,
 } from "@/lib/project-proposal-pricing";
+
+/** Consistent vertical space before each premium section heading. */
+export const SECTION_GAP_BEFORE_PT = 14;
 
 /** Premium presentation tokens layered on top of the shared palette. */
 const PREMIUM = {
@@ -77,28 +94,108 @@ function drawCard(
   doc.roundedRect(x, y, w, h, radius).lineWidth(0.5).strokeColor(palette.border).stroke();
 }
 
+export type SectionTitleOptions = {
+  pageBottom?: number;
+  /** Minimum height of content following the title; keeps the orange bar with its section. */
+  minFollowingHeight?: number;
+  /** Skip the standard pre-section gap (use sparingly). */
+  skipGapBefore?: boolean;
+};
+
+const GENERATION_CHART_HEIGHT_PT = 76;
+const GENERATION_CHART_CARD_PAD = 10;
+const GENERATION_CHART_TITLE_H = 11;
+const GENERATION_CHART_TITLE_GAP = 6;
+const GENERATION_CHART_LABEL_H = 14;
+const GENERATION_NOTE_GAP = 8;
+
+function getGenerationChartCardHeight(chartHeight = GENERATION_CHART_HEIGHT_PT): number {
+  return (
+    GENERATION_CHART_CARD_PAD * 2 +
+    GENERATION_CHART_TITLE_H +
+    GENERATION_CHART_TITLE_GAP +
+    chartHeight +
+    GENERATION_CHART_LABEL_H
+  );
+}
+
+function measureWarrantyCardsHeight(ctx: ProposalLayoutContext): number {
+  const { doc, fonts } = ctx;
+  const gap = 10;
+  const cardW = (CONTENT_WIDTH - gap * 2) / 3;
+  const pad = 12;
+  const innerW = cardW - pad * 2;
+  doc.font(fonts.regular).fontSize(7);
+  const detailsBlockH = Math.max(
+    ...WARRANTY_ROWS.map(([, details]) => doc.heightOfString(details, { width: innerW })),
+  );
+  return pad + 16 + 20 + detailsBlockH + pad;
+}
+
+function measureWarrantySectionHeight(ctx: ProposalLayoutContext): number {
+  const { doc, fonts } = ctx;
+  const titleBlockH = 30;
+  const cardH = measureWarrantyCardsHeight(ctx);
+  doc.font(fonts.regular).fontSize(8);
+  const footnoteH = 6 + doc.heightOfString(WARRANTY_FOOTNOTE, { width: CONTENT_WIDTH });
+  return titleBlockH + cardH + footnoteH;
+}
+
+export function estimateProjectSummaryCardHeight(rowCount: number): number {
+  const rowH = 28;
+  const cardRows = Math.ceil(rowCount / 2);
+  return 16 + cardRows * rowH + 12;
+}
+
+export function estimateGenerationEstimateSectionMinHeight(): number {
+  const chartCardH = getGenerationChartCardHeight();
+  const disclaimerH = 44;
+  return chartCardH + GENERATION_NOTE_GAP + disclaimerH;
+}
+
+export function estimateWarrantySectionMinHeight(): number {
+  const titleBlockH = 30;
+  const cardH = 106;
+  const footnoteH = 18;
+  return titleBlockH + cardH + footnoteH;
+}
+
+export function startNewPage(ctx: ProposalLayoutContext): number {
+  ctx.doc.addPage();
+  return MARGIN_TOP;
+}
+
 export function drawPremiumSectionTitle(
   ctx: DocContext,
   text: string,
   x: number,
   y: number,
   width = CONTENT_WIDTH,
+  compact = false,
+  options?: SectionTitleOptions,
 ): number {
   const { doc, palette, fonts } = ctx;
+  const titleBlockH = compact ? 22 : 30;
+  if (!options?.skipGapBefore) {
+    y += SECTION_GAP_BEFORE_PT;
+  }
+  if (options?.pageBottom != null && options.minFollowingHeight != null) {
+    y = ensurePageSpace(doc, y, titleBlockH + options.minFollowingHeight, options.pageBottom);
+  }
   doc.rect(x, y + 1, 3, 16).fill(palette.accent);
   doc
     .font(fonts.bold)
     .fontSize(11)
     .fillColor(PREMIUM.heading)
     .text(text.toUpperCase(), x + 10, y, { width: width - 10 });
-  const lineY = doc.y + 5;
+  const lineY = doc.y + (compact ? 3 : 5);
   doc
     .moveTo(x, lineY)
     .lineTo(x + width, lineY)
     .lineWidth(0.5)
     .strokeColor(palette.border)
     .stroke();
-  return lineY + 8;
+  return lineY + (compact ? 3 : 8);
 }
 
 export function drawDualBrandProposalHeader(
@@ -115,32 +212,34 @@ export function drawDualBrandProposalHeader(
   const iseLogo = companyLogo(opts.companyCode);
   const waaree = waareeLogo();
   const logoH = 48;
+  const logoW = 150;
 
   if (iseLogo) {
-    doc.image(iseLogo, CONTENT_LEFT, top, { fit: [150, logoH] });
+    doc.image(iseLogo, CONTENT_LEFT, top, { fit: [logoW, logoH] });
   } else {
     doc.font(fonts.bold).fontSize(14).fillColor(palette.ink).text(opts.companyName, CONTENT_LEFT, top);
   }
+
+  const taglineY = top + logoH + 4;
+  doc
+    .font(fonts.bold)
+    .fontSize(8.5)
+    .fillColor(palette.accent)
+    .text(WAAREE_FRANCHISEE_TAGLINE, CONTENT_LEFT, taglineY, {
+      width: logoW,
+      align: "center",
+    });
 
   if (waaree) {
     doc.image(waaree, CONTENT_RIGHT - 120, top, { fit: [110, logoH] });
   }
 
-  const titleY = top + logoH + 10;
+  const titleY = Math.max(doc.y, top + logoH) + 10;
   doc
     .font(fonts.bold)
     .fontSize(17)
     .fillColor(PREMIUM.heading)
     .text(opts.title.toUpperCase(), CONTENT_LEFT, titleY, { width: CONTENT_WIDTH, align: "center" });
-
-  doc
-    .font(fonts.bold)
-    .fontSize(8.5)
-    .fillColor(palette.accent)
-    .text(WAAREE_FRANCHISEE_TAGLINE, CONTENT_LEFT, doc.y + 3, {
-      width: CONTENT_WIDTH,
-      align: "center",
-    });
 
   const cardY = doc.y + 12;
   const cardPad = 12;
@@ -190,11 +289,11 @@ export function drawCoverLetterPremium(
   let contentH = 10;
   contentH += doc.heightOfString(formatDocumentDate(opts.proposalDate), { width: innerW }) + 8;
   contentH += 16;
-  contentH += doc.heightOfString(subject, { width: innerW }) + 10;
+  contentH += doc.heightOfString(subject, { width: innerW }) + 8;
   for (const p of paragraphs) {
-    contentH += doc.heightOfString(p, { width: innerW }) + 6;
+    contentH += doc.heightOfString(p, { width: innerW }) + 4;
   }
-  contentH += 30;
+  contentH += 22;
   const cardH = contentH + pad * 2;
 
   drawCard(ctx, CONTENT_LEFT, top, CONTENT_WIDTH, cardH, 8, "#FFFFFF");
@@ -202,39 +301,86 @@ export function drawCoverLetterPremium(
   let y = top + pad;
   const x = CONTENT_LEFT + pad;
   doc.font(fonts.regular).fontSize(9).fillColor(palette.muted).text(formatDocumentDate(opts.proposalDate), x, y);
-  y = doc.y + 8;
+  y = doc.y + 6;
 
   doc.font(fonts.bold).fontSize(11).fillColor(PREMIUM.heading).text(`Dear ${opts.customerName},`, x, y);
-  y = doc.y + 8;
+  y = doc.y + 6;
 
   doc.font(fonts.bold).fontSize(9).fillColor(palette.accent).text(`Subject: ${subject}`, x, y, { width: innerW });
-  y = doc.y + 10;
+  y = doc.y + 8;
 
   doc.font(fonts.regular).fontSize(9.5).fillColor(palette.ink);
   for (const paragraph of paragraphs) {
     doc.text(paragraph, x, y, { width: innerW });
-    y = doc.y + 6;
+    y = doc.y + 4;
   }
 
   doc.text("Thanking you,", x, y);
-  y = doc.y + 4;
+  y = doc.y + 3;
   doc.font(fonts.bold).text(`For ${opts.companyName}`, x, y);
 
-  return top + cardH + 8;
+  return top + cardH + 4;
+}
+
+/** PDF points per millimetre (72 pt/in ÷ 25.4 mm/in). */
+export function mmToPt(mm: number): number {
+  return mm * (72 / 25.4);
 }
 
 export type KpiCard = { label: string; value: string };
+
+export type KpiGridOptions = {
+  /** Override default card height in points. */
+  cardHeightPt?: number;
+  /** Extra gap below the grid in points. */
+  bottomGapPt?: number;
+};
+
+function drawKpiGridInBounds(
+  ctx: ProposalLayoutContext,
+  cards: KpiCard[],
+  x: number,
+  y: number,
+  width: number,
+  totalHeight: number,
+  columns = 2,
+): void {
+  const { doc, palette, fonts } = ctx;
+  const gap = 8;
+  const cardPad = 10;
+  const rows = Math.ceil(cards.length / columns);
+  const cardW = (width - gap * (columns - 1)) / columns;
+  const cardH = (totalHeight - gap * (rows - 1)) / rows;
+
+  cards.forEach((card, index) => {
+    const col = index % columns;
+    const row = Math.floor(index / columns);
+    const cx = x + col * (cardW + gap);
+    const cy = y + row * (cardH + gap);
+
+    drawCard(ctx, cx, cy, cardW, cardH, 6, PREMIUM.cardBg);
+    doc.font(fonts.regular).fontSize(7).fillColor(palette.muted).text(card.label.toUpperCase(), cx + cardPad, cy + cardPad, {
+      width: cardW - cardPad * 2,
+    });
+    doc.font(fonts.bold).fontSize(9.5).fillColor(PREMIUM.heading).text(card.value, cx + cardPad, cy + cardPad + 12, {
+      width: cardW - cardPad * 2,
+    });
+  });
+}
 
 export function drawKpiGrid(
   ctx: ProposalLayoutContext,
   cards: KpiCard[],
   top: number,
   columns = 3,
+  options: KpiGridOptions = {},
 ): number {
   const { doc, palette, fonts, pageBottom } = ctx;
-  const gap = 10;
+  const gap = 8;
+  const cardPad = 10;
   const cardW = (CONTENT_WIDTH - gap * (columns - 1)) / columns;
-  const cardH = 52;
+  const cardH = options.cardHeightPt ?? 44;
+  const bottomGap = options.bottomGapPt ?? 0;
   const rows = Math.ceil(cards.length / columns);
   const gridH = rows * cardH + (rows - 1) * gap;
 
@@ -247,16 +393,15 @@ export function drawKpiGrid(
     const cy = y + row * (cardH + gap);
 
     drawCard(ctx, x, cy, cardW, cardH, 6, PREMIUM.cardBg);
-    doc.circle(x + 14, cy + 16, 3).fill(palette.accent);
-    doc.font(fonts.regular).fontSize(7).fillColor(palette.muted).text(card.label.toUpperCase(), x + 10, cy + 24, {
-      width: cardW - 20,
+    doc.font(fonts.regular).fontSize(7).fillColor(palette.muted).text(card.label.toUpperCase(), x + cardPad, cy + cardPad, {
+      width: cardW - cardPad * 2,
     });
-    doc.font(fonts.bold).fontSize(10).fillColor(PREMIUM.heading).text(card.value, x + 10, cy + 36, {
-      width: cardW - 20,
+    doc.font(fonts.bold).fontSize(9.5).fillColor(PREMIUM.heading).text(card.value, x + cardPad, cy + cardPad + 12, {
+      width: cardW - cardPad * 2,
     });
   });
 
-  return y + gridH + 8;
+  return y + gridH + bottomGap;
 }
 
 export function drawProjectSummaryCards(
@@ -284,7 +429,7 @@ export function drawProjectSummaryCards(
     doc.font(fonts.bold).fontSize(9).fillColor(palette.ink).text(value, x, ry + 11, { width: colW - 20 });
   });
 
-  return y + cardH + 10;
+  return y + cardH;
 }
 
 export type PricingData = {
@@ -297,15 +442,19 @@ export type PricingData = {
 
 export function drawPricingCard(ctx: ProposalLayoutContext, data: PricingData, top: number): number {
   const { doc, palette, fonts, pageBottom } = ctx;
-  const pad = 16;
+  const pad = 14;
   const innerW = CONTENT_WIDTH - pad * 2;
+  const subsidyNote = formatCommercialOfferSubsidyNote(
+    data.money(data.subsidyEstimate),
+    data.money(data.effectiveInvestment),
+  );
 
   doc.font(fonts.regular).fontSize(8);
   const noteH =
-    doc.heightOfString(SUBSIDY_NOTE, { width: innerW }) +
+    doc.heightOfString(subsidyNote, { width: innerW }) +
     doc.heightOfString(data.gstSplitNote, { width: innerW }) +
-    12;
-  const cardH = 130 + noteH;
+    6;
+  const cardH = 82 + noteH - mmToPt(3);
 
   const y = ensurePageSpace(doc, top, cardH, pageBottom);
   drawCard(ctx, CONTENT_LEFT, y, CONTENT_WIDTH, cardH, 10, "#FFFFFF");
@@ -314,66 +463,74 @@ export function drawPricingCard(ctx: ProposalLayoutContext, data: PricingData, t
   let rowY = y + pad;
 
   const rows: Array<[string, string, "normal" | "green" | "highlight"]> = [
-    ["Gross Project Cost Payable", data.money(data.finalAmount), "normal"],
+    ["Gross Project Cost Payable", data.money(data.finalAmount), "highlight"],
     ["Central Government Subsidy", data.money(data.subsidyEstimate), "green"],
-    ["Net Effective Investment", data.money(data.effectiveInvestment), "highlight"],
   ];
 
-  for (const [label, value, style] of rows) {
+  rows.forEach(([label, value, style], index) => {
     const isHighlight = style === "highlight";
-    const rowBoxH = isHighlight ? 36 : 22;
+    const rowBoxH = isHighlight ? 32 : 18;
     if (isHighlight) {
-      doc.roundedRect(labelX - 4, rowY - 2, innerW + 8, rowBoxH, 6).fill(PREMIUM.accentSoft);
-      doc.roundedRect(labelX - 4, rowY - 2, innerW + 8, rowBoxH, 6).lineWidth(1).strokeColor(palette.accent).stroke();
+      doc.roundedRect(labelX - 4, rowY - 1, innerW + 8, rowBoxH, 6).fill(PREMIUM.accentSoft);
+      doc.roundedRect(labelX - 4, rowY - 1, innerW + 8, rowBoxH, 6).lineWidth(1).strokeColor(palette.accent).stroke();
     }
 
     doc
       .font(isHighlight ? fonts.bold : fonts.regular)
       .fontSize(isHighlight ? 11 : 9.5)
       .fillColor(PREMIUM.heading)
-      .text(label, labelX, rowY + (isHighlight ? 8 : 4), { width: innerW - 130 });
+      .text(label, labelX, rowY + (isHighlight ? 7 : 3), { width: innerW - 130 });
 
     const valueColor = style === "green" ? PREMIUM.positive : isHighlight ? palette.accent : palette.ink;
     doc
       .font(fonts.bold)
       .fontSize(isHighlight ? 16 : 10)
       .fillColor(valueColor)
-      .text(value, labelX, rowY + (isHighlight ? 6 : 4), { width: innerW, align: "right" });
+      .text(value, labelX, rowY + (isHighlight ? 5 : 3), { width: innerW, align: "right" });
 
-    rowY += rowBoxH + 6;
-  }
+    const rowGap = index === 0 ? 4 : 2;
+    rowY += rowBoxH + rowGap;
+  });
 
-  rowY += 4;
-  doc.font(fonts.regular).fontSize(7.5).fillColor(palette.muted).text(SUBSIDY_NOTE, labelX, rowY, {
+  rowY += 2;
+  doc.font(fonts.regular).fontSize(7.5).fillColor(palette.muted).text(subsidyNote, labelX, rowY, {
     width: innerW,
   });
-  rowY = doc.y + 6;
+  rowY = doc.y + 3;
   doc.text(data.gstSplitNote, labelX, rowY, { width: innerW });
 
-  return y + cardH + 12;
+  return y + cardH;
 }
 
 export function drawPremiumBomTable(
   ctx: ProposalLayoutContext,
-  opts: { bom: BomLine[]; companyName: string },
+  opts: { bom: BomLine[] },
   top: number,
 ): number {
   const { doc, palette, fonts, pageBottom } = ctx;
   const left = CONTENT_LEFT;
-  const scopeW = 48;
-  const tableW = CONTENT_WIDTH - scopeW;
+  const tableW = CONTENT_WIDTH;
   const radius = 8;
-  const cols = [
+  const hPad = 4;
+  const fixedCols = [
     { key: "sr", label: "Sr.", w: 24 },
     { key: "item", label: "Item", w: 68 },
-    { key: "desc", label: "Description", w: 162 },
     { key: "qty", label: "Qty", w: 40 },
     { key: "cap", label: "Capacity", w: 56 },
     { key: "make", label: "Make", w: 44 },
   ] as const;
+  const descW = tableW - hPad * 2 - fixedCols.reduce((sum, col) => sum + col.w, 0);
+  const cols = [
+    fixedCols[0],
+    fixedCols[1],
+    { key: "desc", label: "Description", w: descW },
+    fixedCols[2],
+    fixedCols[3],
+    fixedCols[4],
+  ] as const;
 
   const colX: Record<string, number> = {};
-  let x = left + 4;
+  let x = left + hPad;
   for (const col of cols) {
     colX[col.key] = x;
     x += col.w;
@@ -408,11 +565,50 @@ export function drawPremiumBomTable(
     }
   };
 
+  const rowPadY = 6;
+  const rowPadBottom = 6;
+  const minRowH = 20;
+
+  const measureTextBlockH = (
+    text: string,
+    width: number,
+    font: string = fonts.regular,
+    size = 7.5,
+  ): number => {
+    if (!text) return 0;
+    doc.font(font).fontSize(size);
+    return doc.heightOfString(text, { width }) + rowPadY + rowPadBottom;
+  };
+
   opts.bom.forEach((line, index) => {
-    let rowH = 20;
-    const descW = line.spanDetailColumns ? detailSpanW - CELL_PAD * 2 : cols[2].w - CELL_PAD * 2;
-    const descH = doc.heightOfString(line.description, { width: descW }) + 10;
-    if (descH > rowH) rowH = descH;
+    const itemCellW = cols[1].w - CELL_PAD * 2;
+    const descCellW = line.spanDetailColumns ? detailSpanW - CELL_PAD * 2 : cols[2].w - CELL_PAD * 2;
+    const qtyCellW = cols[3].w - CELL_PAD * 2;
+    const capCellW = cols[4].w - 8;
+    const makeCellW = cols[5].w - CELL_PAD * 2;
+
+    doc.font(fonts.regular).fontSize(7.5);
+    let rowH = minRowH;
+
+    if (!line.isModuleVariant) {
+      rowH = Math.max(rowH, measureTextBlockH(String(line.sr), cols[0].w - CELL_PAD * 2));
+      rowH = Math.max(rowH, measureTextBlockH(line.item, itemCellW));
+    }
+
+    rowH = Math.max(rowH, measureTextBlockH(line.description, descCellW));
+
+    if (!line.spanDetailColumns) {
+      rowH = Math.max(rowH, measureTextBlockH(line.qty, qtyCellW, fonts.bold));
+      rowH = Math.max(rowH, measureTextBlockH(line.make, makeCellW));
+
+      doc.font(fonts.bold).fontSize(6.5);
+      const capTextH = line.capacity
+        ? doc.heightOfString(line.capacity, { width: capCellW })
+        : 0;
+      rowH = Math.max(rowH, Math.max(18, capTextH + rowPadY + rowPadBottom));
+    }
+
+    rowH = Math.ceil(rowH);
 
     if (y + rowH > pageBottom) {
       doc.addPage();
@@ -440,16 +636,18 @@ export function drawPremiumBomTable(
         .text(line.qty, colX.qty + CELL_PAD, y + 6, { width: cols[3].w - CELL_PAD * 2, align: "center" });
       doc.font(fonts.regular).fillColor(palette.ink);
 
-      const capW = cols[4].w - 8;
-      const capTextW = doc.widthOfString(line.capacity);
-      const pillW = Math.min(capW, capTextW + 10);
+      doc.font(fonts.bold).fontSize(6.5);
+      const capTextH = line.capacity
+        ? doc.heightOfString(line.capacity, { width: capCellW })
+        : 0;
+      const pillW = capCellW;
+      const pillH = Math.max(14, capTextH + 4);
       const pillX = colX.cap + (cols[4].w - pillW) / 2;
-      doc.roundedRect(pillX, y + 4, pillW, 14, 7).fill(PREMIUM.accentSoft);
+      const pillY = y + (rowH - pillH) / 2;
+      doc.roundedRect(pillX, pillY, pillW, pillH, 7).fill(PREMIUM.accentSoft);
       doc
-        .font(fonts.bold)
-        .fontSize(6.5)
         .fillColor(palette.accent)
-        .text(line.capacity, pillX, y + 7, { width: pillW, align: "center" });
+        .text(line.capacity, pillX, pillY + (pillH - capTextH) / 2, { width: pillW, align: "center" });
 
       doc.font(fonts.regular).fontSize(7.5).fillColor(palette.ink);
       doc.text(line.make, colX.make + CELL_PAD, y + 6, { width: cols[5].w - CELL_PAD * 2, align: "center" });
@@ -467,21 +665,7 @@ export function drawPremiumBomTable(
   const tableBottom = y + 4;
   doc.roundedRect(left, tableTop, tableW, tableBottom - tableTop, radius).lineWidth(0.75).strokeColor(palette.border).stroke();
 
-  const scopeX = left + tableW;
-  doc.roundedRect(scopeX, tableTop, scopeW, tableBottom - tableTop, 4).fill(PREMIUM.cardBg);
-  doc.roundedRect(scopeX, tableTop, scopeW, tableBottom - tableTop, 4).lineWidth(0.5).strokeColor(palette.border).stroke();
-  doc.save();
-  doc.font(fonts.bold).fontSize(7.5).fillColor(palette.accent);
-  const scopeText = opts.companyName.toUpperCase();
-  doc.translate(scopeX + scopeW / 2, tableTop + (tableBottom - tableTop) / 2);
-  doc.rotate(-90);
-  doc.text(scopeText, -((tableBottom - tableTop) / 2) + 10, -4, {
-    width: tableBottom - tableTop - 20,
-    align: "center",
-  });
-  doc.restore();
-
-  return tableBottom + 8;
+  return tableBottom;
 }
 
 function drawChecklist(
@@ -509,6 +693,7 @@ export function drawScopeCards(ctx: ProposalLayoutContext, top: number): number 
   const cardW = (CONTENT_WIDTH - gap) / 2;
   const pad = 12;
   const innerW = cardW - pad * 2;
+  const scopeTop = top + mmToPt(4);
 
   doc.font(fonts.regular).fontSize(8.5);
   const ivaanH =
@@ -519,7 +704,7 @@ export function drawScopeCards(ctx: ProposalLayoutContext, top: number): number 
     CLIENT_SCOPE_ITEMS.reduce((h, item) => h + doc.heightOfString(item, { width: innerW - 16 }) + 4, 0);
   const cardH = Math.max(ivaanH, clientH);
 
-  const y = ensurePageSpace(doc, top, cardH, pageBottom);
+  const y = ensurePageSpace(doc, scopeTop, cardH, pageBottom);
 
   drawCard(ctx, CONTENT_LEFT, y, cardW, cardH, 8, "#FFFFFF");
   drawCard(ctx, CONTENT_LEFT + cardW + gap, y, cardW, cardH, 8, PREMIUM.cardBg);
@@ -554,31 +739,154 @@ export function drawScopeCards(ctx: ProposalLayoutContext, top: number): number 
     palette.accent,
   );
 
-  return y + cardH + 12;
+  return y + cardH;
 }
 
 export function drawGenerationKpiCards(
   ctx: ProposalLayoutContext,
   metrics: KpiCard[],
   top: number,
+  options: KpiGridOptions = {},
 ): number {
-  return drawKpiGrid(ctx, metrics, top, 4);
+  return drawKpiGrid(ctx, metrics, top, 4, { bottomGapPt: 12, ...options });
+}
+
+export type GenerationEstimateSectionData = {
+  metrics: KpiCard[];
+  disclaimer: string;
+  monthlyRows: Array<{ month: string; acEnergyKwh: number }>;
+  monthlyAverageKwh: number;
+};
+
+function drawBarChartInBounds(
+  ctx: ProposalLayoutContext,
+  rows: Array<{ month: string; acEnergyKwh: number }>,
+  monthlyAverageKwh: number,
+  x: number,
+  y: number,
+  width: number,
+  chartHeight: number,
+): number {
+  const { doc, palette, fonts } = ctx;
+  const totalHeight = getGenerationChartCardHeight(chartHeight);
+  const cardPad = GENERATION_CHART_CARD_PAD;
+  const titleChartGap = GENERATION_CHART_TITLE_GAP;
+
+  drawCard(ctx, x, y, width, totalHeight, 8, "#FFFFFF");
+
+  let cy = y + cardPad;
+  doc
+    .font(fonts.bold)
+    .fontSize(7.5)
+    .fillColor(PREMIUM.heading)
+    .text("Monthly Est. AC Generation (kWh) — Jalgaon, Maharashtra", x + cardPad, cy, {
+      width: width - cardPad * 2,
+    });
+
+  const values = rows.map((row) => row.acEnergyKwh);
+  const maxValue = Math.max(...values);
+  const yAxisWidth = 26;
+  const chartLeft = x + cardPad + yAxisWidth;
+  const chartWidth = width - cardPad * 2 - yAxisWidth;
+  const barGap = 3;
+  const barWidth = (chartWidth - barGap * (rows.length + 1)) / rows.length;
+  const chartTop = doc.y + titleChartGap;
+  const baseline = chartTop + chartHeight;
+
+  doc.font(fonts.regular).fontSize(6).text("0", x + cardPad, baseline - 7, { width: yAxisWidth - 4, align: "right" });
+
+  doc
+    .moveTo(chartLeft, baseline)
+    .lineTo(chartLeft + chartWidth, baseline)
+    .lineWidth(0.5)
+    .strokeColor(palette.border)
+    .stroke();
+
+  const averageLineY =
+    maxValue > 0 ? baseline - (monthlyAverageKwh / maxValue) * chartHeight : baseline;
+
+  rows.forEach((row, index) => {
+    const barX = chartLeft + barGap + index * (barWidth + barGap);
+    const barH = maxValue > 0 ? (row.acEnergyKwh / maxValue) * chartHeight : 0;
+    const barY = baseline - barH;
+    doc.roundedRect(barX, barY, barWidth, barH, 2).fill(palette.accent);
+    doc
+      .font(fonts.regular)
+      .fontSize(6)
+      .fillColor(palette.muted)
+      .text(row.month.slice(0, 3), barX, baseline + 3, { width: barWidth, align: "center" });
+  });
+
+  if (maxValue > 0 && monthlyAverageKwh > 0) {
+    doc
+      .moveTo(chartLeft, averageLineY)
+      .lineTo(chartLeft + chartWidth, averageLineY)
+      .lineWidth(0.5)
+      .dash(4, { space: 3 })
+      .strokeColor(palette.faint)
+      .stroke()
+      .undash();
+
+    doc
+      .font(fonts.regular)
+      .fontSize(5)
+      .fillColor(palette.faint)
+      .text("Monthly average generation", x + cardPad, averageLineY - 10, {
+        width: yAxisWidth - 2,
+        align: "right",
+      });
+  }
+
+  return y + totalHeight;
+}
+
+export function drawGenerationEstimateSection(
+  ctx: ProposalLayoutContext,
+  data: GenerationEstimateSectionData,
+  top: number,
+): number {
+  const { doc, palette, fonts, pageBottom } = ctx;
+  const colGap = 12;
+  const leftW = Math.floor((CONTENT_WIDTH - colGap) * 0.4);
+  const rightW = CONTENT_WIDTH - colGap - leftW;
+  const leftX = CONTENT_LEFT;
+  const rightX = CONTENT_LEFT + leftW + colGap;
+  const chartHeight = GENERATION_CHART_HEIGHT_PT;
+  const chartCardH = getGenerationChartCardHeight(chartHeight);
+
+  doc.font(fonts.regular).fontSize(7);
+  const disclaimerH = doc.heightOfString(data.disclaimer, { width: CONTENT_WIDTH });
+  const sectionH = chartCardH + GENERATION_NOTE_GAP + disclaimerH;
+
+  const y = ensurePageSpace(doc, top, sectionH, pageBottom);
+
+  drawKpiGridInBounds(ctx, data.metrics, leftX, y, leftW, chartCardH, 2);
+  drawBarChartInBounds(ctx, data.monthlyRows, data.monthlyAverageKwh, rightX, y, rightW, chartHeight);
+
+  const noteY = y + chartCardH + GENERATION_NOTE_GAP;
+  doc.font(fonts.regular).fontSize(7).fillColor(palette.muted).text(data.disclaimer, CONTENT_LEFT, noteY, {
+    width: CONTENT_WIDTH,
+  });
+
+  return noteY + disclaimerH;
 }
 
 export function drawPremiumBarChart(
   ctx: ProposalLayoutContext,
   rows: Array<{ month: string; acEnergyKwh: number }>,
+  monthlyAverageKwh: number,
   top: number,
 ): number {
   const { doc, palette, fonts, pageBottom } = ctx;
   const chartHeight = 80;
   const labelHeight = 18;
-  const captionHeight = 14;
-  const totalHeight = chartHeight + labelHeight + captionHeight + 20;
+  const titleChartGap = 10;
+  const totalHeight = chartHeight + labelHeight + titleChartGap + 34;
 
-  let y = ensurePageSpace(doc, top, totalHeight, pageBottom);
+  const cardTop = ensurePageSpace(doc, top, totalHeight, pageBottom);
+  let y = cardTop;
 
-  drawCard(ctx, CONTENT_LEFT, y, CONTENT_WIDTH, totalHeight - 8, 8, "#FFFFFF");
+  drawCard(ctx, CONTENT_LEFT, cardTop, CONTENT_WIDTH, totalHeight - 8, 8, "#FFFFFF");
   const cardPad = 12;
   y += cardPad;
 
@@ -597,17 +905,9 @@ export function drawPremiumBarChart(
   const chartWidth = CONTENT_WIDTH - cardPad * 2 - yAxisWidth;
   const barGap = 5;
   const barWidth = (chartWidth - barGap * (rows.length + 1)) / rows.length;
-  const chartTop = y + captionHeight;
+  const chartTop = doc.y + titleChartGap;
   const baseline = chartTop + chartHeight;
 
-  doc
-    .font(fonts.regular)
-    .fontSize(6.5)
-    .fillColor(palette.faint)
-    .text(maxValue.toLocaleString("en-IN"), CONTENT_LEFT + cardPad, chartTop + 2, {
-      width: yAxisWidth - 4,
-      align: "right",
-    });
   doc.text("0", CONTENT_LEFT + cardPad, baseline - 8, { width: yAxisWidth - 4, align: "right" });
 
   doc
@@ -616,6 +916,9 @@ export function drawPremiumBarChart(
     .lineWidth(0.5)
     .strokeColor(palette.border)
     .stroke();
+
+  const averageLineY =
+    maxValue > 0 ? baseline - (monthlyAverageKwh / maxValue) * chartHeight : baseline;
 
   rows.forEach((row, index) => {
     const barX = chartLeft + barGap + index * (barWidth + barGap);
@@ -629,7 +932,27 @@ export function drawPremiumBarChart(
       .text(row.month.slice(0, 3), barX, baseline + 4, { width: barWidth, align: "center" });
   });
 
-  return y + totalHeight;
+  if (maxValue > 0 && monthlyAverageKwh > 0) {
+    doc
+      .moveTo(chartLeft, averageLineY)
+      .lineTo(chartLeft + chartWidth, averageLineY)
+      .lineWidth(0.5)
+      .dash(4, { space: 3 })
+      .strokeColor(palette.faint)
+      .stroke()
+      .undash();
+
+    doc
+      .font(fonts.regular)
+      .fontSize(5.5)
+      .fillColor(palette.faint)
+      .text("Monthly average generation", CONTENT_LEFT + cardPad, averageLineY - 12, {
+        width: yAxisWidth - 2,
+        align: "right",
+      });
+  }
+
+  return cardTop + totalHeight - 8;
 }
 
 export function drawImpactCards(
@@ -699,18 +1022,46 @@ export function drawGstBreakupSection(ctx: ProposalLayoutContext, data: GstBreak
     },
   ];
   const gstTable = drawTable(ctx, { top: y, columns: gstColumns, rows: gstRows, pageBottom });
-  return gstTable.y + 10;
+  return gstTable.y;
 }
 
-export function drawWarrantyCards(ctx: ProposalLayoutContext, top: number): number {
+export type WarrantyCardsOptions = {
+  /** Pin the warranty block to the bottom of the page (just above the footer). */
+  anchorToPageBottom?: boolean;
+};
+
+export function drawWarrantyCards(
+  ctx: ProposalLayoutContext,
+  top: number,
+  options?: WarrantyCardsOptions,
+): number {
   const { doc, palette, fonts, pageBottom } = ctx;
   const gap = 10;
   const cardW = (CONTENT_WIDTH - gap * 2) / 3;
   const pad = 12;
-  const cardH = 72;
+  const innerW = cardW - pad * 2;
+  doc.font(fonts.regular).fontSize(7);
+  const detailsBlockH = Math.max(
+    ...WARRANTY_ROWS.map(([, details]) => doc.heightOfString(details, { width: innerW })),
+  );
+  const cardH = pad + 16 + 20 + detailsBlockH + pad;
+  const sectionH = measureWarrantySectionHeight(ctx);
 
-  let y = ensurePageSpace(doc, top, cardH + 30, pageBottom);
-  y = drawPremiumSectionTitle(ctx, "Warranty", CONTENT_LEFT, y);
+  let y: number;
+  if (options?.anchorToPageBottom) {
+    const anchorY = pageBottom - sectionH;
+    if (top + SECTION_GAP_BEFORE_PT > anchorY) {
+      y = ensurePageSpace(doc, top, sectionH + SECTION_GAP_BEFORE_PT, pageBottom);
+      y = drawPremiumSectionTitle(ctx, "Warranty", CONTENT_LEFT, y);
+    } else {
+      y = drawPremiumSectionTitle(ctx, "Warranty", CONTENT_LEFT, anchorY, CONTENT_WIDTH, false, {
+        skipGapBefore: true,
+      });
+    }
+  } else {
+    y = ensurePageSpace(doc, top, sectionH + SECTION_GAP_BEFORE_PT, pageBottom);
+    y = drawPremiumSectionTitle(ctx, "Warranty", CONTENT_LEFT, y);
+  }
 
   WARRANTY_ROWS.forEach(([component, details], index) => {
     const x = CONTENT_LEFT + index * (cardW + gap);
@@ -742,7 +1093,7 @@ export function drawWarrantyCards(ctx: ProposalLayoutContext, top: number): numb
   doc.font(fonts.regular).fontSize(8).fillColor(palette.muted).text(WARRANTY_FOOTNOTE, CONTENT_LEFT, y, {
     width: CONTENT_WIDTH,
   });
-  return doc.y + 10;
+  return doc.y;
 }
 
 export function drawPaymentTimeline(ctx: ProposalLayoutContext, top: number): number {
@@ -787,52 +1138,205 @@ export function drawPaymentTimeline(ctx: ProposalLayoutContext, top: number): nu
     }
   });
 
-  return y + cardH + 12;
+  return y + cardH;
 }
 
-export function drawDeliveryTimeline(ctx: ProposalLayoutContext, top: number): number {
-  const { doc, palette, fonts, pageBottom } = ctx;
-  const stepCount = DELIVERY_PROCESS_STEPS.length;
-  const cardH = 70;
-  const notesH = DELIVERY_TIMELINE.length * 14 + 20;
-  let y = ensurePageSpace(doc, top, cardH + notesH + 30, pageBottom);
-  y = drawPremiumSectionTitle(ctx, "Delivery Timeline", CONTENT_LEFT, y);
+const TIMELINE_ICON_ASSET_DIR = path.join(process.cwd(), "assets", "installation-timeline");
+const TIMELINE_NODE_R = 14;
+const TIMELINE_STEM_H = 6;
+const TIMELINE_ROW_H = 72;
+const TIMELINE_ROW_GAP = 28;
+const TIMELINE_SECTION_PAD = 10;
+const TIMELINE_FOOTER_GAP = 10;
 
-  drawCard(ctx, CONTENT_LEFT, y, CONTENT_WIDTH, cardH, 8, PREMIUM.cardBg);
-  const stepW = CONTENT_WIDTH / stepCount;
+function installationTimelineIconAsset(icon: InstallationTimelineIcon): Buffer | null {
+  const file = INSTALLATION_TIMELINE_ICON_FILES[icon];
+  if (!file) return null;
+  return readAsset(path.join(TIMELINE_ICON_ASSET_DIR, file));
+}
 
-  DELIVERY_PROCESS_STEPS.forEach((step, index) => {
-    const cx = CONTENT_LEFT + index * stepW + stepW / 2;
-    doc.circle(cx, y + 20, 5).fill(palette.accent);
+function estimateInstallationTimelineSectionHeight(): number {
+  const headerH = 28;
+  const rowsH = TIMELINE_ROW_H * 3 + TIMELINE_ROW_GAP * 2;
+  const footerH = 24;
+  return headerH + rowsH + TIMELINE_SECTION_PAD + TIMELINE_FOOTER_GAP + footerH;
+}
+
+function timelineRowCenters(stepCount: number): number[] {
+  return computeMilestoneCenters(
+    stepCount,
+    CONTENT_WIDTH,
+    0,
+    INSTALLATION_TIMELINE_GRID_COLUMNS,
+  ).map((x) => CONTENT_LEFT + x);
+}
+
+function drawTimelineSnakePath(ctx: DocContext, rowYs: number[]): void {
+  const { doc } = ctx;
+  const theme = INSTALLATION_TIMELINE_THEME;
+  const row1 = timelineRowCenters(5);
+  const row2 = timelineRowCenters(5);
+  const row3 = timelineRowCenters(4);
+  const rowDirections: Array<"ltr" | "rtl"> = ["ltr", "rtl", "ltr"];
+  const bendRadius = 14;
+  const bendOutset = computeBendOutset(CONTENT_WIDTH, 5, { paddingX: 0, bendRadius });
+
+  const { pathD, arrow } = buildTimelineRoadmapPath(
+    rowYs,
+    [row1, row2, row3],
+    rowDirections,
+    bendRadius,
+    { arrowExtension: 10, bendOutset },
+  );
+
+  doc.save();
+  doc.lineWidth(2.25).strokeColor(theme.connector).lineCap("round").lineJoin("round");
+  doc.path(pathD).stroke();
+  doc.restore();
+
+  if (arrow) {
+    const tip = arrow.rotation === 0 ? 1 : arrow.rotation === 180 ? -1 : 0;
+    const down = arrow.rotation === 90 ? 1 : 0;
+    if (tip !== 0) {
+      doc
+        .moveTo(arrow.x, arrow.y - 2.5)
+        .lineTo(arrow.x + tip * 6, arrow.y)
+        .lineTo(arrow.x, arrow.y + 2.5)
+        .closePath()
+        .fill(theme.connector);
+    } else if (down !== 0) {
+      doc
+        .moveTo(arrow.x - 2.5, arrow.y)
+        .lineTo(arrow.x, arrow.y + down * 6)
+        .lineTo(arrow.x + 2.5, arrow.y)
+        .closePath()
+        .fill(theme.connector);
+    }
+  }
+}
+
+function drawInstallationTimelineStepNode(
+  ctx: DocContext,
+  centerX: number,
+  iconY: number,
+  colW: number,
+  step: InstallationTimelineStep,
+): void {
+  const { doc, fonts } = ctx;
+  const theme = INSTALLATION_TIMELINE_THEME;
+  const iconAsset = installationTimelineIconAsset(step.icon);
+
+  doc.circle(centerX, iconY, TIMELINE_NODE_R).fill(theme.white);
+  doc.circle(centerX, iconY, TIMELINE_NODE_R).lineWidth(1.5).strokeColor(theme.connector).stroke();
+
+  if (iconAsset) {
+    const innerSize = 14;
+    doc.image(iconAsset, centerX - innerSize / 2, iconY - innerSize / 2, {
+      fit: [innerSize, innerSize],
+    });
+  } else {
+    doc
+      .font(fonts.bold)
+      .fontSize(8)
+      .fillColor(theme.connector)
+      .text(INSTALLATION_TIMELINE_PDF_ICONS[step.icon], centerX - TIMELINE_NODE_R, iconY - 4, {
+        width: TIMELINE_NODE_R * 2,
+        align: "center",
+      });
+  }
+
+  const stemTop = iconY + TIMELINE_NODE_R;
+  doc
+    .moveTo(centerX, stemTop)
+    .lineTo(centerX, stemTop + TIMELINE_STEM_H)
+    .lineWidth(1.5)
+    .strokeColor(theme.connector)
+    .stroke();
+
+  const titleY = stemTop + TIMELINE_STEM_H + 4;
+  doc
+    .font(fonts.bold)
+    .fontSize(7.5)
+    .fillColor(theme.ink)
+    .text(step.title, centerX - colW / 2 + 2, titleY, { width: colW - 4, align: "center", lineGap: 0.5 });
+
+  const badgeH = 12;
+  const badgeW = Math.min(colW - 4, step.duration && step.duration.startsWith("+") ? 66 : 54);
+  const badgeX = centerX - badgeW / 2;
+  const badgeY = titleY + 18;
+  if (step.duration) {
+    doc.roundedRect(badgeX, badgeY, badgeW, badgeH, badgeH / 2).fill(theme.lightGrey);
     doc
       .font(fonts.regular)
       .fontSize(6)
-      .fillColor(PREMIUM.heading)
-      .text(step, cx - stepW / 2 + 4, y + 30, { width: stepW - 8, align: "center" });
-
-    if (index < stepCount - 1) {
-      const lineX = CONTENT_LEFT + (index + 1) * stepW;
-      doc
-        .moveTo(lineX - stepW / 2 + 8, y + 20)
-        .lineTo(lineX - 4, y + 20)
-        .lineWidth(0.75)
-        .strokeColor(palette.accent)
-        .stroke();
-    }
-  });
-
-  y += cardH + 8;
-  doc.font(fonts.regular).fontSize(8).fillColor(palette.ink);
-  for (const line of DELIVERY_TIMELINE) {
-    doc.text(`• ${line}`, CONTENT_LEFT + 8, y, { width: CONTENT_WIDTH - 16 });
-    y = doc.y + 3;
+      .fillColor(theme.muted)
+      .text(step.duration, badgeX, badgeY + 3, { width: badgeW, align: "center", lineGap: 0 });
   }
-
-  doc.font(fonts.regular).fontSize(8.5).fillColor(palette.ink).text(`Cancellation: ${CANCELLATION_POLICY}`, CONTENT_LEFT, y, {
-    width: CONTENT_WIDTH,
-  });
-  return doc.y + 10;
 }
+
+function drawInstallationTimelineRow(
+  ctx: DocContext,
+  row: InstallationTimelineRow,
+  y: number,
+): number {
+  const { steps, direction } = row;
+  const stepCount = steps.length;
+  const colW = CONTENT_WIDTH / INSTALLATION_TIMELINE_GRID_COLUMNS;
+  const centers = timelineRowCenters(stepCount);
+  const iconY = y + TIMELINE_NODE_R + 2;
+  const orderedSteps = direction === "rtl" ? [...steps].reverse() : steps;
+
+  orderedSteps.forEach((step, index) => {
+    drawInstallationTimelineStepNode(ctx, centers[index] ?? CONTENT_LEFT, iconY, colW, step);
+  });
+
+  return y + TIMELINE_ROW_H;
+}
+
+export function drawInstallationTimeline(ctx: ProposalLayoutContext, top: number): number {
+  const { doc, fonts, palette, pageBottom } = ctx;
+  const theme = INSTALLATION_TIMELINE_THEME;
+  const sectionH = estimateInstallationTimelineSectionHeight();
+  let y = top + SECTION_GAP_BEFORE_PT;
+  y = ensurePageSpace(doc, y, sectionH, pageBottom);
+
+  doc.rect(CONTENT_LEFT, y + 1, 3, 16).fill(palette.accent);
+  doc
+    .font(fonts.bold)
+    .fontSize(11)
+    .fillColor(theme.heading)
+    .text(`${INSTALLATION_TIMELINE_TITLE_LEAD.toUpperCase()} `, CONTENT_LEFT + 10, y, { continued: true });
+  doc.fillColor(palette.accent).text(INSTALLATION_TIMELINE_TITLE_EMPHASIS.toUpperCase());
+  y = doc.y + 8;
+  y += TIMELINE_SECTION_PAD;
+
+  const rowStartY = y;
+  const rowYs: number[] = [];
+  INSTALLATION_TIMELINE_ROWS.forEach((row, rowIndex) => {
+    rowYs.push(rowStartY + rowIndex * (TIMELINE_ROW_H + TIMELINE_ROW_GAP) + TIMELINE_NODE_R + 2);
+  });
+  drawTimelineSnakePath(ctx, rowYs);
+
+  INSTALLATION_TIMELINE_ROWS.forEach((row, rowIndex) => {
+    y = drawInstallationTimelineRow(
+      ctx,
+      row,
+      rowStartY + rowIndex * (TIMELINE_ROW_H + TIMELINE_ROW_GAP),
+    );
+  });
+
+  y += TIMELINE_FOOTER_GAP;
+  doc
+    .font(fonts.regular)
+    .fontSize(7.5)
+    .fillColor(theme.muted)
+    .text(INSTALLATION_TIMELINE_FOOTER_NOTE, CONTENT_LEFT, y, { width: CONTENT_WIDTH, lineGap: 1.5 });
+
+  return doc.y;
+}
+
+/** @deprecated Use drawInstallationTimeline */
+export const drawDeliveryTimeline = drawInstallationTimeline;
 
 export function drawWaareeBrandCard(ctx: ProposalLayoutContext, top: number): number {
   const { doc, palette, fonts, pageBottom } = ctx;
@@ -871,7 +1375,7 @@ export function drawWaareeBrandCard(ctx: ProposalLayoutContext, top: number): nu
     hy = doc.y + 4;
   }
 
-  return y + cardH - 8;
+  return y + cardH - 20;
 }
 
 export function drawTermsSection(ctx: ProposalLayoutContext, top: number): number {
@@ -917,7 +1421,7 @@ export function drawTermsSection(ctx: ProposalLayoutContext, top: number): numbe
   renderColumn(leftTerms, CONTENT_LEFT + pad, startY);
   renderColumn(rightTerms, CONTENT_LEFT + colW + colGap + pad, startY);
 
-  return y + contentH + 12;
+  return y + contentH;
 }
 
 export function drawBankDetailsCard(
@@ -970,6 +1474,7 @@ export function drawSignatureBlock(
   companyName: string,
   top: number,
   fontSize = 9,
+  showCompanyStamp = true,
 ): number {
   const { doc, palette, fonts } = ctx;
   const signW = 200;
@@ -993,11 +1498,13 @@ export function drawSignatureBlock(
     .fillColor(palette.ink)
     .text("Authorised Signatory", signX, top + 38, { width: signW, align: "right" });
 
-  doc
-    .font(fonts.regular)
-    .fontSize(fontSize - 2)
-    .fillColor(palette.faint)
-    .text("Company Stamp", signX, top + 52, { width: signW, align: "right" });
+  if (showCompanyStamp) {
+    doc
+      .font(fonts.regular)
+      .fontSize(fontSize - 2)
+      .fillColor(palette.faint)
+      .text("Company Stamp", signX, top + 52, { width: signW, align: "right" });
+  }
 
-  return top + 68;
+  return top + (showCompanyStamp ? 68 : 54);
 }

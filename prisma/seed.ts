@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import { ISE_BANK_DETAILS } from "../src/lib/proposal-pdf-content";
 import {
   CapacityUnit,
   DispatchStatus,
@@ -58,8 +59,7 @@ async function main() {
     email: "connect@ivaansolar.com",
     gstNumber: "27AAJFI3520N1Z5",
     tagline: "Authorised Waaree Franchise",
-    bankDetails:
-      "Bank: State Bank of India\nA/c No: 41649096711   IFSC: SBIN0018300\nBranch: Kalika Mandir, Jalgaon",
+    bankDetails: ISE_BANK_DETAILS,
     termsAndConditions: defaultTerms,
   };
   const pcmvProfile = {

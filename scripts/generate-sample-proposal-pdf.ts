@@ -1,5 +1,6 @@
 import { writeFileSync } from "node:fs";
 import { Prisma, ProposalBuildingType, ProposalConnectionPhase, ProposalStructureType } from "@prisma/client";
+import { ISE_BANK_DETAILS } from "@/lib/proposal-pdf-content";
 import { generateProjectProposalPdf, type ProjectProposalPdfRecord } from "@/lib/project-proposal-pdf";
 
 const fixture: ProjectProposalPdfRecord = {
@@ -27,8 +28,7 @@ const fixture: ProjectProposalPdfRecord = {
     email: "connect@ivaansolar.com",
     gstNumber: "27AAJFI3520N1Z5",
     tagline: "Authorised Waaree Franchise",
-    bankDetails:
-      "Bank: State Bank of India\nA/c No: 41649096711   IFSC: SBIN0018300\nBranch: Kalika Mandir, Jalgaon",
+    bankDetails: ISE_BANK_DETAILS,
     termsAndConditions: null,
   },
   salesUser: {

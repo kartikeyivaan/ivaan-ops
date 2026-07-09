@@ -14,17 +14,6 @@ export const WAAREE_HIGHLIGHTS = [
   "1.5 GW+ manufacturing capacity",
 ];
 
-/** Process milestones for delivery timeline visualization. */
-export const DELIVERY_PROCESS_STEPS = [
-  "Purchase Order",
-  "Advance Payment",
-  "Material Booking / Fabrication",
-  "Dispatch",
-  "Installation",
-  "Commissioning",
-  "Net Metering",
-];
-
 export const IVAAN_SCOPE_ITEMS = [
   "Design and engineering of the rooftop solar power system",
   "Supply of all equipment including packaging, forwarding, freight, and transit insurance",
@@ -47,7 +36,7 @@ export const WARRANTY_ROWS: Array<[string, string]> = [
     "30 years against manufacturing defects; power output 90% at end of 10th year, 80% at end of 27th year",
   ],
   ["Inverter", "8 years from date of installation"],
-  ["Other BOS Components", "1 year"],
+  ["Other BOS Components", "BOS Components Include ACDB, DCDB and other small components used in System"],
 ];
 
 export const WARRANTY_FOOTNOTE = "All warranties as per respective OEM terms and conditions.";
@@ -58,16 +47,25 @@ export const PAYMENT_MILESTONES: Array<[string, string]> = [
   ["10% Commissioning", "After system commissioning, against completion certificate"],
 ];
 
-export const DELIVERY_TIMELINE = [
-  "Dispatch: 4–6 weeks from receipt of Purchase Order and advance payment",
-  "Installation & commissioning: 4–6 weeks thereafter (subject to payment milestones)",
-];
-
 export const CANCELLATION_POLICY =
   "In case of cancellation, the customer shall pay for proportionate work completed plus 10% of the balance project value. Advance paid is non-refundable except as mutually agreed based on project progress.";
 
+export const ISE_BANK_DETAILS = [
+  "Account Name: Ivaan Solar Energy",
+  "IFSC: ICIC0000375 | Jalgaon Branch",
+  "Account Number: 037505012379",
+  "Account Type: Over Draft",
+].join("\n");
+
 export const SUBSIDY_NOTE =
   "Central Government subsidy (₹78,000) is credited directly to the beneficiary account per MNRE norms after commissioning. The gross project cost stated above is payable by the customer; NDCR panels are not eligible for subsidy.";
+
+export function formatCommercialOfferSubsidyNote(
+  subsidyAmount: string,
+  effectiveInvestment: string,
+): string {
+  return `Central Government subsidy (${subsidyAmount}) is credited directly to the beneficiary account per MNRE norms after commissioning. The gross project cost stated above is payable by the customer; NDCR panels are not eligible for subsidy. Net effective investment: ${effectiveInvestment}.`;
+}
 
 /** Official contact shown on project proposal / quote card PDFs. */
 export const PROJECT_DOCUMENTS_PHONE = "+91 8390 201918";
@@ -76,11 +74,6 @@ export const GENERATION_DISCLAIMER =
   "Generation estimates are based on 1,700 kWh/kWp/year for Maharashtra, with monthly distribution reflecting average solar irradiance at Jalgaon. Actual generation depends on site conditions, shading, cleaning, and grid availability.";
 
 export const PROPOSAL_TERMS = [
-  "This offer is valid for 5 days from the date of proposal unless reconfirmed in writing.",
-  "GST is included in the quoted price and charged as per prevailing rates at the time of dispatch (70% supply @ 5%, 30% installation @ 18%).",
   "Any MNRE subsidy or exemption shall be passed on to the client as per applicable government policy.",
-  "Net metering and liaisoning are included; timelines are subject to DISCOM approvals.",
-  "Mounting structures (MMS) are suitable for rooftop installation as per standard design.",
-  "Separate Purchase Order for supply and Work Order for services are required upon acceptance.",
   CANCELLATION_POLICY,
 ];

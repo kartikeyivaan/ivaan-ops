@@ -59,6 +59,21 @@ body {
   animation: drawer-overlay-in 200ms ease-out;
 }
 
+@keyframes timeline-roadmap-draw {
+  from {
+    stroke-dashoffset: var(--path-length);
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.timeline-roadmap-path {
+  stroke-dasharray: var(--path-length);
+  stroke-dashoffset: var(--path-length);
+  animation: timeline-roadmap-draw 2.4s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
 [data-drawer-overlay][data-state="closed"] {
   animation: drawer-overlay-out 180ms ease-in;
 }

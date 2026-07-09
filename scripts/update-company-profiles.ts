@@ -11,6 +11,7 @@
  *   npx tsx scripts/update-company-profiles.ts
  */
 import { PrismaClient } from "@prisma/client";
+import { ISE_BANK_DETAILS } from "@/lib/proposal-pdf-content";
 
 const prisma = new PrismaClient();
 
@@ -39,8 +40,7 @@ const PROFILES = [
     email: "connect@ivaansolar.com",
     gstNumber: "27AAJFI3520N1Z5",
     tagline: "Authorised Waaree Franchise",
-    bankDetails:
-      "Bank: State Bank of India\nA/c No: 41649096711   IFSC: SBIN0018300\nBranch: Kalika Mandir, Jalgaon",
+    bankDetails: ISE_BANK_DETAILS,
     termsAndConditions: DEFAULT_TERMS,
   },
   {

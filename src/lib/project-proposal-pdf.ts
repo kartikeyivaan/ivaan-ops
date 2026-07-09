@@ -8,12 +8,13 @@ import {
   GST_SPLIT_LOW_RATE,
   GST_SPLIT_LOW_WEIGHT,
 } from "@/lib/project-proposal-pricing";
+import { isNdcrCompletePackage } from "@/lib/project-proposal-packages";
 import { formatProposalDocumentNumber } from "@/lib/project-proposals";
 import {
   buildProposalBom,
-  calculateProposedSystemKwp,
+  calculateStructureCapacity,
+  calculateTotalSystemKw,
   resolveInverterKw,
-  totalProposedPanelCount,
   type BomLine,
 } from "@/lib/proposal-bom";
 import {
@@ -22,7 +23,6 @@ import {
   calculateMonthlyGeneration,
 } from "@/lib/proposal-generation";
 import {
-  DELIVERY_TIMELINE,
   GENERATION_DISCLAIMER,
   PAYMENT_MILESTONES,
   PROJECT_DOCUMENTS_PHONE,
@@ -30,16 +30,15 @@ import {
   WARRANTY_FOOTNOTE,
   WARRANTY_ROWS,
 } from "@/lib/proposal-pdf-content";
+import { INSTALLATION_TIMELINE_SUMMARY } from "@/lib/installation-timeline";
 import {
   drawBankDetailsCard,
   drawCoverLetterPremium,
-  drawDeliveryTimeline,
+  drawInstallationTimeline,
   drawDualBrandProposalHeader,
-  drawGenerationKpiCards,
-  drawGstBreakupSection,
+  drawGenerationEstimateSection,
   drawImpactCards,
   drawPaymentTimeline,
-  drawPremiumBarChart,
   drawPremiumBomTable,
   drawPremiumSectionTitle,
   drawPricingCard,
@@ -49,7 +48,10 @@ import {
   drawTermsSection,
   drawWaareeBrandCard,
   drawWarrantyCards,
-  drawKpiGrid,
+  estimateProjectSummaryCardHeight,
+  estimateGenerationEstimateSectionMinHeight,
+  estimateWarrantySectionMinHeight,
+  startNewPage,
   type ProposalLayoutContext,
 } from "@/lib/proposal-pdf-components";
 import {
@@ -61,7 +63,6 @@ import {
   drawFooter,
   drawParties,
   drawProjectQuotationHeader,
-  drawTable,
   makeMoney,
   MARGIN_BOTTOM,
   MARGIN_TOP,
@@ -71,7 +72,6 @@ import {
   setupFonts,
   waareeLogo,
   type DocContext,
-  type TableColumn,
 } from "@/lib/pdf-theme";
 import { formatDocumentDate } from "@/lib/utils";
 
@@ -160,6 +160,13 @@ function structureLabel(value: string): string {
   return labels[value] ?? formatEnumLabel(value);
 }
 
+function quoteCardStructurePhrase(value: string): string {
+  const label = structureLabel(value);
+  return label.endsWith("Structure")
+    ? `${label} of`
+    : `${label} Structure of`;
+}
+
 function connectionLabel(value: string): string {
   return value === "THREE_PHASE" ? "Three Phase" : "Single Phase";
 }
@@ -178,12 +185,21 @@ function prepareProposal(proposal: ProjectProposalPdfRecord, money: (v: number) 
     throw new Error("REVISION_NOT_FOUND");
   }
 
-  const systemKw = decimalToNumber(revision.package.systemKw);
   const panelWp = revision.package.panelWp;
   const panelCount = revision.package.panelCount;
   const ndcrPanelWp = revision.ndcrPanelWp ?? 580;
+  const ndcrComplete = isNdcrCompletePackage(revision.package.code);
+  const systemKw = ndcrComplete
+    ? decimalToNumber(revision.inverterCapacityKw ?? 0)
+    : calculateTotalSystemKw({
+        panelWp,
+        panelCount,
+        dcrAdditionalPanels: revision.dcrAdditionalPanels,
+        ndcrPanelWp,
+        ndcrAdditionalPanels: revision.ndcrAdditionalPanels,
+      });
   const brands = (revision.inverterBrands as string[]) ?? [];
-  const inverterBrand = brands[0] ?? "—";
+  const inverterBrand = brands.length > 0 ? brands.join("/") : "—";
   const inverterKw = resolveInverterKw(
     systemKw,
     revision.inverterUpgrade ? decimalToNumber(revision.inverterUpgrade.upgradeKw) : null,
@@ -312,20 +328,17 @@ export async function generateProjectProposalQuoteCardPdf(
   const pageBottom = doc.page.height - 56;
   const { revision } = data;
 
-  const proposedKwp = calculateProposedSystemKwp({
+  const totalSystemKw = calculateTotalSystemKw({
     panelWp: data.panelWp,
     panelCount: data.panelCount,
     dcrAdditionalPanels: revision.dcrAdditionalPanels,
     ndcrPanelWp: data.ndcrPanelWp,
     ndcrAdditionalPanels: revision.ndcrAdditionalPanels,
-    futureStructurePanels: revision.futureStructurePanels,
   });
-  const totalPanels = totalProposedPanelCount({
-    panelCount: data.panelCount,
-    dcrAdditionalPanels: revision.dcrAdditionalPanels,
-    ndcrAdditionalPanels: revision.ndcrAdditionalPanels,
-    futureStructurePanels: revision.futureStructurePanels,
-  });
+  const structureCapacity = calculateStructureCapacity(
+    data.panelCount,
+    revision.futureStructurePanels,
+  );
 
   const headerBottom = drawProjectQuotationHeader(ctx, {
     logo: companyLogo(proposal.company.code),
@@ -367,7 +380,7 @@ export async function generateProjectProposalQuoteCardPdf(
   y = sectionTitle(ctx, "System Summary", CONTENT_LEFT, y, undefined, 10) + 3;
 
   doc.font(fonts.bold).fontSize(10).fillColor(palette.ink).text(
-    `${proposedKwp} kWp On-Grid Rooftop Solar System`,
+    `${totalSystemKw} kW On-Grid Rooftop Solar System`,
     CONTENT_LEFT,
     y,
     { width: CONTENT_WIDTH },
@@ -379,7 +392,7 @@ export async function generateProjectProposalQuoteCardPdf(
     revision.ndcrAdditionalPanels > 0
       ? ` | NDCR: Waaree ${data.ndcrPanelWp}+Wp × ${revision.ndcrAdditionalPanels}`
       : "";
-  const inverterLine = `Inverter: ${data.inverterBrand} ${data.inverterKw} kW | ${connectionLabel(revision.connectionPhase)} | ${structureLabel(revision.structureType)} Structure of ${totalPanels} Panels`;
+  const inverterLine = `Inverter: ${data.inverterBrand} ${data.inverterKw} kW | ${connectionLabel(revision.connectionPhase)} | ${quoteCardStructurePhrase(revision.structureType)} ${structureCapacity} Panels`;
 
   doc.font(fonts.regular).fontSize(9).fillColor(palette.ink);
   doc.text(`${dcrLine}${ndcrLine}`, CONTENT_LEFT, y, { width: CONTENT_WIDTH });
@@ -407,7 +420,7 @@ export async function generateProjectProposalQuoteCardPdf(
   }
 
   let delY = y;
-  for (const line of DELIVERY_TIMELINE) {
+  for (const line of INSTALLATION_TIMELINE_SUMMARY) {
     doc.text(line, rightColX, delY, { width: colW });
     delY = doc.y + 4;
   }
@@ -432,7 +445,7 @@ export async function generateProjectProposalQuoteCardPdf(
   }
 
   y = Math.max(warrantyBottom, bankBottom) + 10;
-  drawSignatureBlock(ctx, proposal.company.name, y);
+  drawSignatureBlock(ctx, proposal.company.name, y, 9, false);
 
   const companyLine = [proposal.company.name, PROJECT_DOCUMENTS_PHONE, profile.email]
     .filter(Boolean)
@@ -461,6 +474,7 @@ export async function generateProjectProposalPdf(
     ["Valid Until", formatDocumentDate(revision.validityDate)],
     ["Customer Name", revision.customerName],
     ["Project Capacity", `${data.systemKw} kWp`],
+    ["Short Address", revision.shortAddress || "—"],
   ];
   if (revision.revisionNo > 0) {
     headerMeta.push(["Proposal Version", `Rev. ${revision.revisionNo}`]);
@@ -481,22 +495,58 @@ export async function generateProjectProposalPdf(
       systemKw: data.systemKw,
       companyName: proposal.company.name,
     },
-    headerBottom + 4,
+    headerBottom + 2,
   );
 
-  y = drawKpiGrid(layout, [
-    { label: "Plant Capacity", value: `${data.systemKw} kWp On-Grid` },
-    { label: "Panel Technology", value: `Waaree TOPCON DCR Bi-${data.panelWp}Wp+` },
-    { label: "Inverter", value: `${data.inverterBrand} ${data.inverterKw} kW` },
-    { label: "Structure", value: structureLabel(revision.structureType) },
-    {
-      label: "Annual Generation",
-      value: `${data.generation.annualGenerationKwh.toLocaleString("en-IN")} kWh`,
-    },
-    { label: "Net Effective Investment", value: data.money(data.effectiveInvestment) },
-  ], y);
+  y = drawPremiumSectionTitle(ctx, "Bill of Materials", CONTENT_LEFT, y, CONTENT_WIDTH, true);
+  y = drawPremiumBomTable(layout, { bom: data.bom }, y);
 
-  y = drawPremiumSectionTitle(ctx, "Commercial Offer", CONTENT_LEFT, y);
+  const projectSummaryRows: Array<[string, string]> = [
+    ["Project Capacity", `${data.systemKw} kWp On-Grid Rooftop`],
+    ["Panel Technology", `Waaree TOPCON DCR Bi-${data.panelWp}Wp+`],
+    ["Inverter", `${data.inverterBrand} ${data.inverterKw} kW On-Grid String`],
+    ["Structure", structureLabel(revision.structureType)],
+    ["Connection", connectionLabel(revision.connectionPhase)],
+    ["Scheme", "Turnkey EPC with Net Metering (included)"],
+    ["Est. Annual Generation", `${data.generation.annualGenerationKwh.toLocaleString("en-IN")} kWh`],
+    ["Performance Ratio (est.)", `~${data.generation.performanceRatioPercent}%`],
+  ];
+  y = drawPremiumSectionTitle(ctx, "Project Summary", CONTENT_LEFT, y, CONTENT_WIDTH, false, {
+    pageBottom,
+    minFollowingHeight: estimateProjectSummaryCardHeight(projectSummaryRows.length),
+  });
+  y = drawProjectSummaryCards(layout, projectSummaryRows, y);
+
+  y = drawScopeCards(layout, y);
+
+  y = drawPremiumSectionTitle(ctx, "Generation Estimate", CONTENT_LEFT, y, CONTENT_WIDTH, false, {
+    pageBottom,
+    minFollowingHeight: estimateGenerationEstimateSectionMinHeight(),
+  });
+  y = drawGenerationEstimateSection(
+    layout,
+    {
+      metrics: [
+        { label: "Annual Production", value: `${data.generation.annualGenerationKwh.toLocaleString("en-IN")} kWh` },
+        { label: "Monthly Average", value: `${data.generation.monthlyAverageKwh.toLocaleString("en-IN")} kWh` },
+        {
+          label: "Specific Generation",
+          value: `${data.generation.specificGenerationKwhPerKwp.toLocaleString("en-IN")} kWh/kWp/yr`,
+        },
+        { label: "Performance Ratio", value: `~${data.generation.performanceRatioPercent}%` },
+      ],
+      disclaimer: GENERATION_DISCLAIMER,
+      monthlyRows: data.monthlyRows,
+      monthlyAverageKwh: data.generation.monthlyAverageKwh,
+    },
+    y,
+  );
+  y = drawWarrantyCards(layout, y, { anchorToPageBottom: true });
+
+  y = startNewPage(layout);
+  y = drawPremiumSectionTitle(ctx, "Commercial Offer", CONTENT_LEFT, y, CONTENT_WIDTH, true, {
+    skipGapBefore: true,
+  });
   y = drawPricingCard(layout, {
     finalAmount: data.finalAmount,
     subsidyEstimate: data.subsidyEstimate,
@@ -505,59 +555,13 @@ export async function generateProjectProposalPdf(
     gstSplitNote: `GST split: ${Math.round(GST_SPLIT_LOW_WEIGHT * 100)}% supply @ ${GST_SPLIT_LOW_RATE}% (${data.money(data.gst.bucketAt5Percent)}) · ${Math.round(GST_SPLIT_HIGH_WEIGHT * 100)}% installation @ ${GST_SPLIT_HIGH_RATE}% (${data.money(data.gst.bucketAt18Percent)})`,
   }, y);
 
-  y = drawPremiumSectionTitle(ctx, "Project Summary", CONTENT_LEFT, y);
-  y = drawProjectSummaryCards(layout, [
-    ["Plant Capacity", `${data.systemKw} kWp On-Grid Rooftop`],
-    ["Panel Technology", `Waaree TOPCON DCR Bi-${data.panelWp}Wp+`],
-    ["Inverter", `${data.inverterBrand} ${data.inverterKw} kW On-Grid String`],
-    ["Structure", structureLabel(revision.structureType)],
-    ["Connection", connectionLabel(revision.connectionPhase)],
-    ["Scheme", "Turnkey EPC with Net Metering (included)"],
-    ["Est. Annual Generation", `${data.generation.annualGenerationKwh.toLocaleString("en-IN")} kWh`],
-    ["Performance Ratio (est.)", `~${data.generation.performanceRatioPercent}%`],
-  ], y);
+  y = drawPaymentTimeline(layout, y);
+  y = drawInstallationTimeline(layout, y);
 
-  y = drawPremiumSectionTitle(ctx, "Bill of Materials", CONTENT_LEFT, y);
-  y = drawPremiumBomTable(layout, { bom: data.bom, companyName: proposal.company.name }, y);
-
-  y = drawScopeCards(layout, y);
-
-  y = drawPremiumSectionTitle(ctx, "Generation Estimate", CONTENT_LEFT, y);
-  y = drawGenerationKpiCards(layout, [
-    { label: "Annual Production", value: `${data.generation.annualGenerationKwh.toLocaleString("en-IN")} kWh` },
-    { label: "Monthly Average", value: `${data.generation.monthlyAverageKwh.toLocaleString("en-IN")} kWh` },
-    {
-      label: "Specific Generation",
-      value: `${data.generation.specificGenerationKwhPerKwp.toLocaleString("en-IN")} kWh/kWp/yr`,
-    },
-    { label: "Performance Ratio", value: `~${data.generation.performanceRatioPercent}%` },
-  ], y);
-
-  const { doc: pdfDoc, palette: pal } = ctx;
-  pdfDoc.font(fonts.regular).fontSize(7.5).fillColor(pal.muted).text(GENERATION_DISCLAIMER, CONTENT_LEFT, y, {
-    width: CONTENT_WIDTH,
+  y = startNewPage(layout);
+  y = drawPremiumSectionTitle(ctx, "Environmental Impact (25 Years)", CONTENT_LEFT, y, CONTENT_WIDTH, false, {
+    skipGapBefore: true,
   });
-  y = pdfDoc.y + 8;
-
-  y = drawPremiumBarChart(layout, data.monthlyRows, y);
-
-  const monthColumns: TableColumn[] = [
-    { key: "month", label: "Month", width: 90, align: "left", bold: true },
-    { key: "kwh", label: "Est. AC Energy (kWh)", width: 120, align: "right" },
-  ];
-  const monthTableRows = data.monthlyRows.map((row) => ({
-    month: row.month,
-    kwh: row.acEnergyKwh.toLocaleString("en-IN"),
-  }));
-  const monthTable = drawTable(ctx, {
-    top: y,
-    columns: monthColumns,
-    rows: monthTableRows,
-    pageBottom,
-  });
-  y = monthTable.y + 10;
-
-  y = drawPremiumSectionTitle(ctx, "Environmental Impact (25 Years)", CONTENT_LEFT, y);
   y = drawImpactCards(layout, [
     {
       label: "CO₂ Offset",
@@ -585,10 +589,6 @@ export async function generateProjectProposalPdf(
     },
   ], y);
 
-  y = drawGstBreakupSection(layout, { money: data.money, gst: data.gst }, y);
-  y = drawWarrantyCards(layout, y);
-  y = drawPaymentTimeline(layout, y);
-  y = drawDeliveryTimeline(layout, y);
   y = drawWaareeBrandCard(layout, y);
   y = drawTermsSection(layout, y);
 

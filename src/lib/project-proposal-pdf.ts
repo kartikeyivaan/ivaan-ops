@@ -50,7 +50,6 @@ import {
   drawWarrantyCards,
   estimateProjectSummaryCardHeight,
   estimateGenerationEstimateSectionMinHeight,
-  estimateWarrantySectionMinHeight,
   startNewPage,
   type ProposalLayoutContext,
 } from "@/lib/proposal-pdf-components";
@@ -596,7 +595,7 @@ export async function generateProjectProposalPdf(
   if (bankDetails) {
     y = drawBankDetailsCard(layout, bankDetails, proposal.company.name, y);
   } else {
-    y = drawSignatureBlock(ctx, proposal.company.name, y);
+    drawSignatureBlock(ctx, proposal.company.name, y);
   }
 
   const companyLine = [proposal.company.name, PROJECT_DOCUMENTS_PHONE, data.profile.email]

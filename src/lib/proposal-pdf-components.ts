@@ -774,7 +774,7 @@ function drawBarChartInBounds(
 
   drawCard(ctx, x, y, width, totalHeight, 8, "#FFFFFF");
 
-  let cy = y + cardPad;
+  const cy = y + cardPad;
   doc
     .font(fonts.bold)
     .fontSize(7.5)

@@ -39,13 +39,14 @@ export function getProposalValidityDate(proposalDate: Date): Date {
 }
 
 /** Bump when proposal PDF layout/content generation changes (cache busting). */
-export const PROJECT_PROPOSAL_PDF_LAYOUT_VERSION = 2;
+export const PROJECT_PROPOSAL_PDF_LAYOUT_VERSION = 3;
 
 export const PROJECT_PROPOSAL_PDF_CACHE_HEADERS = {
   "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
   Pragma: "no-cache",
   "CDN-Cache-Control": "no-store",
   "Vercel-CDN-Cache-Control": "no-store",
+  "X-Proposal-Pdf-Layout-Version": String(PROJECT_PROPOSAL_PDF_LAYOUT_VERSION),
 } as const;
 
 export function projectProposalPdfUrl(
@@ -60,6 +61,36 @@ export function projectProposalPdfUrl(
     v: String(PROJECT_PROPOSAL_PDF_LAYOUT_VERSION),
   });
   return `/api/project-proposals/${proposalId}/pdf?${params.toString()}`;
+}
+
+/** Fetch a fresh PDF and open it in a new tab, bypassing browser PDF URL cache. */
+export async function openProjectProposalPdf(url: string): Promise<void> {
+  const bustUrl = `${url}&_ts=${Date.now()}`;
+  const response = await fetch(bustUrl, {
+    cache: "no-store",
+    credentials: "same-origin",
+  });
+
+  if (!response.ok) {
+    let message = "Could not load the proposal PDF. Please try again.";
+    try {
+      const data = (await response.json()) as { message?: string };
+      if (data.message) message = data.message;
+    } catch {
+      // Non-JSON error body — keep default message.
+    }
+    throw new Error(message);
+  }
+
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const opened = window.open(objectUrl, "_blank", "noopener,noreferrer");
+  if (!opened) {
+    URL.revokeObjectURL(objectUrl);
+    throw new Error("Pop-up blocked. Allow pop-ups for this site and try again.");
+  }
+
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
 }
 
 export async function generateProposalNumber(

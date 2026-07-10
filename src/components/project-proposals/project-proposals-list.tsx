@@ -43,6 +43,7 @@ import {
   canShareProjectProposal,
   formatRevisionProposalLabel,
   formatProjectProposalStatus,
+  openProjectProposalPdf,
   projectProposalPdfUrl,
 } from "@/lib/project-proposals";
 import { canReviseProjectProposal } from "@/lib/project-proposal-revision";
@@ -156,6 +157,22 @@ export function ProjectProposalsList({
 
   async function refreshList() {
     await applyFilters();
+  }
+
+  async function downloadProposalPdf(proposal: ProposalListItem) {
+    setActionLoading(proposal.id);
+    setError(null);
+    try {
+      await openProjectProposalPdf(
+        projectProposalPdfUrl(proposal.id, {
+          revisionNo: proposal.currentRevisionNo,
+        }),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not open the proposal PDF.");
+    } finally {
+      setActionLoading(null);
+    }
   }
 
   async function shareWhatsapp(proposalId: string) {
@@ -355,15 +372,8 @@ export function ProjectProposalsList({
           ) : null}
           {canDownloadRow(proposal) ? (
             <DropdownMenuItem
-              onClick={() =>
-                window.open(
-                  projectProposalPdfUrl(proposal.id, {
-                    revisionNo: proposal.currentRevisionNo,
-                  }),
-                  "_blank",
-                  "noopener,noreferrer",
-                )
-              }
+              disabled={actionLoading === proposal.id}
+              onClick={() => void downloadProposalPdf(proposal)}
             >
               <Download className="mr-2 h-4 w-4" />
               Download PDF

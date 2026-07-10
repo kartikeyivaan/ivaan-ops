@@ -24,6 +24,7 @@ import {
   formatApprovalStatus,
   formatRevisionProposalLabel,
   formatProjectProposalStatus,
+  openProjectProposalPdf,
   projectProposalPdfUrl,
 } from "@/lib/project-proposals";
 import { canReviseProjectProposal } from "@/lib/project-proposal-revision";
@@ -155,6 +156,23 @@ export function ProjectProposalDetail({
   const canSubmitForApproval = canManage && proposal.status === "DRAFT" && requiresApproval;
   const canDownloadOrShare = canShareProjectProposal(proposal.status);
   const canDownloadPdf = canManage || canDownloadOrShare;
+
+  async function openProposalPdf(format: "card" | "full") {
+    setLoading(true);
+    setError(null);
+    try {
+      await openProjectProposalPdf(
+        projectProposalPdfUrl(proposal.id, {
+          format,
+          revisionNo: proposal.currentRevisionNo,
+        }),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not open the proposal PDF.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function shareWhatsapp() {
     setLoading(true);
@@ -345,29 +363,21 @@ export function ProjectProposalDetail({
         ) : null}
         {canDownloadPdf ? (
           <>
-            <Button asChild variant="outline" className="w-full sm:w-auto">
-              <a
-                href={projectProposalPdfUrl(proposal.id, {
-                  format: "card",
-                  revisionNo: proposal.currentRevisionNo,
-                })}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Quote Card
-              </a>
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto"
+              disabled={loading}
+              onClick={() => void openProposalPdf("card")}
+            >
+              Quote Card
             </Button>
-            <Button asChild variant="outline" className="w-full sm:w-auto">
-              <a
-                href={projectProposalPdfUrl(proposal.id, {
-                  format: "full",
-                  revisionNo: proposal.currentRevisionNo,
-                })}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Full Proposal
-              </a>
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto"
+              disabled={loading}
+              onClick={() => void openProposalPdf("full")}
+            >
+              Full Proposal
             </Button>
           </>
         ) : null}

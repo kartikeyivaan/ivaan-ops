@@ -38,6 +38,30 @@ export function getProposalValidityDate(proposalDate: Date): Date {
   return toDateOnly(addDays(proposalDate, PROJECT_PROPOSAL_VALIDITY_DAYS));
 }
 
+/** Bump when proposal PDF layout/content generation changes (cache busting). */
+export const PROJECT_PROPOSAL_PDF_LAYOUT_VERSION = 2;
+
+export const PROJECT_PROPOSAL_PDF_CACHE_HEADERS = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+  Pragma: "no-cache",
+  "CDN-Cache-Control": "no-store",
+  "Vercel-CDN-Cache-Control": "no-store",
+} as const;
+
+export function projectProposalPdfUrl(
+  proposalId: string,
+  options?: { format?: "card" | "full"; revisionNo?: number },
+): string {
+  const format = options?.format ?? "full";
+  const revisionNo = options?.revisionNo ?? 1;
+  const params = new URLSearchParams({
+    format,
+    rev: String(revisionNo),
+    v: String(PROJECT_PROPOSAL_PDF_LAYOUT_VERSION),
+  });
+  return `/api/project-proposals/${proposalId}/pdf?${params.toString()}`;
+}
+
 export async function generateProposalNumber(
   prisma: PrismaClient | Prisma.TransactionClient,
   companyCode: string,

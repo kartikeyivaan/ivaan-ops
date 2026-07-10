@@ -3,6 +3,11 @@ import { generateProjectProposalPdf, projectProposalPdfInclude } from "@/lib/pro
 import { assertProjectProposalShareable } from "@/lib/project-proposal-service";
 import { verifyProjectProposalShareToken } from "@/lib/share-token";
 import { prisma } from "@/lib/prisma";
+import {
+  PROJECT_PROPOSAL_PDF_CACHE_HEADERS,
+} from "@/lib/project-proposals";
+
+export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -49,7 +54,7 @@ export async function GET(request: Request) {
   return new NextResponse(new Uint8Array(pdf), {
     headers: {
       "Content-Type": "application/pdf",
-      "Cache-Control": "no-store, no-cache, must-revalidate",
+      ...PROJECT_PROPOSAL_PDF_CACHE_HEADERS,
       "Content-Disposition": `inline; filename="${asciiName}.pdf"; filename*=UTF-8''${encodeURIComponent(
         `${safeName}.pdf`,
       )}`,

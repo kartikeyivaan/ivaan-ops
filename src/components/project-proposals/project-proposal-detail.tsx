@@ -24,6 +24,7 @@ import {
   formatApprovalStatus,
   formatRevisionProposalLabel,
   formatProjectProposalStatus,
+  projectProposalPdfUrl,
 } from "@/lib/project-proposals";
 import { canReviseProjectProposal } from "@/lib/project-proposal-revision";
 import { formatDocumentDate } from "@/lib/utils";
@@ -346,7 +347,10 @@ export function ProjectProposalDetail({
           <>
             <Button asChild variant="outline" className="w-full sm:w-auto">
               <a
-                href={`/api/project-proposals/${proposal.id}/pdf?format=card`}
+                href={projectProposalPdfUrl(proposal.id, {
+                  format: "card",
+                  revisionNo: proposal.currentRevisionNo,
+                })}
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -355,7 +359,10 @@ export function ProjectProposalDetail({
             </Button>
             <Button asChild variant="outline" className="w-full sm:w-auto">
               <a
-                href={`/api/project-proposals/${proposal.id}/pdf?format=full`}
+                href={projectProposalPdfUrl(proposal.id, {
+                  format: "full",
+                  revisionNo: proposal.currentRevisionNo,
+                })}
                 target="_blank"
                 rel="noopener noreferrer"
               >

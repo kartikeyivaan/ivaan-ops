@@ -9,7 +9,10 @@ import {
 import { assertProjectProposalAccess } from "@/lib/project-proposal-service";
 import { canViewProjectProposals } from "@/lib/project-proposal-permissions";
 import { prisma } from "@/lib/prisma";
+import { PROJECT_PROPOSAL_PDF_CACHE_HEADERS } from "@/lib/project-proposals";
 import { requireActiveCompany } from "@/lib/session";
+
+export const dynamic = "force-dynamic";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -64,7 +67,7 @@ export async function GET(request: Request, context: RouteContext) {
     return new NextResponse(new Uint8Array(pdf), {
       headers: {
         "Content-Type": "application/pdf",
-        "Cache-Control": "no-store, no-cache, must-revalidate",
+        ...PROJECT_PROPOSAL_PDF_CACHE_HEADERS,
         "Content-Disposition": `attachment; filename="${asciiName}.pdf"; filename*=UTF-8''${encodeURIComponent(
           `${safeName}.pdf`,
         )}`,

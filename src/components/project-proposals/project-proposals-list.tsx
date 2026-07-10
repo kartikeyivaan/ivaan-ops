@@ -43,6 +43,7 @@ import {
   canShareProjectProposal,
   formatRevisionProposalLabel,
   formatProjectProposalStatus,
+  projectProposalPdfUrl,
 } from "@/lib/project-proposals";
 import { canReviseProjectProposal } from "@/lib/project-proposal-revision";
 import { formatDocumentDate } from "@/lib/utils";
@@ -356,7 +357,9 @@ export function ProjectProposalsList({
             <DropdownMenuItem
               onClick={() =>
                 window.open(
-                  `/api/project-proposals/${proposal.id}/pdf`,
+                  projectProposalPdfUrl(proposal.id, {
+                    revisionNo: proposal.currentRevisionNo,
+                  }),
                   "_blank",
                   "noopener,noreferrer",
                 )

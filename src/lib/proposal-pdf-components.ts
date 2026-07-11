@@ -1475,14 +1475,17 @@ export function drawSignatureBlock(
   top: number,
   fontSize = 9,
   showCompanyStamp = true,
+  pageBottom?: number,
 ): number {
   const { doc, palette, fonts } = ctx;
   const signW = 200;
   const signX = CONTENT_RIGHT - signW;
+  const blockHeight = showCompanyStamp ? 68 : 54;
+  const drawTop = pageBottom != null ? ensurePageSpace(doc, top, blockHeight, pageBottom) : top;
 
   doc
-    .moveTo(signX, top)
-    .lineTo(CONTENT_RIGHT, top)
+    .moveTo(signX, drawTop)
+    .lineTo(CONTENT_RIGHT, drawTop)
     .lineWidth(0.5)
     .strokeColor(palette.border)
     .stroke();
@@ -1491,20 +1494,20 @@ export function drawSignatureBlock(
     .font(fonts.regular)
     .fontSize(fontSize)
     .fillColor(palette.muted)
-    .text(`For ${companyName}`, signX, top + 8, { width: signW, align: "right" });
+    .text(`For ${companyName}`, signX, drawTop + 8, { width: signW, align: "right" });
   doc
     .font(fonts.bold)
     .fontSize(fontSize)
     .fillColor(palette.ink)
-    .text("Authorised Signatory", signX, top + 38, { width: signW, align: "right" });
+    .text("Authorised Signatory", signX, drawTop + 38, { width: signW, align: "right" });
 
   if (showCompanyStamp) {
     doc
       .font(fonts.regular)
       .fontSize(fontSize - 2)
       .fillColor(palette.faint)
-      .text("Company Stamp", signX, top + 52, { width: signW, align: "right" });
+      .text("Company Stamp", signX, drawTop + 52, { width: signW, align: "right" });
   }
 
-  return top + (showCompanyStamp ? 68 : 54);
+  return drawTop + blockHeight;
 }

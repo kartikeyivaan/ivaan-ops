@@ -328,13 +328,13 @@ export function ProjectProposalsList({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
             disabled={actionLoading === proposal.id}
-            className="w-full sm:w-auto"
+            className="h-8 w-8 shrink-0 p-0"
+            aria-label="Proposal actions"
           >
             <MoreHorizontal className="h-4 w-4" />
-            Actions
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
@@ -562,9 +562,12 @@ export function ProjectProposalsList({
                           {revision ? formatDocumentDate(revision.proposalDate) : "—"}
                         </p>
                       </div>
-                      <Badge variant={statusVariant(proposal.status)}>
-                        {formatProjectProposalStatus(proposal.status)}
-                      </Badge>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Badge variant={statusVariant(proposal.status)}>
+                          {formatProjectProposalStatus(proposal.status)}
+                        </Badge>
+                        {renderProposalActions(proposal)}
+                      </div>
                     </div>
                     <dl className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
                       <div>
@@ -602,7 +605,6 @@ export function ProjectProposalsList({
                         </dd>
                       </div>
                     </dl>
-                    <div className="mt-4">{renderProposalActions(proposal)}</div>
                   </div>
                 );
               })
@@ -623,7 +625,7 @@ export function ProjectProposalsList({
                   <TableHead className="text-right">Final Amount</TableHead>
                   <TableHead className="text-right">Discount</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -660,7 +662,7 @@ export function ProjectProposalsList({
                             {formatProjectProposalStatus(proposal.status)}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="w-10 px-2 text-center">
                           {renderProposalActions(proposal)}
                         </TableCell>
                       </TableRow>

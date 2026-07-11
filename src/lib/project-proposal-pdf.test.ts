@@ -6,6 +6,11 @@ import {
 } from "@prisma/client";
 import { Prisma } from "@prisma/client";
 import { generateProjectProposalPdf, generateProjectProposalQuoteCardPdf, type ProjectProposalPdfRecord } from "@/lib/project-proposal-pdf";
+import { ISE_BANK_DETAILS } from "@/lib/proposal-pdf-content";
+
+function countPdfPages(pdf: Buffer): number {
+  return (pdf.toString("latin1").match(/\/Type\s*\/Page\b/g) || []).length;
+}
 
 function buildProposalFixture(): ProjectProposalPdfRecord {
   return {
@@ -117,5 +122,24 @@ describe("project proposal pdf", () => {
     expect(pdf).toBeInstanceOf(Buffer);
     expect(pdf.length).toBeGreaterThan(1000);
     expect(pdf.subarray(0, 4).toString()).toBe("%PDF");
+  });
+
+  it("keeps the quote card on a single page with full ISE company details", async () => {
+    const proposal = buildProposalFixture();
+    proposal.company = {
+      ...proposal.company,
+      address: "Waaree Solar Center, Opp. K. U. Kolhe School,\nOld Nashirabad Road, Near Kalika Mata Mandir Chowk",
+      city: "Jalgaon",
+      state: "Maharashtra",
+      pincode: "425001",
+      phone: "+91 8888 555 832",
+      email: "connect@ivaansolar.com",
+      gstNumber: "27AAJFI3520N1Z5",
+      tagline: "Authorised Waaree Franchise",
+      bankDetails: ISE_BANK_DETAILS,
+    };
+
+    const pdf = await generateProjectProposalQuoteCardPdf(proposal);
+    expect(countPdfPages(pdf)).toBe(1);
   });
 });

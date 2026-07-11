@@ -324,7 +324,11 @@ export async function generateProjectProposalQuoteCardPdf(
   const ctx: DocContext = { doc, palette, fonts };
   const data = prepareProposal(proposal, money);
   const profile = resolveProfile(proposal.company);
-  const pageBottom = doc.page.height - 56;
+  // Quote card uses the footer band for signature; shrink the bottom margin so
+  // PDFKit does not auto-paginate before the footer line.
+  const quoteCardBottomMargin = 56;
+  doc.page.margins.bottom = quoteCardBottomMargin;
+  const pageBottom = doc.page.height - quoteCardBottomMargin;
   const { revision } = data;
 
   const totalSystemKw = calculateTotalSystemKw({
@@ -444,7 +448,7 @@ export async function generateProjectProposalQuoteCardPdf(
   }
 
   y = Math.max(warrantyBottom, bankBottom) + 10;
-  drawSignatureBlock(ctx, proposal.company.name, y, 9, false);
+  drawSignatureBlock(ctx, proposal.company.name, y, 9, false, pageBottom);
 
   const companyLine = [proposal.company.name, PROJECT_DOCUMENTS_PHONE, profile.email]
     .filter(Boolean)

@@ -4,6 +4,7 @@ import {
   calculateProposedSystemKwp,
   calculateStructureCapacity,
   calculateTotalSystemKw,
+  resolveInverterKw,
   totalProposedPanelCount,
 } from "@/lib/proposal-bom";
 import {
@@ -42,6 +43,15 @@ describe("proposal generation", () => {
 });
 
 describe("proposal bom", () => {
+  it("resolves inverter capacity from upgrade only (default 3 kW)", () => {
+    expect(resolveInverterKw(null)).toBe(3);
+    expect(resolveInverterKw(undefined)).toBe(3);
+    expect(resolveInverterKw(0)).toBe(3);
+    expect(resolveInverterKw(4)).toBe(4);
+    expect(resolveInverterKw(5)).toBe(5);
+    expect(resolveInverterKw(6)).toBe(6);
+  });
+
   it("includes separate DCR and NDCR module rows", () => {
     const bom = buildProposalBom({
       panelWp: 570,
@@ -58,8 +68,42 @@ describe("proposal bom", () => {
 
     const moduleLines = bom.filter((line) => line.description.includes("Modules"));
     expect(moduleLines).toHaveLength(2);
-    expect(moduleLines[0]?.description).toContain("DCR");
+    expect(moduleLines[0]?.description).toBe(
+      "Waaree TOPCON DCR Bi-570+Wp Modules",
+    );
     expect(moduleLines[1]?.description).toContain("NDCR Bi-580Wp+");
+  });
+
+  it("uses Mono-PERC for 530+Wp and TOPCON for 570+Wp DCR modules", () => {
+    expect(
+      buildProposalBom({
+        panelWp: 530,
+        panelCount: 6,
+        systemKw: 3.3,
+        dcrAdditionalPanels: 0,
+        ndcrAdditionalPanels: 0,
+        ndcrPanelWp: 580,
+        inverterBrand: "Polycab",
+        inverterKw: 3,
+        connectionPhase: "SINGLE_PHASE",
+        structureType: "CUSTOM_FABRICATED",
+      })[0]?.description,
+    ).toBe("Waaree Mono-PERC DCR Bi-530+Wp Modules");
+
+    expect(
+      buildProposalBom({
+        panelWp: 570,
+        panelCount: 6,
+        systemKw: 3.3,
+        dcrAdditionalPanels: 0,
+        ndcrAdditionalPanels: 0,
+        ndcrPanelWp: 580,
+        inverterBrand: "Polycab",
+        inverterKw: 3,
+        connectionPhase: "SINGLE_PHASE",
+        structureType: "CUSTOM_FABRICATED",
+      })[0]?.description,
+    ).toBe("Waaree TOPCON DCR Bi-570+Wp Modules");
   });
 
   it("calculates proposed system kWp from all panel wattages", () => {

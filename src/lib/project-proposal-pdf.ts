@@ -14,6 +14,7 @@ import {
   buildProposalBom,
   calculateStructureCapacity,
   calculateTotalSystemKw,
+  formatDcrPanelTechnology,
   resolveInverterKw,
   type BomLine,
 } from "@/lib/proposal-bom";
@@ -199,10 +200,13 @@ function prepareProposal(proposal: ProjectProposalPdfRecord, money: (v: number) 
       });
   const brands = (revision.inverterBrands as string[]) ?? [];
   const inverterBrand = brands.length > 0 ? brands.join("/") : "—";
-  const inverterKw = resolveInverterKw(
-    systemKw,
-    revision.inverterUpgrade ? decimalToNumber(revision.inverterUpgrade.upgradeKw) : null,
-  );
+  const inverterKw = ndcrComplete
+    ? decimalToNumber(revision.inverterCapacityKw ?? 0)
+    : resolveInverterKw(
+        revision.inverterUpgrade
+          ? decimalToNumber(revision.inverterUpgrade.upgradeKw)
+          : null,
+      );
   const finalAmount = decimalToNumber(revision.finalAmount);
   const subsidyEstimate = decimalToNumber(revision.subsidyEstimate);
   const effectiveInvestment = decimalToNumber(revision.effectiveCustomerInvestment);
@@ -506,7 +510,7 @@ export async function generateProjectProposalPdf(
 
   const projectSummaryRows: Array<[string, string]> = [
     ["Project Capacity", `${data.systemKw} kWp On-Grid Rooftop`],
-    ["Panel Technology", `Waaree TOPCON DCR Bi-${data.panelWp}Wp+`],
+    ["Panel Technology", formatDcrPanelTechnology(data.panelWp)],
     ["Inverter", `${data.inverterBrand} ${data.inverterKw} kW On-Grid String`],
     ["Structure", structureLabel(revision.structureType)],
     ["Connection", connectionLabel(revision.connectionPhase)],

@@ -24,14 +24,20 @@ export function structureDescription(structureType: ProposalStructureType | stri
   }
 }
 
+/** Default on-grid inverter when no inverter upgrade is selected. */
+export const DEFAULT_INVERTER_CAPACITY_KW = 3;
+
+/**
+ * Inverter AC capacity for DCR package proposals.
+ * Only the explicit inverter upgrade changes capacity; panel count / DC kWp must not.
+ */
 export function resolveInverterKw(
-  systemKw: number,
   upgradeKw: number | null | undefined,
 ): number {
-  if (upgradeKw && upgradeKw > 0) {
+  if (upgradeKw != null && upgradeKw > 0) {
     return upgradeKw;
   }
-  return Math.round(systemKw);
+  return DEFAULT_INVERTER_CAPACITY_KW;
 }
 
 /** Total DC nameplate kWp from all proposed panels (one decimal). */
@@ -77,6 +83,16 @@ export function formatDcrPanelLabel(panelWp: number): string {
   return `Waaree ${panelWp}+Wp DCR`;
 }
 
+/** DCR module technology label for proposal PDF (BOM + project summary). */
+export function formatDcrPanelTechnology(panelWp: number): string {
+  const tech = panelWp < 570 ? "Mono-PERC" : "TOPCON";
+  return `Waaree ${tech} DCR Bi-${panelWp}+Wp`;
+}
+
+export function formatDcrPanelModuleDescription(panelWp: number): string {
+  return `${formatDcrPanelTechnology(panelWp)} Modules`;
+}
+
 export function formatNdcrPanelLabel(ndcrPanelWp: number): string {
   return `Waaree ${ndcrPanelWp}+Wp NDCR`;
 }
@@ -118,7 +134,7 @@ export function buildProposalBom(input: {
   lines.push({
     sr: 1,
     item: "Solar PV Module",
-    description: `Waaree TOPCON DCR Bi-${input.panelWp}Wp+ Modules`,
+    description: formatDcrPanelModuleDescription(input.panelWp),
     qty: String(totalDcrPanels),
     capacity: `${input.panelWp}Wp+`,
     make: "Waaree",

@@ -269,7 +269,6 @@ export function ProjectProposalForm({
     });
 
     const inverterKw = resolveInverterKw(
-      selectedPackage.systemKw,
       selectedInverterUpgrade?.upgradeKw ?? null,
     );
 

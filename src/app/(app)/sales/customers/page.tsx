@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import {
@@ -39,11 +40,13 @@ export default async function CustomersPage() {
   });
 
   return (
-    <CustomersList
-      initialCustomers={customers}
-      salesExecutives={salesExecutives}
-      canEdit={canEditCustomers(session.user.roles)}
-      canReassign={canReassignCustomers(session.user.roles)}
-    />
+    <Suspense fallback={<div className="text-sm text-slate-500">Loading customers...</div>}>
+      <CustomersList
+        initialCustomers={customers}
+        salesExecutives={salesExecutives}
+        canEdit={canEditCustomers(session.user.roles)}
+        canReassign={canReassignCustomers(session.user.roles)}
+      />
+    </Suspense>
   );
 }

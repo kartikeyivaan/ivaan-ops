@@ -194,16 +194,29 @@ export const incomingLotSchema = z.object({
   companyId: z.string().uuid(),
   warehouseId: z.string().uuid(),
   vendorId: z.string().uuid().optional(),
-  purchaseInvoiceNo: z.string().optional(),
+  purchaseInvoiceNo: z.string().trim().min(1, "Purchase invoice number is required."),
   purchaseDate: z.string(),
   productId: z.string().uuid(),
   quantity: z.coerce.number().positive(),
   unitPurchaseRate: z.coerce.number().min(0),
   transportCharges: z.coerce.number().min(0).default(0),
   commissionCharges: z.coerce.number().min(0).default(0),
+  confirmSimilar: z.boolean().optional(),
 });
 
 export const incomingLotUpdateSchema = incomingLotSchema.omit({ companyId: true });
+
+export const incomingLotCheckSchema = z.object({
+  purchaseInvoiceNo: z.string().trim().min(1).optional(),
+  companyId: z.string().uuid().optional(),
+  warehouseId: z.string().uuid().optional(),
+  vendorId: z.string().uuid().optional(),
+  productId: z.string().uuid().optional(),
+  purchaseDate: z.string().optional(),
+  quantity: z.coerce.number().positive().optional(),
+  unitPurchaseRate: z.coerce.number().min(0).optional(),
+  excludeLotId: z.string().uuid().optional(),
+});
 
 export const inwardSchema = z.object({
   lotId: z.string().uuid(),

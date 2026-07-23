@@ -111,8 +111,8 @@ export function PurchaseIncomingList({
                       {isEditableIncomingLot(lot) ? (
                         <Button
                           type="button"
-                          variant="default"
-                          className="h-auto p-0 font-medium text-emerald-700"
+                          variant="ghost"
+                          className="h-auto p-0 font-medium text-slate-900 hover:bg-transparent hover:underline"
                           onClick={() => setEditingLot(lot)}
                         >
                           {lot.lotNumber}

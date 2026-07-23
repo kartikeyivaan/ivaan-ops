@@ -23,6 +23,7 @@ Implements Sprint 1 customer module per PRD v3.0.
 | `/sales/customers` | Customer list |
 | `/sales/customers/new` | Create customer |
 | `/sales/customers/[id]` | Customer profile |
+| `/sales/customers/[id]/edit` | Edit customer |
 
 ## API
 

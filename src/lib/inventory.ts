@@ -25,16 +25,31 @@ export function getFinancialYear(date = new Date()): string {
   return `${String(startYear).slice(-2)}-${String(endYear).slice(-2)}`;
 }
 
+export function normalizePurchaseInvoiceNo(value: string): string {
+  return value.trim().toUpperCase();
+}
+
+export function systemPurchaseInvoiceNo(lotNumber: string): string {
+  return `SYS-${lotNumber}`;
+}
+
 export async function generateLotNumber(
   prisma: PrismaClient | Prisma.TransactionClient,
   date = new Date(),
 ): Promise<string> {
   const fy = getFinancialYear(date);
   const prefix = `LOT-${fy}-`;
-  const count = await prisma.inventoryLot.count({
+  const latest = await prisma.inventoryLot.findFirst({
     where: { lotNumber: { startsWith: prefix } },
+    orderBy: { lotNumber: "desc" },
+    select: { lotNumber: true },
   });
-  return `${prefix}${String(count + 1).padStart(5, "0")}`;
+
+  const lastSeq = latest
+    ? Number.parseInt(latest.lotNumber.slice(prefix.length), 10) || 0
+    : 0;
+
+  return `${prefix}${String(lastSeq + 1).padStart(5, "0")}`;
 }
 
 export async function generateTransferNumber(

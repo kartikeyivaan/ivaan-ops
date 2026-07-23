@@ -13,12 +13,15 @@ import {
   type CustomerImportRow,
 } from "@/lib/customers";
 
+const customerInclude = {
+  assignedSalesUser: { select: { id: true, name: true, email: true } },
+  createdBy: { select: { id: true, name: true } },
+  updatedBy: { select: { id: true, name: true } },
+  contacts: true,
+} satisfies Prisma.CustomerInclude;
+
 type CustomerWithRelations = Prisma.CustomerGetPayload<{
-  include: {
-    assignedSalesUser: { select: { id: true; name: true; email: true } };
-    createdBy: { select: { id: true; name: true } };
-    contacts: true;
-  };
+  include: typeof customerInclude;
 }>;
 
 export type CustomerListItem = CustomerWithRelations & {
@@ -87,11 +90,7 @@ export async function listCustomers(
 
   const customers = await prisma.customer.findMany({
     where,
-    include: {
-      assignedSalesUser: { select: { id: true, name: true, email: true } },
-      createdBy: { select: { id: true, name: true } },
-      contacts: true,
-    },
+    include: customerInclude,
     orderBy: { customerName: "asc" },
   });
 
@@ -105,11 +104,7 @@ export async function getCustomerById(
 ) {
   const customer = await prisma.customer.findUnique({
     where: { id: customerId },
-    include: {
-      assignedSalesUser: { select: { id: true, name: true, email: true } },
-      createdBy: { select: { id: true, name: true } },
-      contacts: true,
-    },
+    include: customerInclude,
   });
 
   return customer ? serializeCustomer(prisma, customer, companyId) : null;
@@ -180,6 +175,7 @@ export async function createCustomer(
       email: input.email || null,
       assignedSalesUserId: input.assignedSalesUserId,
       createdById: input.createdById,
+      updatedById: input.createdById,
       status: input.status ?? CustomerStatus.ACTIVE,
       contacts: input.contacts?.length
         ? {
@@ -192,11 +188,7 @@ export async function createCustomer(
           }
         : undefined,
     },
-    include: {
-      assignedSalesUser: { select: { id: true, name: true, email: true } },
-      createdBy: { select: { id: true, name: true } },
-      contacts: true,
-    },
+    include: customerInclude,
   });
 }
 
@@ -204,6 +196,7 @@ export async function updateCustomer(
   prisma: PrismaClient,
   customerId: string,
   input: {
+    updatedById: string;
     customerName?: string;
     contactPersonName?: string;
     customerType?: CustomerType;
@@ -279,12 +272,9 @@ export async function updateCustomer(
         email: input.email === "" ? null : input.email,
         assignedSalesUserId: input.assignedSalesUserId,
         status: input.status,
+        updatedById: input.updatedById,
       },
-      include: {
-        assignedSalesUser: { select: { id: true, name: true, email: true } },
-        createdBy: { select: { id: true, name: true } },
-        contacts: true,
-      },
+      include: customerInclude,
     });
   });
 }

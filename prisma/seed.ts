@@ -350,6 +350,7 @@ async function main() {
         email: customer.email,
         assignedSalesUserId: customer.assignedSalesUserId,
         createdById: customer.createdById,
+        updatedById: customer.createdById,
         contacts: {
           create: {
             name: "Primary Contact",
@@ -584,6 +585,7 @@ async function main() {
             lotNumber: cableLotNumber,
             companyId: ise.id,
             warehouseId: iseWarehouse.id,
+            purchaseInvoiceNo: "INV-SEED-003",
             purchaseDate: new Date(),
             productId: cableProduct.id,
             quantity: 500,

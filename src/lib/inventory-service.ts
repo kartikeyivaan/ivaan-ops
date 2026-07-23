@@ -10,7 +10,9 @@ import {
   decimalToNumber,
   emptyStockSummary,
   generateLotNumber,
+  normalizePurchaseInvoiceNo,
   normalizeSerialNumber,
+  systemPurchaseInvoiceNo,
   type StockSummary,
   validateInwardQuantities,
 } from "@/lib/inventory";
@@ -251,6 +253,138 @@ export async function getLotById(prisma: PrismaClient, lotId: string, companyId:
   });
 }
 
+export type SimilarIncomingLotMatch = {
+  id: string;
+  lotNumber: string;
+  purchaseInvoiceNo: string;
+  productName: string;
+  vendorName: string | null;
+  purchaseDate: string;
+  quantity: number;
+};
+
+export class SimilarIncomingLotError extends Error {
+  readonly matches: SimilarIncomingLotMatch[];
+
+  constructor(matches: SimilarIncomingLotMatch[]) {
+    super("SIMILAR_ENTRY_EXISTS");
+    this.matches = matches;
+  }
+}
+
+export async function findDuplicatePurchaseInvoice(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  purchaseInvoiceNo: string,
+  excludeLotId?: string,
+) {
+  const normalized = normalizePurchaseInvoiceNo(purchaseInvoiceNo);
+  if (!normalized) return null;
+
+  return prisma.inventoryLot.findFirst({
+    where: {
+      purchaseInvoiceNo: { equals: normalized, mode: "insensitive" },
+      ...(excludeLotId ? { id: { not: excludeLotId } } : {}),
+    },
+    select: {
+      id: true,
+      lotNumber: true,
+      purchaseInvoiceNo: true,
+    },
+  });
+}
+
+export async function findSimilarIncomingLots(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  input: {
+    companyId: string;
+    warehouseId: string;
+    vendorId?: string | null;
+    productId: string;
+    purchaseDate: Date;
+    quantity: number;
+    unitPurchaseRate: number;
+    excludeLotId?: string;
+  },
+): Promise<SimilarIncomingLotMatch[]> {
+  const lots = await prisma.inventoryLot.findMany({
+    where: {
+      companyId: input.companyId,
+      warehouseId: input.warehouseId,
+      productId: input.productId,
+      vendorId: input.vendorId ?? null,
+      purchaseDate: input.purchaseDate,
+      quantity: input.quantity,
+      unitPurchaseRate: input.unitPurchaseRate,
+      ...(input.excludeLotId ? { id: { not: input.excludeLotId } } : {}),
+    },
+    include: {
+      product: { select: { displayName: true } },
+      vendor: { select: { vendorName: true } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 5,
+  });
+
+  return lots.map((lot) => ({
+    id: lot.id,
+    lotNumber: lot.lotNumber,
+    purchaseInvoiceNo: lot.purchaseInvoiceNo,
+    productName: lot.product.displayName,
+    vendorName: lot.vendor?.vendorName ?? null,
+    purchaseDate: lot.purchaseDate.toISOString().slice(0, 10),
+    quantity: decimalToNumber(lot.quantity),
+  }));
+}
+
+async function validateIncomingLotUniqueness(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  input: {
+    purchaseInvoiceNo: string;
+    companyId: string;
+    warehouseId: string;
+    vendorId?: string | null;
+    productId: string;
+    purchaseDate: Date;
+    quantity: number;
+    unitPurchaseRate: number;
+    confirmSimilar?: boolean;
+    excludeLotId?: string;
+  },
+) {
+  const purchaseInvoiceNo = normalizePurchaseInvoiceNo(input.purchaseInvoiceNo);
+  if (!purchaseInvoiceNo) {
+    throw new Error("PURCHASE_INVOICE_REQUIRED");
+  }
+
+  const duplicateInvoice = await findDuplicatePurchaseInvoice(
+    prisma,
+    purchaseInvoiceNo,
+    input.excludeLotId,
+  );
+  if (duplicateInvoice) {
+    throw new Error("DUPLICATE_PURCHASE_INVOICE");
+  }
+
+  if (!input.confirmSimilar) {
+    const similarLots = await findSimilarIncomingLots(prisma, {
+      companyId: input.companyId,
+      warehouseId: input.warehouseId,
+      vendorId: input.vendorId,
+      productId: input.productId,
+      purchaseDate: input.purchaseDate,
+      quantity: input.quantity,
+      unitPurchaseRate: input.unitPurchaseRate,
+      excludeLotId: input.excludeLotId,
+    });
+
+    if (similarLots.length > 0) {
+      throw new SimilarIncomingLotError(similarLots);
+    }
+  }
+
+  return purchaseInvoiceNo;
+}
+
 export async function createIncomingLot(
   prisma: PrismaClient,
   input: {
@@ -265,6 +399,7 @@ export async function createIncomingLot(
     transportCharges?: number;
     commissionCharges?: number;
     createdById: string;
+    confirmSimilar?: boolean;
   },
 ) {
   const warehouse = await prisma.warehouse.findFirst({
@@ -294,16 +429,27 @@ export async function createIncomingLot(
     if (!vendor) throw new Error("VENDOR_NOT_FOUND");
   }
 
-  const lotNumber = await generateLotNumber(prisma, input.purchaseDate);
+  const purchaseInvoiceNo = await validateIncomingLotUniqueness(prisma, {
+    purchaseInvoiceNo: input.purchaseInvoiceNo ?? "",
+    companyId: input.companyId,
+    warehouseId: input.warehouseId,
+    vendorId: input.vendorId,
+    productId: input.productId,
+    purchaseDate: input.purchaseDate,
+    quantity: input.quantity,
+    unitPurchaseRate: input.unitPurchaseRate,
+    confirmSimilar: input.confirmSimilar,
+  });
 
   return prisma.$transaction(async (tx) => {
+    const lotNumber = await generateLotNumber(tx, input.purchaseDate);
     const lot = await tx.inventoryLot.create({
       data: {
         lotNumber,
         companyId: input.companyId,
         warehouseId: input.warehouseId,
         vendorId: input.vendorId ?? null,
-        purchaseInvoiceNo: input.purchaseInvoiceNo ?? null,
+        purchaseInvoiceNo,
         purchaseDate: input.purchaseDate,
         productId: input.productId,
         quantity: input.quantity,
@@ -363,6 +509,7 @@ export async function updateIncomingLot(
     transportCharges?: number;
     commissionCharges?: number;
     updatedById: string;
+    confirmSimilar?: boolean;
   },
 ) {
   const lot = await prisma.inventoryLot.findFirst({
@@ -398,13 +545,26 @@ export async function updateIncomingLot(
     if (!vendor) throw new Error("VENDOR_NOT_FOUND");
   }
 
+  const purchaseInvoiceNo = await validateIncomingLotUniqueness(prisma, {
+    purchaseInvoiceNo: input.purchaseInvoiceNo ?? "",
+    companyId,
+    warehouseId: input.warehouseId,
+    vendorId: input.vendorId,
+    productId: input.productId,
+    purchaseDate: input.purchaseDate,
+    quantity: input.quantity,
+    unitPurchaseRate: input.unitPurchaseRate,
+    confirmSimilar: input.confirmSimilar,
+    excludeLotId: lotId,
+  });
+
   return prisma.$transaction(async (tx) => {
     const updatedLot = await tx.inventoryLot.update({
       where: { id: lotId },
       data: {
         warehouseId: input.warehouseId,
         vendorId: input.vendorId ?? null,
-        purchaseInvoiceNo: input.purchaseInvoiceNo ?? null,
+        purchaseInvoiceNo,
         purchaseDate: input.purchaseDate,
         productId: input.productId,
         quantity: input.quantity,
@@ -758,6 +918,7 @@ export async function adjustStock(
           lotNumber,
           companyId: input.companyId,
           warehouseId: input.warehouseId,
+          purchaseInvoiceNo: systemPurchaseInvoiceNo(lotNumber),
           purchaseDate: new Date(),
           productId: input.productId,
           quantity: Math.abs(input.qty),

@@ -10,7 +10,7 @@ import { formatCustomerType } from "@/lib/customers";
 import { formatPaymentMode, formatProformaStatus } from "@/lib/proforma-invoices";
 import { formatDispatchStatus } from "@/lib/dispatches";
 import { formatQuotationStatus } from "@/lib/quotations";
-import { formatDocumentDate } from "@/lib/utils";
+import { formatDate, formatDocumentDate } from "@/lib/utils";
 import type { CustomerListItem } from "@/lib/customer-service";
 
 type SalesExecutive = { id: string; name: string; email: string };
@@ -82,9 +82,16 @@ export function CustomerProfile({
             {customer.customerCode} · {formatCustomerType(customer.customerType)}
           </p>
         </div>
-        <Button variant="outline" asChild>
-          <Link href="/sales/customers">Back to list</Link>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" asChild>
+            <Link href="/sales/customers">Back to list</Link>
+          </Button>
+          {canEdit ? (
+            <Button asChild>
+              <Link href={`/sales/customers/${customer.id}/edit`}>Edit Customer</Link>
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-4">
@@ -175,6 +182,22 @@ export function CustomerProfile({
               <div>
                 <p className="text-xs uppercase text-slate-500">Email</p>
                 <p className="font-medium">{customer.email ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase text-slate-500">Created By</p>
+                <p className="font-medium">{customer.createdBy.name}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase text-slate-500">Created Date</p>
+                <p className="font-medium">{formatDate(customer.createdAt)}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase text-slate-500">Modified By</p>
+                <p className="font-medium">{customer.updatedBy.name}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase text-slate-500">Modified Date</p>
+                <p className="font-medium">{formatDate(customer.updatedAt)}</p>
               </div>
             </CardContent>
           </Card>
@@ -336,7 +359,10 @@ export function CustomerProfile({
             <CustomerForm
               mode="edit"
               customerId={customer.id}
+              customerCode={customer.customerCode}
               salesExecutives={salesExecutives}
+              cancelHref={`/sales/customers/${customer.id}`}
+              successRedirect="/sales/customers?updated=1"
               initialValues={{
                 customerName: customer.customerName,
                 contactPersonName: customer.contactPersonName ?? "",

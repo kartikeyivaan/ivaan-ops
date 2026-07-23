@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { isReferentialConstraintError } from "@/lib/api-response";
@@ -10,6 +11,7 @@ import {
   deleteIncomingLot,
   getLotById,
   serializeLotForRole,
+  SimilarIncomingLotError,
   updateIncomingLot,
 } from "@/lib/inventory-service";
 import { prisma } from "@/lib/prisma";
@@ -78,6 +80,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       transportCharges: parsed.data.transportCharges,
       commissionCharges: parsed.data.commissionCharges,
       updatedById: session.user.id,
+      confirmSimilar: parsed.data.confirmSimilar,
     });
 
     return NextResponse.json(
@@ -107,7 +110,43 @@ export async function PATCH(request: Request, context: RouteContext) {
       if (error.message === "INVALID_QUANTITY") {
         return errorResponse("VALIDATION_ERROR", "Quantity must be greater than zero.", 400);
       }
+      if (error.message === "PURCHASE_INVOICE_REQUIRED") {
+        return errorResponse(
+          "VALIDATION_ERROR",
+          "Purchase invoice number is required.",
+          400,
+        );
+      }
+      if (error.message === "DUPLICATE_PURCHASE_INVOICE") {
+        return errorResponse(
+          "DUPLICATE_PURCHASE_INVOICE",
+          "This purchase invoice number already exists.",
+          409,
+        );
+      }
     }
+
+    if (error instanceof SimilarIncomingLotError) {
+      return errorResponse(
+        "SIMILAR_ENTRY_EXISTS",
+        "A similar incoming purchase record already exists.",
+        409,
+        { matches: error.matches },
+      );
+    }
+
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002" &&
+      String(error.meta?.target ?? "").includes("purchase_invoice_no")
+    ) {
+      return errorResponse(
+        "DUPLICATE_PURCHASE_INVOICE",
+        "This purchase invoice number already exists.",
+        409,
+      );
+    }
+
     throw error;
   }
 }

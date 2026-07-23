@@ -16,6 +16,32 @@ type Product = { id: string; displayName: string; gstRate: number };
 type Warehouse = { id: string; name: string; companyId: string };
 type Vendor = { id: string; vendorName: string };
 
+type SimilarIncomingLot = {
+  lotNumber: string;
+  purchaseInvoiceNo: string;
+  productName: string;
+  vendorName: string | null;
+  purchaseDate: string;
+  quantity: number;
+};
+
+type IncomingApiResponse = {
+  code?: string;
+  message?: string;
+  details?: {
+    matches?: SimilarIncomingLot[];
+  };
+};
+
+function formatSimilarMatches(matches: SimilarIncomingLot[]) {
+  return matches
+    .map(
+      (match) =>
+        `- ${match.lotNumber} (${match.purchaseInvoiceNo}): ${match.productName}, qty ${match.quantity}`,
+    )
+    .join("\n");
+}
+
 function formatDateInput(value: string) {
   return value.slice(0, 10);
 }
@@ -54,6 +80,7 @@ export function IncomingLotEditDialog({
     commissionCharges: String(lot.commissionCharges),
   });
   const [error, setError] = useState("");
+  const [invoiceWarning, setInvoiceWarning] = useState("");
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -70,7 +97,45 @@ export function IncomingLotEditDialog({
       commissionCharges: String(lot.commissionCharges),
     });
     setError("");
+    setInvoiceWarning("");
   }, [lot]);
+
+  async function checkPurchaseInvoiceDuplicate(invoiceNo: string) {
+    if (!invoiceNo.trim()) {
+      setInvoiceWarning("");
+      return;
+    }
+
+    const params = new URLSearchParams({
+      purchaseInvoiceNo: invoiceNo.trim(),
+      excludeLotId: lot.id,
+    });
+    const response = await fetch(`/api/inventory/incoming/check?${params.toString()}`);
+    if (!response.ok) return;
+
+    const data = await parseApiJson<{
+      duplicateInvoice: { lotNumber: string; purchaseInvoiceNo: string } | null;
+    }>(response);
+    if (data.duplicateInvoice) {
+      setInvoiceWarning(
+        `Invoice ${data.duplicateInvoice.purchaseInvoiceNo} is already used by lot ${data.duplicateInvoice.lotNumber}.`,
+      );
+      return;
+    }
+
+    setInvoiceWarning("");
+  }
+
+  async function submitUpdate(payload: Record<string, unknown>, confirmSimilar = false) {
+    const response = await fetch(`/api/inventory/incoming/${lot.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...payload, confirmSimilar }),
+    });
+
+    const data = await parseApiJson<IncomingApiResponse>(response);
+    return { response, data };
+  }
 
   const productOptions = useMemo(
     () => products.map((product) => ({ value: product.id, label: product.displayName })),
@@ -115,6 +180,18 @@ export function IncomingLotEditDialog({
     setLoading(true);
     setError("");
 
+    if (!form.purchaseInvoiceNo.trim()) {
+      setLoading(false);
+      setError("Purchase invoice number is required.");
+      return;
+    }
+
+    if (invoiceWarning) {
+      setLoading(false);
+      setError("Use a unique purchase invoice number before saving.");
+      return;
+    }
+
     if (!form.productId || !products.some((product) => product.id === form.productId)) {
       setLoading(false);
       setError("Select a valid product from the list.");
@@ -156,26 +233,42 @@ export function IncomingLotEditDialog({
       return;
     }
 
-    const response = await fetch(`/api/inventory/incoming/${lot.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        warehouseId: form.warehouseId,
-        vendorId: form.vendorId || undefined,
-        purchaseInvoiceNo: form.purchaseInvoiceNo || undefined,
-        purchaseDate: form.purchaseDate,
-        productId: form.productId,
-        quantity: quantityResult.value,
-        unitPurchaseRate: unitRateResult.value,
-        transportCharges: transportResult.value ?? 0,
-        commissionCharges: commissionResult.value ?? 0,
-      }),
-    });
+    const payload = {
+      warehouseId: form.warehouseId,
+      vendorId: form.vendorId || undefined,
+      purchaseInvoiceNo: form.purchaseInvoiceNo.trim(),
+      purchaseDate: form.purchaseDate,
+      productId: form.productId,
+      quantity: quantityResult.value,
+      unitPurchaseRate: unitRateResult.value,
+      transportCharges: transportResult.value ?? 0,
+      commissionCharges: commissionResult.value ?? 0,
+    };
 
-    const data = await parseApiJson<{ message?: string }>(response);
+    let { response, data } = await submitUpdate(payload);
+
+    if (
+      !response.ok &&
+      data.code === "SIMILAR_ENTRY_EXISTS" &&
+      data.details?.matches?.length
+    ) {
+      const confirmed = window.confirm(
+        `Similar incoming purchase record(s) already exist:\n${formatSimilarMatches(data.details.matches)}\n\nSave anyway?`,
+      );
+      if (confirmed) {
+        ({ response, data } = await submitUpdate(payload, true));
+      } else {
+        setLoading(false);
+        return;
+      }
+    }
+
     setLoading(false);
 
     if (!response.ok) {
+      if (data.code === "DUPLICATE_PURCHASE_INVOICE") {
+        setInvoiceWarning(data.message ?? "This purchase invoice number already exists.");
+      }
       setError(data.message ?? "Failed to update incoming lot.");
       return;
     }
@@ -257,8 +350,16 @@ export function IncomingLotEditDialog({
               <Label>Purchase invoice no.</Label>
               <Input
                 value={form.purchaseInvoiceNo}
-                onChange={(e) => setForm({ ...form, purchaseInvoiceNo: e.target.value })}
+                onChange={(e) => {
+                  setForm({ ...form, purchaseInvoiceNo: e.target.value });
+                  setInvoiceWarning("");
+                }}
+                onBlur={(e) => checkPurchaseInvoiceDuplicate(e.target.value)}
+                required
               />
+              {invoiceWarning ? (
+                <p className="text-sm text-amber-700">{invoiceWarning}</p>
+              ) : null}
             </div>
             <div className="space-y-2">
               <Label>Purchase date</Label>

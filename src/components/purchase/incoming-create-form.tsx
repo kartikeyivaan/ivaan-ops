@@ -17,6 +17,37 @@ type Product = { id: string; displayName: string; gstRate: number };
 type Warehouse = { id: string; name: string; companyId: string };
 type Vendor = { id: string; vendorName: string };
 
+type SimilarIncomingLot = {
+  lotNumber: string;
+  purchaseInvoiceNo: string;
+  productName: string;
+  vendorName: string | null;
+  purchaseDate: string;
+  quantity: number;
+};
+
+type IncomingCheckResponse = {
+  duplicateInvoice: { lotNumber: string; purchaseInvoiceNo: string } | null;
+  similarLots: SimilarIncomingLot[];
+};
+
+type IncomingApiResponse = {
+  code?: string;
+  message?: string;
+  details?: {
+    matches?: SimilarIncomingLot[];
+  };
+};
+
+function formatSimilarMatches(matches: SimilarIncomingLot[]) {
+  return matches
+    .map(
+      (match) =>
+        `- ${match.lotNumber} (${match.purchaseInvoiceNo}): ${match.productName}, qty ${match.quantity}`,
+    )
+    .join("\n");
+}
+
 export function IncomingCreateForm({
   companies,
   products,
@@ -49,6 +80,8 @@ export function IncomingCreateForm({
     commissionCharges: "0",
   });
   const [error, setError] = useState("");
+  const [invoiceWarning, setInvoiceWarning] = useState("");
+  const [similarWarning, setSimilarWarning] = useState("");
   const [loading, setLoading] = useState(false);
 
   const companyWarehouses = useMemo(
@@ -100,12 +133,62 @@ export function IncomingCreateForm({
       companyId,
       warehouseId: nextWarehouses[0]?.id ?? "",
     }));
+    setInvoiceWarning("");
+    setSimilarWarning("");
+  }
+
+  async function checkPurchaseInvoiceDuplicate(invoiceNo: string) {
+    if (!invoiceNo.trim()) {
+      setInvoiceWarning("");
+      return;
+    }
+
+    const params = new URLSearchParams({ purchaseInvoiceNo: invoiceNo.trim() });
+    const response = await fetch(`/api/inventory/incoming/check?${params.toString()}`);
+    if (!response.ok) return;
+
+    const data = await parseApiJson<IncomingCheckResponse>(response);
+    if (data.duplicateInvoice) {
+      setInvoiceWarning(
+        `Invoice ${data.duplicateInvoice.purchaseInvoiceNo} is already used by lot ${data.duplicateInvoice.lotNumber}.`,
+      );
+      return;
+    }
+
+    setInvoiceWarning("");
+  }
+
+  async function submitIncomingLot(
+    payload: Record<string, unknown>,
+    confirmSimilar = false,
+  ) {
+    const response = await fetch("/api/inventory/incoming", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...payload, confirmSimilar }),
+    });
+
+    const data = await parseApiJson<IncomingApiResponse>(response);
+    return { response, data };
   }
 
   async function createIncoming(event: React.FormEvent) {
     event.preventDefault();
     setLoading(true);
     setError("");
+    setSimilarWarning("");
+
+    if (!form.purchaseInvoiceNo.trim()) {
+      setLoading(false);
+      setError("Purchase invoice number is required.");
+      return;
+    }
+
+    if (invoiceWarning) {
+      setLoading(false);
+      setError("Use a unique purchase invoice number before saving.");
+      return;
+    }
 
     if (!form.productId || !products.some((product) => product.id === form.productId)) {
       setLoading(false);
@@ -148,27 +231,46 @@ export function IncomingCreateForm({
       return;
     }
 
-    const response = await fetch("/api/inventory/incoming", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        companyId: form.companyId,
-        warehouseId: form.warehouseId,
-        vendorId: form.vendorId || undefined,
-        purchaseInvoiceNo: form.purchaseInvoiceNo || undefined,
-        purchaseDate: form.purchaseDate,
-        productId: form.productId,
-        quantity: quantityResult.value,
-        unitPurchaseRate: unitRateResult.value,
-        transportCharges: transportResult.value ?? 0,
-        commissionCharges: commissionResult.value ?? 0,
-      }),
-    });
+    const payload = {
+      companyId: form.companyId,
+      warehouseId: form.warehouseId,
+      vendorId: form.vendorId || undefined,
+      purchaseInvoiceNo: form.purchaseInvoiceNo.trim(),
+      purchaseDate: form.purchaseDate,
+      productId: form.productId,
+      quantity: quantityResult.value,
+      unitPurchaseRate: unitRateResult.value,
+      transportCharges: transportResult.value ?? 0,
+      commissionCharges: commissionResult.value ?? 0,
+    };
 
-    const data = await parseApiJson<{ message?: string }>(response);
+    let { response, data } = await submitIncomingLot(payload);
+
+    if (
+      !response.ok &&
+      data.code === "SIMILAR_ENTRY_EXISTS" &&
+      data.details?.matches?.length
+    ) {
+      const confirmed = window.confirm(
+        `Similar incoming purchase record(s) already exist:\n${formatSimilarMatches(data.details.matches)}\n\nCreate anyway?`,
+      );
+      if (confirmed) {
+        ({ response, data } = await submitIncomingLot(payload, true));
+      } else {
+        setSimilarWarning(
+          `Similar record exists: ${data.details.matches.map((match) => match.lotNumber).join(", ")}.`,
+        );
+        setLoading(false);
+        return;
+      }
+    }
+
     setLoading(false);
 
     if (!response.ok) {
+      if (data.code === "DUPLICATE_PURCHASE_INVOICE") {
+        setInvoiceWarning(data.message ?? "This purchase invoice number already exists.");
+      }
       setError(data.message ?? "Failed to create incoming lot.");
       return;
     }
@@ -181,6 +283,8 @@ export function IncomingCreateForm({
       transportCharges: "0",
       commissionCharges: "0",
     }));
+    setInvoiceWarning("");
+    setSimilarWarning("");
 
     if (onCreated) {
       await onCreated();
@@ -251,8 +355,17 @@ export function IncomingCreateForm({
             <Label>Purchase invoice no.</Label>
             <Input
               value={form.purchaseInvoiceNo}
-              onChange={(e) => setForm({ ...form, purchaseInvoiceNo: e.target.value })}
+              onChange={(e) => {
+                setForm({ ...form, purchaseInvoiceNo: e.target.value });
+                setInvoiceWarning("");
+                setSimilarWarning("");
+              }}
+              onBlur={(e) => checkPurchaseInvoiceDuplicate(e.target.value)}
+              required
             />
+            {invoiceWarning ? (
+              <p className="text-sm text-amber-700">{invoiceWarning}</p>
+            ) : null}
           </div>
           <div className="space-y-2">
             <Label>Purchase date</Label>
@@ -305,6 +418,9 @@ export function IncomingCreateForm({
                 : " (GST uses the selected product's GST rate)."}
             </p>
           </div>
+          {similarWarning ? (
+            <p className="text-sm text-amber-700 md:col-span-2">{similarWarning}</p>
+          ) : null}
           {error ? <p className="text-sm text-red-600 md:col-span-2">{error}</p> : null}
           <div className="md:col-span-2">
             <Button type="submit" disabled={loading || companyWarehouses.length === 0}>

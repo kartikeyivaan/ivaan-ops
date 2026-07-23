@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import {
@@ -5,7 +6,14 @@ import {
   canViewInventory,
   canViewSerialNumbers,
 } from "@/lib/inventory-permissions";
-import { createIncomingLot, listIncomingLots, serializeLotForRole } from "@/lib/inventory-service";
+import {
+  createIncomingLot,
+  findDuplicatePurchaseInvoice,
+  findSimilarIncomingLots,
+  listIncomingLots,
+  serializeLotForRole,
+  SimilarIncomingLotError,
+} from "@/lib/inventory-service";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany, getSessionCompanyIds } from "@/lib/session";
 import { incomingLotSchema, inventorySearchSchema } from "@/lib/validations";
@@ -81,6 +89,7 @@ export async function POST(request: Request) {
       transportCharges: parsed.data.transportCharges,
       commissionCharges: parsed.data.commissionCharges,
       createdById: session.user.id,
+      confirmSimilar: parsed.data.confirmSimilar,
     });
 
     return NextResponse.json(
@@ -100,6 +109,50 @@ export async function POST(request: Request) {
       }
       if (error.message === "INVALID_QUANTITY") {
         return errorResponse("VALIDATION_ERROR", "Quantity must be greater than zero.", 400);
+      }
+      if (error.message === "PURCHASE_INVOICE_REQUIRED") {
+        return errorResponse(
+          "VALIDATION_ERROR",
+          "Purchase invoice number is required.",
+          400,
+        );
+      }
+      if (error.message === "DUPLICATE_PURCHASE_INVOICE") {
+        return errorResponse(
+          "DUPLICATE_PURCHASE_INVOICE",
+          "This purchase invoice number already exists.",
+          409,
+        );
+      }
+    }
+
+    if (error instanceof SimilarIncomingLotError) {
+      return errorResponse(
+        "SIMILAR_ENTRY_EXISTS",
+        "A similar incoming purchase record already exists.",
+        409,
+        { matches: error.matches },
+      );
+    }
+
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      const target = String(error.meta?.target ?? "");
+      if (target.includes("purchase_invoice_no")) {
+        return errorResponse(
+          "DUPLICATE_PURCHASE_INVOICE",
+          "This purchase invoice number already exists.",
+          409,
+        );
+      }
+      if (target.includes("lot_number")) {
+        return errorResponse(
+          "DUPLICATE_LOT_NUMBER",
+          "Could not assign a unique lot number. Please try again.",
+          409,
+        );
       }
     }
 

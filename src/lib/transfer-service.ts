@@ -11,6 +11,7 @@ import {
   decimalToNumber,
   generateLotNumber,
   generateTransferNumber,
+  systemPurchaseInvoiceNo,
 } from "@/lib/inventory";
 
 const transferInclude = {
@@ -186,6 +187,7 @@ async function addNonSerialStock(
         lotNumber,
         companyId: input.companyId,
         warehouseId: input.warehouseId,
+        purchaseInvoiceNo: systemPurchaseInvoiceNo(lotNumber),
         purchaseDate: new Date(),
         productId: input.productId,
         quantity: input.qty,

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Plus, Upload, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -37,6 +37,7 @@ export function CustomersList({
   canReassign: boolean;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [customers, setCustomers] = useState(initialCustomers);
   const [q, setQ] = useState("");
   const [city, setCity] = useState("");
@@ -46,6 +47,17 @@ export function CustomersList({
   const [showImport, setShowImport] = useState(false);
   const [showReassign, setShowReassign] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCustomers(initialCustomers);
+  }, [initialCustomers]);
+
+  useEffect(() => {
+    if (searchParams.get("updated") !== "1") return;
+    setSuccessMessage("Customer updated successfully.");
+    router.replace("/sales/customers", { scroll: false });
+  }, [searchParams, router]);
 
   async function applyFilters() {
     setLoading(true);
@@ -103,6 +115,12 @@ export function CustomersList({
           ) : null}
         </div>
       </div>
+
+      {successMessage ? (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          {successMessage}
+        </div>
+      ) : null}
 
       <CollapsibleFilterCard title="Search & Filter" contentClassName="grid gap-4 md:grid-cols-4">
           <div className="space-y-2">
@@ -186,7 +204,18 @@ export function CustomersList({
                     >
                       {customer.customerName}
                     </Link>
-                    <p className="text-xs text-slate-500">{customer.customerCode}</p>
+                    {canEdit ? (
+                      <p className="text-xs">
+                        <Link
+                          href={`/sales/customers/${customer.id}/edit`}
+                          className="font-medium text-emerald-700 hover:underline"
+                        >
+                          {customer.customerCode}
+                        </Link>
+                      </p>
+                    ) : (
+                      <p className="text-xs text-slate-500">{customer.customerCode}</p>
+                    )}
                   </TableCell>
                   <TableCell data-label="City">{customer.city ?? "—"}</TableCell>
                   <TableCell data-label="GST">{customer.gstNumber}</TableCell>

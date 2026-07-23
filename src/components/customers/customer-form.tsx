@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,11 @@ type ContactInput = {
 type CustomerFormProps = {
   mode: "create" | "edit";
   customerId?: string;
+  customerCode?: string;
   salesExecutives: SalesExecutive[];
+  cancelHref?: string;
+  successRedirect?: string;
+  showCardTitle?: boolean;
   initialValues?: {
     customerName: string;
     contactPersonName: string;
@@ -50,7 +55,11 @@ const emptyContact = (): ContactInput => ({
 export function CustomerForm({
   mode,
   customerId,
+  customerCode,
   salesExecutives,
+  cancelHref = "/sales/customers",
+  successRedirect,
+  showCardTitle = true,
   initialValues,
 }: CustomerFormProps) {
   const router = useRouter();
@@ -146,7 +155,13 @@ export function CustomerForm({
         return;
       }
 
-      router.push(`/sales/customers/${data.id}`);
+      if (mode === "edit") {
+        router.push(successRedirect ?? "/sales/customers?updated=1");
+        router.refresh();
+        return;
+      }
+
+      router.push(successRedirect ?? `/sales/customers/${data.id}`);
       router.refresh();
     } catch {
       setMessage("Could not reach the server. Check your connection and try again.");
@@ -157,11 +172,19 @@ export function CustomerForm({
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>{mode === "create" ? "Create Customer" : "Edit Customer"}</CardTitle>
-      </CardHeader>
-      <CardContent>
+      {showCardTitle ? (
+        <CardHeader>
+          <CardTitle>{mode === "create" ? "Create Customer" : "Edit Customer"}</CardTitle>
+        </CardHeader>
+      ) : null}
+      <CardContent className={showCardTitle ? undefined : "pt-6"}>
         <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2">
+          {mode === "edit" && customerCode ? (
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="customerCode">Customer ID</Label>
+              <Input id="customerCode" value={customerCode} readOnly disabled className="bg-slate-50" />
+            </div>
+          ) : null}
           <div className="space-y-2 md:col-span-2">
             <Label htmlFor="customerName">Firm Name</Label>
             <Input
@@ -328,6 +351,9 @@ export function CustomerForm({
           <div className="flex flex-wrap items-center gap-3 md:col-span-2">
             <Button type="submit" disabled={loading || salesExecutives.length === 0}>
               {loading ? "Saving..." : mode === "create" ? "Create customer" : "Save changes"}
+            </Button>
+            <Button type="button" variant="outline" asChild>
+              <Link href={cancelHref}>Cancel</Link>
             </Button>
             {message ? <p className="w-full text-sm text-red-600">{message}</p> : null}
           </div>

@@ -216,6 +216,7 @@ model User {
   notifications      Notification[]
   assignedCustomers  Customer[]    @relation("AssignedSalesExecutive")
   createdCustomers   Customer[]    @relation("CustomerCreatedBy")
+  updatedCustomers   Customer[]    @relation("CustomerUpdatedBy")
   createdLots        InventoryLot[] @relation("LotCreatedBy")
   inventoryTransactions InventoryTransaction[] @relation("TransactionCreatedBy")
   createdTransfers   InventoryTransfer[] @relation("TransferCreatedBy")
@@ -356,12 +357,14 @@ model Customer {
   email                String?
   assignedSalesUserId  String         @map("assigned_sales_user_id") @db.Uuid
   createdById          String         @map("created_by") @db.Uuid
+  updatedById          String         @map("updated_by") @db.Uuid
   status               CustomerStatus @default(ACTIVE)
   createdAt            DateTime       @default(now()) @map("created_at")
   updatedAt            DateTime       @updatedAt @map("updated_at")
 
   assignedSalesUser    User             @relation("AssignedSalesExecutive", fields: [assignedSalesUserId], references: [id])
   createdBy            User             @relation("CustomerCreatedBy", fields: [createdById], references: [id])
+  updatedBy            User             @relation("CustomerUpdatedBy", fields: [updatedById], references: [id])
   contacts             CustomerContact[]
   quotations           Quotation[]
   proformaInvoices     ProformaInvoice[]
@@ -484,7 +487,7 @@ model InventoryLot {
   companyId           String    @map("company_id") @db.Uuid
   warehouseId         String    @map("warehouse_id") @db.Uuid
   vendorId            String?   @map("vendor_id") @db.Uuid
-  purchaseInvoiceNo   String?   @map("purchase_invoice_no")
+  purchaseInvoiceNo   String    @unique @map("purchase_invoice_no")
   purchaseDate        DateTime  @map("purchase_date") @db.Date
   productId           String    @map("product_id") @db.Uuid
   quantity            Decimal   @db.Decimal(12, 3)

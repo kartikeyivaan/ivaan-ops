@@ -11,6 +11,7 @@ import {
 import {
   calculateTotalPurchaseCost,
   getFinancialYear,
+  normalizePurchaseInvoiceNo,
   normalizeSerialNumber,
   validateInwardQuantities,
 } from "@/lib/inventory";
@@ -36,6 +37,10 @@ describe("inventory helpers", () => {
         commissionCharges: 25,
       }),
     ).toBe(1195);
+  });
+
+  it("normalizes purchase invoice numbers", () => {
+    expect(normalizePurchaseInvoiceNo(" inv-001 ")).toBe("INV-001");
   });
 
   it("validates inward quantities", () => {

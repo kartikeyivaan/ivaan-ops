@@ -130,8 +130,8 @@ function createMockPrisma(options: {
   return {
     proposalPackageMaster: {
       findUnique: vi.fn().mockResolvedValue({
-        id: options.pkg.id ?? "pkg-id",
         ...options.pkg,
+        id: options.pkg.id ?? "pkg-id",
       }),
     },
     proposalInverterBrandMaster: {

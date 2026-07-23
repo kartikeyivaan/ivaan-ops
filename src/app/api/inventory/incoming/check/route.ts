@@ -51,26 +51,35 @@ export async function GET(request: Request) {
       )
     : null;
 
-  const canCheckSimilar =
-    parsed.data.companyId &&
-    parsed.data.warehouseId &&
-    parsed.data.productId &&
-    parsed.data.purchaseDate &&
-    parsed.data.quantity !== undefined &&
-    parsed.data.unitPurchaseRate !== undefined;
+  const {
+    companyId,
+    warehouseId,
+    vendorId,
+    productId,
+    purchaseDate,
+    quantity,
+    unitPurchaseRate,
+    excludeLotId,
+  } = parsed.data;
 
-  const similarLots = canCheckSimilar
-    ? await findSimilarIncomingLots(prisma, {
-        companyId: parsed.data.companyId,
-        warehouseId: parsed.data.warehouseId,
-        vendorId: parsed.data.vendorId,
-        productId: parsed.data.productId,
-        purchaseDate: new Date(parsed.data.purchaseDate),
-        quantity: parsed.data.quantity,
-        unitPurchaseRate: parsed.data.unitPurchaseRate,
-        excludeLotId: parsed.data.excludeLotId,
-      })
-    : [];
+  const similarLots =
+    companyId &&
+    warehouseId &&
+    productId &&
+    purchaseDate &&
+    quantity !== undefined &&
+    unitPurchaseRate !== undefined
+      ? await findSimilarIncomingLots(prisma, {
+          companyId,
+          warehouseId,
+          vendorId,
+          productId,
+          purchaseDate: new Date(purchaseDate),
+          quantity,
+          unitPurchaseRate,
+          excludeLotId,
+        })
+      : [];
 
   return NextResponse.json({
     duplicateInvoice: duplicateInvoice

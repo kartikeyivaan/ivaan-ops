@@ -8,8 +8,6 @@ import {
 } from "@/lib/inventory-permissions";
 import {
   createIncomingLot,
-  findDuplicatePurchaseInvoice,
-  findSimilarIncomingLots,
   listIncomingLots,
   serializeLotForRole,
   SimilarIncomingLotError,

@@ -1194,6 +1194,26 @@ function drawTimelineSnakePath(ctx: DocContext, rowYs: number[]): void {
   doc.path(pathD).stroke();
   doc.restore();
 
+  // Directional flow arrows in every gap between consecutive nodes so the reader
+  // can follow the process order along each row.
+  const drawFlowArrow = (x: number, y: number, dir: 1 | -1) => {
+    doc
+      .moveTo(x - dir * 2.6, y - 3.2)
+      .lineTo(x + dir * 3.6, y)
+      .lineTo(x - dir * 2.6, y + 3.2)
+      .closePath()
+      .fill(theme.connector);
+  };
+
+  [row1, row2, row3].forEach((centers, rowIndex) => {
+    const dir: 1 | -1 = rowDirections[rowIndex] === "ltr" ? 1 : -1;
+    const y = rowYs[rowIndex] ?? 0;
+    for (let i = 0; i < centers.length - 1; i += 1) {
+      const midX = ((centers[i] ?? 0) + (centers[i + 1] ?? 0)) / 2;
+      drawFlowArrow(midX, y, dir);
+    }
+  });
+
   if (arrow) {
     const tip = arrow.rotation === 0 ? 1 : arrow.rotation === 180 ? -1 : 0;
     const down = arrow.rotation === 90 ? 1 : 0;
@@ -1429,15 +1449,28 @@ export function drawBankDetailsCard(
   bankDetails: string,
   companyName: string,
   top: number,
+  qr?: Buffer | null,
 ): number {
   const { doc, palette, fonts, pageBottom } = ctx;
-  const pad = 16;
+  const pad = 12;
   const leftW = CONTENT_WIDTH * 0.62;
   const rightW = CONTENT_WIDTH - leftW - 12;
-  const cardH = 110;
+  const qrSize = 78;
+  const signatureH = 68;
+  const cardGap = 12;
 
-  let y = ensurePageSpace(doc, top, cardH + 60, pageBottom);
-  y = drawPremiumSectionTitle(ctx, "Bank Details", CONTENT_LEFT, y);
+  // Card height hugs its content: the bank details text or the QR, whichever is
+  // taller (no empty filler space).
+  doc.font(fonts.regular).fontSize(9);
+  const textH = doc.heightOfString(bankDetails, { width: leftW - pad * 2 });
+  const cardH = Math.max(textH + pad * 2, qrSize + pad);
+
+  // Reserve title + card + gap + signature as one unit so the block never splits
+  // across pages (the section title decides the page break before drawing).
+  let y = drawPremiumSectionTitle(ctx, "Bank Details", CONTENT_LEFT, top, CONTENT_WIDTH, false, {
+    pageBottom,
+    minFollowingHeight: cardH + cardGap + signatureH,
+  });
 
   drawCard(ctx, CONTENT_LEFT, y, leftW, cardH, 8, "#FFFFFF");
   doc
@@ -1447,26 +1480,24 @@ export function drawBankDetailsCard(
     .text(bankDetails, CONTENT_LEFT + pad, y + pad, { width: leftW - pad * 2 });
 
   const qrX = CONTENT_LEFT + leftW + 12;
-  drawCard(ctx, qrX, y, rightW, cardH, 8, PREMIUM.cardBg);
-  doc
-    .font(fonts.regular)
-    .fontSize(7.5)
-    .fillColor(palette.muted)
-    .text("UPI / QR Code", qrX + 10, y + 20, { width: rightW - 20, align: "center" });
-  doc
-    .roundedRect(qrX + 20, y + 36, rightW - 40, rightW - 40, 4)
-    .lineWidth(0.5)
-    .dash(3, { space: 3 })
-    .strokeColor(palette.border)
-    .stroke();
-  doc
-    .font(fonts.regular)
-    .fontSize(6.5)
-    .fillColor(palette.faint)
-    .text("Scan to pay", qrX + 10, y + cardH - 18, { width: rightW - 20, align: "center" });
+  // QR sits bare (no background tile), centered in the right column and
+  // vertically against the bank details card.
+  const qrBoxX = qrX + (rightW - qrSize) / 2;
+  const qrBoxY = y + (cardH - qrSize) / 2;
+  if (qr) {
+    doc.image(qr, qrBoxX, qrBoxY, { fit: [qrSize, qrSize], align: "center", valign: "center" });
+  } else {
+    doc
+      .roundedRect(qrBoxX, qrBoxY, qrSize, qrSize, 4)
+      .lineWidth(0.5)
+      .dash(3, { space: 3 })
+      .strokeColor(palette.border)
+      .stroke()
+      .undash();
+  }
 
-  y += cardH + 16;
-  return drawSignatureBlock(ctx, companyName, y);
+  y += cardH + cardGap;
+  return drawSignatureBlock(ctx, companyName, y, 9, true);
 }
 
 export function drawSignatureBlock(

@@ -24,10 +24,10 @@ import {
   calculateMonthlyGeneration,
 } from "@/lib/proposal-generation";
 import {
+  formatCommercialOfferSubsidyNote,
   GENERATION_DISCLAIMER,
   PAYMENT_MILESTONES,
   PROJECT_DOCUMENTS_PHONE,
-  SUBSIDY_NOTE,
   WARRANTY_FOOTNOTE,
   WARRANTY_ROWS,
 } from "@/lib/proposal-pdf-content";
@@ -55,9 +55,9 @@ import {
   type ProposalLayoutContext,
 } from "@/lib/proposal-pdf-components";
 import {
+  bankUpiQr,
   companyLogo,
   CONTENT_LEFT,
-  CONTENT_RIGHT,
   CONTENT_WIDTH,
   createDocOptions,
   drawFooter,
@@ -267,43 +267,64 @@ function drawCommercialBlock(
 
   y = sectionTitle(ctx, compact ? "Commercial Summary" : "Commercial Offer", CONTENT_LEFT, y) + 4;
 
-  const boxPad = compact ? 10 : 10;
-  const rowH = compact ? 18 : 18;
+  const boxPad = 12;
+  const innerW = CONTENT_WIDTH - boxPad * 2;
   const labelX = CONTENT_LEFT + boxPad;
-  const valueW = 120;
-  const rows: Array<[string, string, boolean]> = [
-    ["Project Cost Payable (GST Inclusive)", data.money(data.finalAmount), true],
-    ["Central Govt. Subsidy", data.money(data.subsidyEstimate), false],
-    ["Net Effective Investment", data.money(data.effectiveInvestment), true],
+  const highlightRowH = 30;
+  const normalRowH = 20;
+  const rows: Array<[string, string, "highlight" | "green"]> = [
+    ["Project Cost Payable (GST Inclusive)", data.money(data.finalAmount), "highlight"],
+    ["Central Govt. Subsidy", data.money(data.subsidyEstimate), "green"],
   ];
 
+  const subsidyNote = formatCommercialOfferSubsidyNote(
+    data.money(data.subsidyEstimate),
+    data.money(data.effectiveInvestment),
+  );
+
   const noteHeight =
-    doc.font(fonts.regular).fontSize(compact ? 8 : 7.5).heightOfString(SUBSIDY_NOTE, {
-      width: CONTENT_WIDTH - boxPad * 2,
+    doc.font(fonts.regular).fontSize(compact ? 8 : 7.5).heightOfString(subsidyNote, {
+      width: innerW,
     }) + 4;
-  const boxH = rowH * 3 + boxPad * 2 + noteHeight;
+  const rowsH = highlightRowH + 4 + normalRowH;
+  const boxH = rowsH + boxPad * 2 + noteHeight;
 
   if (y + boxH > pageBottom) {
     doc.addPage();
     y = MARGIN_TOP;
   }
 
-  doc.roundedRect(CONTENT_LEFT, y, CONTENT_WIDTH, boxH, 4).fill(palette.accentSoft);
-  doc.roundedRect(CONTENT_LEFT, y, CONTENT_WIDTH, boxH, 4).lineWidth(0.75).strokeColor(palette.border).stroke();
+  doc.roundedRect(CONTENT_LEFT, y, CONTENT_WIDTH, boxH, 6).fill("#FFFFFF");
+  doc.roundedRect(CONTENT_LEFT, y, CONTENT_WIDTH, boxH, 6).lineWidth(0.75).strokeColor(palette.border).stroke();
 
   let rowY = y + boxPad;
-  for (const [label, value, bold] of rows) {
-    doc.font(bold ? fonts.bold : fonts.regular)
-      .fontSize(compact ? 9.5 : 9.5)
+  rows.forEach(([label, value, style], index) => {
+    const isHighlight = style === "highlight";
+    const rowBoxH = isHighlight ? highlightRowH : normalRowH;
+    if (isHighlight) {
+      doc.roundedRect(labelX - 4, rowY - 1, innerW + 8, rowBoxH, 6).fill(palette.accentSoft);
+      doc.roundedRect(labelX - 4, rowY - 1, innerW + 8, rowBoxH, 6).lineWidth(1).strokeColor(palette.accent).stroke();
+    }
+
+    doc
+      .font(isHighlight ? fonts.bold : fonts.regular)
+      .fontSize(isHighlight ? 10.5 : 9.5)
       .fillColor(palette.ink)
-      .text(label, labelX, rowY, { width: CONTENT_WIDTH - valueW - boxPad * 2 });
-    doc.text(value, CONTENT_RIGHT - valueW - boxPad, rowY, { width: valueW, align: "right" });
-    rowY += rowH;
-  }
+      .text(label, labelX, rowY + (isHighlight ? 6 : 3), { width: innerW - 130 });
+
+    const valueColor = style === "green" ? "#059669" : palette.accent;
+    doc
+      .font(fonts.bold)
+      .fontSize(isHighlight ? 15 : 10)
+      .fillColor(valueColor)
+      .text(value, labelX, rowY + (isHighlight ? 5 : 3), { width: innerW, align: "right" });
+
+    rowY += rowBoxH + (index === 0 ? 4 : 2);
+  });
 
   rowY += 2;
-  doc.font(fonts.regular).fontSize(compact ? 8 : 7.5).fillColor(palette.muted).text(SUBSIDY_NOTE, labelX, rowY, {
-    width: CONTENT_WIDTH - boxPad * 2,
+  doc.font(fonts.regular).fontSize(compact ? 8 : 7.5).fillColor(palette.muted).text(subsidyNote, labelX, rowY, {
+    width: innerW,
   });
 
   y = y + boxH + (compact ? 6 : 10);
@@ -601,7 +622,7 @@ export async function generateProjectProposalPdf(
 
   const bankDetails = proposal.company.bankDetails || data.profile.bankDetails;
   if (bankDetails) {
-    y = drawBankDetailsCard(layout, bankDetails, proposal.company.name, y);
+    y = drawBankDetailsCard(layout, bankDetails, proposal.company.name, y, bankUpiQr(proposal.company.code));
   } else {
     drawSignatureBlock(ctx, proposal.company.name, y);
   }

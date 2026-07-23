@@ -63,11 +63,11 @@ export const INSTALLATION_TIMELINE_ROW_1: InstallationTimelineStep[] = [
 ];
 
 export const INSTALLATION_TIMELINE_ROW_2: InstallationTimelineStep[] = [
-  { title: "Net Meter Installation", duration: "Day 25–30", icon: "meter" },
-  { title: "Meter Approval", duration: "Day 20–25", icon: "approval" },
-  { title: "Solar Panel Installation", duration: "Day 18–20", icon: "solar-panel" },
-  { title: "Electrical Installation", duration: "Day 15–18", icon: "wrench" },
   { title: "Structure Installation", duration: "Day 7–15", icon: "structure" },
+  { title: "Electrical Installation", duration: "Day 15–18", icon: "wrench" },
+  { title: "Solar Panel Installation", duration: "Day 18–20", icon: "solar-panel" },
+  { title: "Meter Approval", duration: "Day 20–25", icon: "approval" },
+  { title: "Net Meter Installation", duration: "Day 25–30", icon: "meter" },
 ];
 
 export const INSTALLATION_TIMELINE_ROW_3: InstallationTimelineStep[] = [

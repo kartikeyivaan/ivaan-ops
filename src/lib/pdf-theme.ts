@@ -73,6 +73,8 @@ export function readAsset(filePath: string): Buffer | null {
 }
 
 const LOGO_WAAREE = path.join(ASSET_ROOT, "branding", "waaree-logo.png");
+const UPI_QR = path.join(ASSET_ROOT, "branding", "upi-qr.png");
+const UPI_QR_PCM = path.join(ASSET_ROOT, "branding", "upi-qr-pcmv.png");
 
 export function companyLogo(companyCode: string | null | undefined): Buffer | null {
   if (companyCode === "PCMV") return readAsset(LOGO_PCM);
@@ -81,6 +83,14 @@ export function companyLogo(companyCode: string | null | undefined): Buffer | nu
 
 export function waareeLogo(): Buffer | null {
   return readAsset(LOGO_WAAREE);
+}
+
+/** Bank UPI QR code shown on proposal / quotation PDFs (company-specific with fallback). */
+export function bankUpiQr(companyCode: string | null | undefined): Buffer | null {
+  if (companyCode === "PCMV") {
+    return readAsset(UPI_QR_PCM) ?? readAsset(UPI_QR);
+  }
+  return readAsset(UPI_QR);
 }
 
 export type PdfFonts = { regular: string; bold: string; rupee: string };

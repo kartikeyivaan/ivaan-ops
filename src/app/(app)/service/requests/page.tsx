@@ -1,6 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { requireServiceAccess } from "@/lib/service-guard";
-import { canCreateService, canViewAllService } from "@/lib/service-permissions";
+import {
+  canCreateService,
+  canExportService,
+  canImportService,
+  canViewAllService,
+} from "@/lib/service-permissions";
 import { listServiceExecutives, listServiceWorkTypes } from "@/lib/service-service";
 import { ServiceRequestsList } from "@/components/service/service-requests-list";
 
@@ -18,6 +23,8 @@ export default async function ServiceRequestsPage() {
       executives={executives.map((exec) => ({ id: exec.id, name: exec.name }))}
       showExecutiveFilter={canViewAllService(roles)}
       canCreate={canCreateService(roles)}
+      canImport={canImportService(roles)}
+      canExport={canExportService(roles)}
     />
   );
 }

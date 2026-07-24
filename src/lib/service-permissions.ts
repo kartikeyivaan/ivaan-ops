@@ -96,6 +96,10 @@ export function canExportService(userRoles: string[]): boolean {
   return hasRole(userRoles, [...SERVICE_ADMIN_ROLES]);
 }
 
+export function canImportService(userRoles: string[]): boolean {
+  return hasRole(userRoles, [...SERVICE_ADMIN_ROLES]);
+}
+
 /**
  * Whether a user's service list must be limited to requests assigned to them.
  * Returns true for users who lack the view-all capability (e.g. Service Executive).

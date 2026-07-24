@@ -218,6 +218,28 @@ export const duplicateCheckSchema = z.object({
   consumerNumber: trimmedString.optional(),
 });
 
+const serviceImportRowSchema = z.object({
+  rowNumber: z.number().int(),
+  serial: z.string().optional(),
+  date: z.string().optional(),
+  customerName: z.string().optional(),
+  mobileNumber: z.string().optional(),
+  consumerNumber: z.string().optional(),
+  workType: z.string().optional(),
+  customerRequest: z.string().optional(),
+  status: z.string().optional(),
+  fees: z.string().optional(),
+  amountReceived: z.string().optional(),
+  pendingAmount: z.string().optional(),
+  delayDays: z.string().optional(),
+  delayedNotes: z.string().optional(),
+});
+
+export const serviceImportSchema = z.object({
+  mode: z.enum(["preview", "import"]),
+  rows: z.array(serviceImportRowSchema).min(1).max(2000),
+});
+
 export type CreateServiceRequestInput = z.infer<typeof createServiceRequestSchema>;
 export type UpdateServiceRequestInput = z.infer<typeof updateServiceRequestSchema>;
 export type AddServiceUpdateInput = z.infer<typeof addServiceUpdateSchema>;

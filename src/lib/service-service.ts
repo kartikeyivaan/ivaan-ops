@@ -1,14 +1,19 @@
 import {
   Prisma,
+  ServicePaymentMode,
   ServicePriority,
   ServiceStatus,
   ServiceUpdateType,
   ServiceVisitStatus,
   type PrismaClient,
 } from "@prisma/client";
+import {
+  validateServiceImportRow,
+  type ServiceImportInput,
+  type ServiceImportPreviewRow,
+} from "@/lib/service-import";
 import { writeAuditLog, writeAuditLogTx } from "@/lib/audit";
 import { decimalToNumber } from "@/lib/inventory";
-import { ROLES } from "@/lib/rbac";
 import {
   SERVICE_ASSIGNABLE_ROLES,
 } from "@/lib/service-permissions";
@@ -1371,6 +1376,228 @@ export async function countOpenServiceRequests(
       ...(restrictToUserId ? { assignedToUserId: restrictToUserId } : {}),
     },
   });
+}
+
+// ---------------------------------------------------------------------------
+// Spreadsheet import
+// ---------------------------------------------------------------------------
+
+async function loadWorkTypeMap(prisma: PrismaClient) {
+  const workTypes = await prisma.serviceWorkType.findMany({
+    where: { isActive: true },
+    select: { id: true, name: true, defaultTargetDays: true },
+  });
+  const byName = new Map<string, { id: string; defaultTargetDays: number | null }>();
+  for (const wt of workTypes) {
+    byName.set(wt.name.toLowerCase(), { id: wt.id, defaultTargetDays: wt.defaultTargetDays });
+  }
+  return byName;
+}
+
+export type ServiceImportPreviewResult = {
+  rows: (ServiceImportPreviewRow & { duplicate: boolean })[];
+  summary: {
+    total: number;
+    valid: number;
+    invalid: number;
+    duplicates: number;
+    matchedWorkType: number;
+    customWorkType: number;
+  };
+};
+
+export async function previewServiceImport(
+  prisma: PrismaClient,
+  companyId: string,
+  inputs: ServiceImportInput[],
+): Promise<ServiceImportPreviewResult> {
+  const byName = await loadWorkTypeMap(prisma);
+  const knownNames = new Set(byName.keys());
+
+  const references = inputs
+    .map((r) => (r.serial ?? "").trim())
+    .filter((s) => s.length > 0);
+  const existing =
+    references.length > 0
+      ? await prisma.serviceRequest.findMany({
+          where: { companyId, importReference: { in: references } },
+          select: { importReference: true },
+        })
+      : [];
+  const existingRefs = new Set(
+    existing.map((e) => e.importReference).filter((v): v is string => Boolean(v)),
+  );
+
+  let valid = 0;
+  let invalid = 0;
+  let duplicates = 0;
+  let matchedWorkType = 0;
+  let customWorkType = 0;
+
+  const rows = inputs.map((input) => {
+    const row = validateServiceImportRow(input, knownNames);
+    const duplicate = row.importReference ? existingRefs.has(row.importReference) : false;
+    if (duplicate) duplicates += 1;
+    if (row.isValid) valid += 1;
+    else invalid += 1;
+    if (row.matchedWorkType) matchedWorkType += 1;
+    else customWorkType += 1;
+    return { ...row, duplicate };
+  });
+
+  return {
+    rows,
+    summary: {
+      total: rows.length,
+      valid,
+      invalid,
+      duplicates,
+      matchedWorkType,
+      customWorkType,
+    },
+  };
+}
+
+export type ServiceImportResult = {
+  imported: number;
+  skippedInvalid: number;
+  skippedDuplicate: number;
+};
+
+export async function importServiceRequests(
+  prisma: PrismaClient,
+  input: { companyId: string; performedByUserId: string; rows: ServiceImportInput[] },
+): Promise<ServiceImportResult> {
+  const company = await prisma.company.findUnique({
+    where: { id: input.companyId },
+    select: { id: true, code: true },
+  });
+  if (!company) throw new Error("COMPANY_NOT_FOUND");
+
+  const byName = await loadWorkTypeMap(prisma);
+  const knownNames = new Set(byName.keys());
+
+  // Existing references for duplicate protection.
+  const existing = await prisma.serviceRequest.findMany({
+    where: { companyId: input.companyId, importReference: { not: null } },
+    select: { importReference: true },
+  });
+  const seenRefs = new Set(
+    existing.map((e) => e.importReference).filter((v): v is string => Boolean(v)),
+  );
+
+  let imported = 0;
+  let skippedInvalid = 0;
+  let skippedDuplicate = 0;
+
+  for (const raw of input.rows) {
+    const row = validateServiceImportRow(raw, knownNames);
+    if (!row.isValid) {
+      skippedInvalid += 1;
+      continue;
+    }
+    if (row.importReference && seenRefs.has(row.importReference)) {
+      skippedDuplicate += 1;
+      continue;
+    }
+    if (row.importReference) seenRefs.add(row.importReference);
+
+    const matched = byName.get(row.workTypeName.toLowerCase());
+    const requestDate = new Date(`${row.requestDate}T00:00:00.000Z`);
+    const pendingAmount = calculatePendingAmount(row.totalFees, row.amountReceived);
+    const isChargeable = row.totalFees > 0;
+
+    await prisma.$transaction(async (tx) => {
+      const number = await generateServiceRequestNumber(
+        tx,
+        company.code,
+        company.id,
+        requestDate,
+      );
+
+      const created = await tx.serviceRequest.create({
+        data: {
+          serviceRequestNumber: number,
+          companyId: input.companyId,
+          customerName: row.customerName,
+          mobileNumber: row.mobileNumber,
+          consumerNumber: row.consumerNumber,
+          workTypeId: matched?.id ?? null,
+          customWorkType: matched ? null : row.workTypeName,
+          customerRequest: row.customerRequest,
+          priority: ServicePriority.NORMAL,
+          status: row.status,
+          requestDate,
+          isChargeable,
+          totalFees: row.totalFees,
+          amountReceived: row.amountReceived,
+          pendingAmount,
+          importReference: row.importReference,
+          createdByUserId: input.performedByUserId,
+        },
+      });
+
+      await addTimelineEntryTx(tx, {
+        serviceRequestId: created.id,
+        updateType: ServiceUpdateType.CREATED,
+        createdByUserId: input.performedByUserId,
+        newStatus: row.status,
+        note: "Imported from spreadsheet.",
+      });
+
+      if (row.amountReceived > 0) {
+        await tx.servicePayment.create({
+          data: {
+            serviceRequestId: created.id,
+            amount: row.amountReceived,
+            paymentMode: ServicePaymentMode.OTHER,
+            paymentDate: requestDate,
+            reference: "Imported payment",
+            recordedByUserId: input.performedByUserId,
+          },
+        });
+      }
+
+      if (row.delayedNotes) {
+        await addTimelineEntryTx(tx, {
+          serviceRequestId: created.id,
+          updateType: ServiceUpdateType.GENERAL_NOTE,
+          createdByUserId: input.performedByUserId,
+          note: row.delayedNotes,
+        });
+      }
+
+      await writeAuditLogTx(tx, {
+        tableName: AUDIT_TABLE,
+        recordId: created.id,
+        action: "CREATE",
+        newValue: { serviceRequestNumber: number, imported: true },
+        performedBy: input.performedByUserId,
+        companyId: input.companyId,
+        reference: number,
+      });
+    });
+
+    imported += 1;
+  }
+
+  return { imported, skippedInvalid, skippedDuplicate };
+}
+
+export async function listServiceRequestsForExport(
+  prisma: PrismaClient,
+  companyId: string,
+  restrictToUserId?: string | null,
+) {
+  const records = await prisma.serviceRequest.findMany({
+    where: {
+      companyId,
+      ...(restrictToUserId ? { assignedToUserId: restrictToUserId } : {}),
+    },
+    include: serviceRequestInclude,
+    orderBy: { requestDate: "asc" },
+  });
+  return records.map((r) => serializeServiceRequest(r));
 }
 
 export { ServicePriority };

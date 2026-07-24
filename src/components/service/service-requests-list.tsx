@@ -2,7 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowDown, ArrowUp, ChevronDown, Filter, Plus, Search } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
+  Download,
+  Filter,
+  Plus,
+  Search,
+  Upload,
+} from "lucide-react";
 import type { ServicePriority, ServiceStatus } from "@prisma/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,7 +29,6 @@ import {
 import { parseApiJson } from "@/lib/api-response";
 import {
   SERVICE_PRIORITY_LABELS,
-  SERVICE_STATUS_LABELS,
   formatServicePriority,
   formatServiceStatus,
   servicePriorityBadgeVariant,
@@ -28,6 +36,7 @@ import {
 } from "@/lib/service";
 import { formatDate, formatDocumentDate } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { ServiceImportWizard } from "@/components/service/service-import-wizard";
 
 type WorkTypeOption = { id: string; name: string };
 type ExecutiveOption = { id: string; name: string };
@@ -108,16 +117,21 @@ export function ServiceRequestsList({
   executives,
   showExecutiveFilter,
   canCreate,
+  canImport = false,
+  canExport = false,
 }: {
   workTypes: WorkTypeOption[];
   executives: ExecutiveOption[];
   showExecutiveFilter: boolean;
   canCreate: boolean;
+  canImport?: boolean;
+  canExport?: boolean;
 }) {
   const [items, setItems] = useState<ServiceListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showImport, setShowImport] = useState(false);
 
   const [quickFilter, setQuickFilter] = useState("");
   const [search, setSearch] = useState("");
@@ -266,15 +280,41 @@ export function ServiceRequestsList({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold text-slate-900">Service Requests</h1>
-        {canCreate ? (
-          <Button asChild>
-            <Link href="/service/requests/new">
-              <Plus className="h-4 w-4" />
-              New Request
-            </Link>
-          </Button>
-        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          {canExport ? (
+            <Button variant="outline" asChild>
+              <a href="/api/service/export" download>
+                <Download className="h-4 w-4" />
+                Export
+              </a>
+            </Button>
+          ) : null}
+          {canImport ? (
+            <Button variant="outline" onClick={() => setShowImport(true)}>
+              <Upload className="h-4 w-4" />
+              Import
+            </Button>
+          ) : null}
+          {canCreate ? (
+            <Button asChild>
+              <Link href="/service/requests/new">
+                <Plus className="h-4 w-4" />
+                New Request
+              </Link>
+            </Button>
+          ) : null}
+        </div>
       </div>
+
+      {showImport ? (
+        <ServiceImportWizard
+          onClose={() => setShowImport(false)}
+          onImported={() => {
+            setShowImport(false);
+            load();
+          }}
+        />
+      ) : null}
 
       <div className="flex flex-wrap gap-2">
         {visibleQuickFilters.map((filter) => (

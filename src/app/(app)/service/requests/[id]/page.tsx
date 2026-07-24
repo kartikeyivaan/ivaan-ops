@@ -4,6 +4,9 @@ import { requireServiceAccess } from "@/lib/service-guard";
 import {
   canAddServiceUpdate,
   canAssignService,
+  canCloseService,
+  canCompleteService,
+  canReopenService,
   canUpdateServiceStatus,
   restrictServiceToAssigned,
 } from "@/lib/service-permissions";
@@ -44,6 +47,9 @@ export default async function ServiceRequestDetailPage({
         canAssign: canAssignService(roles),
         canUpdateStatus: canUpdateServiceStatus(roles),
         canAddUpdate: canAddServiceUpdate(roles),
+        canComplete: canCompleteService(roles),
+        canClose: canCloseService(roles),
+        canReopen: canReopenService(roles),
       }}
     />
   );

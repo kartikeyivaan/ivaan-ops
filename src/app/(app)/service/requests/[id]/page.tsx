@@ -6,6 +6,7 @@ import {
   canAssignService,
   canCloseService,
   canCompleteService,
+  canRecordServicePayment,
   canReopenService,
   canUpdateServiceStatus,
   restrictServiceToAssigned,
@@ -50,6 +51,7 @@ export default async function ServiceRequestDetailPage({
         canComplete: canCompleteService(roles),
         canClose: canCloseService(roles),
         canReopen: canReopenService(roles),
+        canRecordPayment: canRecordServicePayment(roles),
       }}
     />
   );

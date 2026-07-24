@@ -199,6 +199,8 @@ export function ServiceRequestDetailView({
             ? { id: request.assignedTo.id, name: request.assignedTo.name }
             : null,
           targetCompletionDate: request.targetCompletionDate,
+          isChargeable: request.isChargeable,
+          paymentCount: request.payments.length,
         }}
         executives={executives}
         permissions={permissions}

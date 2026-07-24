@@ -6,6 +6,7 @@ import { ServiceStatus } from "@prisma/client";
 import type {
   ServiceCompletionSystemStatus,
   ServiceCustomerConfirmation,
+  ServicePaymentMode,
   ServiceWaitingReason,
 } from "@prisma/client";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ import { formatApiErrorMessage, parseApiJson, type ApiErrorPayload } from "@/lib
 import {
   SERVICE_COMPLETION_SYSTEM_STATUS_LABELS,
   SERVICE_CUSTOMER_CONFIRMATION_LABELS,
+  SERVICE_PAYMENT_MODE_LABELS,
   SERVICE_WAITING_REASON_LABELS,
   formatServiceStatus,
   getManualNextServiceStatuses,
@@ -40,6 +42,7 @@ export type ServiceActionPermissions = {
   canComplete: boolean;
   canClose: boolean;
   canReopen: boolean;
+  canRecordPayment: boolean;
 };
 
 function today() {
@@ -51,6 +54,8 @@ type ActionRequest = {
   status: ServiceStatus;
   assignedTo: { id: string; name: string } | null;
   targetCompletionDate: string | null;
+  isChargeable: boolean;
+  paymentCount: number;
 };
 
 export function ServiceRequestActions({
@@ -64,7 +69,7 @@ export function ServiceRequestActions({
 }) {
   const router = useRouter();
   const [openModal, setOpenModal] = useState<
-    null | "assign" | "status" | "complete" | "close" | "reopen"
+    null | "assign" | "status" | "complete" | "close" | "reopen" | "payment"
   >(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -99,6 +104,12 @@ export function ServiceRequestActions({
   // Close / reopen form state
   const [closeNote, setCloseNote] = useState("");
   const [reopenReason, setReopenReason] = useState("");
+
+  // Payment form state
+  const [payAmount, setPayAmount] = useState("");
+  const [payMode, setPayMode] = useState<ServicePaymentMode | "">("");
+  const [payDate, setPayDate] = useState(today());
+  const [payReference, setPayReference] = useState("");
 
   function closeModal() {
     setOpenModal(null);
@@ -204,6 +215,29 @@ export function ServiceRequestActions({
     });
   }
 
+  async function handlePayment(event: React.FormEvent) {
+    event.preventDefault();
+    const amount = Number(payAmount);
+    if (!payAmount.trim() || Number.isNaN(amount) || amount <= 0) {
+      setError("Enter a payment amount greater than zero.");
+      return;
+    }
+    if (!payMode) {
+      setError("Select a payment mode.");
+      return;
+    }
+    if (!payDate) {
+      setError("Select a payment date.");
+      return;
+    }
+    await submit(`/api/service/${request.id}/payments`, {
+      amount,
+      paymentMode: payMode,
+      paymentDate: payDate,
+      reference: payReference || undefined,
+    });
+  }
+
   const showAssign = permissions.canAssign;
   const showStatus = permissions.canUpdateStatus && manualStatuses.length > 0;
   const showAddUpdate = permissions.canAddUpdate;
@@ -216,6 +250,8 @@ export function ServiceRequestActions({
   const showReopen =
     permissions.canReopen &&
     isValidServiceStatusTransition(request.status, ServiceStatus.REOPENED);
+  const showRecordPayment =
+    permissions.canRecordPayment && (request.isChargeable || request.paymentCount > 0);
 
   if (
     !showAssign &&
@@ -223,7 +259,8 @@ export function ServiceRequestActions({
     !showAddUpdate &&
     !showComplete &&
     !showClose &&
-    !showReopen
+    !showReopen &&
+    !showRecordPayment
   ) {
     return null;
   }
@@ -233,6 +270,22 @@ export function ServiceRequestActions({
       <CardContent className="flex flex-wrap gap-2 p-4">
         {showAddUpdate ? (
           <ServiceAddUpdate requestId={request.id} executives={executives} />
+        ) : null}
+        {showRecordPayment ? (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setPayAmount("");
+              setPayMode("");
+              setPayDate(today());
+              setPayReference("");
+              setError(null);
+              setOpenModal("payment");
+            }}
+          >
+            Record Payment
+          </Button>
         ) : null}
         {showComplete ? (
           <Button
@@ -610,6 +663,77 @@ export function ServiceRequestActions({
             <ModalFooter>
               <Button type="submit" disabled={submitting}>
                 {submitting ? "Saving…" : "Reopen Request"}
+              </Button>
+              <Button type="button" variant="outline" onClick={closeModal}>
+                Cancel
+              </Button>
+            </ModalFooter>
+          </ModalForm>
+        </Modal>
+      ) : null}
+
+      {openModal === "payment" ? (
+        <Modal onClose={closeModal} size="sm">
+          <ModalForm onSubmit={handlePayment}>
+            <ModalHeader title="Record Payment" onClose={closeModal} />
+            <ModalBody className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="payAmount">
+                  Amount<span className="ml-0.5 text-red-600">*</span>
+                </Label>
+                <Input
+                  id="payAmount"
+                  inputMode="decimal"
+                  value={payAmount}
+                  onChange={(e) => setPayAmount(e.target.value)}
+                  placeholder="0"
+                />
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="payMode">
+                    Payment Mode<span className="ml-0.5 text-red-600">*</span>
+                  </Label>
+                  <select
+                    id="payMode"
+                    className={selectClass}
+                    value={payMode}
+                    onChange={(e) => setPayMode(e.target.value as ServicePaymentMode | "")}
+                  >
+                    <option value="">Select mode</option>
+                    {Object.entries(SERVICE_PAYMENT_MODE_LABELS).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="payDate">
+                    Payment Date<span className="ml-0.5 text-red-600">*</span>
+                  </Label>
+                  <Input
+                    id="payDate"
+                    type="date"
+                    value={payDate}
+                    onChange={(e) => setPayDate(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="payReference">Reference</Label>
+                <Input
+                  id="payReference"
+                  value={payReference}
+                  onChange={(e) => setPayReference(e.target.value)}
+                  placeholder="UPI ref, cheque no., etc."
+                />
+              </div>
+              {error ? <p className="text-sm text-red-600">{error}</p> : null}
+            </ModalBody>
+            <ModalFooter>
+              <Button type="submit" disabled={submitting}>
+                {submitting ? "Saving…" : "Record Payment"}
               </Button>
               <Button type="button" variant="outline" onClick={closeModal}>
                 Cancel

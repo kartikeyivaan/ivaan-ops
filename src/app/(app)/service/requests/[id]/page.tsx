@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireServiceAccess } from "@/lib/service-guard";
 import {
+  canAddServiceUpdate,
   canAssignService,
   canUpdateServiceStatus,
   restrictServiceToAssigned,
@@ -30,9 +31,8 @@ export default async function ServiceRequestDetailPage({
     notFound();
   }
 
-  const executives = canAssignService(roles)
-    ? await listServiceExecutives(prisma, companyId)
-    : [];
+  const canAct = canAssignService(roles) || canAddServiceUpdate(roles);
+  const executives = canAct ? await listServiceExecutives(prisma, companyId) : [];
 
   const request = JSON.parse(JSON.stringify(record)) as ServiceRequestDetail;
 
@@ -43,6 +43,7 @@ export default async function ServiceRequestDetailPage({
       permissions={{
         canAssign: canAssignService(roles),
         canUpdateStatus: canUpdateServiceStatus(roles),
+        canAddUpdate: canAddServiceUpdate(roles),
       }}
     />
   );

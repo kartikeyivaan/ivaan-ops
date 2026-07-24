@@ -16,6 +16,7 @@ import {
   statusRequiresNote,
   statusRequiresWaitingReason,
 } from "@/lib/service";
+import { ServiceAddUpdate } from "@/components/service/service-add-update";
 
 const selectClass =
   "flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm max-md:min-h-11 max-md:text-base";
@@ -27,6 +28,7 @@ type ExecutiveOption = { id: string; name: string };
 export type ServiceActionPermissions = {
   canAssign: boolean;
   canUpdateStatus: boolean;
+  canAddUpdate: boolean;
 };
 
 type ActionRequest = {
@@ -127,12 +129,16 @@ export function ServiceRequestActions({
 
   const showAssign = permissions.canAssign;
   const showStatus = permissions.canUpdateStatus && manualStatuses.length > 0;
+  const showAddUpdate = permissions.canAddUpdate;
 
-  if (!showAssign && !showStatus) return null;
+  if (!showAssign && !showStatus && !showAddUpdate) return null;
 
   return (
     <Card>
       <CardContent className="flex flex-wrap gap-2 p-4">
+        {showAddUpdate ? (
+          <ServiceAddUpdate requestId={request.id} executives={executives} />
+        ) : null}
         {showAssign ? (
           <Button
             type="button"

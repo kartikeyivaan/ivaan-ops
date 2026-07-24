@@ -66,6 +66,16 @@ export const NAV_ITEMS: NavItem[] = [
     ],
   },
   {
+    label: "Service",
+    href: "/service",
+    roles: [
+      ROLES.SUPER_ADMIN,
+      ROLES.PROJECTS_MANAGER,
+      ROLES.PROJECTS_SALES_EXECUTIVE,
+      ROLES.SERVICE_EXECUTIVE,
+    ],
+  },
+  {
     label: "Inventory",
     href: "/inventory",
     roles: [

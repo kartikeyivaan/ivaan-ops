@@ -168,6 +168,16 @@ export const SERVICE_QUICK_FILTERS = [
   "closed",
 ] as const;
 
+export const SERVICE_SORT_FIELDS = [
+  "requestDate",
+  "updatedAt",
+  "targetCompletionDate",
+  "priority",
+  "status",
+  "customerName",
+  "pendingAmount",
+] as const;
+
 export const serviceListQuerySchema = z.object({
   q: trimmedString.optional(),
   quickFilter: z.enum(SERVICE_QUICK_FILTERS).optional(),
@@ -178,6 +188,8 @@ export const serviceListQuerySchema = z.object({
   paymentPending: z.coerce.boolean().optional(),
   dateFrom: optionalDate,
   dateTo: optionalDate,
+  sortBy: z.enum(SERVICE_SORT_FIELDS).optional(),
+  sortDir: z.enum(["asc", "desc"]).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(50),
 });

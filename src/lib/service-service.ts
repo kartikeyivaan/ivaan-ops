@@ -438,12 +438,17 @@ export async function listServiceRequests(
   const page = filters.page ?? 1;
   const pageSize = filters.pageSize ?? 50;
 
+  const sortDir = filters.sortDir ?? "desc";
+  const orderBy: Prisma.ServiceRequestOrderByWithRelationInput = filters.sortBy
+    ? { [filters.sortBy]: sortDir }
+    : { updatedAt: "desc" };
+
   const [total, records] = await Promise.all([
     prisma.serviceRequest.count({ where }),
     prisma.serviceRequest.findMany({
       where,
       include: serviceRequestInclude,
-      orderBy: { updatedAt: "desc" },
+      orderBy,
       skip: (page - 1) * pageSize,
       take: pageSize,
     }),

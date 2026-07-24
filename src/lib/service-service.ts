@@ -14,6 +14,7 @@ import {
 } from "@/lib/service-permissions";
 import {
   SERVICE_COMPANY_CODE,
+  SERVICE_DEDICATED_ACTION_STATUSES,
   calculatePendingAmount,
   calculateServiceDelay,
   generateServiceRequestNumber,
@@ -645,11 +646,7 @@ export async function assignServiceRequest(
 // Completion, Close, and Reopen use their dedicated functions below.
 // ---------------------------------------------------------------------------
 
-const DEDICATED_STATUSES: ServiceStatus[] = [
-  ServiceStatus.COMPLETED,
-  ServiceStatus.CLOSED,
-  ServiceStatus.REOPENED,
-];
+const DEDICATED_STATUSES = SERVICE_DEDICATED_ACTION_STATUSES;
 
 export async function changeServiceStatus(
   prisma: PrismaClient,

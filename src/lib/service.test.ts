@@ -3,6 +3,7 @@ import { ServiceStatus } from "@prisma/client";
 import {
   calculatePendingAmount,
   calculateServiceDelay,
+  getManualNextServiceStatuses,
   getNextServiceStatuses,
   isValidIndianMobile,
   isValidServiceStatusTransition,
@@ -32,6 +33,17 @@ describe("service status transitions", () => {
 
   it("cancelled is terminal", () => {
     expect(getNextServiceStatuses(ServiceStatus.CANCELLED)).toHaveLength(0);
+  });
+
+  it("excludes dedicated-action statuses from the manual status change list", () => {
+    const manual = getManualNextServiceStatuses(ServiceStatus.ASSIGNED);
+    expect(manual).toContain(ServiceStatus.IN_PROGRESS);
+    expect(manual).toContain(ServiceStatus.WAITING);
+    expect(manual).toContain(ServiceStatus.CANCELLED);
+    expect(manual).not.toContain(ServiceStatus.COMPLETED);
+
+    // A completed request can only be closed/reopened via dedicated actions.
+    expect(getManualNextServiceStatuses(ServiceStatus.COMPLETED)).toHaveLength(0);
   });
 
   it("requires notes and waiting reason for the correct statuses", () => {

@@ -29,6 +29,10 @@ import {
 import { formatDate, formatDocumentDate } from "@/lib/utils";
 import { normalizeMobileNumber } from "@/lib/service";
 import { ServiceTimeline, type ServiceTimelineEntry } from "@/components/service/service-timeline";
+import {
+  ServiceRequestActions,
+  type ServiceActionPermissions,
+} from "@/components/service/service-request-actions";
 
 type NamedUser = { id: string; name: string; email?: string } | null;
 
@@ -115,7 +119,15 @@ function DelayBadge({ request }: { request: ServiceRequestDetail }) {
   return null;
 }
 
-export function ServiceRequestDetailView({ request }: { request: ServiceRequestDetail }) {
+export function ServiceRequestDetailView({
+  request,
+  executives,
+  permissions,
+}: {
+  request: ServiceRequestDetail;
+  executives: { id: string; name: string }[];
+  permissions: ServiceActionPermissions;
+}) {
   const [copied, setCopied] = useState(false);
   const workTypeName = request.workType?.name ?? request.customWorkType ?? "—";
   const mobile = request.mobileNumber ? normalizeMobileNumber(request.mobileNumber) : "";
@@ -178,6 +190,19 @@ export function ServiceRequestDetailView({ request }: { request: ServiceRequestD
           </div>
         </CardContent>
       </Card>
+
+      <ServiceRequestActions
+        request={{
+          id: request.id,
+          status: request.status,
+          assignedTo: request.assignedTo
+            ? { id: request.assignedTo.id, name: request.assignedTo.name }
+            : null,
+          targetCompletionDate: request.targetCompletionDate,
+        }}
+        executives={executives}
+        permissions={permissions}
+      />
 
       {/* Customer + quick actions */}
       <Card>

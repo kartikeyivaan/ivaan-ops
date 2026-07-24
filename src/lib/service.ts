@@ -64,6 +64,23 @@ export function getNextServiceStatuses(current: ServiceStatus): ServiceStatus[] 
   return SERVICE_STATUS_TRANSITIONS[current] ?? [];
 }
 
+/**
+ * Statuses handled by dedicated actions (Complete / Close / Reopen) rather than
+ * the generic status-change flow (PRD §7.2, §11).
+ */
+export const SERVICE_DEDICATED_ACTION_STATUSES: ServiceStatus[] = [
+  ServiceStatus.COMPLETED,
+  ServiceStatus.CLOSED,
+  ServiceStatus.REOPENED,
+];
+
+/** Valid next statuses reachable through the generic "Change Status" action. */
+export function getManualNextServiceStatuses(current: ServiceStatus): ServiceStatus[] {
+  return getNextServiceStatuses(current).filter(
+    (status) => !SERVICE_DEDICATED_ACTION_STATUSES.includes(status),
+  );
+}
+
 export function isValidServiceStatusTransition(
   from: ServiceStatus,
   to: ServiceStatus,

@@ -1,8 +1,12 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireServiceAccess } from "@/lib/service-guard";
-import { restrictServiceToAssigned } from "@/lib/service-permissions";
-import { getServiceRequestById } from "@/lib/service-service";
+import {
+  canAssignService,
+  canUpdateServiceStatus,
+  restrictServiceToAssigned,
+} from "@/lib/service-permissions";
+import { getServiceRequestById, listServiceExecutives } from "@/lib/service-service";
 import {
   ServiceRequestDetailView,
   type ServiceRequestDetail,
@@ -26,7 +30,20 @@ export default async function ServiceRequestDetailPage({
     notFound();
   }
 
+  const executives = canAssignService(roles)
+    ? await listServiceExecutives(prisma, companyId)
+    : [];
+
   const request = JSON.parse(JSON.stringify(record)) as ServiceRequestDetail;
 
-  return <ServiceRequestDetailView request={request} />;
+  return (
+    <ServiceRequestDetailView
+      request={request}
+      executives={executives.map((exec) => ({ id: exec.id, name: exec.name }))}
+      permissions={{
+        canAssign: canAssignService(roles),
+        canUpdateStatus: canUpdateServiceStatus(roles),
+      }}
+    />
+  );
 }

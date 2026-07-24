@@ -13,9 +13,10 @@ describe("rbac", () => {
   });
 
   it("exposes all configured roles", () => {
-    expect(ALL_ROLES).toHaveLength(8);
+    expect(ALL_ROLES).toHaveLength(9);
     expect(ALL_ROLES).toContain(ROLES.PROJECTS_MANAGER);
     expect(ALL_ROLES).toContain(ROLES.PROJECTS_SALES_EXECUTIVE);
+    expect(ALL_ROLES).toContain(ROLES.SERVICE_EXECUTIVE);
   });
 
   it("restricts admin navigation to super admin", () => {

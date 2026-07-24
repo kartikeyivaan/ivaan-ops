@@ -287,6 +287,24 @@ async function main() {
     },
   });
 
+  const serviceExecPassword = await bcrypt.hash("Service@123", 12);
+  await prisma.user.upsert({
+    where: { email: "service@ivaansolar.com" },
+    update: seedUserUpdate(serviceExecPassword),
+    create: {
+      name: "Service Executive",
+      email: "service@ivaansolar.com",
+      passwordHash: serviceExecPassword,
+      ...seedPasswordMeta,
+      roles: {
+        create: [{ roleId: roleMap[ROLES.SERVICE_EXECUTIVE] }],
+      },
+      companies: {
+        create: [{ companyId: ise.id }],
+      },
+    },
+  });
+
   await prisma.notification.create({
     data: {
       userId: admin.id,
@@ -615,6 +633,7 @@ async function main() {
   console.log("Purchase login: purchase@ivaansolar.com / Purchase@123");
   console.log("Warehouse login: warehouse@ivaansolar.com / Warehouse@123");
   console.log("Accounts login: accounts@ivaansolar.com / Accounts@123");
+  console.log("Service login: service@ivaansolar.com / Service@123");
 }
 
 async function seedSampleQuotations() {

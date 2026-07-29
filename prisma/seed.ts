@@ -287,6 +287,24 @@ async function main() {
     },
   });
 
+  const documentationPassword = await bcrypt.hash("Documentation@123", 12);
+  await prisma.user.upsert({
+    where: { email: "documentation@ivaansolar.com" },
+    update: seedUserUpdate(documentationPassword),
+    create: {
+      name: "Documentation Executive",
+      email: "documentation@ivaansolar.com",
+      passwordHash: documentationPassword,
+      ...seedPasswordMeta,
+      roles: {
+        create: [{ roleId: roleMap[ROLES.DOCUMENTATION_EXECUTIVE] }],
+      },
+      companies: {
+        create: [{ companyId: ise.id }],
+      },
+    },
+  });
+
   const serviceExecPassword = await bcrypt.hash("Service@123", 12);
   await prisma.user.upsert({
     where: { email: "service@ivaansolar.com" },
@@ -633,6 +651,9 @@ async function main() {
   console.log("Purchase login: purchase@ivaansolar.com / Purchase@123");
   console.log("Warehouse login: warehouse@ivaansolar.com / Warehouse@123");
   console.log("Accounts login: accounts@ivaansolar.com / Accounts@123");
+  console.log(
+    "Documentation login: documentation@ivaansolar.com / Documentation@123",
+  );
   console.log("Service login: service@ivaansolar.com / Service@123");
 }
 

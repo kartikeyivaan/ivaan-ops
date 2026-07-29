@@ -7,7 +7,18 @@ import {
   type PrismaClient,
 } from "@prisma/client";
 import { writeAuditLogTx } from "@/lib/audit";
+import {
+  bookingAllowed as isBookingAllowed,
+  getDeliveryTermNote,
+  type DeliveryTermMode,
+  type DeliveryTerms,
+} from "@/lib/delivery-terms";
 import { decimalToNumber } from "@/lib/inventory";
+import { getProductStockSummary } from "@/lib/inventory-service";
+import {
+  evaluateQuotationWarnings,
+  type QuotationWarning,
+} from "@/lib/quotation-warnings";
 import {
   QUOTATION_VALIDITY_DAYS,
   addDays,
@@ -96,6 +107,105 @@ type QuotationLineInput = {
   qty: number;
   rate: number;
 };
+
+type QuotationDeliveryTermInput = {
+  deliveryTermMode: DeliveryTermMode;
+  requiredPaymentPercent?: number | null;
+  dispatchMinDays?: number | null;
+  dispatchMaxDays?: number | null;
+};
+
+export class QuotationWarningsRequiredError extends Error {
+  constructor(readonly warnings: QuotationWarning[]) {
+    super("QUOTATION_WARNINGS_REQUIRED");
+  }
+}
+
+function normalizeDeliveryTerms(input: QuotationDeliveryTermInput) {
+  const terms: DeliveryTerms =
+    input.deliveryTermMode === "ADVANCE_BOOKING"
+      ? {
+          mode: input.deliveryTermMode,
+          requiredPaymentPercent: input.requiredPaymentPercent,
+          dispatchMinDays: input.dispatchMinDays,
+          dispatchMaxDays: input.dispatchMaxDays,
+        }
+      : input.deliveryTermMode === "READY_STOCK"
+        ? { mode: input.deliveryTermMode, requiredPaymentPercent: 100 }
+        : { mode: input.deliveryTermMode };
+
+  return {
+    deliveryTermMode: terms.mode,
+    bookingAllowed: isBookingAllowed(terms.mode),
+    requiredPaymentPercent: terms.requiredPaymentPercent ?? null,
+    dispatchMinDays: terms.dispatchMinDays ?? null,
+    dispatchMaxDays: terms.dispatchMaxDays ?? null,
+    deliveryTermNoteSnapshot: getDeliveryTermNote(terms),
+  };
+}
+
+async function getQuotationWarnings(
+  prisma: PrismaClient,
+  input: {
+    companyId: string;
+    productIds: string[];
+    permittedCompanyIds: string[];
+  },
+) {
+  const permittedCompanyIds = [
+    ...new Set([...input.permittedCompanyIds, input.companyId]),
+  ];
+  const [selectedCompany, products, companies] = await Promise.all([
+    prisma.company.findUnique({
+      where: { id: input.companyId },
+      select: { id: true, name: true, code: true },
+    }),
+    prisma.product.findMany({
+      where: { id: { in: input.productIds } },
+      select: {
+        id: true,
+        displayName: true,
+        category: { select: { name: true } },
+      },
+    }),
+    prisma.company.findMany({
+      where: { id: { in: permittedCompanyIds } },
+      select: { id: true, name: true },
+    }),
+  ]);
+  if (!selectedCompany) throw new Error("COMPANY_NOT_FOUND");
+
+  const stockAvailability = (
+    await Promise.all(
+      companies.flatMap((company) =>
+        products.map(async (product) => {
+          const stock = await getProductStockSummary(
+            prisma,
+            company.id,
+            product.id,
+          );
+          return {
+            productId: product.id,
+            companyId: company.id,
+            companyName: company.name,
+            availableQuantity: stock.availableStock,
+          };
+        }),
+      ),
+    )
+  );
+
+  return evaluateQuotationWarnings({
+    selectedCompany,
+    items: products.map((product) => ({
+      productId: product.id,
+      sku: product.displayName,
+      categoryName: product.category.name,
+    })),
+    stockAvailability,
+    permittedCompanyIds,
+  });
+}
 
 type BuildLineResult = {
   productId: string;
@@ -386,7 +496,9 @@ export async function createQuotation(
     notes?: string;
     send: boolean;
     lines: QuotationLineInput[];
-  },
+    permittedCompanyIds: string[];
+    proceedWithWarnings: boolean;
+  } & QuotationDeliveryTermInput,
 ) {
   const company = await prisma.company.findUnique({
     where: { id: input.companyId },
@@ -415,8 +527,17 @@ export async function createQuotation(
   if (input.send && hasPendingItems) throw new Error("PRICE_APPROVAL_REQUIRED");
 
   const totalValue = roundMoney(builtLines.reduce((sum, line) => sum + line.lineTotal, 0));
-  const baseNo = await generateQuotationNumber(prisma, company.code, input.companyId);
   const status = input.send ? QuotationStatus.SENT : QuotationStatus.DRAFT;
+  const deliveryTerms = normalizeDeliveryTerms(input);
+  const warnings = await getQuotationWarnings(prisma, {
+    companyId: input.companyId,
+    productIds: input.lines.map((line) => line.productId),
+    permittedCompanyIds: input.permittedCompanyIds,
+  });
+  if (warnings.length > 0 && !input.proceedWithWarnings) {
+    throw new QuotationWarningsRequiredError(warnings);
+  }
+  const baseNo = await generateQuotationNumber(prisma, company.code, input.companyId);
 
   return prisma.$transaction(async (tx) => {
     const quotation = await tx.quotation.create({
@@ -431,6 +552,7 @@ export async function createQuotation(
         expiryDate,
         totalValue,
         notes: input.notes,
+        ...deliveryTerms,
         items: {
           create: builtLines.map((line) => ({
             productId: line.productId,
@@ -450,6 +572,19 @@ export async function createQuotation(
       requestedById: input.createdById,
       hasPendingItems,
     });
+
+    if (warnings.length > 0) {
+      await tx.quotationWarningLog.createMany({
+        data: warnings.map((warning) => ({
+          quotationId: quotation.id,
+          companyId: input.companyId,
+          warningType: warning.type,
+          displayed: true,
+          details: warning as Prisma.InputJsonValue,
+          proceededById: input.createdById,
+        })),
+      });
+    }
 
     await writeAuditLogTx(tx, {
       tableName: "quotations",
@@ -474,7 +609,9 @@ export async function reviseQuotation(
     notes?: string;
     send: boolean;
     lines: QuotationLineInput[];
-  },
+    permittedCompanyIds: string[];
+    proceedWithWarnings: boolean;
+  } & QuotationDeliveryTermInput,
 ) {
   const source = await prisma.quotation.findFirst({
     where: { id: input.quotationId, companyId: input.companyId },
@@ -516,6 +653,15 @@ export async function reviseQuotation(
   const baseNo = root.quotationNo.replace(/-R\d+$/, "");
   const quotationNo = formatRevisionQuotationNo(baseNo, nextRevisionNo);
   const status = input.send ? QuotationStatus.SENT : QuotationStatus.DRAFT;
+  const deliveryTerms = normalizeDeliveryTerms(input);
+  const warnings = await getQuotationWarnings(prisma, {
+    companyId: input.companyId,
+    productIds: input.lines.map((line) => line.productId),
+    permittedCompanyIds: input.permittedCompanyIds,
+  });
+  if (warnings.length > 0 && !input.proceedWithWarnings) {
+    throw new QuotationWarningsRequiredError(warnings);
+  }
 
   const productNames = await prisma.product.findMany({
     where: {
@@ -564,6 +710,7 @@ export async function reviseQuotation(
         expiryDate,
         totalValue,
         notes: input.notes ?? source.notes,
+        ...deliveryTerms,
         items: {
           create: builtLines.map((line) => ({
             productId: line.productId,
@@ -583,6 +730,19 @@ export async function reviseQuotation(
       requestedById: input.createdById,
       hasPendingItems,
     });
+
+    if (warnings.length > 0) {
+      await tx.quotationWarningLog.createMany({
+        data: warnings.map((warning) => ({
+          quotationId: quotation.id,
+          companyId: input.companyId,
+          warningType: warning.type,
+          displayed: true,
+          details: warning as Prisma.InputJsonValue,
+          proceededById: input.createdById,
+        })),
+      });
+    }
 
     await writeAuditLogTx(tx, {
       tableName: "quotations",

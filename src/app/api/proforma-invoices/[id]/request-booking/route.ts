@@ -56,7 +56,14 @@ export async function POST(request: Request, context: RouteContext) {
       if (error.message === "ADVANCE_NOT_MET") {
         return errorResponse(
           "ADVANCE_NOT_MET",
-          "50% advance payment is required before booking.",
+          "The required payment percentage has not been received for this PI.",
+          400,
+        );
+      }
+      if (error.message === "BOOKING_NOT_ALLOWED") {
+        return errorResponse(
+          "BOOKING_NOT_ALLOWED",
+          "The selected delivery terms do not permit stock booking.",
           400,
         );
       }

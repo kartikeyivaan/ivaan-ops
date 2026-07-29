@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { canManageQuotations } from "@/lib/quotation-permissions";
-import { reviseQuotation } from "@/lib/quotation-service";
+import {
+  QuotationWarningsRequiredError,
+  reviseQuotation,
+} from "@/lib/quotation-service";
 import { buildQuotationWhatsappUrl } from "@/lib/quotation-share";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
@@ -47,11 +50,25 @@ export async function POST(request: Request, context: RouteContext) {
       notes: parsed.data.notes,
       send: parsed.data.send,
       lines: parsed.data.lines,
+      deliveryTermMode: parsed.data.deliveryTermMode,
+      requiredPaymentPercent: parsed.data.requiredPaymentPercent,
+      dispatchMinDays: parsed.data.dispatchMinDays,
+      dispatchMaxDays: parsed.data.dispatchMaxDays,
+      permittedCompanyIds: session.user.companies.map((company) => company.id),
+      proceedWithWarnings: parsed.data.proceedWithWarnings,
     });
     const whatsappUrl = parsed.data.send ? buildQuotationWhatsappUrl(quotation) : null;
 
     return NextResponse.json({ ...quotation, whatsappUrl }, { status: 201 });
   } catch (error) {
+    if (error instanceof QuotationWarningsRequiredError) {
+      return errorResponse(
+        "QUOTATION_WARNINGS_REQUIRED",
+        "Review the quotation warnings before proceeding.",
+        409,
+        { warnings: error.warnings },
+      );
+    }
     if (error instanceof Error) {
       if (error.message === "NOT_FOUND") {
         return errorResponse("NOT_FOUND", "Quotation not found.", 404);

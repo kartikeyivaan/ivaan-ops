@@ -1,6 +1,7 @@
 import {
   ApprovalModuleType,
   ApprovalRequestStatus,
+  InventoryEventType,
   InventoryTransactionType,
   ItemApprovalStatus,
   Prisma,
@@ -12,14 +13,20 @@ import {
 import { writeAuditLogTx } from "@/lib/audit";
 import { decimalToNumber } from "@/lib/inventory";
 import { getWarehouseStockForProduct } from "@/lib/inventory-service";
+import { createEvent } from "@/lib/inventory-event-service";
+import { getInventoryProjection } from "@/lib/inventory-projection-service";
+import { notifyBookingCreated } from "@/lib/notification-service";
 import {
   calculateAdvanceRequired,
   calculateOutstanding,
   canRequestBooking,
   generateProformaInvoiceNumber,
+  resolveBookingRequirement,
   toDateOnly,
 } from "@/lib/proforma-invoices";
 import { calculateLineAmounts, roundMoney } from "@/lib/quotations";
+import { addCalendarDays } from "@/lib/working-days";
+import { createWorkingDaysService } from "@/lib/working-days-service";
 
 const piInclude = {
   company: {
@@ -55,7 +62,17 @@ const piInclude = {
   salesUser: {
     select: { id: true, name: true, email: true, mobile: true, officialContactNumber: true },
   },
-  quotation: { select: { id: true, quotationNo: true } },
+  quotation: {
+    select: {
+      id: true,
+      quotationNo: true,
+      deliveryTermMode: true,
+      bookingAllowed: true,
+      requiredPaymentPercent: true,
+      dispatchMinDays: true,
+      dispatchMaxDays: true,
+    },
+  },
   warehouse: { select: { id: true, name: true, code: true } },
   bookedBy: { select: { id: true, name: true } },
   items: {
@@ -97,6 +114,24 @@ function serializePi(pi: ProformaInvoiceRecord) {
     pi.payments.reduce((sum, payment) => sum + decimalToNumber(payment.amount), 0),
   );
   const totalValue = decimalToNumber(pi.totalValue);
+  const requirement = resolveBookingRequirement(
+    {
+      deliveryTermMode: pi.deliveryTermMode,
+      bookingAllowed: pi.bookingAllowed,
+      requiredPaymentPercent: pi.requiredPaymentPercent
+        ? decimalToNumber(pi.requiredPaymentPercent)
+        : null,
+    },
+    pi.quotation
+      ? {
+          deliveryTermMode: pi.quotation.deliveryTermMode,
+          bookingAllowed: pi.quotation.bookingAllowed,
+          requiredPaymentPercent: pi.quotation.requiredPaymentPercent
+            ? decimalToNumber(pi.quotation.requiredPaymentPercent)
+            : null,
+        }
+      : null,
+  );
 
   return {
     id: pi.id,
@@ -131,8 +166,13 @@ function serializePi(pi: ProformaInvoiceRecord) {
     paymentSummary: {
       totalPaid,
       outstanding: calculateOutstanding(totalValue, totalPaid),
-      advanceRequired: calculateAdvanceRequired(totalValue),
-      canRequestBooking: canRequestBooking(totalValue, totalPaid),
+      requiredPaymentPercent: requirement.requiredPaymentPercent,
+      advanceRequired: calculateAdvanceRequired(
+        totalValue,
+        requirement.requiredPaymentPercent,
+      ),
+      canRequestBooking: canRequestBooking(totalValue, totalPaid, requirement),
+      bookingBlockedReason: requirement.reason ?? null,
     },
   };
 }
@@ -411,6 +451,12 @@ export async function createProformaFromQuotation(
         piDate,
         totalValue: quotation.totalValue,
         notes: quotation.notes,
+        deliveryTermMode: quotation.deliveryTermMode,
+        bookingAllowed: quotation.bookingAllowed,
+        requiredPaymentPercent: quotation.requiredPaymentPercent,
+        dispatchMinDays: quotation.dispatchMinDays,
+        dispatchMaxDays: quotation.dispatchMaxDays,
+        deliveryTermNoteSnapshot: quotation.deliveryTermNoteSnapshot,
         items: {
           create: quotation.items.map((item) => ({
             productId: item.productId,
@@ -569,7 +615,17 @@ export async function requestBooking(
 ) {
   const pi = await prisma.proformaInvoice.findFirst({
     where: { id: input.piId, companyId: input.companyId },
-    include: { payments: true, items: { include: { product: true } } },
+    include: {
+      payments: true,
+      items: { include: { product: true } },
+      quotation: {
+        select: {
+          deliveryTermMode: true,
+          bookingAllowed: true,
+          requiredPaymentPercent: true,
+        },
+      },
+    },
   });
   if (!pi) throw new Error("NOT_FOUND");
   if (pi.status !== ProformaInvoiceStatus.ISSUED) throw new Error("INVALID_STATUS");
@@ -578,7 +634,28 @@ export async function requestBooking(
     (sum, payment) => sum + decimalToNumber(payment.amount),
     0,
   );
-  if (!canRequestBooking(decimalToNumber(pi.totalValue), totalPaid)) {
+  const requirement = resolveBookingRequirement(
+    {
+      deliveryTermMode: pi.deliveryTermMode,
+      bookingAllowed: pi.bookingAllowed,
+      requiredPaymentPercent: pi.requiredPaymentPercent
+        ? decimalToNumber(pi.requiredPaymentPercent)
+        : null,
+    },
+    pi.quotation
+      ? {
+          deliveryTermMode: pi.quotation.deliveryTermMode,
+          bookingAllowed: pi.quotation.bookingAllowed,
+          requiredPaymentPercent: pi.quotation.requiredPaymentPercent
+            ? decimalToNumber(pi.quotation.requiredPaymentPercent)
+            : null,
+        }
+      : null,
+  );
+  if (!requirement.allowed) {
+    throw new Error("BOOKING_NOT_ALLOWED");
+  }
+  if (!canRequestBooking(decimalToNumber(pi.totalValue), totalPaid, requirement)) {
     throw new Error("ADVANCE_NOT_MET");
   }
 
@@ -640,11 +717,104 @@ export async function approveBooking(
 ) {
   const pi = await prisma.proformaInvoice.findFirst({
     where: { id: input.piId, companyId: input.companyId },
-    include: { items: { include: { product: true } } },
+    include: {
+      payments: { select: { amount: true } },
+      items: { include: { product: true } },
+      quotation: {
+        select: {
+          deliveryTermMode: true,
+          bookingAllowed: true,
+          requiredPaymentPercent: true,
+          dispatchMinDays: true,
+          dispatchMaxDays: true,
+        },
+      },
+    },
   });
   if (!pi) throw new Error("NOT_FOUND");
   if (pi.status !== ProformaInvoiceStatus.PENDING_BOOKING) throw new Error("INVALID_STATUS");
   if (!pi.warehouseId) throw new Error("WAREHOUSE_REQUIRED");
+
+  const requirement = resolveBookingRequirement(
+    {
+      deliveryTermMode: pi.deliveryTermMode,
+      bookingAllowed: pi.bookingAllowed,
+      requiredPaymentPercent: pi.requiredPaymentPercent
+        ? decimalToNumber(pi.requiredPaymentPercent)
+        : null,
+    },
+    pi.quotation
+      ? {
+          deliveryTermMode: pi.quotation.deliveryTermMode,
+          bookingAllowed: pi.quotation.bookingAllowed,
+          requiredPaymentPercent: pi.quotation.requiredPaymentPercent
+            ? decimalToNumber(pi.quotation.requiredPaymentPercent)
+            : null,
+        }
+      : null,
+  );
+  if (!requirement.allowed) throw new Error("BOOKING_NOT_ALLOWED");
+  const totalPaid = pi.payments.reduce(
+    (sum, payment) => sum + decimalToNumber(payment.amount),
+    0,
+  );
+  if (!canRequestBooking(decimalToNumber(pi.totalValue), totalPaid, requirement)) {
+    throw new Error("ADVANCE_NOT_MET");
+  }
+
+  const bookingDate = new Date();
+  const bookingDateString = bookingDate.toISOString().slice(0, 10);
+  const mode = pi.deliveryTermMode ?? pi.quotation?.deliveryTermMode ?? null;
+  const minDays =
+    mode === "READY_STOCK"
+      ? 0
+      : (pi.dispatchMinDays ?? pi.quotation?.dispatchMinDays ?? 0);
+  const maxDays =
+    mode === "READY_STOCK"
+      ? 0
+      : (pi.dispatchMaxDays ?? pi.quotation?.dispatchMaxDays ?? minDays);
+  const workingDays = createWorkingDaysService(prisma);
+  const [dispatchMinString, dispatchMaxString] = await Promise.all([
+    workingDays.getNextWorkingDate(
+      input.companyId,
+      pi.warehouseId,
+      addCalendarDays(bookingDateString, minDays),
+    ),
+    workingDays.getNextWorkingDate(
+      input.companyId,
+      pi.warehouseId,
+      addCalendarDays(bookingDateString, maxDays),
+    ),
+  ]);
+  const requiredDispatchMinDate = new Date(`${dispatchMinString}T00:00:00.000Z`);
+  const requiredDispatchMaxDate = new Date(`${dispatchMaxString}T00:00:00.000Z`);
+
+  const quantitiesByProduct = new Map<string, number>();
+  for (const item of pi.items) {
+    quantitiesByProduct.set(
+      item.productId,
+      (quantitiesByProduct.get(item.productId) ?? 0) + decimalToNumber(item.qty),
+    );
+  }
+  for (const [productId, quantity] of quantitiesByProduct) {
+    const projection = await getInventoryProjection({
+      companyId: input.companyId,
+      warehouseId: pi.warehouseId,
+      productId,
+      startDate: bookingDateString,
+      endDate: dispatchMaxString,
+    });
+    const minimumProjected = projection.length
+      ? Math.min(...projection.map((day) => day.projectedAvailableQuantity))
+      : 0;
+    if (minimumProjected < quantity) {
+      const product = pi.items.find((item) => item.productId === productId)?.product;
+      const shortage = roundMoney(quantity - minimumProjected);
+      throw new Error(
+        `INSUFFICIENT_PROJECTED_STOCK|${product?.displayName ?? productId}|${shortage}`,
+      );
+    }
+  }
 
   return prisma.$transaction(async (tx) => {
     await bookInventoryForPi(tx, {
@@ -660,12 +830,33 @@ export async function approveBooking(
       performedById: input.approvedById,
     });
 
+    for (const item of pi.items) {
+      await createEvent(tx, {
+        companyId: input.companyId,
+        warehouseId: pi.warehouseId!,
+        productId: item.productId,
+        eventType: InventoryEventType.BOOKING_RESERVATION,
+        quantity: decimalToNumber(item.qty),
+        effectiveDate: bookingDate,
+        expectedMinDate: requiredDispatchMinDate,
+        expectedMaxDate: requiredDispatchMaxDate,
+        sourceType: "PROFORMA_INVOICE",
+        sourceId: pi.id,
+        sourceNumber: pi.piNo,
+        notes: `Reserved for ${pi.piNo}`,
+        createdById: input.approvedById,
+      });
+    }
+
     const updated = await tx.proformaInvoice.update({
       where: { id: pi.id },
       data: {
         status: ProformaInvoiceStatus.BOOKED,
-        bookedAt: new Date(),
+        bookedAt: bookingDate,
         bookedById: input.approvedById,
+        requiredPaymentPercent: requirement.requiredPaymentPercent,
+        requiredDispatchMinDate,
+        requiredDispatchMaxDate,
       },
       include: piInclude,
     });
@@ -691,6 +882,11 @@ export async function approveBooking(
       performedBy: input.approvedById,
       companyId: input.companyId,
       reference: pi.piNo,
+    });
+
+    await notifyBookingCreated(tx, {
+      salesUserId: pi.salesUserId,
+      piNo: pi.piNo,
     });
 
     return serializePi(updated);

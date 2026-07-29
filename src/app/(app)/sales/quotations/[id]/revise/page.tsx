@@ -124,6 +124,18 @@ export default async function ReviseQuotationPage({ params }: PageProps) {
       defaultSalesUserId={quotation.salesUser.id}
       initialLines={initialLines}
       initialNotes={quotation.notes ?? ""}
+      initialDeliveryTermMode={
+        quotation.deliveryTermMode === "LEGACY"
+          ? "SUBJECT_TO_AVAILABILITY"
+          : quotation.deliveryTermMode
+      }
+      initialRequiredPaymentPercent={
+        quotation.requiredPaymentPercent == null
+          ? null
+          : Number(quotation.requiredPaymentPercent)
+      }
+      initialDispatchMinDays={quotation.dispatchMinDays}
+      initialDispatchMaxDays={quotation.dispatchMaxDays}
     />
   );
 }

@@ -10,6 +10,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TypeaheadSelect } from "@/components/ui/typeahead-select";
+import {
+  getDeliveryTermNote,
+  type DeliveryTermMode,
+} from "@/lib/delivery-terms";
 import { QUOTATION_VALIDITY_DAYS, calculateLineAmounts } from "@/lib/quotations";
 import { formatPricingType } from "@/lib/products";
 
@@ -65,6 +69,10 @@ export function QuotationForm({
   quotationNo,
   initialLines,
   initialNotes,
+  initialDeliveryTermMode,
+  initialRequiredPaymentPercent,
+  initialDispatchMinDays,
+  initialDispatchMaxDays,
 }: {
   customers: Customer[];
   products: Product[];
@@ -78,6 +86,10 @@ export function QuotationForm({
   quotationNo?: string;
   initialLines?: LineDraft[];
   initialNotes?: string;
+  initialDeliveryTermMode?: DeliveryTermMode;
+  initialRequiredPaymentPercent?: number | null;
+  initialDispatchMinDays?: number | null;
+  initialDispatchMaxDays?: number | null;
 }) {
   const isRevise = mode === "revise";
   const router = useRouter();
@@ -90,6 +102,18 @@ export function QuotationForm({
       : (salesExecutives[0]?.id ?? defaultSalesUserId),
   );
   const [notes, setNotes] = useState(initialNotes ?? "");
+  const [deliveryTermMode, setDeliveryTermMode] = useState<DeliveryTermMode>(
+    initialDeliveryTermMode ?? "SUBJECT_TO_AVAILABILITY",
+  );
+  const [requiredPaymentPercent, setRequiredPaymentPercent] = useState(
+    String(initialRequiredPaymentPercent ?? 30),
+  );
+  const [dispatchMinDays, setDispatchMinDays] = useState(
+    String(initialDispatchMinDays ?? 5),
+  );
+  const [dispatchMaxDays, setDispatchMaxDays] = useState(
+    String(initialDispatchMaxDays ?? 7),
+  );
   const [lines, setLines] = useState<LineDraft[]>(
     initialLines && initialLines.length > 0 ? initialLines : [emptyProductLine()],
   );
@@ -173,6 +197,13 @@ export function QuotationForm({
   }, [lines, products]);
 
   const grandTotal = computedLines.reduce((sum, line) => sum + line.lineTotal, 0);
+  const deliveryTermNote = getDeliveryTermNote({
+    mode: deliveryTermMode,
+    requiredPaymentPercent:
+      deliveryTermMode === "READY_STOCK" ? 100 : Number(requiredPaymentPercent),
+    dispatchMinDays: Number(dispatchMinDays),
+    dispatchMaxDays: Number(dispatchMaxDays),
+  });
 
   async function handleCompanyChange(companyId: string) {
     if (!companyId || companyId === selectedCompanyId) {
@@ -283,17 +314,57 @@ export function QuotationForm({
     }));
 
     const endpoint = isRevise ? `/api/quotations/${quotationId}/revise` : "/api/quotations";
-    const payload = isRevise
-      ? { notes: notes || undefined, send, lines: mappedLines }
-      : { customerId, salesUserId, notes: notes || undefined, send, lines: mappedLines };
+    const deliveryTerms = {
+      deliveryTermMode,
+      requiredPaymentPercent:
+        deliveryTermMode === "ADVANCE_BOOKING"
+          ? Number(requiredPaymentPercent)
+          : deliveryTermMode === "READY_STOCK"
+            ? 100
+            : undefined,
+      dispatchMinDays:
+        deliveryTermMode === "ADVANCE_BOOKING" ? Number(dispatchMinDays) : undefined,
+      dispatchMaxDays:
+        deliveryTermMode === "ADVANCE_BOOKING" ? Number(dispatchMaxDays) : undefined,
+    };
+    const basePayload = isRevise
+      ? { notes: notes || undefined, send, lines: mappedLines, ...deliveryTerms }
+      : {
+          customerId,
+          salesUserId,
+          notes: notes || undefined,
+          send,
+          lines: mappedLines,
+          ...deliveryTerms,
+        };
 
-    const response = await fetch(endpoint, {
+    let response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(basePayload),
     });
+    let data = await response.json();
 
-    const data = await response.json();
+    if (response.status === 409 && data.code === "QUOTATION_WARNINGS_REQUIRED") {
+      const warnings = Array.isArray(data.details?.warnings)
+        ? data.details.warnings
+        : [];
+      const confirmed = window.confirm(
+        `${warnings.map((warning: { message?: string }) => `• ${warning.message ?? "Review quotation warning."}`).join("\n\n")}\n\nProceed and save this quotation?`,
+      );
+      if (!confirmed) {
+        shareWindow?.close();
+        setLoading(false);
+        return;
+      }
+
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...basePayload, proceedWithWarnings: true }),
+      });
+      data = await response.json();
+    }
     setLoading(false);
 
     if (!response.ok) {
@@ -534,6 +605,119 @@ export function QuotationForm({
               </div>
             );
           })}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Delivery Terms</CardTitle>
+          <p className="text-sm text-slate-500">
+            Select how material availability and booking will be stated on the quotation.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-3">
+            {[
+              {
+                value: "ADVANCE_BOOKING" as const,
+                title: "Advance Booking",
+                description: "Booking against advance payment with a dispatch window.",
+              },
+              {
+                value: "READY_STOCK" as const,
+                title: "Ready Stock",
+                description: "100% payment required. Offered from ready stock.",
+              },
+              {
+                value: "SUBJECT_TO_AVAILABILITY" as const,
+                title: "Subject to Availability",
+                description: "No booking commitment until material availability is confirmed.",
+              },
+            ].map((option) => (
+              <label
+                key={option.value}
+                className={`flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition ${
+                  deliveryTermMode === option.value
+                    ? "border-emerald-500 bg-emerald-50"
+                    : "border-slate-200 bg-white hover:border-slate-300"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="deliveryTermMode"
+                  value={option.value}
+                  checked={deliveryTermMode === option.value}
+                  onChange={() => setDeliveryTermMode(option.value)}
+                  className="mt-1 h-4 w-4 accent-emerald-600"
+                />
+                <span>
+                  <span className="block font-medium text-slate-900">{option.title}</span>
+                  <span className="mt-1 block text-sm text-slate-500">
+                    {option.description}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </div>
+
+          {deliveryTermMode === "ADVANCE_BOOKING" ? (
+            <div className="grid gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4 sm:grid-cols-3">
+              <div className="space-y-2">
+                <Label htmlFor="requiredPaymentPercent">Advance payment (%)</Label>
+                <Input
+                  id="requiredPaymentPercent"
+                  type="number"
+                  min="1"
+                  max="100"
+                  step="any"
+                  value={requiredPaymentPercent}
+                  onChange={(event) => setRequiredPaymentPercent(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="dispatchMinDays">Dispatch from (days)</Label>
+                <Input
+                  id="dispatchMinDays"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={dispatchMinDays}
+                  onChange={(event) => setDispatchMinDays(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="dispatchMaxDays">Dispatch within (days)</Label>
+                <Input
+                  id="dispatchMaxDays"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={dispatchMaxDays}
+                  onChange={(event) => setDispatchMaxDays(event.target.value)}
+                />
+              </div>
+            </div>
+          ) : null}
+
+          {deliveryTermMode === "READY_STOCK" ? (
+            <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800">
+              Payment required for booking: 100% (fixed)
+            </p>
+          ) : null}
+
+          {deliveryTermMode === "SUBJECT_TO_AVAILABILITY" ? (
+            <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>Booking is disabled for this quotation until availability is confirmed.</p>
+            </div>
+          ) : null}
+
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Generated delivery note
+            </p>
+            <p className="mt-2 text-sm text-slate-700">{deliveryTermNote}</p>
+          </div>
         </CardContent>
       </Card>
 

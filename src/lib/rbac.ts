@@ -8,6 +8,7 @@ export const ROLES = {
   PURCHASE: "Purchase",
   ACCOUNTS: "Accounts",
   SERVICE_EXECUTIVE: "Service Executive",
+  DOCUMENTATION_EXECUTIVE: "Documentation Executive",
 } as const;
 
 export type RoleName = (typeof ROLES)[keyof typeof ROLES];
@@ -88,9 +89,25 @@ export const NAV_ITEMS: NavItem[] = [
     ],
   },
   {
+    label: "Stock Timeline",
+    href: "/sales/inventory-timeline",
+    roles: [
+      ROLES.SUPER_ADMIN,
+      ROLES.SALES_MANAGER,
+      ROLES.SALES_EXECUTIVE,
+      ROLES.WAREHOUSE,
+      ROLES.PURCHASE,
+    ],
+  },
+  {
     label: "Purchase",
     href: "/purchase",
     roles: [ROLES.SUPER_ADMIN, ROLES.PURCHASE],
+  },
+  {
+    label: "Safety Stock",
+    href: "/inventory/safety-stock",
+    roles: [ROLES.SUPER_ADMIN, ROLES.PURCHASE, ROLES.SALES_MANAGER],
   },
   {
     label: "Dispatch",
@@ -125,6 +142,20 @@ export const NAV_ITEMS: NavItem[] = [
       ROLES.WAREHOUSE,
       ROLES.PURCHASE,
       ROLES.ACCOUNTS,
+    ],
+  },
+  {
+    label: "Invoice Queue",
+    href: "/accounts/invoice-queue",
+    roles: [ROLES.SUPER_ADMIN, ROLES.ACCOUNTS],
+  },
+  {
+    label: "Documentation",
+    href: "/documentation",
+    roles: [
+      ROLES.SUPER_ADMIN,
+      ROLES.ACCOUNTS,
+      ROLES.DOCUMENTATION_EXECUTIVE,
     ],
   },
   {

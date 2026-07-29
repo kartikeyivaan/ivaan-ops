@@ -1,4 +1,6 @@
 import {
+  InventoryEventStatus,
+  InventoryEventType,
   InventoryTransactionType,
   LotStatus,
   Prisma,
@@ -17,6 +19,7 @@ import {
   validateInwardQuantities,
 } from "@/lib/inventory";
 import { writeAuditLogTx } from "@/lib/audit";
+import { toSignedInventoryQuantity } from "@/lib/inventory-events";
 
 const lotInclude = {
   company: true,
@@ -301,6 +304,8 @@ export async function findSimilarIncomingLots(
     vendorId?: string | null;
     productId: string;
     purchaseDate: Date;
+    expectedMinDate?: Date | null;
+    expectedMaxDate?: Date | null;
     quantity: number;
     unitPurchaseRate: number;
     excludeLotId?: string;
@@ -393,6 +398,8 @@ export async function createIncomingLot(
     vendorId?: string | null;
     purchaseInvoiceNo?: string | null;
     purchaseDate: Date;
+    expectedMinDate?: Date | null;
+    expectedMaxDate?: Date | null;
     productId: string;
     quantity: number;
     unitPurchaseRate: number;
@@ -411,6 +418,9 @@ export async function createIncomingLot(
   if (!product || !product.isActive) throw new Error("PRODUCT_NOT_FOUND");
 
   if (input.quantity <= 0) throw new Error("INVALID_QUANTITY");
+  if (input.expectedMinDate && input.expectedMaxDate && input.expectedMinDate > input.expectedMaxDate) {
+    throw new Error("INVALID_ARRIVAL_WINDOW");
+  }
 
   const transportCharges = input.transportCharges ?? 0;
   const commissionCharges = input.commissionCharges ?? 0;
@@ -451,6 +461,8 @@ export async function createIncomingLot(
         vendorId: input.vendorId ?? null,
         purchaseInvoiceNo,
         purchaseDate: input.purchaseDate,
+        expectedMinDate: input.expectedMinDate,
+        expectedMaxDate: input.expectedMaxDate,
         productId: input.productId,
         quantity: input.quantity,
         unitPurchaseRate: input.unitPurchaseRate,
@@ -475,6 +487,25 @@ export async function createIncomingLot(
         quantity: input.quantity,
         unitPurchaseRate: input.unitPurchaseRate,
         totalPurchaseCost,
+      },
+    });
+
+    await tx.inventoryEvent.create({
+      data: {
+        companyId: input.companyId,
+        warehouseId: input.warehouseId,
+        productId: input.productId,
+        eventType: InventoryEventType.PURCHASE_INCOMING,
+        quantity: input.quantity,
+        quantityEffect: toSignedInventoryQuantity(InventoryEventType.PURCHASE_INCOMING, input.quantity),
+        effectiveDate: input.expectedMaxDate ?? input.expectedMinDate ?? input.purchaseDate,
+        expectedMinDate: input.expectedMinDate,
+        expectedMaxDate: input.expectedMaxDate,
+        sourceType: "INVENTORY_LOT",
+        sourceId: lot.id,
+        sourceNumber: lot.lotNumber,
+        status: InventoryEventStatus.ACTIVE,
+        createdById: input.createdById,
       },
     });
 
@@ -503,6 +534,8 @@ export async function updateIncomingLot(
     vendorId?: string | null;
     purchaseInvoiceNo?: string | null;
     purchaseDate: Date;
+    expectedMinDate?: Date | null;
+    expectedMaxDate?: Date | null;
     productId: string;
     quantity: number;
     unitPurchaseRate: number;
@@ -527,6 +560,9 @@ export async function updateIncomingLot(
   if (!product || !product.isActive) throw new Error("PRODUCT_NOT_FOUND");
 
   if (input.quantity <= 0) throw new Error("INVALID_QUANTITY");
+  if (input.expectedMinDate && input.expectedMaxDate && input.expectedMinDate > input.expectedMaxDate) {
+    throw new Error("INVALID_ARRIVAL_WINDOW");
+  }
 
   const transportCharges = input.transportCharges ?? 0;
   const commissionCharges = input.commissionCharges ?? 0;
@@ -566,6 +602,8 @@ export async function updateIncomingLot(
         vendorId: input.vendorId ?? null,
         purchaseInvoiceNo,
         purchaseDate: input.purchaseDate,
+        expectedMinDate: input.expectedMinDate,
+        expectedMaxDate: input.expectedMaxDate,
         productId: input.productId,
         quantity: input.quantity,
         unitPurchaseRate: input.unitPurchaseRate,
@@ -594,6 +632,37 @@ export async function updateIncomingLot(
         totalPurchaseCost,
       },
     });
+
+    const event = await tx.inventoryEvent.findFirst({
+      where: {
+        sourceType: "INVENTORY_LOT",
+        sourceId: lotId,
+        eventType: InventoryEventType.PURCHASE_INCOMING,
+        status: { not: InventoryEventStatus.CANCELLED },
+      },
+    });
+    const eventData = {
+      companyId,
+      warehouseId: input.warehouseId,
+      productId: input.productId,
+      quantity: input.quantity,
+      quantityEffect: toSignedInventoryQuantity(InventoryEventType.PURCHASE_INCOMING, input.quantity),
+      effectiveDate: input.expectedMaxDate ?? input.expectedMinDate ?? input.purchaseDate,
+      expectedMinDate: input.expectedMinDate,
+      expectedMaxDate: input.expectedMaxDate,
+      sourceType: "INVENTORY_LOT",
+      sourceId: lotId,
+      sourceNumber: lot.lotNumber,
+      status: InventoryEventStatus.ACTIVE,
+      updatedById: input.updatedById,
+    };
+    if (event) {
+      await tx.inventoryEvent.update({ where: { id: event.id }, data: eventData });
+    } else {
+      await tx.inventoryEvent.create({
+        data: { ...eventData, eventType: InventoryEventType.PURCHASE_INCOMING, createdById: input.updatedById },
+      });
+    }
 
     return updatedLot;
   });
@@ -627,6 +696,16 @@ export async function deleteIncomingLot(
         productId: lot.productId,
         quantity: decimalToNumber(lot.quantity),
         deleted: true,
+      },
+    });
+
+    await tx.inventoryEvent.updateMany({
+      where: { sourceType: "INVENTORY_LOT", sourceId: lotId, status: { not: InventoryEventStatus.CANCELLED } },
+      data: {
+        status: InventoryEventStatus.CANCELLED,
+        cancellationReason: "Incoming lot deleted",
+        cancelledAt: new Date(),
+        updatedById: deletedById,
       },
     });
 
@@ -1079,6 +1158,8 @@ export function serializeLotForRole(
     receivedQuantity: decimalToNumber(lot.receivedQuantity),
     damagedQuantity: decimalToNumber(lot.damagedQuantity),
     purchaseDate: lot.purchaseDate.toISOString(),
+    expectedMinDate: lot.expectedMinDate?.toISOString() ?? null,
+    expectedMaxDate: lot.expectedMaxDate?.toISOString() ?? null,
     createdAt: lot.createdAt.toISOString(),
     updatedAt: lot.updatedAt.toISOString(),
     product: {

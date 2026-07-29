@@ -15,6 +15,7 @@
     "db:push": "prisma db push",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
+    "db:backfill:opening-stock": "tsx scripts/backfill-opening-stock.ts",
     "db:setup:local": "powershell -ExecutionPolicy Bypass -File scripts/setup-local-db.ps1",
     "postinstall": "node scripts/prisma-generate.mjs"
   },

@@ -73,6 +73,8 @@ export function IncomingCreateForm({
     vendorId: "",
     purchaseInvoiceNo: "",
     purchaseDate: new Date().toISOString().slice(0, 10),
+    expectedMinDate: "",
+    expectedMaxDate: "",
     productId: "",
     quantity: "",
     unitPurchaseRate: "",
@@ -237,6 +239,8 @@ export function IncomingCreateForm({
       vendorId: form.vendorId || undefined,
       purchaseInvoiceNo: form.purchaseInvoiceNo.trim(),
       purchaseDate: form.purchaseDate,
+      expectedMinDate: form.expectedMinDate || undefined,
+      expectedMaxDate: form.expectedMaxDate || undefined,
       productId: form.productId,
       quantity: quantityResult.value,
       unitPurchaseRate: unitRateResult.value,
@@ -375,6 +379,14 @@ export function IncomingCreateForm({
               onChange={(e) => setForm({ ...form, purchaseDate: e.target.value })}
               required
             />
+          </div>
+          <div className="space-y-2">
+            <Label>Expected arrival from</Label>
+            <Input type="date" value={form.expectedMinDate} onChange={(e) => setForm({ ...form, expectedMinDate: e.target.value })} />
+          </div>
+          <div className="space-y-2">
+            <Label>Expected arrival by</Label>
+            <Input type="date" min={form.expectedMinDate || undefined} value={form.expectedMaxDate} onChange={(e) => setForm({ ...form, expectedMaxDate: e.target.value })} />
           </div>
           <FormulaInput
             label="Expected quantity"

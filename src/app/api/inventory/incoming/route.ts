@@ -81,6 +81,8 @@ export async function POST(request: Request) {
       vendorId: parsed.data.vendorId,
       purchaseInvoiceNo: parsed.data.purchaseInvoiceNo,
       purchaseDate: new Date(parsed.data.purchaseDate),
+      expectedMinDate: parsed.data.expectedMinDate ? new Date(parsed.data.expectedMinDate) : null,
+      expectedMaxDate: parsed.data.expectedMaxDate ? new Date(parsed.data.expectedMaxDate) : null,
       productId: parsed.data.productId,
       quantity: parsed.data.quantity,
       unitPurchaseRate: parsed.data.unitPurchaseRate,
@@ -107,6 +109,9 @@ export async function POST(request: Request) {
       }
       if (error.message === "INVALID_QUANTITY") {
         return errorResponse("VALIDATION_ERROR", "Quantity must be greater than zero.", 400);
+      }
+      if (error.message === "INVALID_ARRIVAL_WINDOW") {
+        return errorResponse("VALIDATION_ERROR", "Expected arrival end date must be on or after the start date.", 400);
       }
       if (error.message === "PURCHASE_INVOICE_REQUIRED") {
         return errorResponse(

@@ -2,6 +2,8 @@ import {
   ApprovalModuleType,
   ApprovalRequestStatus,
   DispatchStatus,
+  InventoryEventStatus,
+  InventoryEventType,
   InventoryTransactionType,
   Prisma,
   ProformaInvoiceStatus,
@@ -15,6 +17,11 @@ import {
   toDateOnly,
 } from "@/lib/dispatches";
 import { decimalToNumber, normalizeSerialNumber } from "@/lib/inventory";
+import { toSignedInventoryQuantity } from "@/lib/inventory-events";
+import {
+  notifyDispatchCompleted,
+  notifyInvoicePending,
+} from "@/lib/notification-service";
 import { deductNonSerialStock } from "@/lib/transfer-service";
 import { roundMoney } from "@/lib/quotations";
 
@@ -100,6 +107,9 @@ function serializeDispatch(dispatch: DispatchRecord) {
     dispatchDate: dispatch.dispatchDate.toISOString().slice(0, 10),
     vehicleNo: dispatch.vehicleNo,
     driverName: dispatch.driverName,
+    receiverName: dispatch.receiverName,
+    receiverMobile: dispatch.receiverMobile,
+    signatureUrl: dispatch.signatureUrl,
     notes: dispatch.notes,
     dispatchedAt: dispatch.dispatchedAt?.toISOString() ?? null,
     customer: dispatch.customer,
@@ -409,6 +419,9 @@ export async function createDispatch(
     createdById: string;
     vehicleNo?: string;
     driverName?: string;
+    receiverName?: string;
+    receiverMobile?: string;
+    signatureUrl?: string;
     notes?: string;
     confirm: boolean;
     lines: DispatchLineInput[];
@@ -448,6 +461,9 @@ export async function createDispatch(
         dispatchDate,
         vehicleNo: input.vehicleNo,
         driverName: input.driverName,
+        receiverName: input.receiverName,
+        receiverMobile: input.receiverMobile,
+        signatureUrl: input.signatureUrl,
         notes: input.notes,
         createdById: input.createdById,
         lines: {
@@ -499,6 +515,7 @@ async function confirmDispatchTx(
   const dispatch = await tx.dispatch.findFirst({
     where: { id: input.dispatchId, companyId: input.companyId },
     include: {
+      proformaInvoice: { select: { salesUserId: true } },
       lines: {
         include: {
           product: true,
@@ -510,6 +527,13 @@ async function confirmDispatchTx(
   });
   if (!dispatch) throw new Error("NOT_FOUND");
   if (dispatch.status !== DispatchStatus.DRAFT) throw new Error("INVALID_STATUS");
+  if (
+    !dispatch.vehicleNo?.trim() ||
+    !dispatch.receiverName?.trim() ||
+    !dispatch.receiverMobile?.trim()
+  ) {
+    throw new Error("MANDATORY_DISPATCH_FIELDS_REQUIRED");
+  }
 
   for (const line of dispatch.lines) {
     const qty = decimalToNumber(line.qty);
@@ -558,6 +582,48 @@ async function confirmDispatchTx(
       },
     });
 
+    const existingActualEvent = await tx.inventoryEvent.findFirst({
+      where: {
+        sourceType: "DISPATCH",
+        sourceId: dispatch.id,
+        productId: line.productId,
+        eventType: InventoryEventType.ACTUAL_DISPATCH,
+        status: { not: InventoryEventStatus.CANCELLED },
+      },
+    });
+    if (!existingActualEvent) {
+      await tx.inventoryEvent.create({
+        data: {
+          companyId: input.companyId,
+          warehouseId: dispatch.warehouseId,
+          productId: line.productId,
+          eventType: InventoryEventType.ACTUAL_DISPATCH,
+          quantity: qty,
+          quantityEffect: toSignedInventoryQuantity(InventoryEventType.ACTUAL_DISPATCH, qty),
+          effectiveDate: dispatch.dispatchDate,
+          sourceType: "DISPATCH",
+          sourceId: dispatch.id,
+          sourceNumber: dispatch.dcNo,
+          status: InventoryEventStatus.COMPLETED,
+          createdById: input.performedById,
+        },
+      });
+    }
+
+    await tx.inventoryEvent.updateMany({
+      where: {
+        sourceType: "DISPATCH",
+        sourceId: dispatch.id,
+        productId: line.productId,
+        eventType: InventoryEventType.PLANNED_DISPATCH,
+        status: InventoryEventStatus.ACTIVE,
+      },
+      data: {
+        status: InventoryEventStatus.COMPLETED,
+        updatedById: input.performedById,
+      },
+    });
+
     await tx.proformaInvoiceItem.update({
       where: { id: piItem.id },
       data: {
@@ -578,6 +644,17 @@ async function confirmDispatchTx(
 
   await refreshPiDispatchStatus(tx, dispatch.proformaInvoiceId);
 
+  await tx.invoiceHandover.upsert({
+    where: { dispatchId: dispatch.id },
+    create: {
+      dispatchId: dispatch.id,
+      companyId: dispatch.companyId,
+      customerId: dispatch.customerId,
+      status: "PENDING_INVOICE",
+    },
+    update: {},
+  });
+
   await writeAuditLogTx(tx, {
     tableName: "dispatches",
     recordId: dispatch.id,
@@ -588,6 +665,17 @@ async function confirmDispatchTx(
     companyId: input.companyId,
     reference: dispatch.dcNo,
   });
+
+  await Promise.all([
+    notifyDispatchCompleted(tx, {
+      salesUserId: dispatch.proformaInvoice.salesUserId,
+      dcNo: dispatch.dcNo,
+    }),
+    notifyInvoicePending(tx, {
+      companyId: input.companyId,
+      dcNo: dispatch.dcNo,
+    }),
+  ]);
 
   return serializeDispatch(updated);
 }

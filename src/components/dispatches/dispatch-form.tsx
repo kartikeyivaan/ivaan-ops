@@ -43,6 +43,8 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
   const [piId, setPiId] = useState(defaultPiId ?? "");
   const [vehicleNo, setVehicleNo] = useState("");
   const [driverName, setDriverName] = useState("");
+  const [receiverName, setReceiverName] = useState("");
+  const [receiverMobile, setReceiverMobile] = useState("");
   const [notes, setNotes] = useState("");
   const [lines, setLines] = useState<LineDraft[]>([]);
   const [serialOptions, setSerialOptions] = useState<Record<string, SerialOption[]>>({});
@@ -157,6 +159,8 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
       proformaInvoiceId: piId,
       vehicleNo: vehicleNo || undefined,
       driverName: driverName || undefined,
+      receiverName,
+      receiverMobile,
       notes: notes || undefined,
       confirm: true,
       lines: lines
@@ -223,12 +227,20 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
             </select>
           </div>
           <div className="space-y-2">
-            <Label>Vehicle No</Label>
-            <Input className="h-12 text-base" value={vehicleNo} onChange={(e) => setVehicleNo(e.target.value)} />
+            <Label>Vehicle No *</Label>
+            <Input required className="h-12 text-base" value={vehicleNo} onChange={(e) => setVehicleNo(e.target.value)} />
           </div>
           <div className="space-y-2">
             <Label>Driver Name</Label>
             <Input className="h-12 text-base" value={driverName} onChange={(e) => setDriverName(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>Receiver Name *</Label>
+            <Input required className="h-12 text-base" value={receiverName} onChange={(e) => setReceiverName(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>Receiver Mobile *</Label>
+            <Input required type="tel" className="h-12 text-base" value={receiverMobile} onChange={(e) => setReceiverMobile(e.target.value)} />
           </div>
           <div className="space-y-2 md:col-span-2">
             <Label>Notes</Label>
@@ -323,7 +335,7 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
         </Card>
       ) : null}
 
-      <Button className="h-12 w-full text-base" disabled={loading || !piId} onClick={handleSubmit}>
+      <Button className="h-12 w-full text-base" disabled={loading || !piId || !vehicleNo.trim() || !receiverName.trim() || receiverMobile.trim().length < 10} onClick={handleSubmit}>
         {loading ? "Dispatching..." : "Confirm Dispatch & Generate DC"}
       </Button>
 

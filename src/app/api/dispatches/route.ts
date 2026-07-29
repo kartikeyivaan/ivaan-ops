@@ -73,6 +73,9 @@ export async function POST(request: Request) {
       createdById: session.user.id,
       vehicleNo: parsed.data.vehicleNo,
       driverName: parsed.data.driverName,
+      receiverName: parsed.data.receiverName,
+      receiverMobile: parsed.data.receiverMobile,
+      signatureUrl: parsed.data.signatureUrl,
       notes: parsed.data.notes,
       confirm: parsed.data.confirm,
       lines: parsed.data.lines,
@@ -91,6 +94,11 @@ export async function POST(request: Request) {
         EXCEEDS_REMAINING_QTY: ["VALIDATION_ERROR", "Quantity exceeds remaining booked qty.", 400],
         SERIAL_REQUIRED: ["VALIDATION_ERROR", "Serial selection required.", 400],
         INVALID_SERIAL_SELECTION: ["VALIDATION_ERROR", "Invalid serial selection.", 400],
+        MANDATORY_DISPATCH_FIELDS_REQUIRED: [
+          "VALIDATION_ERROR",
+          "Receiver name, receiver mobile and vehicle number are required.",
+          400,
+        ],
       };
       const mapped = map[error.message];
       if (mapped) {

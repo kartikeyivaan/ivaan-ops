@@ -21,6 +21,7 @@ export default async function ReportsPage() {
 
   const companyId = requireActiveCompany(session);
   const roles = session.user.roles;
+  const isAdmin = isSuperAdmin(roles);
 
   const allowedReports = [
     canViewSalesExecutiveReport(roles) ? "sales-executive" : null,
@@ -63,8 +64,44 @@ export default async function ReportsPage() {
       warehouses={warehouses}
       salesExecutives={salesExecutives}
       canFilterByExecutive={
-        isSuperAdmin(roles) || roles.includes(ROLES.SALES_MANAGER) || roles.includes(ROLES.ACCOUNTS)
+        isAdmin || roles.includes(ROLES.SALES_MANAGER) || roles.includes(ROLES.ACCOUNTS)
       }
+      reportShortcuts={[
+        ...(isAdmin || roles.includes(ROLES.PURCHASE)
+          ? [{
+              label: "Delayed Incoming Lots",
+              description: "Review incoming lots and overdue arrival windows.",
+              href: "/purchase/incoming",
+            }]
+          : []),
+        ...(isAdmin || roles.includes(ROLES.ACCOUNTS)
+          ? [{
+              label: "Pending Invoice Entry",
+              description: "Completed dispatches waiting for invoice details.",
+              href: "/accounts/invoice-queue",
+            }]
+          : []),
+        ...(isAdmin ||
+        roles.includes(ROLES.ACCOUNTS) ||
+        roles.includes(ROLES.DOCUMENTATION_EXECUTIVE)
+          ? [{
+              label: "Documentation Ageing / Status",
+              description: "Documentation queue with status and ageing.",
+              href: "/documentation",
+            }]
+          : []),
+        ...(isAdmin ||
+        roles.includes(ROLES.SALES_MANAGER) ||
+        roles.includes(ROLES.SALES_EXECUTIVE) ||
+        roles.includes(ROLES.WAREHOUSE) ||
+        roles.includes(ROLES.PURCHASE)
+          ? [{
+              label: "Projected Stock",
+              description: "Open the projected inventory timeline.",
+              href: "/sales/inventory-timeline",
+            }]
+          : []),
+      ]}
     />
   );
 }

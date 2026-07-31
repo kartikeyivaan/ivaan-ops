@@ -11,6 +11,7 @@ import {
   ProformaInvoiceStatus,
   QuotationStatus,
   ItemApprovalStatus,
+  ReceivedInAccount,
   SerialStatus,
   UserStatus,
 } from "@prisma/client";
@@ -39,14 +40,12 @@ async function main() {
 
   const defaultTerms = [
     "Payment: 100% advance payment is required prior to dispatch of goods.",
-    "Taxes: GST and other applicable taxes shall be charged as per prevailing government norms.",
-    "Transportation: Transportation charges are extra, at actual cost. Unloading and transit insurance are in the client's scope.",
-    "Warranty: Warranty is as per respective OEM / manufacturer terms and conditions.",
-    "Order Cancellation: Cancellation after order confirmation attracts charges of 5% of the total PI / Invoice value.",
-    "Inspection of Goods: Fragile or damage-prone items must be inspected at the time of dispatch / delivery. No claims for transit or handling damage shall be entertained after dispatch.",
-    "Quotation Validity: This quotation is valid for the period stated on the document. Prices and availability are subject to revision thereafter.",
-    "Delivery: Delivery timelines are indicative and subject to stock availability and logistics conditions.",
-    "Title & Risk: Title and risk in the goods pass to the client upon dispatch from our warehouse.",
+    "Taxes: GST and other applicable taxes as per prevailing government norms.",
+    "Transportation: Freight is extra at actual cost. Unloading and transit insurance are in the client's scope.",
+    "Warranty: As per respective OEM / manufacturer terms.",
+    "Cancellation: Cancellation after order confirmation attracts 5% of the total PI / Invoice value.",
+    "Inspection & Risk: Fragile or damage-prone items must be inspected at dispatch / delivery. Title and risk pass to the client on dispatch; no transit or handling claims thereafter.",
+    "Validity: This quotation is valid for the period stated on the document. Prices and availability are subject to revision thereafter.",
   ].join("\n");
 
   const iseProfile = {
@@ -869,6 +868,7 @@ async function seedSampleProformaInvoices() {
       amount: 798480,
       paymentDate: piDate,
       paymentMode: PaymentMode.NEFT,
+      receivedInAccount: ReceivedInAccount.SBI,
       referenceNo: "SEED-PAY-001",
       recordedById: accountsUser.id,
       notes: "50% advance for booking eligibility UAT",
@@ -916,6 +916,7 @@ async function seedSampleProformaInvoices() {
       amount: 146192,
       paymentDate: piDate,
       paymentMode: PaymentMode.BANK_TRANSFER,
+      receivedInAccount: ReceivedInAccount.ICICI,
       referenceNo: "SEED-PAY-002",
       recordedById: accountsUser.id,
     },
@@ -1057,6 +1058,7 @@ async function seedSampleDispatches() {
         amount: Number(bookedPi.totalValue),
         paymentDate: piDate,
         paymentMode: PaymentMode.RTGS,
+        receivedInAccount: ReceivedInAccount.HDFC,
         referenceNo: "SEED-PAY-003",
         recordedById: accountsUser.id,
         notes: "100% payment — ready for dispatch",

@@ -6,9 +6,11 @@ import { listDispatches } from "@/lib/dispatch-service";
 import {
   canApproveBooking,
   canApproveDispatchToday,
+  canApprovePiCancel,
   canManageProformaInvoices,
   canMarkDispatchToday,
   canRecordPayments,
+  canRequestPiCancel,
   canViewProformaInvoices,
 } from "@/lib/pi-permissions";
 import { buildProformaInvoiceWhatsappUrl } from "@/lib/pi-share";
@@ -89,6 +91,8 @@ export default async function ProformaInvoiceDetailPage({ params }: PageProps) {
       canApproveBooking={canApproveBooking(session.user.roles)}
       canMarkDispatchToday={canMarkDispatchToday(session.user.roles)}
       canApproveDispatchToday={canApproveDispatchToday(session.user.roles)}
+      canRequestCancel={canRequestPiCancel(session.user.roles)}
+      canApproveCancel={canApprovePiCancel(session.user.roles)}
     />
   );
 }

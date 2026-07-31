@@ -1,0 +1,79 @@
+import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { assertInventoryOpsAllowed } from "@/lib/inventory-audit-service";
+import { canApprovePanelDamage } from "@/lib/inventory-permissions";
+import { rejectDamageReport } from "@/lib/damage-report-service";
+import { prisma } from "@/lib/prisma";
+import { requireActiveCompany } from "@/lib/session";
+import { rejectDamageReportSchema } from "@/lib/validations";
+
+function errorResponse(code: string, message: string, status: number, details?: unknown) {
+  return NextResponse.json({ code, message, details }, { status });
+}
+
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const session = await auth();
+  if (!session?.user || !canApprovePanelDamage(session.user.roles)) {
+    return errorResponse("FORBIDDEN", "You do not have permission for this action.", 403);
+  }
+
+  let companyId: string;
+  try {
+    companyId = requireActiveCompany(session);
+  } catch {
+    return errorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
+  }
+
+  const { id } = await params;
+  const body = await request.json();
+  const parsed = rejectDamageReportSchema.safeParse(body);
+  if (!parsed.success) {
+    return errorResponse(
+      "VALIDATION_ERROR",
+      "Rejection reason is required.",
+      400,
+      parsed.error.flatten(),
+    );
+  }
+
+  try {
+    await assertInventoryOpsAllowed(prisma, companyId);
+    const report = await rejectDamageReport(prisma, {
+      companyId,
+      reportId: id,
+      rejectedById: session.user.id,
+      reason: parsed.data.reason,
+    });
+    return NextResponse.json(report);
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === "INVENTORY_OPS_BLOCKED") {
+        return errorResponse(
+          "INVENTORY_OPS_BLOCKED",
+          "Inventory operations are blocked until Opening Stock Audit is approved for all warehouses.",
+          423,
+        );
+      }
+      if (error.message === "NOT_FOUND") {
+        return errorResponse("NOT_FOUND", "Damage report not found.", 404);
+      }
+      if (error.message === "INVALID_STATUS") {
+        return errorResponse("INVALID_STATUS", "This report is not pending approval.", 400);
+      }
+      if (error.message === "REASON_REQUIRED") {
+        return errorResponse("VALIDATION_ERROR", "Rejection reason is required.", 400);
+      }
+      if (error.message === "SERIAL_NOT_AVAILABLE") {
+        return errorResponse(
+          "SERIAL_NOT_AVAILABLE",
+          "Panel status changed; cannot reject this damage report.",
+          409,
+        );
+      }
+    }
+    throw error;
+  }
+}

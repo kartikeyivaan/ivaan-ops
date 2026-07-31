@@ -374,6 +374,15 @@ export async function getQuotationById(
 
   if (!quotation) return null;
 
+  const pendingPriceApproval = await prisma.approvalRequest.findFirst({
+    where: {
+      moduleType: ApprovalModuleType.QUOTATION,
+      moduleId: quotation.id,
+      status: ApprovalRequestStatus.PENDING,
+    },
+    select: { id: true },
+  });
+
   const rootId = quotation.parentQuotationId ?? quotation.id;
   const revisionChain = await prisma.quotation.findMany({
     where: {
@@ -429,6 +438,7 @@ export async function getQuotationById(
     }),
     changesFromPrevious,
     previousRevisionNo,
+    pendingPriceApproval: Boolean(pendingPriceApproval),
   };
 }
 
@@ -452,9 +462,19 @@ export async function countPendingQuotationApprovals(
   prisma: PrismaClient,
   companyId: string,
 ) {
+  const pending = await prisma.approvalRequest.findMany({
+    where: {
+      moduleType: ApprovalModuleType.QUOTATION,
+      status: ApprovalRequestStatus.PENDING,
+    },
+    select: { moduleId: true },
+  });
+  if (pending.length === 0) return 0;
+
   return prisma.quotation.count({
     where: {
       companyId,
+      id: { in: pending.map((row) => row.moduleId) },
       items: { some: { approvalStatus: ItemApprovalStatus.PENDING } },
     },
   });
@@ -873,6 +893,68 @@ export async function approveQuotationPricing(
       action: "APPROVE",
       newValue: { approvedItems: pendingItems.length },
       performedBy: input.approvedById,
+      companyId: input.companyId,
+      reference: quotation.quotationNo,
+    });
+
+    return serializeQuotation(updated);
+  });
+}
+
+export async function rejectQuotationPricing(
+  prisma: PrismaClient,
+  input: {
+    companyId: string;
+    quotationId: string;
+    rejectedById: string;
+    reason: string;
+  },
+) {
+  const quotation = await prisma.quotation.findFirst({
+    where: { id: input.quotationId, companyId: input.companyId },
+    include: { items: true },
+  });
+  if (!quotation) throw new Error("NOT_FOUND");
+
+  const pendingItems = quotation.items.filter(
+    (item) => item.approvalStatus === ItemApprovalStatus.PENDING,
+  );
+  if (pendingItems.length === 0) throw new Error("NO_PENDING_APPROVAL");
+
+  const pendingRequest = await prisma.approvalRequest.findFirst({
+    where: {
+      moduleType: ApprovalModuleType.QUOTATION,
+      moduleId: quotation.id,
+      status: ApprovalRequestStatus.PENDING,
+    },
+  });
+  if (!pendingRequest) throw new Error("NO_PENDING_APPROVAL");
+
+  return prisma.$transaction(async (tx) => {
+    await tx.approvalRequest.update({
+      where: { id: pendingRequest.id },
+      data: {
+        status: ApprovalRequestStatus.REJECTED,
+        approvedById: input.rejectedById,
+        remarks: input.reason,
+      },
+    });
+
+    const updated = await tx.quotation.findUniqueOrThrow({
+      where: { id: quotation.id },
+      include: quotationInclude,
+    });
+
+    await writeAuditLogTx(tx, {
+      tableName: "quotations",
+      recordId: quotation.id,
+      action: "UPDATE",
+      newValue: {
+        decision: "REJECTED",
+        reason: input.reason,
+        pendingItems: pendingItems.length,
+      },
+      performedBy: input.rejectedById,
       companyId: input.companyId,
       reference: quotation.quotationNo,
     });

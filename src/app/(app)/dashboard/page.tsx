@@ -1,18 +1,11 @@
+import Link from "next/link";
 import { auth } from "@/lib/auth";
+import { canAccessApprovalsInbox } from "@/lib/approvals-permissions";
+import { countPendingApprovalsForUser } from "@/lib/approvals-service";
 import { ROLES } from "@/lib/rbac";
-import {
-  countOpenQuotations,
-  countPendingQuotationApprovals,
-} from "@/lib/quotation-service";
-import {
-  countBookedOrders,
-  countPendingBookingApprovals,
-  countPendingPayments,
-} from "@/lib/pi-service";
-import {
-  countPendingDispatchCancels,
-  countTodaysDispatches,
-} from "@/lib/dispatch-service";
+import { countOpenQuotations } from "@/lib/quotation-service";
+import { countBookedOrders, countPendingPayments } from "@/lib/pi-service";
+import { countTodaysDispatches } from "@/lib/dispatch-service";
 import { countPendingIncomingTransfers } from "@/lib/transfer-service";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
@@ -40,8 +33,7 @@ export default async function DashboardPage() {
       roles.includes(ROLES.SALES_EXECUTIVE) ||
       roles.includes(ROLES.SALES_MANAGER) ||
       roles.includes(ROLES.SUPER_ADMIN);
-    const isManagerish =
-      roles.includes(ROLES.SALES_MANAGER) || roles.includes(ROLES.SUPER_ADMIN);
+    const canSeeApprovals = canAccessApprovalsInbox(roles);
     const isAccountsish =
       roles.includes(ROLES.SUPER_ADMIN) || roles.includes(ROLES.ACCOUNTS);
 
@@ -62,12 +54,8 @@ export default async function DashboardPage() {
             roles.includes(ROLES.SALES_EXECUTIVE) ? session.user.id : undefined,
           )
         : Promise.resolve(null),
-      isManagerish
-        ? Promise.all([
-            countPendingQuotationApprovals(prisma, companyId),
-            countPendingBookingApprovals(prisma, companyId),
-            countPendingDispatchCancels(prisma, companyId),
-          ]).then((counts) => counts.reduce((sum, value) => sum + value, 0))
+      canSeeApprovals
+        ? countPendingApprovalsForUser(prisma, companyId, roles)
         : Promise.resolve(null),
       isSalesish ? countBookedOrders(prisma, companyId) : Promise.resolve(null),
       isAccountsish ? countPendingPayments(prisma, companyId) : Promise.resolve(null),
@@ -97,21 +85,23 @@ export default async function DashboardPage() {
             "Order Value This Month",
             "Pending Approvals",
           ]
-      : roles.includes(ROLES.SALES_EXECUTIVE)
-        ? [
-            "Open Quotations",
-            "Booked Orders",
-            "Order Value This Month",
-            "Available Qty For Sale",
-          ]
-        : roles.includes(ROLES.WAREHOUSE)
-          ? [
-              "Today's Dispatches",
-              "Pending Inwarding",
-              "Low Stock",
-              "Transfer Requests",
-            ]
-          : ["Role-based dashboard"];
+        : roles.includes(ROLES.PROJECTS_MANAGER)
+          ? ["Pending Approvals"]
+          : roles.includes(ROLES.SALES_EXECUTIVE)
+            ? [
+                "Open Quotations",
+                "Booked Orders",
+                "Order Value This Month",
+                "Available Qty For Sale",
+              ]
+            : roles.includes(ROLES.WAREHOUSE)
+              ? [
+                  "Today's Dispatches",
+                  "Pending Inwarding",
+                  "Low Stock",
+                  "Transfer Requests",
+                ]
+              : ["Role-based dashboard"];
 
   function widgetValue(widget: string): string {
     if (widget === "Transfer Requests" && pendingTransfers !== null) {
@@ -143,7 +133,7 @@ export default async function DashboardPage() {
       return "Sent quotations still within validity";
     }
     if (widget === "Pending Approvals" && pendingApprovals !== null) {
-      return "Quotations, bookings, and DC cancellations awaiting manager approval";
+      return "Items awaiting your approval — click to review";
     }
     if (widget === "Booked Orders" && bookedOrders !== null) {
       return "Orders with approved booking and reserved stock";
@@ -155,6 +145,11 @@ export default async function DashboardPage() {
       return "Delivery challans dispatched today";
     }
     return "Placeholder for Sprint 1 module data";
+  }
+
+  function widgetHref(widget: string): string | null {
+    if (widget === "Pending Approvals") return "/approvals";
+    return null;
   }
 
   return (
@@ -169,17 +164,29 @@ export default async function DashboardPage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {widgets.map((widget) => (
-          <Card key={widget}>
-            <CardHeader>
-              <CardTitle className="text-base">{widget}</CardTitle>
-              <CardDescription>{widgetDescription(widget)}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-semibold text-slate-900">{widgetValue(widget)}</p>
-            </CardContent>
-          </Card>
-        ))}
+        {widgets.map((widget) => {
+          const href = widgetHref(widget);
+          const card = (
+            <Card className={href ? "h-full transition hover:border-emerald-300" : undefined}>
+              <CardHeader>
+                <CardTitle className="text-base">{widget}</CardTitle>
+                <CardDescription>{widgetDescription(widget)}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-3xl font-semibold text-slate-900">{widgetValue(widget)}</p>
+              </CardContent>
+            </Card>
+          );
+
+          if (href) {
+            return (
+              <Link key={widget} href={href} className="block">
+                {card}
+              </Link>
+            );
+          }
+          return <div key={widget}>{card}</div>;
+        })}
       </div>
     </div>
   );

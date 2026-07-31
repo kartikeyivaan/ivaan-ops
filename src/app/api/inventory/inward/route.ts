@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { canInwardMaterial } from "@/lib/inventory-permissions";
+import { assertInventoryOpsAllowed } from "@/lib/inventory-audit-service";
 import { receiveMaterial } from "@/lib/inventory-service";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
@@ -35,6 +36,8 @@ export async function POST(request: Request) {
   }
 
   try {
+    await assertInventoryOpsAllowed(prisma, companyId);
+
     const lot = await receiveMaterial(prisma, {
       lotId: parsed.data.lotId,
       companyId,
@@ -47,6 +50,13 @@ export async function POST(request: Request) {
     return NextResponse.json(lot);
   } catch (error) {
     if (error instanceof Error) {
+      if (error.message === "INVENTORY_OPS_BLOCKED") {
+        return errorResponse(
+          "INVENTORY_OPS_BLOCKED",
+          "Inventory operations are blocked until Opening Stock Audit is approved for all warehouses.",
+          423,
+        );
+      }
       if (error.message === "NOT_FOUND") {
         return errorResponse("NOT_FOUND", "Lot not found.", 404);
       }

@@ -4,9 +4,13 @@ import {
   type PrismaClient,
 } from "@prisma/client";
 import {
+  calculateKitSystemKwp,
   generateDisplayName,
+  isKitCategory,
+  KIT_DEFAULT_BRAND,
   resolvePricingType,
   resolveSerialTracking,
+  type KitBomLineForName,
 } from "@/lib/products";
 import { decimalToNumber, type StockSummary } from "@/lib/inventory";
 import { getProductStockSummary } from "@/lib/inventory-service";
@@ -18,6 +22,17 @@ const productInclude = {
   technology: true,
   prices: {
     orderBy: { effectiveFrom: "desc" as const },
+  },
+  kitComponents: {
+    orderBy: { sortOrder: "asc" as const },
+    include: {
+      componentProduct: {
+        include: {
+          category: true,
+          brand: true,
+        },
+      },
+    },
   },
 };
 
@@ -54,11 +69,32 @@ function serializeProductPrice(price: ProductPriceRecord) {
   };
 }
 
+function serializeKitComponent(
+  component: ProductRecord["kitComponents"][number],
+) {
+  return {
+    id: component.id,
+    productId: component.componentProductId,
+    qty: decimalToNumber(component.qty),
+    sortOrder: component.sortOrder,
+    product: {
+      id: component.componentProduct.id,
+      displayName: component.componentProduct.displayName,
+      serialTracking: component.componentProduct.serialTracking,
+      capacity: decimalToNumber(component.componentProduct.capacity),
+      capacityUnit: component.componentProduct.capacityUnit,
+      category: serializeMasterRecord(component.componentProduct.category),
+      brand: serializeMasterRecord(component.componentProduct.brand),
+    },
+  };
+}
+
 function serializeProductRecord(
   product: ProductRecord,
   stock: StockSummary,
 ) {
   const currentPrice = getCurrentPrice(product.prices);
+  const isKit = isKitCategory(product.category.name);
 
   return {
     id: product.id,
@@ -73,6 +109,7 @@ function serializeProductRecord(
     gstRate: decimalToNumber(product.gstRate),
     serialTracking: product.serialTracking,
     isActive: product.isActive,
+    isKit,
     createdAt: product.createdAt.toISOString(),
     updatedAt: product.updatedAt.toISOString(),
     category: serializeMasterRecord(product.category),
@@ -82,7 +119,10 @@ function serializeProductRecord(
       : null,
     prices: product.prices.map(serializeProductPrice),
     currentPrice: currentPrice ? serializeProductPrice(currentPrice) : null,
-    stock,
+    kitComponents: product.kitComponents.map(serializeKitComponent),
+    stock: isKit
+      ? { availableStock: 0, incomingStock: 0, bookedStock: 0, damagedStock: 0 }
+      : stock,
   };
 }
 
@@ -101,9 +141,12 @@ export async function serializeProduct(
   companyId: string,
   stock?: StockSummary,
 ): Promise<ProductListItem> {
+  const isKit = isKitCategory(product.category.name);
   return serializeProductRecord(
     product,
-    stock ?? (await getProductStockSummary(prisma, companyId, product.id)),
+    isKit
+      ? { availableStock: 0, incomingStock: 0, bookedStock: 0, damagedStock: 0 }
+      : (stock ?? (await getProductStockSummary(prisma, companyId, product.id))),
   );
 }
 
@@ -153,7 +196,7 @@ export async function getProductById(
   return product ? serializeProduct(prisma, product, companyId) : null;
 }
 
-async function upsertBrand(prisma: PrismaClient, name: string) {
+async function upsertBrand(prisma: PrismaClient | Prisma.TransactionClient, name: string) {
   return prisma.brand.upsert({
     where: { name },
     update: {},
@@ -161,7 +204,10 @@ async function upsertBrand(prisma: PrismaClient, name: string) {
   });
 }
 
-async function upsertTechnology(prisma: PrismaClient, name?: string | null) {
+async function upsertTechnology(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  name?: string | null,
+) {
   if (!name?.trim()) return null;
   return prisma.productTechnology.upsert({
     where: { name },
@@ -170,17 +216,106 @@ async function upsertTechnology(prisma: PrismaClient, name?: string | null) {
   });
 }
 
+type KitComponentInput = { productId: string; qty: number };
+
+async function loadKitBomNameLines(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  components: KitComponentInput[],
+): Promise<{
+  nameLines: KitBomLineForName[];
+  resolved: Array<{
+    componentProductId: string;
+    qty: number;
+    sortOrder: number;
+    displayName: string;
+    serialTracking: boolean;
+    categoryName: string;
+  }>;
+}> {
+  if (components.length === 0) {
+    throw new Error("KIT_COMPONENTS_REQUIRED");
+  }
+
+  const ids = components.map((line) => line.productId);
+  if (new Set(ids).size !== ids.length) {
+    throw new Error("KIT_DUPLICATE_COMPONENT");
+  }
+
+  const products = await prisma.product.findMany({
+    where: { id: { in: ids }, isActive: true },
+    include: { category: true, brand: true },
+  });
+  if (products.length !== ids.length) {
+    throw new Error("KIT_COMPONENT_NOT_FOUND");
+  }
+
+  const byId = new Map(products.map((product) => [product.id, product]));
+  const nameLines: KitBomLineForName[] = [];
+  const resolved: Array<{
+    componentProductId: string;
+    qty: number;
+    sortOrder: number;
+    displayName: string;
+    serialTracking: boolean;
+    categoryName: string;
+  }> = [];
+
+  for (const [index, line] of components.entries()) {
+    const product = byId.get(line.productId);
+    if (!product) throw new Error("KIT_COMPONENT_NOT_FOUND");
+    if (isKitCategory(product.category.name)) {
+      throw new Error("KIT_NESTED_NOT_ALLOWED");
+    }
+
+    nameLines.push({
+      categoryName: product.category.name,
+      brandName: product.brand.name,
+      capacity: decimalToNumber(product.capacity),
+      capacityUnit: product.capacityUnit,
+      qty: line.qty,
+    });
+    resolved.push({
+      componentProductId: product.id,
+      qty: line.qty,
+      sortOrder: index,
+      displayName: product.displayName,
+      serialTracking: product.serialTracking,
+      categoryName: product.category.name,
+    });
+  }
+
+  return { nameLines, resolved };
+}
+
+async function replaceKitComponents(
+  tx: Prisma.TransactionClient,
+  kitProductId: string,
+  components: Array<{ componentProductId: string; qty: number; sortOrder: number }>,
+) {
+  await tx.kitComponent.deleteMany({ where: { kitProductId } });
+  if (components.length === 0) return;
+  await tx.kitComponent.createMany({
+    data: components.map((component) => ({
+      kitProductId,
+      componentProductId: component.componentProductId,
+      qty: component.qty,
+      sortOrder: component.sortOrder,
+    })),
+  });
+}
+
 export async function createProduct(
   prisma: PrismaClient,
   input: {
     categoryId: string;
-    brandName: string;
+    brandName?: string;
     technologyName?: string | null;
-    capacity: number;
-    capacityUnit: CapacityUnit;
+    capacity?: number;
+    capacityUnit?: CapacityUnit;
     hsn?: string;
     gstRate: number;
     isActive?: boolean;
+    kitComponents?: KitComponentInput[];
     initialPrice?: {
       landingCost: number;
       standardPrice: number;
@@ -194,15 +329,37 @@ export async function createProduct(
   });
   if (!category) throw new Error("CATEGORY_NOT_FOUND");
 
-  const brand = await upsertBrand(prisma, input.brandName.trim());
-  const technology = await upsertTechnology(prisma, input.technologyName);
+  const isKit = isKitCategory(category.name);
+  let kitResolved: Awaited<ReturnType<typeof loadKitBomNameLines>> | null = null;
+
+  if (isKit) {
+    kitResolved = await loadKitBomNameLines(prisma, input.kitComponents ?? []);
+  } else {
+    if (!input.brandName?.trim()) throw new Error("BRAND_REQUIRED");
+    if (input.capacity == null || input.capacity <= 0) throw new Error("CAPACITY_REQUIRED");
+    if (!input.capacityUnit) throw new Error("CAPACITY_UNIT_REQUIRED");
+  }
+
+  const brandName = isKit
+    ? KIT_DEFAULT_BRAND
+    : input.brandName!.trim();
+  const brand = await upsertBrand(prisma, brandName);
+  const technology = isKit
+    ? null
+    : await upsertTechnology(prisma, input.technologyName);
+
+  const capacity = isKit
+    ? calculateKitSystemKwp(kitResolved!.nameLines) || 1
+    : input.capacity!;
+  const capacityUnit = isKit ? CapacityUnit.KW : input.capacityUnit!;
 
   const displayName = generateDisplayName({
     categoryName: category.name,
     brandName: brand.name,
     technologyName: technology?.name,
-    capacity: input.capacity,
-    capacityUnit: input.capacityUnit,
+    capacity,
+    capacityUnit,
+    kitComponents: kitResolved?.nameLines,
   });
 
   return prisma.$transaction(async (tx) => {
@@ -211,8 +368,8 @@ export async function createProduct(
         categoryId: category.id,
         brandId: brand.id,
         technologyId: technology?.id ?? null,
-        capacity: input.capacity,
-        capacityUnit: input.capacityUnit,
+        capacity,
+        capacityUnit,
         displayName,
         pricingType: resolvePricingType(category.name),
         hsn: input.hsn,
@@ -220,8 +377,11 @@ export async function createProduct(
         serialTracking: resolveSerialTracking(category.name),
         isActive: input.isActive ?? true,
       },
-      include: productInclude,
     });
+
+    if (isKit && kitResolved) {
+      await replaceKitComponents(tx, product.id, kitResolved.resolved);
+    }
 
     if (input.initialPrice) {
       await tx.productPrice.create({
@@ -256,11 +416,17 @@ export async function updateProduct(
     hsn?: string;
     gstRate?: number;
     isActive?: boolean;
+    kitComponents?: KitComponentInput[];
   },
 ) {
   const existing = await prisma.product.findUnique({
     where: { id: productId },
-    include: { category: true, brand: true, technology: true },
+    include: {
+      category: true,
+      brand: true,
+      technology: true,
+      kitComponents: true,
+    },
   });
   if (!existing) throw new Error("NOT_FOUND");
 
@@ -269,17 +435,42 @@ export async function updateProduct(
     : existing.category;
   if (!category) throw new Error("CATEGORY_NOT_FOUND");
 
-  const brand = input.brandName
-    ? await upsertBrand(prisma, input.brandName.trim())
-    : existing.brand;
+  const isKit = isKitCategory(category.name);
+  let kitResolved: Awaited<ReturnType<typeof loadKitBomNameLines>> | null = null;
 
-  const technology =
-    input.technologyName !== undefined
+  if (isKit) {
+    const components =
+      input.kitComponents ??
+      existing.kitComponents.map((line) => ({
+        productId: line.componentProductId,
+        qty: decimalToNumber(line.qty),
+      }));
+    kitResolved = await loadKitBomNameLines(prisma, components);
+  }
+
+  const brand = isKit
+    ? await upsertBrand(prisma, KIT_DEFAULT_BRAND)
+    : input.brandName
+      ? await upsertBrand(prisma, input.brandName.trim())
+      : existing.brand;
+
+  const technology = isKit
+    ? null
+    : input.technologyName !== undefined
       ? await upsertTechnology(prisma, input.technologyName)
       : existing.technology;
 
-  const capacity = input.capacity ?? Number(existing.capacity);
-  const capacityUnit = input.capacityUnit ?? existing.capacityUnit;
+  const capacity = isKit
+    ? calculateKitSystemKwp(kitResolved!.nameLines) || 1
+    : (input.capacity ?? Number(existing.capacity));
+  const capacityUnit = isKit
+    ? CapacityUnit.KW
+    : (input.capacityUnit ?? existing.capacityUnit);
+
+  if (!isKit) {
+    if (!brand.name?.trim()) throw new Error("BRAND_REQUIRED");
+    if (!(capacity > 0)) throw new Error("CAPACITY_REQUIRED");
+  }
 
   const displayName = generateDisplayName({
     categoryName: category.name,
@@ -287,24 +478,33 @@ export async function updateProduct(
     technologyName: technology?.name,
     capacity,
     capacityUnit,
+    kitComponents: kitResolved?.nameLines,
   });
 
-  return prisma.product.update({
-    where: { id: productId },
-    data: {
-      categoryId: category.id,
-      brandId: brand.id,
-      technologyId: technology?.id ?? null,
-      capacity,
-      capacityUnit,
-      displayName,
-      pricingType: resolvePricingType(category.name),
-      serialTracking: resolveSerialTracking(category.name),
-      hsn: input.hsn,
-      gstRate: input.gstRate,
-      isActive: input.isActive,
-    },
-    include: productInclude,
+  return prisma.$transaction(async (tx) => {
+    if (isKit && kitResolved) {
+      await replaceKitComponents(tx, productId, kitResolved.resolved);
+    } else if (!isKit && isKitCategory(existing.category.name)) {
+      await tx.kitComponent.deleteMany({ where: { kitProductId: productId } });
+    }
+
+    return tx.product.update({
+      where: { id: productId },
+      data: {
+        categoryId: category.id,
+        brandId: brand.id,
+        technologyId: technology?.id ?? null,
+        capacity,
+        capacityUnit,
+        displayName,
+        pricingType: resolvePricingType(category.name),
+        serialTracking: resolveSerialTracking(category.name),
+        hsn: input.hsn,
+        gstRate: input.gstRate,
+        isActive: input.isActive,
+      },
+      include: productInclude,
+    });
   });
 }
 
@@ -367,4 +567,28 @@ export async function listMasters(prisma: PrismaClient) {
     brands: brands.map(serializeMasterRecord),
     technologies: technologies.map(serializeMasterRecord),
   };
+}
+
+/** Load kit BOM for fulfillment (booking / dispatch). */
+export async function getKitComponentsForFulfillment(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  kitProductId: string,
+) {
+  const components = await prisma.kitComponent.findMany({
+    where: { kitProductId },
+    orderBy: { sortOrder: "asc" },
+    include: {
+      componentProduct: {
+        include: { category: true },
+      },
+    },
+  });
+
+  return components.map((component) => ({
+    componentProductId: component.componentProductId,
+    qty: decimalToNumber(component.qty),
+    displayName: component.componentProduct.displayName,
+    serialTracking: component.componentProduct.serialTracking,
+    categoryName: component.componentProduct.category.name,
+  }));
 }

@@ -72,6 +72,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       hsn: parsed.data.hsn,
       gstRate: parsed.data.gstRate,
       isActive: parsed.data.isActive,
+      kitComponents: parsed.data.kitComponents,
     });
 
     await writeAuditLog({
@@ -86,8 +87,24 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     return NextResponse.json(product);
   } catch (error) {
-    if (error instanceof Error && error.message === "CATEGORY_NOT_FOUND") {
-      return errorResponse("NOT_FOUND", "Product category not found.", 404);
+    if (error instanceof Error) {
+      switch (error.message) {
+        case "CATEGORY_NOT_FOUND":
+          return errorResponse("NOT_FOUND", "Product category not found.", 404);
+        case "KIT_COMPONENTS_REQUIRED":
+          return errorResponse("VALIDATION_ERROR", "Add at least one kit component.", 400);
+        case "KIT_DUPLICATE_COMPONENT":
+          return errorResponse("VALIDATION_ERROR", "Duplicate component in kit BOM.", 400);
+        case "KIT_COMPONENT_NOT_FOUND":
+          return errorResponse("VALIDATION_ERROR", "One or more kit components were not found.", 400);
+        case "KIT_NESTED_NOT_ALLOWED":
+          return errorResponse("VALIDATION_ERROR", "Kits cannot include other kits.", 400);
+        case "BRAND_REQUIRED":
+          return errorResponse("VALIDATION_ERROR", "Brand is required.", 400);
+        case "CAPACITY_REQUIRED":
+        case "CAPACITY_UNIT_REQUIRED":
+          return errorResponse("VALIDATION_ERROR", "Capacity and unit are required.", 400);
+      }
     }
     throw error;
   }

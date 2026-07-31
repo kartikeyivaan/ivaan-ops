@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { canAdjustStock } from "@/lib/inventory-permissions";
+import { assertInventoryOpsAllowed } from "@/lib/inventory-audit-service";
 import { adjustStock } from "@/lib/inventory-service";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
@@ -34,6 +35,8 @@ export async function POST(request: Request) {
   }
 
   try {
+    await assertInventoryOpsAllowed(prisma, companyId);
+
     const transaction = await adjustStock(prisma, {
       companyId,
       productId: parsed.data.productId,
@@ -46,6 +49,13 @@ export async function POST(request: Request) {
     return NextResponse.json(transaction, { status: 201 });
   } catch (error) {
     if (error instanceof Error) {
+      if (error.message === "INVENTORY_OPS_BLOCKED") {
+        return errorResponse(
+          "INVENTORY_OPS_BLOCKED",
+          "Inventory operations are blocked until Opening Stock Audit is approved for all warehouses.",
+          423,
+        );
+      }
       if (error.message === "NEGATIVE_STOCK_BLOCKED") {
         return errorResponse(
           "NEGATIVE_STOCK_BLOCKED",

@@ -118,6 +118,29 @@ export function DispatchDetail({
     router.refresh();
   }
 
+  async function handleRejectCancel() {
+    const reason = window.prompt("Rejection reason (min 3 characters):");
+    if (reason == null) return;
+    if (reason.trim().length < 3) {
+      setError("A rejection reason is required (min 3 characters).");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    const response = await fetch(`/api/dispatches/${dispatch.id}/reject-cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: reason.trim() }),
+    });
+    const data = await response.json();
+    setLoading(false);
+    if (!response.ok) {
+      setError(data.message ?? "Unable to reject cancellation.");
+      return;
+    }
+    router.refresh();
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -164,10 +187,16 @@ export function DispatchDetail({
             </Button>
           ) : null}
           {canApproveCancel && dispatch.status === "CANCEL_PENDING" ? (
-            <Button variant="secondary" className="h-12" disabled={loading} onClick={handleApproveCancel}>
-              <ShieldCheck className="h-4 w-4" />
-              Approve Cancel
-            </Button>
+            <>
+              <Button variant="secondary" className="h-12" disabled={loading} onClick={handleApproveCancel}>
+                <ShieldCheck className="h-4 w-4" />
+                Approve Cancel
+              </Button>
+              <Button variant="outline" className="h-12" disabled={loading} onClick={handleRejectCancel}>
+                <XCircle className="h-4 w-4" />
+                Reject Cancel
+              </Button>
+            </>
           ) : null}
         </div>
       </div>

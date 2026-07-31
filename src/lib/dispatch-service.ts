@@ -19,6 +19,11 @@ import {
 import { decimalToNumber, normalizeSerialNumber } from "@/lib/inventory";
 import { toSignedInventoryQuantity } from "@/lib/inventory-events";
 import {
+  componentRemainingQty,
+  loadKitBomMap,
+  resolveKitDispatchQty,
+} from "@/lib/kit-fulfillment";
+import {
   notifyDispatchCompleted,
   notifyInvoicePending,
 } from "@/lib/notification-service";
@@ -26,6 +31,8 @@ import { calculateOutstanding } from "@/lib/proforma-invoices";
 import { clearExpiredDispatchTodayFlags } from "@/lib/pi-service";
 import { deductNonSerialStock } from "@/lib/transfer-service";
 import { roundMoney } from "@/lib/quotations";
+import { isKitCategory } from "@/lib/products";
+import { getKitComponentsForFulfillment } from "@/lib/product-service";
 
 export const dispatchInclude = {
   company: {
@@ -288,6 +295,7 @@ export async function listDispatchableProformaInvoices(
               id: true,
               displayName: true,
               serialTracking: true,
+              category: { select: { name: true } },
             },
           },
         },
@@ -296,45 +304,76 @@ export async function listDispatchableProformaInvoices(
     orderBy: { createdAt: "desc" },
   });
 
-  return rows
-    .map((pi) => {
-      const totalPaid = pi.payments.reduce(
-        (sum, payment) => sum + decimalToNumber(payment.amount),
-        0,
+  const result = [];
+  for (const pi of rows) {
+    const totalPaid = pi.payments.reduce(
+      (sum, payment) => sum + decimalToNumber(payment.amount),
+      0,
+    );
+    const outstanding = calculateOutstanding(decimalToNumber(pi.totalValue), totalPaid);
+
+    const items = [];
+    for (const item of pi.items) {
+      const remainingKits = getRemainingQty(
+        decimalToNumber(item.qty),
+        decimalToNumber(item.dispatchedQty),
       );
-      const outstanding = calculateOutstanding(decimalToNumber(pi.totalValue), totalPaid);
-      return {
-        id: pi.id,
-        piNo: pi.piNo,
-        status: pi.status,
-        customer: pi.customer,
-        warehouse: pi.warehouse,
-        outstanding,
-        dispatchTodayMarkedBy: pi.dispatchTodayMarkedBy,
-        draft: {
-          vehicleNo: pi.dispatchDraftVehicleNo,
-          driverName: pi.dispatchDraftDriverName,
-          receiverName: pi.dispatchDraftReceiverName,
-          receiverMobile: pi.dispatchDraftReceiverMobile,
-          notes: pi.dispatchDraftNotes,
-        },
-        items: pi.items.map((item) => ({
+      if (remainingKits <= 0) continue;
+
+      if (isKitCategory(item.product.category.name)) {
+        const components = await getKitComponentsForFulfillment(prisma, item.productId);
+        for (const component of components) {
+          items.push({
+            id: item.id,
+            productId: component.componentProductId,
+            productName: `${component.displayName} (from ${item.product.displayName})`,
+            kitProductName: item.product.displayName,
+            serialTracking: component.serialTracking,
+            orderedQty: decimalToNumber(item.qty) * component.qty,
+            dispatchedQty: decimalToNumber(item.dispatchedQty) * component.qty,
+            remainingQty: componentRemainingQty(remainingKits, component.qty),
+            isKitComponent: true,
+            kitBomQty: component.qty,
+          });
+        }
+      } else {
+        items.push({
           id: item.id,
           productId: item.productId,
           productName: item.product.displayName,
+          kitProductName: null,
           serialTracking: item.product.serialTracking,
           orderedQty: decimalToNumber(item.qty),
           dispatchedQty: decimalToNumber(item.dispatchedQty),
-          remainingQty: getRemainingQty(
-            decimalToNumber(item.qty),
-            decimalToNumber(item.dispatchedQty),
-          ),
-        })),
-      };
-    })
-    .filter(
-      (pi) => pi.outstanding <= 0 && pi.items.some((item) => item.remainingQty > 0),
-    );
+          remainingQty: remainingKits,
+          isKitComponent: false,
+          kitBomQty: null,
+        });
+      }
+    }
+
+    result.push({
+      id: pi.id,
+      piNo: pi.piNo,
+      status: pi.status,
+      customer: pi.customer,
+      warehouse: pi.warehouse,
+      outstanding,
+      dispatchTodayMarkedBy: pi.dispatchTodayMarkedBy,
+      draft: {
+        vehicleNo: pi.dispatchDraftVehicleNo,
+        driverName: pi.dispatchDraftDriverName,
+        receiverName: pi.dispatchDraftReceiverName,
+        receiverMobile: pi.dispatchDraftReceiverMobile,
+        notes: pi.dispatchDraftNotes,
+      },
+      items,
+    });
+  }
+
+  return result.filter(
+    (pi) => pi.outstanding <= 0 && pi.items.some((item) => item.remainingQty > 0),
+  );
 }
 
 export async function listBookedSerialsForPi(
@@ -484,7 +523,10 @@ async function validateDispatchLines(
 
   const pi = await prisma.proformaInvoice.findFirst({
     where: { id: input.piId, companyId: input.companyId },
-    include: { items: { include: { product: true } }, payments: true },
+    include: {
+      items: { include: { product: { include: { category: true } } } },
+      payments: true,
+    },
   });
   if (!pi) throw new Error("NOT_FOUND");
   if (
@@ -511,11 +553,67 @@ async function validateDispatchLines(
 
   if (pi.warehouseId !== input.warehouseId) throw new Error("WAREHOUSE_MISMATCH");
 
-  for (const line of input.lines) {
-    if (line.qty <= 0) throw new Error("INVALID_QUANTITY");
+  const kitProductIds = pi.items
+    .filter((item) => isKitCategory(item.product.category.name))
+    .map((item) => item.productId);
+  const kitBomMap = await loadKitBomMap(prisma, kitProductIds);
 
-    const piItem = pi.items.find((item) => item.id === line.proformaInvoiceItemId);
-    if (!piItem || piItem.productId !== line.productId) throw new Error("INVALID_LINE");
+  // For kits, all BOM components must be dispatched together for the same kit qty.
+  const linesByPiItem = new Map<string, typeof input.lines>();
+  for (const line of input.lines) {
+    const group = linesByPiItem.get(line.proformaInvoiceItemId) ?? [];
+    group.push(line);
+    linesByPiItem.set(line.proformaInvoiceItemId, group);
+  }
+
+  for (const [piItemId, groupLines] of linesByPiItem) {
+    const piItem = pi.items.find((item) => item.id === piItemId);
+    if (!piItem) throw new Error("INVALID_LINE");
+
+    if (isKitCategory(piItem.product.category.name)) {
+      const bom = kitBomMap.get(piItem.productId) ?? [];
+      resolveKitDispatchQty({
+        kitOrderedQty: decimalToNumber(piItem.qty),
+        kitDispatchedQty: decimalToNumber(piItem.dispatchedQty),
+        bom,
+        lines: groupLines.map((line) => ({
+          productId: line.productId,
+          qty: line.qty,
+        })),
+      });
+
+      for (const line of groupLines) {
+        if (line.qty <= 0) throw new Error("INVALID_QUANTITY");
+        const component = bom.find((c) => c.componentProductId === line.productId);
+        if (!component) throw new Error("INVALID_LINE");
+
+        if (component.serialTracking) {
+          const serialIds = line.serialIds ?? [];
+          if (serialIds.length !== Math.ceil(line.qty)) throw new Error("SERIAL_REQUIRED");
+
+          const selectable = await prisma.inventorySerial.findMany({
+            where: {
+              id: { in: serialIds },
+              productId: line.productId,
+              OR: [
+                { status: SerialStatus.AVAILABLE },
+                {
+                  status: SerialStatus.BOOKED,
+                  proformaInvoiceSerials: { some: { piId: input.piId } },
+                },
+              ],
+            },
+          });
+          if (selectable.length !== serialIds.length) throw new Error("INVALID_SERIAL_SELECTION");
+        }
+      }
+      continue;
+    }
+
+    if (groupLines.length !== 1) throw new Error("INVALID_LINE");
+    const line = groupLines[0]!;
+    if (line.qty <= 0) throw new Error("INVALID_QUANTITY");
+    if (piItem.productId !== line.productId) throw new Error("INVALID_LINE");
 
     const remaining = getRemainingQty(
       decimalToNumber(piItem.qty),
@@ -698,7 +796,9 @@ async function confirmDispatchTx(
       lines: {
         include: {
           product: true,
-          proformaInvoiceItem: true,
+          proformaInvoiceItem: {
+            include: { product: { include: { category: true } } },
+          },
           serials: true,
         },
       },
@@ -714,14 +814,47 @@ async function confirmDispatchTx(
     throw new Error("MANDATORY_DISPATCH_FIELDS_REQUIRED");
   }
 
+  const kitProductIds = dispatch.lines
+    .filter((line) => isKitCategory(line.proformaInvoiceItem.product.category.name))
+    .map((line) => line.proformaInvoiceItem.productId);
+  const kitBomMap = await loadKitBomMap(tx, kitProductIds);
+
+  const linesByPiItem = new Map<string, typeof dispatch.lines>();
+  for (const line of dispatch.lines) {
+    const group = linesByPiItem.get(line.proformaInvoiceItemId) ?? [];
+    group.push(line);
+    linesByPiItem.set(line.proformaInvoiceItemId, group);
+  }
+
+  const piItemKitQty = new Map<string, number>();
+  for (const [piItemId, groupLines] of linesByPiItem) {
+    const piItem = groupLines[0]!.proformaInvoiceItem;
+    if (isKitCategory(piItem.product.category.name)) {
+      const bom = kitBomMap.get(piItem.productId) ?? [];
+      const kitQty = resolveKitDispatchQty({
+        kitOrderedQty: decimalToNumber(piItem.qty),
+        kitDispatchedQty: decimalToNumber(piItem.dispatchedQty),
+        bom,
+        lines: groupLines.map((line) => ({
+          productId: line.productId,
+          qty: decimalToNumber(line.qty),
+        })),
+      });
+      piItemKitQty.set(piItemId, kitQty);
+    } else {
+      const line = groupLines[0]!;
+      const qty = decimalToNumber(line.qty);
+      const remaining = getRemainingQty(
+        decimalToNumber(piItem.qty),
+        decimalToNumber(piItem.dispatchedQty),
+      );
+      if (qty > remaining) throw new Error("EXCEEDS_REMAINING_QTY");
+      piItemKitQty.set(piItemId, qty);
+    }
+  }
+
   for (const line of dispatch.lines) {
     const qty = decimalToNumber(line.qty);
-    const piItem = line.proformaInvoiceItem;
-    const remaining = getRemainingQty(
-      decimalToNumber(piItem.qty),
-      decimalToNumber(piItem.dispatchedQty),
-    );
-    if (qty > remaining) throw new Error("EXCEEDS_REMAINING_QTY");
 
     if (line.product.serialTracking) {
       const serialIds = line.serials.map((entry) => entry.serialId);
@@ -803,11 +936,16 @@ async function confirmDispatchTx(
         updatedById: input.performedById,
       },
     });
+  }
 
+  for (const [piItemId, qtyToAdd] of piItemKitQty) {
+    const piItem = dispatch.lines.find(
+      (line) => line.proformaInvoiceItemId === piItemId,
+    )!.proformaInvoiceItem;
     await tx.proformaInvoiceItem.update({
-      where: { id: piItem.id },
+      where: { id: piItemId },
       data: {
-        dispatchedQty: decimalToNumber(piItem.dispatchedQty) + qty,
+        dispatchedQty: decimalToNumber(piItem.dispatchedQty) + qtyToAdd,
       },
     });
   }
@@ -941,7 +1079,9 @@ export async function approveDispatchCancel(
       lines: {
         include: {
           product: true,
-          proformaInvoiceItem: true,
+          proformaInvoiceItem: {
+            include: { product: { include: { category: true } } },
+          },
           serials: true,
         },
       },
@@ -951,6 +1091,39 @@ export async function approveDispatchCancel(
   if (dispatch.status !== DispatchStatus.CANCEL_PENDING) throw new Error("INVALID_STATUS");
 
   return prisma.$transaction(async (tx) => {
+    const kitProductIds = dispatch.lines
+      .filter((line) => isKitCategory(line.proformaInvoiceItem.product.category.name))
+      .map((line) => line.proformaInvoiceItem.productId);
+    const kitBomMap = await loadKitBomMap(tx, kitProductIds);
+
+    const linesByPiItem = new Map<string, typeof dispatch.lines>();
+    for (const line of dispatch.lines) {
+      const group = linesByPiItem.get(line.proformaInvoiceItemId) ?? [];
+      group.push(line);
+      linesByPiItem.set(line.proformaInvoiceItemId, group);
+    }
+
+    const piItemQtyToReverse = new Map<string, number>();
+    for (const [piItemId, groupLines] of linesByPiItem) {
+      const piItem = groupLines[0]!.proformaInvoiceItem;
+      if (isKitCategory(piItem.product.category.name)) {
+        const bom = kitBomMap.get(piItem.productId) ?? [];
+        // Use already-dispatched kit math: treat current dispatched as ceiling for reverse.
+        const kitQty = resolveKitDispatchQty({
+          kitOrderedQty: decimalToNumber(piItem.qty),
+          kitDispatchedQty: 0,
+          bom,
+          lines: groupLines.map((line) => ({
+            productId: line.productId,
+            qty: decimalToNumber(line.qty),
+          })),
+        });
+        piItemQtyToReverse.set(piItemId, kitQty);
+      } else {
+        piItemQtyToReverse.set(piItemId, decimalToNumber(groupLines[0]!.qty));
+      }
+    }
+
     for (const line of dispatch.lines) {
       const qty = decimalToNumber(line.qty);
 
@@ -981,12 +1154,16 @@ export async function approveDispatchCancel(
           createdById: input.approvedById,
         },
       });
+    }
 
-      const piItem = line.proformaInvoiceItem;
+    for (const [piItemId, qtyToReverse] of piItemQtyToReverse) {
+      const piItem = dispatch.lines.find(
+        (line) => line.proformaInvoiceItemId === piItemId,
+      )!.proformaInvoiceItem;
       await tx.proformaInvoiceItem.update({
-        where: { id: piItem.id },
+        where: { id: piItemId },
         data: {
-          dispatchedQty: Math.max(0, decimalToNumber(piItem.dispatchedQty) - qty),
+          dispatchedQty: Math.max(0, decimalToNumber(piItem.dispatchedQty) - qtyToReverse),
         },
       });
     }
@@ -1018,6 +1195,65 @@ export async function approveDispatchCancel(
       action: "CANCEL",
       newValue: { status: DispatchStatus.CANCELLED },
       performedBy: input.approvedById,
+      companyId: input.companyId,
+      reference: dispatch.dcNo,
+    });
+
+    return serializeDispatch(updated);
+  });
+}
+
+export async function rejectDispatchCancel(
+  prisma: PrismaClient,
+  input: {
+    companyId: string;
+    dispatchId: string;
+    rejectedById: string;
+    reason: string;
+  },
+) {
+  const dispatch = await prisma.dispatch.findFirst({
+    where: { id: input.dispatchId, companyId: input.companyId },
+  });
+  if (!dispatch) throw new Error("NOT_FOUND");
+  if (dispatch.status !== DispatchStatus.CANCEL_PENDING) throw new Error("INVALID_STATUS");
+
+  const pending = await prisma.approvalRequest.findFirst({
+    where: {
+      moduleType: ApprovalModuleType.DC_CANCEL,
+      moduleId: dispatch.id,
+      status: ApprovalRequestStatus.PENDING,
+    },
+  });
+  if (!pending) throw new Error("NO_PENDING_APPROVAL");
+
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.dispatch.update({
+      where: { id: dispatch.id },
+      data: { status: DispatchStatus.DISPATCHED },
+      include: dispatchInclude,
+    });
+
+    await tx.approvalRequest.update({
+      where: { id: pending.id },
+      data: {
+        status: ApprovalRequestStatus.REJECTED,
+        approvedById: input.rejectedById,
+        remarks: input.reason,
+      },
+    });
+
+    await writeAuditLogTx(tx, {
+      tableName: "dispatches",
+      recordId: dispatch.id,
+      action: "UPDATE",
+      oldValue: { status: DispatchStatus.CANCEL_PENDING },
+      newValue: {
+        status: DispatchStatus.DISPATCHED,
+        decision: "REJECTED",
+        reason: input.reason,
+      },
+      performedBy: input.rejectedById,
       companyId: input.companyId,
       reference: dispatch.dcNo,
     });

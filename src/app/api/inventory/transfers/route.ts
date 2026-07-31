@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { assertCompanyAccess } from "@/lib/customer-permissions";
+import { assertInventoryOpsAllowed } from "@/lib/inventory-audit-service";
 import {
   canCreateTransfer,
   canViewTransferSerials,
@@ -91,6 +92,8 @@ export async function POST(request: Request) {
   }
 
   try {
+    await assertInventoryOpsAllowed(prisma, companyId);
+
     const transfer = await createTransfer(prisma, {
       fromCompanyId: companyId,
       fromWarehouseId: parsed.data.fromWarehouseId,
@@ -107,6 +110,13 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     if (error instanceof Error) {
+      if (error.message === "INVENTORY_OPS_BLOCKED") {
+        return errorResponse(
+          "INVENTORY_OPS_BLOCKED",
+          "Inventory operations are blocked until Opening Stock Audit is approved for all warehouses.",
+          423,
+        );
+      }
       if (error.message === "FROM_WAREHOUSE_NOT_FOUND") {
         return errorResponse("NOT_FOUND", "Source warehouse not found.", 404);
       }

@@ -24,6 +24,11 @@ export type NavItem = {
 export const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", roles: ALL_ROLES },
   {
+    label: "Approvals",
+    href: "/approvals",
+    roles: [ROLES.SUPER_ADMIN, ROLES.SALES_MANAGER, ROLES.PROJECTS_MANAGER],
+  },
+  {
     label: "Customers",
     href: "/sales/customers",
     roles: [
@@ -89,6 +94,16 @@ export const NAV_ITEMS: NavItem[] = [
     ],
   },
   {
+    label: "Inventory Audit",
+    href: "/inventory/audits",
+    roles: [
+      ROLES.SUPER_ADMIN,
+      ROLES.WAREHOUSE,
+      ROLES.PURCHASE,
+      ROLES.SALES_MANAGER,
+    ],
+  },
+  {
     label: "Stock Timeline",
     href: "/sales/inventory-timeline",
     roles: [
@@ -143,6 +158,11 @@ export const NAV_ITEMS: NavItem[] = [
       ROLES.PURCHASE,
       ROLES.ACCOUNTS,
     ],
+  },
+  {
+    label: "PI Payments",
+    href: "/accounts/payments",
+    roles: [ROLES.SUPER_ADMIN, ROLES.ACCOUNTS],
   },
   {
     label: "Invoice Queue",

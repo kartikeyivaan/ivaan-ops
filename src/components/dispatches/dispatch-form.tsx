@@ -415,6 +415,11 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
                 <p className="font-medium">{line.productName}</p>
                 <p className="text-sm text-slate-500">
                   Remaining booked qty: {line.remainingQty}
+                  {line.productName.includes("(from ") ? (
+                    <span className="block text-xs text-slate-500">
+                      Kit component — dispatch full BOM together
+                    </span>
+                  ) : null}
                 </p>
                 <div className="mt-3 space-y-2">
                   <Label>Dispatch Qty</Label>

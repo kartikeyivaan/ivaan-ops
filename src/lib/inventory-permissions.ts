@@ -23,6 +23,8 @@ const INWARD_ROLES = [ROLES.SUPER_ADMIN, ROLES.WAREHOUSE] as const;
 
 const DAMAGE_ROLES = [ROLES.SUPER_ADMIN, ROLES.WAREHOUSE] as const;
 
+const DAMAGE_APPROVE_ROLES = [ROLES.SUPER_ADMIN] as const;
+
 const ADJUST_ROLES = [ROLES.SUPER_ADMIN] as const;
 
 const SERIAL_VIEW_ROLES = [
@@ -49,6 +51,14 @@ export function canInwardMaterial(userRoles: string[]): boolean {
 
 export function canReportDamage(userRoles: string[]): boolean {
   return hasRole(userRoles, [...DAMAGE_ROLES]);
+}
+
+export function canViewDamagedItems(userRoles: string[]): boolean {
+  return hasRole(userRoles, [...DAMAGE_ROLES]);
+}
+
+export function canApprovePanelDamage(userRoles: string[]): boolean {
+  return hasRole(userRoles, [...DAMAGE_APPROVE_ROLES]);
 }
 
 export function canAdjustStock(userRoles: string[]): boolean {

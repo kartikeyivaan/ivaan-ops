@@ -67,6 +67,7 @@ export default async function CustomerDetailPage({ params }: PageProps) {
             amount: Number(payment.amount),
             paymentDate: payment.paymentDate.toISOString().slice(0, 10),
             paymentMode: payment.paymentMode,
+            receivedInAccount: payment.receivedInAccount,
             referenceNo: payment.referenceNo,
             proformaInvoice: payment.proformaInvoice,
           })),

@@ -31,6 +31,8 @@ const DISPATCH_TODAY_ROLES = [
 
 const APPROVE_DISPATCH_TODAY_ROLES = [ROLES.SUPER_ADMIN, ROLES.SALES_MANAGER] as const;
 
+const APPROVE_CANCEL_ROLES = [ROLES.SUPER_ADMIN, ROLES.SALES_MANAGER] as const;
+
 export function canViewProformaInvoices(userRoles: string[]): boolean {
   return hasRole(userRoles, [...VIEW_ROLES]);
 }
@@ -53,4 +55,12 @@ export function canMarkDispatchToday(userRoles: string[]): boolean {
 
 export function canApproveDispatchToday(userRoles: string[]): boolean {
   return hasRole(userRoles, [...APPROVE_DISPATCH_TODAY_ROLES]);
+}
+
+export function canRequestPiCancel(userRoles: string[]): boolean {
+  return hasRole(userRoles, [...MANAGE_ROLES]);
+}
+
+export function canApprovePiCancel(userRoles: string[]): boolean {
+  return hasRole(userRoles, [...APPROVE_CANCEL_ROLES]);
 }

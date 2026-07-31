@@ -6,6 +6,7 @@ import {
   canViewInventory,
   canViewSerialNumbers,
 } from "@/lib/inventory-permissions";
+import { assertInventoryOpsAllowed } from "@/lib/inventory-audit-service";
 import {
   createIncomingLot,
   listIncomingLots,
@@ -75,6 +76,8 @@ export async function POST(request: Request) {
   }
 
   try {
+    await assertInventoryOpsAllowed(prisma, parsed.data.companyId);
+
     const lot = await createIncomingLot(prisma, {
       companyId: parsed.data.companyId,
       warehouseId: parsed.data.warehouseId,
@@ -97,12 +100,26 @@ export async function POST(request: Request) {
       { status: 201 },
     );
   } catch (error) {
+    if (error instanceof Error && error.message === "INVENTORY_OPS_BLOCKED") {
+      return errorResponse(
+        "INVENTORY_OPS_BLOCKED",
+        "Inventory operations are blocked until Opening Stock Audit is approved for all warehouses.",
+        423,
+      );
+    }
     if (error instanceof Error) {
       if (error.message === "WAREHOUSE_NOT_FOUND") {
         return errorResponse("NOT_FOUND", "Warehouse not found.", 404);
       }
       if (error.message === "PRODUCT_NOT_FOUND") {
         return errorResponse("NOT_FOUND", "Product not found.", 404);
+      }
+      if (error.message === "KIT_NOT_STOCKABLE") {
+        return errorResponse(
+          "VALIDATION_ERROR",
+          "Kit products cannot be received into inventory. Receive component products instead.",
+          400,
+        );
       }
       if (error.message === "VENDOR_NOT_FOUND") {
         return errorResponse("NOT_FOUND", "Vendor not found.", 404);

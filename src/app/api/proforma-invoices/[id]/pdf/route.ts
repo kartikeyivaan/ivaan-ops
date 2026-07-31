@@ -30,6 +30,9 @@ export async function GET(_request: Request, context: RouteContext) {
   if (!pi) {
     return errorResponse("NOT_FOUND", "Proforma invoice not found.", 404);
   }
+  if (pi.status === "CANCELLED" || pi.status === "CANCEL_PENDING" || pi.status === "DRAFT") {
+    return errorResponse("INVALID_STATUS", "PDF is not available for this PI status.", 400);
+  }
 
   const pdf = await generateProformaInvoicePdf(pi);
   return new NextResponse(new Uint8Array(pdf), {

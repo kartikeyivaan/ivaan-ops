@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Package, Truck, ArrowRightLeft, Send } from "lucide-react";
+import { Package, Truck, ArrowRightLeft, Send, ClipboardCheck, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -23,10 +23,12 @@ export function StockOverview({
   initialStock,
   warehouses,
   canReceiveIncoming,
+  canViewDamaged,
 }: {
   initialStock: ProductStockSummary[];
   warehouses: Warehouse[];
   canReceiveIncoming: boolean;
+  canViewDamaged?: boolean;
 }) {
   const [stock, setStock] = useState(initialStock);
   const [q, setQ] = useState("");
@@ -70,6 +72,20 @@ export function StockOverview({
               <Link href="/inventory/incoming">
                 <Truck className="mr-2 h-4 w-4" />
                 Receive Incoming
+              </Link>
+            </Button>
+          ) : null}
+          <Button variant="outline" asChild>
+            <Link href="/inventory/audits">
+              <ClipboardCheck className="mr-2 h-4 w-4" />
+              Audits
+            </Link>
+          </Button>
+          {canViewDamaged ? (
+            <Button variant="outline" asChild>
+              <Link href="/inventory/damaged">
+                <AlertTriangle className="mr-2 h-4 w-4" />
+                Damaged Items
               </Link>
             </Button>
           ) : null}

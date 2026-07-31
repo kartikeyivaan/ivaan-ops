@@ -47,6 +47,7 @@ export async function POST(request: Request, context: RouteContext) {
       amount: parsed.data.amount,
       paymentDate: toDateOnly(new Date(parsed.data.paymentDate)),
       paymentMode: parsed.data.paymentMode,
+      receivedInAccount: parsed.data.receivedInAccount,
       referenceNo: parsed.data.referenceNo,
       notes: parsed.data.notes,
       recordedById: session.user.id,

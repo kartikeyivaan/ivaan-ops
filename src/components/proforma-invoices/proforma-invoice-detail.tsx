@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { ArrowLeft, Download, MessageCircle, Send, ShieldCheck, Truck } from "lucide-react";
+import { ArrowLeft, Download, MessageCircle, Send, ShieldCheck, Truck, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,7 +23,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { canRecordPaymentAgainstPi, formatPaymentMode, formatProformaStatus } from "@/lib/proforma-invoices";
+import {
+  canRecordPaymentAgainstPi,
+  formatPaymentMode,
+  formatProformaStatus,
+  formatReceivedInAccount,
+} from "@/lib/proforma-invoices";
 import { formatCurrency } from "@/lib/quotations";
 import { formatDocumentDate } from "@/lib/utils";
 import { formatPricingType } from "@/lib/products";
@@ -82,6 +87,7 @@ type ProformaInvoiceDetailData = {
     amount: number;
     paymentDate: string;
     paymentMode: string;
+    receivedInAccount?: string | null;
     referenceNo?: string | null;
     recordedBy: { name: string };
   }>;
@@ -98,7 +104,7 @@ type ProformaInvoiceDetailData = {
 
 function statusVariant(status: string): "default" | "success" | "warning" | "danger" {
   if (status === "ISSUED" || status === "BOOKED") return "success";
-  if (status === "PENDING_BOOKING") return "warning";
+  if (status === "PENDING_BOOKING" || status === "CANCEL_PENDING") return "warning";
   if (status === "CANCELLED") return "danger";
   return "default";
 }
@@ -113,6 +119,8 @@ export function ProformaInvoiceDetail({
   canApproveBooking,
   canMarkDispatchToday,
   canApproveDispatchToday,
+  canRequestCancel,
+  canApproveCancel,
 }: {
   pi: ProformaInvoiceDetailData;
   warehouses: Warehouse[];
@@ -123,6 +131,8 @@ export function ProformaInvoiceDetail({
   canApproveBooking: boolean;
   canMarkDispatchToday: boolean;
   canApproveDispatchToday: boolean;
+  canRequestCancel: boolean;
+  canApproveCancel: boolean;
 }) {
   const router = useRouter();
   const [error, setError] = useState("");
@@ -131,6 +141,7 @@ export function ProformaInvoiceDetail({
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
   const [paymentMode, setPaymentMode] = useState("BANK_TRANSFER");
+  const [receivedInAccount, setReceivedInAccount] = useState("");
   const [referenceNo, setReferenceNo] = useState("");
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? "");
   const [vehicleNo, setVehicleNo] = useState(pi.dispatchToday?.draft.vehicleNo ?? "");
@@ -166,8 +177,29 @@ export function ProformaInvoiceDetail({
   }
 
   async function handleRecordPayment() {
-    setLoading(true);
     setError("");
+    if (!paymentAmount || Number(paymentAmount) <= 0) {
+      setError("Amount is required.");
+      return;
+    }
+    if (!paymentDate) {
+      setError("Payment date is required.");
+      return;
+    }
+    if (!paymentMode) {
+      setError("Payment mode is required.");
+      return;
+    }
+    if (!receivedInAccount) {
+      setError("Received in A/c is required.");
+      return;
+    }
+    if (!referenceNo.trim()) {
+      setError("Reference is required.");
+      return;
+    }
+
+    setLoading(true);
     const response = await fetch(`/api/proforma-invoices/${pi.id}/payments`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -175,7 +207,8 @@ export function ProformaInvoiceDetail({
         amount: Number(paymentAmount),
         paymentDate,
         paymentMode,
-        referenceNo: referenceNo || undefined,
+        receivedInAccount,
+        referenceNo: referenceNo.trim(),
       }),
     });
     const data = await response.json();
@@ -185,6 +218,7 @@ export function ProformaInvoiceDetail({
       return;
     }
     setPaymentAmount("");
+    setReceivedInAccount("");
     setReferenceNo("");
     router.refresh();
   }
@@ -218,6 +252,29 @@ export function ProformaInvoiceDetail({
     setLoading(false);
     if (!response.ok) {
       setError(data.message ?? "Unable to approve booking.");
+      return;
+    }
+    router.refresh();
+  }
+
+  async function handleRejectBooking() {
+    const reason = window.prompt("Rejection reason (min 3 characters):");
+    if (reason == null) return;
+    if (reason.trim().length < 3) {
+      setError("A rejection reason is required (min 3 characters).");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    const response = await fetch(`/api/proforma-invoices/${pi.id}/reject-booking`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: reason.trim() }),
+    });
+    const data = await response.json();
+    setLoading(false);
+    if (!response.ok) {
+      setError(data.message ?? "Unable to reject booking.");
       return;
     }
     router.refresh();
@@ -276,6 +333,86 @@ export function ProformaInvoiceDetail({
     router.refresh();
   }
 
+  async function handleRejectDispatchToday() {
+    const reason = window.prompt("Rejection reason (min 3 characters):");
+    if (reason == null) return;
+    if (reason.trim().length < 3) {
+      setError("A rejection reason is required (min 3 characters).");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    const response = await fetch(`/api/proforma-invoices/${pi.id}/reject-dispatch-today`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: reason.trim() }),
+    });
+    const data = await response.json();
+    setLoading(false);
+    if (!response.ok) {
+      setError(data.message ?? "Unable to reject dispatch today.");
+      return;
+    }
+    router.refresh();
+  }
+
+  async function handleRequestCancel() {
+    setLoading(true);
+    setError("");
+    const response = await fetch(`/api/proforma-invoices/${pi.id}/request-cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const data = await response.json();
+    setLoading(false);
+    if (!response.ok) {
+      setError(data.message ?? "Unable to request cancellation.");
+      return;
+    }
+    router.refresh();
+  }
+
+  async function handleApproveCancel() {
+    setLoading(true);
+    setError("");
+    const response = await fetch(`/api/proforma-invoices/${pi.id}/approve-cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const data = await response.json();
+    setLoading(false);
+    if (!response.ok) {
+      setError(data.message ?? "Unable to approve cancellation.");
+      return;
+    }
+    router.refresh();
+  }
+
+  async function handleRejectCancel() {
+    const reason = window.prompt("Rejection reason (min 3 characters):");
+    if (reason == null) return;
+    if (reason.trim().length < 3) {
+      setError("A rejection reason is required (min 3 characters).");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    const response = await fetch(`/api/proforma-invoices/${pi.id}/reject-cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: reason.trim() }),
+    });
+    const data = await response.json();
+    setLoading(false);
+    if (!response.ok) {
+      setError(data.message ?? "Unable to reject cancellation.");
+      return;
+    }
+    router.refresh();
+  }
+
   function openWhatsapp(url: string | null | undefined) {
     if (!url) {
       setError("Add a valid mobile number for this customer to share on WhatsApp.");
@@ -302,7 +439,9 @@ export function ProformaInvoiceDetail({
               Back
             </Link>
           </Button>
-          {pi.status !== "DRAFT" ? (
+          {pi.status !== "DRAFT" &&
+          pi.status !== "CANCELLED" &&
+          pi.status !== "CANCEL_PENDING" ? (
             <Button variant="outline" asChild>
               <a href={`/api/proforma-invoices/${pi.id}/pdf`} target="_blank" rel="noreferrer">
                 <Download className="h-4 w-4" />
@@ -310,7 +449,9 @@ export function ProformaInvoiceDetail({
               </a>
             </Button>
           ) : null}
-          {pi.status !== "DRAFT" ? (
+          {pi.status !== "DRAFT" &&
+          pi.status !== "CANCELLED" &&
+          pi.status !== "CANCEL_PENDING" ? (
             <Button variant="outline" onClick={() => openWhatsapp(whatsappUrl)}>
               <MessageCircle className="h-4 w-4" />
               Share on WhatsApp
@@ -352,16 +493,47 @@ export function ProformaInvoiceDetail({
             </Button>
           ) : null}
           {canApproveBooking && pi.status === "PENDING_BOOKING" ? (
-            <Button variant="secondary" disabled={loading} onClick={handleApproveBooking}>
-              <ShieldCheck className="h-4 w-4" />
-              Approve Booking
-            </Button>
+            <>
+              <Button variant="secondary" disabled={loading} onClick={handleApproveBooking}>
+                <ShieldCheck className="h-4 w-4" />
+                Approve Booking
+              </Button>
+              <Button variant="outline" disabled={loading} onClick={handleRejectBooking}>
+                <XCircle className="h-4 w-4" />
+                Reject Booking
+              </Button>
+            </>
           ) : null}
           {canApproveDispatchToday && dispatchToday?.pendingApproval ? (
-            <Button variant="secondary" disabled={loading} onClick={handleApproveDispatchToday}>
-              <ShieldCheck className="h-4 w-4" />
-              Approve Dispatch Today
+            <>
+              <Button variant="secondary" disabled={loading} onClick={handleApproveDispatchToday}>
+                <ShieldCheck className="h-4 w-4" />
+                Approve Dispatch Today
+              </Button>
+              <Button variant="outline" disabled={loading} onClick={handleRejectDispatchToday}>
+                <XCircle className="h-4 w-4" />
+                Reject Dispatch Today
+              </Button>
+            </>
+          ) : null}
+          {canRequestCancel &&
+          ["DRAFT", "ISSUED", "PENDING_BOOKING", "BOOKED"].includes(pi.status) ? (
+            <Button variant="secondary" disabled={loading} onClick={handleRequestCancel}>
+              <XCircle className="h-4 w-4" />
+              Request Cancel
             </Button>
+          ) : null}
+          {canApproveCancel && pi.status === "CANCEL_PENDING" ? (
+            <>
+              <Button variant="secondary" disabled={loading} onClick={handleApproveCancel}>
+                <ShieldCheck className="h-4 w-4" />
+                Approve Cancel
+              </Button>
+              <Button variant="outline" disabled={loading} onClick={handleRejectCancel}>
+                <XCircle className="h-4 w-4" />
+                Reject Cancel
+              </Button>
+            </>
           ) : null}
         </div>
       </div>
@@ -490,6 +662,7 @@ export function ProformaInvoiceDetail({
                 <TableRow>
                   <TableHead>Date</TableHead>
                   <TableHead>Mode</TableHead>
+                  <TableHead>Received in A/c</TableHead>
                   <TableHead>Reference</TableHead>
                   <TableHead>Recorded By</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
@@ -500,6 +673,11 @@ export function ProformaInvoiceDetail({
                   <TableRow key={payment.id}>
                     <TableCell>{payment.paymentDate}</TableCell>
                     <TableCell>{formatPaymentMode(payment.paymentMode)}</TableCell>
+                    <TableCell>
+                      {payment.receivedInAccount
+                        ? formatReceivedInAccount(payment.receivedInAccount)
+                        : "—"}
+                    </TableCell>
                     <TableCell>{payment.referenceNo ?? "—"}</TableCell>
                     <TableCell>{payment.recordedBy.name}</TableCell>
                     <TableCell className="text-right">{formatCurrency(payment.amount)}</TableCell>
@@ -510,28 +688,37 @@ export function ProformaInvoiceDetail({
           )}
 
           {showRecordPayment ? (
-            <div className="grid gap-3 rounded-md border p-4 md:grid-cols-5">
+            <div className="grid gap-3 rounded-md border p-4 md:grid-cols-3 lg:grid-cols-6">
               <div className="space-y-2">
-                <Label>Amount</Label>
+                <Label>
+                  Amount <span className="text-red-500">*</span>
+                </Label>
                 <Input
                   type="number"
                   min="0"
                   step="any"
+                  required
                   value={paymentAmount}
                   onChange={(event) => setPaymentAmount(event.target.value)}
                 />
               </div>
               <div className="space-y-2">
-                <Label>Date</Label>
+                <Label>
+                  Date <span className="text-red-500">*</span>
+                </Label>
                 <Input
                   type="date"
+                  required
                   value={paymentDate}
                   onChange={(event) => setPaymentDate(event.target.value)}
                 />
               </div>
               <div className="space-y-2">
-                <Label>Mode</Label>
+                <Label>
+                  Mode <span className="text-red-500">*</span>
+                </Label>
                 <select
+                  required
                   value={paymentMode}
                   onChange={(event) => setPaymentMode(event.target.value)}
                   className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
@@ -545,8 +732,27 @@ export function ProformaInvoiceDetail({
                 </select>
               </div>
               <div className="space-y-2">
-                <Label>Reference</Label>
+                <Label>
+                  Received in A/c <span className="text-red-500">*</span>
+                </Label>
+                <select
+                  required
+                  value={receivedInAccount}
+                  onChange={(event) => setReceivedInAccount(event.target.value)}
+                  className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
+                >
+                  <option value="">Select account</option>
+                  <option value="SBI">SBI</option>
+                  <option value="ICICI">ICICI</option>
+                  <option value="HDFC">HDFC</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label>
+                  Reference <span className="text-red-500">*</span>
+                </Label>
                 <Input
+                  required
                   value={referenceNo}
                   onChange={(event) => setReferenceNo(event.target.value)}
                 />

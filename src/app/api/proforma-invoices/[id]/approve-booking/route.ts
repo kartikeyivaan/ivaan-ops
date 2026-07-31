@@ -63,6 +63,14 @@ export async function POST(request: Request, context: RouteContext) {
           { product, shortage: Number(shortage) },
         );
       }
+      if (error.message.startsWith("KIT_BOM_EMPTY|")) {
+        const [, product] = error.message.split("|");
+        return errorResponse(
+          "KIT_BOM_EMPTY",
+          `Kit "${product}" has no components configured.`,
+          400,
+        );
+      }
       if (error.message === "ADVANCE_NOT_MET") {
         return errorResponse(
           "ADVANCE_NOT_MET",

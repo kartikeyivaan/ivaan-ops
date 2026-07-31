@@ -140,15 +140,21 @@ export const customerImportSchema = z.object({
   rows: z.array(customerImportRowSchema).min(1),
 });
 
+export const kitComponentSchema = z.object({
+  productId: z.string().uuid(),
+  qty: z.coerce.number().positive(),
+});
+
 export const productSchema = z.object({
   categoryId: z.string().uuid(),
-  brandName: z.string().min(2),
+  brandName: z.string().min(2).optional(),
   technologyName: z.string().optional(),
-  capacity: z.coerce.number().positive(),
-  capacityUnit: z.enum(["WP", "KW", "KVA", "NOS", "METER"]),
+  capacity: z.coerce.number().positive().optional(),
+  capacityUnit: z.enum(["WP", "KW", "KVA", "NOS", "METER"]).optional(),
   hsn: z.string().optional(),
   gstRate: z.coerce.number().min(0).max(100),
   isActive: z.boolean().default(true),
+  kitComponents: z.array(kitComponentSchema).optional(),
   initialPrice: z
     .object({
       landingCost: z.coerce.number().min(0),
@@ -235,11 +241,43 @@ export const damageSchema = z.object({
   notes: z.string().optional(),
 });
 
+export const createDamageReportSchema = z.object({
+  serialNumber: z.string().min(1),
+  category: z.enum(["HANDLING", "STORAGE", "TRANSIT_AFTER_INWARD", "OTHER"]),
+  reason: z.string().trim().min(1, "Reason is required"),
+});
+
+export const rejectDamageReportSchema = z.object({
+  reason: z.string().trim().min(1, "Rejection reason is required"),
+});
+
 export const adjustStockSchema = z.object({
   productId: z.string().uuid(),
   warehouseId: z.string().uuid(),
   qty: z.coerce.number(),
   notes: z.string().optional(),
+});
+
+export const createOpeningAuditSchema = z.object({
+  warehouseId: z.string().uuid(),
+});
+
+export const upsertOpeningLineSchema = z.object({
+  productId: z.string().uuid(),
+  condition: z.enum(["GOOD", "DAMAGED"]).default("GOOD"),
+  physicalQty: z.coerce.number().min(0).optional(),
+  serialNumbers: z.array(z.string().min(1)).optional(),
+  remarks: z.string().optional().nullable(),
+});
+
+export const createDailyAuditSchema = z.object({
+  warehouseId: z.string().uuid(),
+  auditDate: z.string().optional(),
+});
+
+export const updateDailyAuditLineSchema = z.object({
+  physicalQty: z.coerce.number().min(0),
+  remarks: z.string().optional().nullable(),
 });
 
 export const inventorySearchSchema = z.object({
@@ -375,6 +413,10 @@ export const approveQuotationPriceSchema = z.object({
   remarks: z.string().optional(),
 });
 
+export const rejectApprovalSchema = z.object({
+  reason: z.string().min(3),
+});
+
 export const quotationSearchSchema = z.object({
   q: z.string().optional(),
   status: z.enum(["DRAFT", "SENT", "EXPIRED", "CONVERTED"]).optional(),
@@ -397,9 +439,10 @@ export const convertQuotationToPiSchema = z.object({
 
 export const recordPaymentSchema = z.object({
   amount: z.coerce.number().positive(),
-  paymentDate: z.string(),
+  paymentDate: z.string().min(1, "Payment date is required."),
   paymentMode: z.enum(["BANK_TRANSFER", "CHEQUE", "CASH", "UPI", "NEFT", "RTGS"]),
-  referenceNo: z.string().optional(),
+  receivedInAccount: z.enum(["SBI", "ICICI", "HDFC"]),
+  referenceNo: z.string().trim().min(1, "Reference is required."),
   notes: z.string().optional(),
 });
 
@@ -427,6 +470,14 @@ export const approveDispatchTodaySchema = z.object({
   remarks: z.string().optional(),
 });
 
+export const requestPiCancelSchema = z.object({
+  remarks: z.string().optional(),
+});
+
+export const approvePiCancelSchema = z.object({
+  remarks: z.string().optional(),
+});
+
 export const proformaInvoiceSearchSchema = z.object({
   q: z.string().optional(),
   status: z
@@ -437,6 +488,7 @@ export const proformaInvoiceSearchSchema = z.object({
       "BOOKED",
       "PARTIALLY_DISPATCHED",
       "FULLY_DISPATCHED",
+      "CANCEL_PENDING",
       "CANCELLED",
     ])
     .optional(),
@@ -593,9 +645,7 @@ export const approveProjectProposalSchema = z.object({
   remarks: z.string().optional(),
 });
 
-export const rejectProjectProposalSchema = z.object({
-  reason: z.string().min(3),
-});
+export const rejectProjectProposalSchema = rejectApprovalSchema;
 
 export const reviseProjectProposalSchema = updateProjectProposalSchema;
 

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { ArrowLeft, Download, FileInput, MessageCircle, Pencil, Send, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Download, FileInput, MessageCircle, Pencil, Send, ShieldCheck, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -68,6 +68,7 @@ type QuotationDetailData = {
   }>;
   changesFromPrevious?: QuotationLineChange[] | null;
   previousRevisionNo?: number | null;
+  pendingPriceApproval?: boolean;
 };
 
 type QuotationLineChange = {
@@ -168,6 +169,29 @@ export function QuotationDetail({
     router.refresh();
   }
 
+  async function handleRejectPricing() {
+    const reason = window.prompt("Rejection reason (min 3 characters):");
+    if (reason == null) return;
+    if (reason.trim().length < 3) {
+      setError("A rejection reason is required (min 3 characters).");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    const response = await fetch(`/api/quotations/${quotation.id}/reject-price`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: reason.trim() }),
+    });
+    const data = await response.json();
+    setLoading(false);
+    if (!response.ok) {
+      setError(data.message ?? "Unable to reject pricing.");
+      return;
+    }
+    router.refresh();
+  }
+
   async function handleConvertToPi() {
     setLoading(true);
     setError("");
@@ -220,10 +244,18 @@ export function QuotationDetail({
             </Button>
           ) : null}
           {canApprovePricing && hasPendingApproval ? (
-            <Button variant="secondary" disabled={loading} onClick={handleApprovePricing}>
-              <ShieldCheck className="h-4 w-4" />
-              Approve Pricing
-            </Button>
+            <>
+              <Button variant="secondary" disabled={loading} onClick={handleApprovePricing}>
+                <ShieldCheck className="h-4 w-4" />
+                Approve Pricing
+              </Button>
+              {quotation.pendingPriceApproval ? (
+                <Button variant="outline" disabled={loading} onClick={handleRejectPricing}>
+                  <XCircle className="h-4 w-4" />
+                  Reject Pricing
+                </Button>
+              ) : null}
+            </>
           ) : null}
           {canManage && (quotation.status === "SENT" || quotation.status === "EXPIRED") ? (
             <Button variant="outline" asChild>

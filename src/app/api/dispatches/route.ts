@@ -4,6 +4,7 @@ import {
   canManageDispatches,
   canViewDispatches,
 } from "@/lib/dispatch-permissions";
+import { assertInventoryOpsAllowed } from "@/lib/inventory-audit-service";
 import { createDispatch, listDispatches } from "@/lib/dispatch-service";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
@@ -69,6 +70,8 @@ export async function POST(request: Request) {
   }
 
   try {
+    await assertInventoryOpsAllowed(prisma, companyId);
+
     const dispatch = await createDispatch(prisma, {
       companyId,
       proformaInvoiceId: parsed.data.proformaInvoiceId,
@@ -86,6 +89,11 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof Error) {
       const map: Record<string, [string, string, number]> = {
+        INVENTORY_OPS_BLOCKED: [
+          "INVENTORY_OPS_BLOCKED",
+          "Inventory operations are blocked until Opening Stock Audit is approved for all warehouses.",
+          423,
+        ],
         NOT_FOUND: ["NOT_FOUND", "Proforma invoice not found.", 404],
         INVALID_PI_STATUS: ["INVALID_STATUS", "PI is not ready for dispatch.", 400],
         PAYMENT_INCOMPLETE: [
@@ -106,6 +114,17 @@ export async function POST(request: Request) {
         EXCEEDS_REMAINING_QTY: ["VALIDATION_ERROR", "Quantity exceeds remaining booked qty.", 400],
         SERIAL_REQUIRED: ["VALIDATION_ERROR", "Serial selection required.", 400],
         INVALID_SERIAL_SELECTION: ["VALIDATION_ERROR", "Invalid serial selection.", 400],
+        KIT_BOM_EMPTY: ["VALIDATION_ERROR", "Kit has no components configured.", 400],
+        KIT_COMPONENT_MISSING: [
+          "VALIDATION_ERROR",
+          "Dispatch all kit components together with matching quantities.",
+          400,
+        ],
+        KIT_QTY_MISMATCH: [
+          "VALIDATION_ERROR",
+          "Kit component quantities must match the BOM ratio.",
+          400,
+        ],
         MANDATORY_DISPATCH_FIELDS_REQUIRED: [
           "VALIDATION_ERROR",
           "Receiver name, receiver mobile and vehicle number are required.",

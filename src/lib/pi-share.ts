@@ -26,7 +26,7 @@ function appBaseUrl(): string {
 }
 
 export function canShareProformaInvoice(status: string): boolean {
-  return status !== "DRAFT";
+  return status !== "DRAFT" && status !== "CANCELLED" && status !== "CANCEL_PENDING";
 }
 
 /** Tokenized, login-free URL to the PI PDF. Valid for 5 days. */

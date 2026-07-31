@@ -101,6 +101,48 @@ export async function notifyDispatchTodayApprovalNeeded(
   });
 }
 
+export async function notifyPiCancelApprovalNeeded(
+  client: NotificationClient,
+  input: { companyId: string; piNo: string },
+) {
+  const users = await client.user.findMany({
+    where: {
+      status: "ACTIVE",
+      companies: { some: { companyId: input.companyId } },
+      roles: {
+        some: {
+          role: { name: { in: [ROLES.SALES_MANAGER, ROLES.SUPER_ADMIN] } },
+        },
+      },
+    },
+    select: { id: true },
+  });
+  if (!users.length) return { count: 0 };
+  return client.notification.createMany({
+    data: users.map(({ id }) => ({
+      userId: id,
+      title: "PI cancel approval needed",
+      message: `${input.piNo} has a cancellation request pending approval.`,
+      module: "proforma",
+    })),
+  });
+}
+
+export async function notifyPiCancelled(
+  client: NotificationClient,
+  input: { salesUserId: string; piNo: string },
+) {
+  return createNotification(
+    {
+      userId: input.salesUserId,
+      title: "Proforma invoice cancelled",
+      message: `${input.piNo} has been cancelled.`,
+      module: "proforma",
+    },
+    client,
+  );
+}
+
 export async function notifyInvoicePending(
   client: NotificationClient,
   input: { companyId: string; dcNo: string },

@@ -86,8 +86,8 @@ Reconciliation result:
   endpoints are not included.
 - Legacy delivery terms require explicit booking permission; ambiguous records
   are intentionally blocked.
-- No PI cancellation/release endpoint currently exists. Reservation release must
-  be wired into that authorised lifecycle when one is introduced.
+- PI cancellation is available via request → Sales Manager / Super Admin approval.
+  Booked reservations are released on approve.
 - Ready Stock uses the existing working-day behaviour; no new configurable
   same-day cut-off was introduced.
 - Government portal and automatic Tally invoice integrations remain out of scope.

@@ -419,8 +419,12 @@ export async function createIncomingLot(
   });
   if (!warehouse) throw new Error("WAREHOUSE_NOT_FOUND");
 
-  const product = await prisma.product.findUnique({ where: { id: input.productId } });
+  const product = await prisma.product.findUnique({
+    where: { id: input.productId },
+    include: { category: true },
+  });
   if (!product || !product.isActive) throw new Error("PRODUCT_NOT_FOUND");
+  if (product.category.name === "Kit") throw new Error("KIT_NOT_STOCKABLE");
 
   if (input.quantity <= 0) throw new Error("INVALID_QUANTITY");
   if (input.expectedMinDate && input.expectedMaxDate && input.expectedMinDate > input.expectedMaxDate) {

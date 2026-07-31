@@ -124,15 +124,22 @@ export function ProductProfile({
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">Available Stock</CardTitle>
+            <CardTitle className="text-sm">
+              {product.isKit ? "System Size" : "Available Stock"}
+            </CardTitle>
           </CardHeader>
-          <CardContent className="text-2xl font-semibold">{product.stock.availableStock}</CardContent>
+          <CardContent className="text-2xl font-semibold">
+            {product.isKit
+              ? `${product.capacity} ${formatCapacityUnit(product.capacityUnit)}`
+              : product.stock.availableStock}
+          </CardContent>
         </Card>
       </div>
 
       <Tabs defaultValue="overview">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          {product.isKit ? <TabsTrigger value="bom">Components</TabsTrigger> : null}
           <TabsTrigger value="prices">Price History</TabsTrigger>
           {canEdit ? <TabsTrigger value="edit">Edit</TabsTrigger> : null}
         </TabsList>
@@ -141,7 +148,9 @@ export function ProductProfile({
           <Card>
             <CardContent className="grid gap-4 pt-6 md:grid-cols-2">
               <div>
-                <p className="text-xs uppercase text-slate-500">Capacity</p>
+                <p className="text-xs uppercase text-slate-500">
+                  {product.isKit ? "System kWp" : "Capacity"}
+                </p>
                 <p className="font-medium">
                   {product.capacity.toString()} {formatCapacityUnit(product.capacityUnit)}
                 </p>
@@ -156,7 +165,13 @@ export function ProductProfile({
               </div>
               <div>
                 <p className="text-xs uppercase text-slate-500">Serial Tracking</p>
-                <p className="font-medium">{product.serialTracking ? "Yes" : "No"}</p>
+                <p className="font-medium">
+                  {product.isKit
+                    ? "On components (panels / inverters)"
+                    : product.serialTracking
+                      ? "Yes"
+                      : "No"}
+                </p>
               </div>
               <div>
                 <p className="text-xs uppercase text-slate-500">Status</p>
@@ -167,6 +182,47 @@ export function ProductProfile({
             </CardContent>
           </Card>
         </TabsContent>
+
+        {product.isKit ? (
+          <TabsContent value="bom">
+            <Card>
+              <CardHeader>
+                <CardTitle>Kit BOM</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Product</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead>Qty</TableHead>
+                      <TableHead>Serial</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {product.kitComponents.map((line) => (
+                      <TableRow key={line.id}>
+                        <TableCell>{line.product.displayName}</TableCell>
+                        <TableCell>{line.product.category.name}</TableCell>
+                        <TableCell>{line.qty}</TableCell>
+                        <TableCell>
+                          {line.product.serialTracking ? "Yes" : "No"}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {product.kitComponents.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center text-slate-500">
+                          No components configured.
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        ) : null}
 
         <TabsContent value="prices">
           <div className="space-y-4">
@@ -285,6 +341,15 @@ export function ProductProfile({
                 hsn: product.hsn ?? "",
                 gstRate: product.gstRate.toString(),
                 isActive: product.isActive,
+                kitComponents: product.kitComponents.map((line) => ({
+                  productId: line.productId,
+                  productName: line.product.displayName,
+                  categoryName: line.product.category.name,
+                  brandName: line.product.brand.name,
+                  capacity: line.product.capacity,
+                  capacityUnit: line.product.capacityUnit,
+                  qty: line.qty,
+                })),
               }}
             />
           </TabsContent>

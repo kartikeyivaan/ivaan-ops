@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import {
   canInwardMaterial,
+  canViewDamagedItems,
   canViewInventory,
 } from "@/lib/inventory-permissions";
 import { listStockSummary } from "@/lib/inventory-service";
@@ -29,6 +30,7 @@ export default async function InventoryPage() {
       initialStock={stock}
       warehouses={warehouses}
       canReceiveIncoming={canInwardMaterial(session.user.roles)}
+      canViewDamaged={canViewDamagedItems(session.user.roles)}
     />
   );
 }

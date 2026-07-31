@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CustomerForm } from "@/components/customers/customer-form";
 import { formatCustomerType } from "@/lib/customers";
-import { formatPaymentMode, formatProformaStatus } from "@/lib/proforma-invoices";
+import { formatPaymentMode, formatProformaStatus, formatReceivedInAccount } from "@/lib/proforma-invoices";
 import { formatDispatchStatus } from "@/lib/dispatches";
 import { formatQuotationStatus } from "@/lib/quotations";
 import { formatDate, formatDocumentDate } from "@/lib/utils";
@@ -39,6 +39,7 @@ type CustomerPayment = {
   amount: number;
   paymentDate: string;
   paymentMode: string;
+  receivedInAccount?: string | null;
   referenceNo?: string | null;
   proformaInvoice: { piNo: string };
 };
@@ -313,6 +314,9 @@ export function CustomerProfile({
                       <p className="font-medium">{payment.proformaInvoice.piNo}</p>
                       <p className="text-sm text-slate-500">
                         {payment.paymentDate} · {formatPaymentMode(payment.paymentMode)}
+                        {payment.receivedInAccount
+                          ? ` · ${formatReceivedInAccount(payment.receivedInAccount)}`
+                          : ""}
                         {payment.referenceNo ? ` · ${payment.referenceNo}` : ""}
                       </p>
                     </div>

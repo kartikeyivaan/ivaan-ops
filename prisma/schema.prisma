@@ -111,6 +111,7 @@ enum SerialStatus {
   BOOKED
   DAMAGED
   DISPATCHED
+  DAMAGE_PENDING
 }
 
 enum InventoryTransactionType {
@@ -120,6 +121,28 @@ enum InventoryTransactionType {
   DAMAGE
   TRANSFER
   ADJUST
+}
+
+enum InventoryOpeningPhase {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum OpeningAuditStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+}
+
+enum OpeningLineCondition {
+  GOOD
+  DAMAGED
+}
+
+enum DailyAuditStatus {
+  DRAFT
+  SUBMITTED
 }
 
 enum TransferStatus {
@@ -144,6 +167,7 @@ enum ProformaInvoiceStatus {
   BOOKED
   PARTIALLY_DISPATCHED
   FULLY_DISPATCHED
+  CANCEL_PENDING
   CANCELLED
 }
 
@@ -163,6 +187,12 @@ enum PaymentMode {
   RTGS
 }
 
+enum ReceivedInAccount {
+  SBI
+  ICICI
+  HDFC
+}
+
 enum ItemApprovalStatus {
   AUTO
   PENDING
@@ -174,6 +204,21 @@ enum ApprovalModuleType {
   BOOKING
   DC_CANCEL
   DISPATCH_TODAY
+  PI_CANCEL
+  PANEL_DAMAGE
+}
+
+enum DamageReportStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum DamageCategory {
+  HANDLING
+  STORAGE
+  TRANSIT_AFTER_INWARD
+  OTHER
 }
 
 enum ProjectProposalStatus {
@@ -329,6 +374,9 @@ model Company {
   termsAndConditions  String?  @map("terms_and_conditions")
   /// HH:mm local cut-off for ready-stock same-day dispatch (e.g. "15:00"). Null = preserve legacy behaviour.
   dispatchCutoffTime  String?  @map("dispatch_cutoff_time")
+  /// Opening Stock Audit gate: ops blocked while IN_PROGRESS until all warehouses approved.
+  inventoryOpeningPhase      InventoryOpeningPhase @default(NOT_STARTED) @map("inventory_opening_phase")
+  inventoryTrackingStartDate DateTime?             @map("inventory_tracking_start_date")
   isActive            Boolean  @default(true) @map("is_active")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
@@ -352,6 +400,9 @@ model Company {
   documentationRecords  DocumentationRecord[]
   projectProposals      ProjectProposal[]
   serviceRequests       ServiceRequest[]
+  openingAudits         InventoryOpeningAudit[]
+  dailyAudits           InventoryDailyAudit[]
+  damageReports         InventoryDamageReport[]
 
   @@map("companies")
 }
@@ -419,6 +470,13 @@ model User {
   documentationCompleted            DocumentationRecord[]          @relation("DocumentationCompletedBy")
   documentationStatusChanges        DocumentationStatusHistory[]   @relation("DocumentationStatusChangedBy")
   documentationAssignments          DocumentationAssignmentHistory[] @relation("DocumentationAssignmentChangedBy")
+  openingAuditsCreated              InventoryOpeningAudit[]        @relation("OpeningAuditCreatedBy")
+  openingAuditsSubmitted            InventoryOpeningAudit[]        @relation("OpeningAuditSubmittedBy")
+  openingAuditsApproved             InventoryOpeningAudit[]        @relation("OpeningAuditApprovedBy")
+  dailyAuditsCreated                InventoryDailyAudit[]          @relation("DailyAuditCreatedBy")
+  dailyAuditsSubmitted              InventoryDailyAudit[]          @relation("DailyAuditSubmittedBy")
+  damageReportsRequested            InventoryDamageReport[]        @relation("DamageReportRequestedBy")
+  damageReportsDecided              InventoryDamageReport[]        @relation("DamageReportDecidedBy")
 
   @@map("users")
 }
@@ -475,6 +533,9 @@ model Warehouse {
   holidayOverrides     WarehouseHoliday[]
   proformaInvoices     ProformaInvoice[]
   dispatches           Dispatch[]
+  openingAudits        InventoryOpeningAudit[]
+  dailyAudits          InventoryDailyAudit[]
+  damageReports        InventoryDamageReport[]
 
   @@unique([companyId, name])
   @@map("warehouses")
@@ -634,21 +695,43 @@ model Product {
   brand                    Brand                     @relation(fields: [brandId], references: [id])
   technology               ProductTechnology?        @relation(fields: [technologyId], references: [id])
   prices                   ProductPrice[]
+  kitComponents            KitComponent[]            @relation("KitProductComponents")
+  componentOfKits          KitComponent[]            @relation("ComponentProductKits")
   inventoryLots            InventoryLot[]
   inventorySerials         InventorySerial[]
   inventoryTransactions    InventoryTransaction[]
   inventoryEvents          InventoryEvent[]
   inventorySafetyStock     InventorySafetyStock[]
+  damageReports            InventoryDamageReport[]
   transferLines            InventoryTransferLine[]
   quotationItems           QuotationItem[]
   proformaInvoiceItems     ProformaInvoiceItem[]
   dispatchLines            DispatchLine[]
   projectProposalRevisions ProjectProposalRevision[]
+  openingAuditLines        InventoryOpeningAuditLine[]
+  dailyAuditLines          InventoryDailyAuditLine[]
 
   @@index([displayName])
   @@index([categoryId])
   @@index([brandId])
   @@map("products")
+}
+
+/** Sales BOM for Kit products — kits are never stocked; components are fulfilled. */
+model KitComponent {
+  id                 String  @id @default(uuid()) @db.Uuid
+  kitProductId       String  @map("kit_product_id") @db.Uuid
+  componentProductId String  @map("component_product_id") @db.Uuid
+  qty                Decimal @db.Decimal(12, 3)
+  sortOrder          Int     @default(0) @map("sort_order")
+
+  kitProduct       Product @relation("KitProductComponents", fields: [kitProductId], references: [id], onDelete: Cascade)
+  componentProduct Product @relation("ComponentProductKits", fields: [componentProductId], references: [id])
+
+  @@unique([kitProductId, componentProductId])
+  @@index([kitProductId])
+  @@index([componentProductId])
+  @@map("kit_components")
 }
 
 model Vendor {
@@ -725,10 +808,41 @@ model InventorySerial {
   transferLineSerials    InventoryTransferLineSerial[]
   proformaInvoiceSerials ProformaInvoiceSerial[]
   dispatchLineSerials    DispatchLineSerial[]
+  damageReports          InventoryDamageReport[]
 
   @@index([productId, status])
   @@index([currentWarehouseId])
   @@map("inventory_serials")
+}
+
+model InventoryDamageReport {
+  id             String             @id @default(uuid()) @db.Uuid
+  companyId      String             @map("company_id") @db.Uuid
+  serialId       String             @map("serial_id") @db.Uuid
+  productId      String             @map("product_id") @db.Uuid
+  warehouseId    String             @map("warehouse_id") @db.Uuid
+  serialNumber   String             @map("serial_number")
+  category       DamageCategory
+  reason         String
+  status         DamageReportStatus @default(PENDING)
+  requestedById  String             @map("requested_by") @db.Uuid
+  decidedById    String?            @map("decided_by") @db.Uuid
+  decidedAt      DateTime?          @map("decided_at")
+  decisionRemarks String?           @map("decision_remarks")
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+
+  company     Company         @relation(fields: [companyId], references: [id])
+  serial      InventorySerial @relation(fields: [serialId], references: [id])
+  product     Product         @relation(fields: [productId], references: [id])
+  warehouse   Warehouse       @relation(fields: [warehouseId], references: [id])
+  requestedBy User            @relation("DamageReportRequestedBy", fields: [requestedById], references: [id])
+  decidedBy   User?           @relation("DamageReportDecidedBy", fields: [decidedById], references: [id])
+
+  @@index([companyId, status])
+  @@index([serialId, status])
+  @@index([warehouseId])
+  @@map("inventory_damage_reports")
 }
 
 model InventoryTransaction {
@@ -985,17 +1099,18 @@ model ProformaInvoiceSerial {
 }
 
 model Payment {
-  id                String      @id @default(uuid()) @db.Uuid
-  companyId         String      @map("company_id") @db.Uuid
-  customerId        String      @map("customer_id") @db.Uuid
-  proformaInvoiceId String      @map("proforma_invoice_id") @db.Uuid
-  amount            Decimal     @db.Decimal(14, 2)
-  paymentDate       DateTime    @map("payment_date") @db.Date
-  paymentMode       PaymentMode @map("payment_mode")
-  referenceNo       String?     @map("reference_no")
+  id                String             @id @default(uuid()) @db.Uuid
+  companyId         String             @map("company_id") @db.Uuid
+  customerId        String             @map("customer_id") @db.Uuid
+  proformaInvoiceId String             @map("proforma_invoice_id") @db.Uuid
+  amount            Decimal            @db.Decimal(14, 2)
+  paymentDate       DateTime           @map("payment_date") @db.Date
+  paymentMode       PaymentMode        @map("payment_mode")
+  receivedInAccount ReceivedInAccount? @map("received_in_account")
+  referenceNo       String?            @map("reference_no")
   notes             String?
-  recordedById      String      @map("recorded_by") @db.Uuid
-  createdAt         DateTime    @default(now()) @map("created_at")
+  recordedById      String             @map("recorded_by") @db.Uuid
+  createdAt         DateTime           @default(now()) @map("created_at")
 
   company         Company         @relation(fields: [companyId], references: [id])
   customer        Customer        @relation(fields: [customerId], references: [id])
@@ -1627,4 +1742,112 @@ model DocumentationAssignmentHistory {
 
   @@index([documentationRecordId, changedAt])
   @@map("documentation_assignment_history")
+}
+
+// ---------------------------------------------------------------------------
+// Inventory Audit (Opening Stock + Daily Product Count)
+// ---------------------------------------------------------------------------
+
+model InventoryOpeningAudit {
+  id           String             @id @default(uuid()) @db.Uuid
+  auditNumber  String             @unique @map("audit_number")
+  companyId    String             @map("company_id") @db.Uuid
+  warehouseId  String             @map("warehouse_id") @db.Uuid
+  status       OpeningAuditStatus @default(DRAFT)
+  notes        String?
+  createdById  String             @map("created_by") @db.Uuid
+  submittedAt  DateTime?          @map("submitted_at")
+  submittedById String?           @map("submitted_by") @db.Uuid
+  approvedAt   DateTime?          @map("approved_at")
+  approvedById String?            @map("approved_by") @db.Uuid
+  createdAt    DateTime           @default(now()) @map("created_at")
+  updatedAt    DateTime           @updatedAt @map("updated_at")
+
+  company     Company                     @relation(fields: [companyId], references: [id])
+  warehouse   Warehouse                   @relation(fields: [warehouseId], references: [id])
+  createdBy   User                        @relation("OpeningAuditCreatedBy", fields: [createdById], references: [id])
+  submittedBy User?                       @relation("OpeningAuditSubmittedBy", fields: [submittedById], references: [id])
+  approvedBy  User?                       @relation("OpeningAuditApprovedBy", fields: [approvedById], references: [id])
+  lines       InventoryOpeningAuditLine[]
+
+  @@unique([companyId, warehouseId])
+  @@index([companyId, status])
+  @@map("inventory_opening_audits")
+}
+
+model InventoryOpeningAuditLine {
+  id          String               @id @default(uuid()) @db.Uuid
+  auditId     String               @map("audit_id") @db.Uuid
+  productId   String               @map("product_id") @db.Uuid
+  condition   OpeningLineCondition @default(GOOD)
+  physicalQty Decimal              @default(0) @map("physical_qty") @db.Decimal(12, 3)
+  remarks     String?
+  createdAt   DateTime             @default(now()) @map("created_at")
+  updatedAt   DateTime             @updatedAt @map("updated_at")
+
+  audit   InventoryOpeningAudit         @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  product Product                       @relation(fields: [productId], references: [id])
+  serials InventoryOpeningAuditSerial[]
+
+  @@unique([auditId, productId, condition])
+  @@index([auditId])
+  @@index([productId])
+  @@map("inventory_opening_audit_lines")
+}
+
+model InventoryOpeningAuditSerial {
+  id           String   @id @default(uuid()) @db.Uuid
+  lineId       String   @map("line_id") @db.Uuid
+  serialNumber String   @map("serial_number")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  line InventoryOpeningAuditLine @relation(fields: [lineId], references: [id], onDelete: Cascade)
+
+  @@unique([lineId, serialNumber])
+  @@index([serialNumber])
+  @@map("inventory_opening_audit_serials")
+}
+
+model InventoryDailyAudit {
+  id            String           @id @default(uuid()) @db.Uuid
+  auditNumber   String           @unique @map("audit_number")
+  companyId     String           @map("company_id") @db.Uuid
+  warehouseId   String           @map("warehouse_id") @db.Uuid
+  auditDate     DateTime         @map("audit_date") @db.Date
+  status        DailyAuditStatus @default(DRAFT)
+  notes         String?
+  createdById   String           @map("created_by") @db.Uuid
+  submittedAt   DateTime?        @map("submitted_at")
+  submittedById String?          @map("submitted_by") @db.Uuid
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
+
+  company     Company                   @relation(fields: [companyId], references: [id])
+  warehouse   Warehouse                 @relation(fields: [warehouseId], references: [id])
+  createdBy   User                      @relation("DailyAuditCreatedBy", fields: [createdById], references: [id])
+  submittedBy User?                     @relation("DailyAuditSubmittedBy", fields: [submittedById], references: [id])
+  lines       InventoryDailyAuditLine[]
+
+  @@index([companyId, warehouseId, auditDate])
+  @@index([companyId, status])
+  @@map("inventory_daily_audits")
+}
+
+model InventoryDailyAuditLine {
+  id          String    @id @default(uuid()) @db.Uuid
+  auditId     String    @map("audit_id") @db.Uuid
+  productId   String    @map("product_id") @db.Uuid
+  systemQty   Decimal   @map("system_qty") @db.Decimal(12, 3)
+  physicalQty Decimal?  @map("physical_qty") @db.Decimal(12, 3)
+  varianceQty Decimal?  @map("variance_qty") @db.Decimal(12, 3)
+  remarks     String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  audit   InventoryDailyAudit @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  product Product             @relation(fields: [productId], references: [id])
+
+  @@unique([auditId, productId])
+  @@index([auditId])
+  @@map("inventory_daily_audit_lines")
 }

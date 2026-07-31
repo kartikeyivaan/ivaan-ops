@@ -1,6 +1,7 @@
 import {
   ApprovalModuleType,
   ApprovalRequestStatus,
+  DispatchStatus,
   InventoryEventStatus,
   InventoryEventType,
   InventoryTransactionType,
@@ -16,7 +17,17 @@ import { decimalToNumber } from "@/lib/inventory";
 import { getWarehouseStockForProduct } from "@/lib/inventory-service";
 import { createEvent } from "@/lib/inventory-event-service";
 import { getInventoryProjection } from "@/lib/inventory-projection-service";
-import { notifyBookingCreated, notifyDispatchTodayApprovalNeeded, notifyWarehouseDispatchToday } from "@/lib/notification-service";
+import {
+  explodeItemsForFulfillment,
+  mergeFulfillmentQuantities,
+} from "@/lib/kit-fulfillment";
+import {
+  notifyBookingCreated,
+  notifyDispatchTodayApprovalNeeded,
+  notifyPiCancelApprovalNeeded,
+  notifyPiCancelled,
+  notifyWarehouseDispatchToday,
+} from "@/lib/notification-service";
 import {
   calculateAdvanceRequired,
   calculateOutstanding,
@@ -227,6 +238,7 @@ function serializePi(
       amount: decimalToNumber(payment.amount),
       paymentDate: payment.paymentDate.toISOString().slice(0, 10),
       paymentMode: payment.paymentMode,
+      receivedInAccount: payment.receivedInAccount,
       referenceNo: payment.referenceNo,
       notes: payment.notes,
       recordedBy: payment.recordedBy,
@@ -616,7 +628,8 @@ export async function recordPayment(
     amount: number;
     paymentDate: Date;
     paymentMode: string;
-    referenceNo?: string;
+    receivedInAccount: string;
+    referenceNo: string;
     notes?: string;
     recordedById: string;
   },
@@ -630,6 +643,7 @@ export async function recordPayment(
   if (!pi) throw new Error("NOT_FOUND");
   if (
     pi.status === ProformaInvoiceStatus.DRAFT ||
+    pi.status === ProformaInvoiceStatus.CANCEL_PENDING ||
     pi.status === ProformaInvoiceStatus.CANCELLED
   ) {
     throw new Error("INVALID_STATUS");
@@ -651,6 +665,7 @@ export async function recordPayment(
         amount: input.amount,
         paymentDate: input.paymentDate,
         paymentMode: input.paymentMode as never,
+        receivedInAccount: input.receivedInAccount as never,
         referenceNo: input.referenceNo,
         notes: input.notes,
         recordedById: input.recordedById,
@@ -793,7 +808,7 @@ export async function approveBooking(
     where: { id: input.piId, companyId: input.companyId },
     include: {
       payments: { select: { amount: true } },
-      items: { include: { product: true } },
+      items: { include: { product: { include: { category: true } } } },
       quotation: {
         select: {
           deliveryTermMode: true,
@@ -865,14 +880,19 @@ export async function approveBooking(
   const requiredDispatchMinDate = new Date(`${dispatchMinString}T00:00:00.000Z`);
   const requiredDispatchMaxDate = new Date(`${dispatchMaxString}T00:00:00.000Z`);
 
-  const quantitiesByProduct = new Map<string, number>();
-  for (const item of pi.items) {
-    quantitiesByProduct.set(
-      item.productId,
-      (quantitiesByProduct.get(item.productId) ?? 0) + decimalToNumber(item.qty),
-    );
-  }
-  for (const [productId, quantity] of quantitiesByProduct) {
+  const fulfillmentLines = await explodeItemsForFulfillment(
+    prisma,
+    pi.items.map((item) => ({
+      productId: item.productId,
+      qty: decimalToNumber(item.qty),
+      serialTracking: item.product.serialTracking,
+      displayName: item.product.displayName,
+      categoryName: item.product.category.name,
+    })),
+  );
+  const quantitiesByProduct = mergeFulfillmentQuantities(fulfillmentLines);
+
+  for (const [productId, entry] of quantitiesByProduct) {
     const projection = await getInventoryProjection({
       companyId: input.companyId,
       warehouseId: pi.warehouseId,
@@ -883,11 +903,10 @@ export async function approveBooking(
     const minimumProjected = projection.length
       ? Math.min(...projection.map((day) => day.projectedAvailableQuantity))
       : 0;
-    if (minimumProjected < quantity) {
-      const product = pi.items.find((item) => item.productId === productId)?.product;
-      const shortage = roundMoney(quantity - minimumProjected);
+    if (minimumProjected < entry.qty) {
+      const shortage = roundMoney(entry.qty - minimumProjected);
       throw new Error(
-        `INSUFFICIENT_PROJECTED_STOCK|${product?.displayName ?? productId}|${shortage}`,
+        `INSUFFICIENT_PROJECTED_STOCK|${entry.displayName}|${shortage}`,
       );
     }
   }
@@ -898,21 +917,21 @@ export async function approveBooking(
       warehouseId: pi.warehouseId!,
       piId: pi.id,
       piNo: pi.piNo,
-      items: pi.items.map((item) => ({
-        productId: item.productId,
-        qty: decimalToNumber(item.qty),
-        serialTracking: item.product.serialTracking,
+      items: [...quantitiesByProduct.entries()].map(([productId, entry]) => ({
+        productId,
+        qty: entry.qty,
+        serialTracking: entry.serialTracking,
       })),
       performedById: input.approvedById,
     });
 
-    for (const item of pi.items) {
+    for (const [productId, entry] of quantitiesByProduct) {
       await createEvent(tx, {
         companyId: input.companyId,
         warehouseId: pi.warehouseId!,
-        productId: item.productId,
+        productId,
         eventType: InventoryEventType.BOOKING_RESERVATION,
-        quantity: decimalToNumber(item.qty),
+        quantity: entry.qty,
         effectiveDate: bookingDate,
         expectedMinDate: requiredDispatchMinDate,
         expectedMaxDate: requiredDispatchMaxDate,
@@ -969,6 +988,65 @@ export async function approveBooking(
   });
 }
 
+export async function rejectBooking(
+  prisma: PrismaClient,
+  input: {
+    companyId: string;
+    piId: string;
+    rejectedById: string;
+    reason: string;
+  },
+) {
+  const pi = await prisma.proformaInvoice.findFirst({
+    where: { id: input.piId, companyId: input.companyId },
+  });
+  if (!pi) throw new Error("NOT_FOUND");
+  if (pi.status !== ProformaInvoiceStatus.PENDING_BOOKING) throw new Error("INVALID_STATUS");
+
+  const pending = await prisma.approvalRequest.findFirst({
+    where: {
+      moduleType: ApprovalModuleType.BOOKING,
+      moduleId: pi.id,
+      status: ApprovalRequestStatus.PENDING,
+    },
+  });
+  if (!pending) throw new Error("NO_PENDING_APPROVAL");
+
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.proformaInvoice.update({
+      where: { id: pi.id },
+      data: { status: ProformaInvoiceStatus.ISSUED },
+      include: piInclude,
+    });
+
+    await tx.approvalRequest.update({
+      where: { id: pending.id },
+      data: {
+        status: ApprovalRequestStatus.REJECTED,
+        approvedById: input.rejectedById,
+        remarks: input.reason,
+      },
+    });
+
+    await writeAuditLogTx(tx, {
+      tableName: "proforma_invoices",
+      recordId: pi.id,
+      action: "UPDATE",
+      oldValue: { status: ProformaInvoiceStatus.PENDING_BOOKING },
+      newValue: {
+        status: ProformaInvoiceStatus.ISSUED,
+        decision: "REJECTED",
+        reason: input.reason,
+      },
+      performedBy: input.rejectedById,
+      companyId: input.companyId,
+      reference: pi.piNo,
+    });
+
+    return serializePi(updated);
+  });
+}
+
 export async function countBookedOrders(prisma: PrismaClient, companyId: string) {
   return prisma.proformaInvoice.count({
     where: { companyId, status: ProformaInvoiceStatus.BOOKED },
@@ -1019,7 +1097,11 @@ export async function getCustomerPiMetrics(
       companyId,
       customerId,
       status: {
-        notIn: [ProformaInvoiceStatus.DRAFT, ProformaInvoiceStatus.CANCELLED],
+        notIn: [
+          ProformaInvoiceStatus.DRAFT,
+          ProformaInvoiceStatus.CANCEL_PENDING,
+          ProformaInvoiceStatus.CANCELLED,
+        ],
       },
     },
     include: { payments: true },
@@ -1375,6 +1457,423 @@ export async function approveDispatchToday(
       markedById: input.approvedById,
     });
     return serializePi(updated, { pendingDispatchTodayApproval: false });
+  });
+}
+
+export async function rejectDispatchToday(
+  prisma: PrismaClient,
+  input: {
+    companyId: string;
+    piId: string;
+    rejectedById: string;
+    reason: string;
+  },
+) {
+  await clearExpiredDispatchTodayFlags(prisma, input.companyId, input.piId);
+
+  const pi = await prisma.proformaInvoice.findFirst({
+    where: { id: input.piId, companyId: input.companyId },
+  });
+  if (!pi) throw new Error("NOT_FOUND");
+
+  const pending = await prisma.approvalRequest.findFirst({
+    where: {
+      moduleType: ApprovalModuleType.DISPATCH_TODAY,
+      moduleId: pi.id,
+      status: ApprovalRequestStatus.PENDING,
+    },
+  });
+  if (!pending) throw new Error("NO_PENDING_DISPATCH_TODAY");
+
+  return prisma.$transaction(async (tx) => {
+    await tx.approvalRequest.update({
+      where: { id: pending.id },
+      data: {
+        status: ApprovalRequestStatus.REJECTED,
+        approvedById: input.rejectedById,
+        remarks: input.reason,
+      },
+    });
+
+    const updated = await tx.proformaInvoice.findUniqueOrThrow({
+      where: { id: pi.id },
+      include: piInclude,
+    });
+
+    await writeAuditLogTx(tx, {
+      tableName: "proforma_invoices",
+      recordId: pi.id,
+      action: "UPDATE",
+      newValue: {
+        decision: "REJECTED",
+        module: "DISPATCH_TODAY",
+        reason: input.reason,
+      },
+      performedBy: input.rejectedById,
+      companyId: input.companyId,
+      reference: pi.piNo,
+    });
+
+    return serializePi(updated, { pendingDispatchTodayApproval: false });
+  });
+}
+
+const PI_CANCELABLE_STATUSES: ProformaInvoiceStatus[] = [
+  ProformaInvoiceStatus.DRAFT,
+  ProformaInvoiceStatus.ISSUED,
+  ProformaInvoiceStatus.PENDING_BOOKING,
+  ProformaInvoiceStatus.BOOKED,
+];
+
+async function releasePiBookingReservations(
+  tx: Prisma.TransactionClient,
+  input: {
+    companyId: string;
+    piId: string;
+    piNo: string;
+    performedById: string;
+  },
+) {
+  const reservations = await tx.inventoryEvent.findMany({
+    where: {
+      companyId: input.companyId,
+      sourceType: "PROFORMA_INVOICE",
+      sourceId: input.piId,
+      eventType: InventoryEventType.BOOKING_RESERVATION,
+      status: { not: InventoryEventStatus.CANCELLED },
+    },
+  });
+
+  for (const reservation of reservations) {
+    const existingRelease = await tx.inventoryEvent.findFirst({
+      where: {
+        replacesEventId: reservation.id,
+        eventType: InventoryEventType.BOOKING_RELEASE,
+        status: { not: InventoryEventStatus.CANCELLED },
+      },
+    });
+    if (existingRelease) continue;
+
+    await createEvent(tx, {
+      companyId: reservation.companyId,
+      warehouseId: reservation.warehouseId,
+      productId: reservation.productId,
+      eventType: InventoryEventType.BOOKING_RELEASE,
+      quantity: decimalToNumber(reservation.quantity),
+      effectiveDate: new Date(),
+      sourceType: reservation.sourceType,
+      sourceId: reservation.sourceId,
+      sourceNumber: reservation.sourceNumber,
+      replacesEventId: reservation.id,
+      notes: `Released booking for cancelled ${input.piNo}`,
+      createdById: input.performedById,
+    });
+  }
+}
+
+export async function requestPiCancel(
+  prisma: PrismaClient,
+  input: {
+    companyId: string;
+    piId: string;
+    requestedById: string;
+    remarks?: string;
+  },
+) {
+  const pi = await prisma.proformaInvoice.findFirst({
+    where: { id: input.piId, companyId: input.companyId },
+  });
+  if (!pi) throw new Error("NOT_FOUND");
+  if (!PI_CANCELABLE_STATUSES.includes(pi.status)) {
+    throw new Error("INVALID_STATUS");
+  }
+
+  const activeDispatch = await prisma.dispatch.findFirst({
+    where: {
+      proformaInvoiceId: pi.id,
+      status: { not: DispatchStatus.CANCELLED },
+    },
+    select: { id: true },
+  });
+  if (activeDispatch) throw new Error("HAS_ACTIVE_DISPATCH");
+
+  const existing = await prisma.approvalRequest.findFirst({
+    where: {
+      moduleType: ApprovalModuleType.PI_CANCEL,
+      moduleId: pi.id,
+      status: ApprovalRequestStatus.PENDING,
+    },
+  });
+  if (existing) throw new Error("CANCEL_ALREADY_REQUESTED");
+
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.proformaInvoice.update({
+      where: { id: pi.id },
+      data: { status: ProformaInvoiceStatus.CANCEL_PENDING },
+      include: piInclude,
+    });
+
+    await tx.approvalRequest.create({
+      data: {
+        moduleType: ApprovalModuleType.PI_CANCEL,
+        moduleId: pi.id,
+        requestedById: input.requestedById,
+        status: ApprovalRequestStatus.PENDING,
+        remarks: input.remarks,
+      },
+    });
+
+    await tx.approvalRequest.updateMany({
+      where: {
+        moduleType: {
+          in: [ApprovalModuleType.BOOKING, ApprovalModuleType.DISPATCH_TODAY],
+        },
+        moduleId: pi.id,
+        status: ApprovalRequestStatus.PENDING,
+      },
+      data: {
+        status: ApprovalRequestStatus.REJECTED,
+        approvedById: input.requestedById,
+        remarks: input.remarks ?? "Rejected because PI cancel was requested",
+      },
+    });
+
+    await writeAuditLogTx(tx, {
+      tableName: "proforma_invoices",
+      recordId: pi.id,
+      action: "UPDATE",
+      oldValue: { status: pi.status },
+      newValue: { status: ProformaInvoiceStatus.CANCEL_PENDING },
+      performedBy: input.requestedById,
+      companyId: input.companyId,
+      reference: pi.piNo,
+    });
+
+    await notifyPiCancelApprovalNeeded(tx, {
+      companyId: input.companyId,
+      piNo: pi.piNo,
+    });
+
+    return serializePi(updated);
+  });
+}
+
+export async function approvePiCancel(
+  prisma: PrismaClient,
+  input: {
+    companyId: string;
+    piId: string;
+    approvedById: string;
+    remarks?: string;
+  },
+) {
+  const pi = await prisma.proformaInvoice.findFirst({
+    where: { id: input.piId, companyId: input.companyId },
+  });
+  if (!pi) throw new Error("NOT_FOUND");
+  if (pi.status !== ProformaInvoiceStatus.CANCEL_PENDING) {
+    throw new Error("INVALID_STATUS");
+  }
+
+  const activeDispatch = await prisma.dispatch.findFirst({
+    where: {
+      proformaInvoiceId: pi.id,
+      status: { not: DispatchStatus.CANCELLED },
+    },
+    select: { id: true },
+  });
+  if (activeDispatch) throw new Error("HAS_ACTIVE_DISPATCH");
+
+  return prisma.$transaction(async (tx) => {
+    await releasePiBookingReservations(tx, {
+      companyId: input.companyId,
+      piId: pi.id,
+      piNo: pi.piNo,
+      performedById: input.approvedById,
+    });
+
+    await tx.proformaInvoiceSerial.deleteMany({
+      where: { piId: pi.id },
+    });
+
+    const updated = await tx.proformaInvoice.update({
+      where: { id: pi.id },
+      data: {
+        status: ProformaInvoiceStatus.CANCELLED,
+        dispatchTodayDate: null,
+        dispatchTodayMarkedAt: null,
+        dispatchTodayMarkedById: null,
+        dispatchDraftVehicleNo: null,
+        dispatchDraftDriverName: null,
+        dispatchDraftReceiverName: null,
+        dispatchDraftReceiverMobile: null,
+        dispatchDraftNotes: null,
+      },
+      include: piInclude,
+    });
+
+    await tx.approvalRequest.updateMany({
+      where: {
+        moduleType: ApprovalModuleType.PI_CANCEL,
+        moduleId: pi.id,
+        status: ApprovalRequestStatus.PENDING,
+      },
+      data: {
+        status: ApprovalRequestStatus.APPROVED,
+        approvedById: input.approvedById,
+        remarks: input.remarks,
+      },
+    });
+
+    await tx.approvalRequest.updateMany({
+      where: {
+        moduleType: {
+          in: [ApprovalModuleType.BOOKING, ApprovalModuleType.DISPATCH_TODAY],
+        },
+        moduleId: pi.id,
+        status: ApprovalRequestStatus.PENDING,
+      },
+      data: {
+        status: ApprovalRequestStatus.REJECTED,
+        approvedById: input.approvedById,
+        remarks: input.remarks ?? "Rejected because PI was cancelled",
+      },
+    });
+
+    await writeAuditLogTx(tx, {
+      tableName: "proforma_invoices",
+      recordId: pi.id,
+      action: "CANCEL",
+      newValue: { status: ProformaInvoiceStatus.CANCELLED },
+      performedBy: input.approvedById,
+      companyId: input.companyId,
+      reference: pi.piNo,
+    });
+
+    await notifyPiCancelled(tx, {
+      salesUserId: pi.salesUserId,
+      piNo: pi.piNo,
+    });
+
+    return serializePi(updated);
+  });
+}
+
+export async function rejectPiCancel(
+  prisma: PrismaClient,
+  input: {
+    companyId: string;
+    piId: string;
+    rejectedById: string;
+    reason: string;
+  },
+) {
+  const pi = await prisma.proformaInvoice.findFirst({
+    where: { id: input.piId, companyId: input.companyId },
+  });
+  if (!pi) throw new Error("NOT_FOUND");
+  if (pi.status !== ProformaInvoiceStatus.CANCEL_PENDING) {
+    throw new Error("INVALID_STATUS");
+  }
+
+  const pending = await prisma.approvalRequest.findFirst({
+    where: {
+      moduleType: ApprovalModuleType.PI_CANCEL,
+      moduleId: pi.id,
+      status: ApprovalRequestStatus.PENDING,
+    },
+  });
+  if (!pending) throw new Error("NO_PENDING_APPROVAL");
+
+  const logs = await prisma.auditLog.findMany({
+    where: {
+      tableName: "proforma_invoices",
+      recordId: pi.id,
+      companyId: input.companyId,
+    },
+    orderBy: { performedAt: "desc" },
+    take: 20,
+  });
+
+  let previousStatus: ProformaInvoiceStatus | null = null;
+  for (const log of logs) {
+    const newValue = log.newValue as { status?: string } | null;
+    const oldValue = log.oldValue as { status?: string } | null;
+    if (newValue?.status === ProformaInvoiceStatus.CANCEL_PENDING && oldValue?.status) {
+      previousStatus = oldValue.status as ProformaInvoiceStatus;
+      break;
+    }
+  }
+
+  if (!previousStatus || !PI_CANCELABLE_STATUSES.includes(previousStatus)) {
+    const reservation = await prisma.inventoryEvent.findFirst({
+      where: {
+        companyId: input.companyId,
+        sourceType: "PROFORMA_INVOICE",
+        sourceId: pi.id,
+        eventType: InventoryEventType.BOOKING_RESERVATION,
+        status: { not: InventoryEventStatus.CANCELLED },
+      },
+      select: { id: true },
+    });
+    previousStatus = reservation
+      ? ProformaInvoiceStatus.BOOKED
+      : ProformaInvoiceStatus.ISSUED;
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.proformaInvoice.update({
+      where: { id: pi.id },
+      data: { status: previousStatus },
+      include: piInclude,
+    });
+
+    await tx.approvalRequest.update({
+      where: { id: pending.id },
+      data: {
+        status: ApprovalRequestStatus.REJECTED,
+        approvedById: input.rejectedById,
+        remarks: input.reason,
+      },
+    });
+
+    if (previousStatus === ProformaInvoiceStatus.PENDING_BOOKING) {
+      const existingBooking = await tx.approvalRequest.findFirst({
+        where: {
+          moduleType: ApprovalModuleType.BOOKING,
+          moduleId: pi.id,
+          status: ApprovalRequestStatus.PENDING,
+        },
+      });
+      if (!existingBooking) {
+        await tx.approvalRequest.create({
+          data: {
+            moduleType: ApprovalModuleType.BOOKING,
+            moduleId: pi.id,
+            requestedById: input.rejectedById,
+            status: ApprovalRequestStatus.PENDING,
+            remarks: "Reopened after PI cancel rejection",
+          },
+        });
+      }
+    }
+
+    await writeAuditLogTx(tx, {
+      tableName: "proforma_invoices",
+      recordId: pi.id,
+      action: "UPDATE",
+      oldValue: { status: ProformaInvoiceStatus.CANCEL_PENDING },
+      newValue: {
+        status: previousStatus,
+        decision: "REJECTED",
+        reason: input.reason,
+      },
+      performedBy: input.rejectedById,
+      companyId: input.companyId,
+      reference: pi.piNo,
+    });
+
+    return serializePi(updated);
   });
 }
 

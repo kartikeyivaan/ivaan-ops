@@ -40,7 +40,7 @@ type ProformaInvoiceListItem = {
 function statusVariant(status: string): "default" | "success" | "warning" | "danger" {
   if (status === "ISSUED") return "success";
   if (status === "BOOKED") return "success";
-  if (status === "PENDING_BOOKING") return "warning";
+  if (status === "PENDING_BOOKING" || status === "CANCEL_PENDING") return "warning";
   if (status === "CANCELLED") return "danger";
   return "default";
 }
@@ -116,6 +116,8 @@ export function ProformaInvoicesList({
               <option value="BOOKED">Booked</option>
               <option value="PARTIALLY_DISPATCHED">Partially Dispatched</option>
               <option value="FULLY_DISPATCHED">Fully Dispatched</option>
+              <option value="CANCEL_PENDING">Cancel Pending</option>
+              <option value="CANCELLED">Cancelled</option>
             </select>
           </div>
           <div className="flex items-end gap-2 md:col-span-2">

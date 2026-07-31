@@ -189,6 +189,21 @@ export function formatPaymentMode(mode: string): string {
     .join(" ");
 }
 
+export function formatReceivedInAccount(account: string): string {
+  return account;
+}
+
 export function toDateOnly(date: Date): Date {
   return new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+}
+
+/** Inclusive last-30-days window ending today (UTC date-only). */
+export function defaultPaymentsDateRange(): { dateFrom: string; dateTo: string } {
+  const dateTo = toDateOnly(new Date());
+  const dateFrom = new Date(dateTo);
+  dateFrom.setUTCDate(dateFrom.getUTCDate() - 29);
+  return {
+    dateFrom: dateFrom.toISOString().slice(0, 10),
+    dateTo: dateTo.toISOString().slice(0, 10),
+  };
 }

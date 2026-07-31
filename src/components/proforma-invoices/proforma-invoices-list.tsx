@@ -18,7 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatProformaStatus } from "@/lib/proforma-invoices";
+import { formatProformaStatus, isReadyForDispatch } from "@/lib/proforma-invoices";
 import { formatCurrency } from "@/lib/quotations";
 import { formatDocumentDate } from "@/lib/utils";
 
@@ -33,6 +33,7 @@ type ProformaInvoiceListItem = {
   paymentSummary: {
     totalPaid: number;
     outstanding: number;
+    readyForDispatch?: boolean;
   };
 };
 
@@ -155,9 +156,15 @@ export function ProformaInvoicesList({
                     <TableCell data-label="Customer">{row.customer.customerName}</TableCell>
                     <TableCell data-label="Date">{formatDocumentDate(row.piDate)}</TableCell>
                     <TableCell data-label="Status">
-                      <Badge variant={statusVariant(row.status)}>
-                        {formatProformaStatus(row.status)}
-                      </Badge>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Badge variant={statusVariant(row.status)}>
+                          {formatProformaStatus(row.status)}
+                        </Badge>
+                        {(row.paymentSummary.readyForDispatch ??
+                          isReadyForDispatch(row.status, row.paymentSummary.outstanding)) ? (
+                          <Badge variant="success">Ready for Dispatch</Badge>
+                        ) : null}
+                      </div>
                     </TableCell>
                     <TableCell data-label="Total" className="text-right">{formatCurrency(row.totalValue)}</TableCell>
                     <TableCell data-label="Outstanding" className="text-right">

@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { FileCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -38,9 +40,17 @@ export function InvoiceQueue({ rows }: { rows: QueueRow[] }) {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Invoice Queue</h1>
-        <p className="text-sm text-slate-500">Dispatches awaiting accounts invoice recording.</p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Invoice Queue</h1>
+          <p className="text-sm text-slate-500">Dispatches awaiting accounts invoice recording.</p>
+        </div>
+        <Button variant="outline" asChild className="h-12">
+          <Link href="/accounts/invoice-queue/completed">
+            <FileCheck className="h-4 w-4" />
+            Completed Invoices
+          </Link>
+        </Button>
       </div>
       <div className="grid gap-3">
         {rows.map((row) => (
@@ -53,8 +63,7 @@ export function InvoiceQueue({ rows }: { rows: QueueRow[] }) {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-slate-600">PI {row.dispatch.proformaInvoice.piNo} · Dispatched {new Date(row.dispatch.dispatchDate).toLocaleDateString("en-IN")}</p>
-              {row.invoiceNumber ? <p className="mt-2 font-medium">Invoice: {row.invoiceNumber}</p> : null}
-              {row.status === "PENDING_INVOICE" ? (
+              {row.status === "PENDING_INVOICE" || row.status === "CORRECTION_REQUIRED" ? (
                 editing === row.id ? (
                   <div className="mt-4 grid gap-3 sm:grid-cols-3">
                     <div className="space-y-1"><Label>Invoice number</Label><Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} /></div>
@@ -66,7 +75,7 @@ export function InvoiceQueue({ rows }: { rows: QueueRow[] }) {
             </CardContent>
           </Card>
         ))}
-        {!rows.length ? <p className="rounded-lg border border-dashed p-8 text-center text-slate-500">No invoice handovers.</p> : null}
+        {!rows.length ? <p className="rounded-lg border border-dashed p-8 text-center text-slate-500">No pending invoice handovers.</p> : null}
       </div>
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
     </div>

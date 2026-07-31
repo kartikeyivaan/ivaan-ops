@@ -173,6 +173,7 @@ enum ApprovalModuleType {
   QUOTATION
   BOOKING
   DC_CANCEL
+  DISPATCH_TODAY
 }
 
 enum ProjectProposalStatus {
@@ -387,6 +388,7 @@ model User {
   salesQuotations                   Quotation[]                    @relation("QuotationSalesUser")
   salesProformaInvoices             ProformaInvoice[]              @relation("ProformaSalesUser")
   bookedProformaInvoices            ProformaInvoice[]              @relation("ProformaBookedBy")
+  dispatchTodayMarkedPis            ProformaInvoice[]              @relation("ProformaDispatchTodayMarkedBy")
   recordedPayments                  Payment[]                      @relation("PaymentRecordedBy")
   createdDispatches                 Dispatch[]                     @relation("DispatchCreatedBy")
   dispatchedOrders                  Dispatch[]                     @relation("DispatchDispatchedBy")
@@ -923,6 +925,14 @@ model ProformaInvoice {
   deliveryTermNoteSnapshot String?             @map("delivery_term_note_snapshot")
   requiredDispatchMinDate DateTime?            @map("required_dispatch_min_date") @db.Date
   requiredDispatchMaxDate DateTime?            @map("required_dispatch_max_date") @db.Date
+  dispatchTodayDate       DateTime?            @map("dispatch_today_date") @db.Date
+  dispatchTodayMarkedAt   DateTime?            @map("dispatch_today_marked_at")
+  dispatchTodayMarkedById String?              @map("dispatch_today_marked_by") @db.Uuid
+  dispatchDraftVehicleNo  String?              @map("dispatch_draft_vehicle_no")
+  dispatchDraftDriverName String?              @map("dispatch_draft_driver_name")
+  dispatchDraftReceiverName String?            @map("dispatch_draft_receiver_name")
+  dispatchDraftReceiverMobile String?          @map("dispatch_draft_receiver_mobile")
+  dispatchDraftNotes      String?              @map("dispatch_draft_notes")
   createdAt              DateTime              @default(now()) @map("created_at")
   updatedAt              DateTime              @updatedAt @map("updated_at")
 
@@ -932,6 +942,7 @@ model ProformaInvoice {
   quotation  Quotation?              @relation(fields: [quotationId], references: [id])
   warehouse  Warehouse?              @relation(fields: [warehouseId], references: [id])
   bookedBy   User?                   @relation("ProformaBookedBy", fields: [bookedById], references: [id])
+  dispatchTodayMarkedBy User?        @relation("ProformaDispatchTodayMarkedBy", fields: [dispatchTodayMarkedById], references: [id])
   items      ProformaInvoiceItem[]
   payments   Payment[]
   serials    ProformaInvoiceSerial[]
@@ -939,6 +950,7 @@ model ProformaInvoice {
 
   @@index([companyId, status])
   @@index([customerId])
+  @@index([companyId, dispatchTodayDate])
   @@map("proforma_invoices")
 }
 

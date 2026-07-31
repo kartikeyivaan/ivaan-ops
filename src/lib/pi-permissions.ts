@@ -23,6 +23,14 @@ const PAYMENT_ROLES = [
 
 const APPROVE_BOOKING_ROLES = [ROLES.SUPER_ADMIN, ROLES.SALES_MANAGER] as const;
 
+const DISPATCH_TODAY_ROLES = [
+  ROLES.SUPER_ADMIN,
+  ROLES.SALES_MANAGER,
+  ROLES.SALES_EXECUTIVE,
+] as const;
+
+const APPROVE_DISPATCH_TODAY_ROLES = [ROLES.SUPER_ADMIN, ROLES.SALES_MANAGER] as const;
+
 export function canViewProformaInvoices(userRoles: string[]): boolean {
   return hasRole(userRoles, [...VIEW_ROLES]);
 }
@@ -37,4 +45,12 @@ export function canRecordPayments(userRoles: string[]): boolean {
 
 export function canApproveBooking(userRoles: string[]): boolean {
   return hasRole(userRoles, [...APPROVE_BOOKING_ROLES]);
+}
+
+export function canMarkDispatchToday(userRoles: string[]): boolean {
+  return hasRole(userRoles, [...DISPATCH_TODAY_ROLES]);
+}
+
+export function canApproveDispatchToday(userRoles: string[]): boolean {
+  return hasRole(userRoles, [...APPROVE_DISPATCH_TODAY_ROLES]);
 }

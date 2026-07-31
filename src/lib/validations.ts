@@ -411,6 +411,22 @@ export const approveBookingSchema = z.object({
   remarks: z.string().optional(),
 });
 
+export const dispatchTodayDraftSchema = z.object({
+  vehicleNo: z.string().trim().max(100).optional(),
+  driverName: z.string().trim().max(100).optional(),
+  receiverName: z.string().trim().max(100).optional(),
+  receiverMobile: z.string().trim().max(20).optional(),
+  notes: z.string().trim().max(500).optional(),
+});
+
+export const markDispatchTodaySchema = dispatchTodayDraftSchema.extend({
+  confirmEarly: z.boolean().optional(),
+});
+
+export const approveDispatchTodaySchema = z.object({
+  remarks: z.string().optional(),
+});
+
 export const proformaInvoiceSearchSchema = z.object({
   q: z.string().optional(),
   status: z
@@ -440,7 +456,18 @@ export const createDispatchSchema = z.object({
   driverName: z.string().optional(),
   receiverName: z.string().trim().min(1, "Receiver name is required."),
   receiverMobile: z.string().trim().min(10, "Receiver mobile is required."),
-  signatureUrl: z.string().max(200_000).optional(),
+  signatureUrl: z
+    .string()
+    .max(200_000)
+    .refine(
+      (value) =>
+        value === "" ||
+        value.startsWith("data:image/png;base64,") ||
+        value.startsWith("data:image/jpeg;base64,") ||
+        value.startsWith("data:image/webp;base64,"),
+      "Signature must be a PNG, JPEG, or WebP image.",
+    )
+    .optional(),
   notes: z.string().optional(),
   confirm: z.boolean().default(true),
   lines: z.array(dispatchLineSchema).min(1),
@@ -451,6 +478,14 @@ export const dispatchSearchSchema = z.object({
   status: z.enum(["DRAFT", "DISPATCHED", "CANCEL_PENDING", "CANCELLED"]).optional(),
   customerId: z.string().uuid().optional(),
   proformaInvoiceId: z.string().uuid().optional(),
+  fromDate: z.string().optional(),
+  toDate: z.string().optional(),
+});
+
+export const lookupDispatchSerialsSchema = z.object({
+  piId: z.string().uuid(),
+  productId: z.string().uuid(),
+  serialNumbers: z.array(z.string().trim().min(1)).min(1).max(500),
 });
 
 export const reportSearchSchema = z.object({

@@ -18,13 +18,15 @@ function error(message: string, status: number) {
   return NextResponse.json({ message }, { status });
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await auth();
   if (!session?.user || !canManageInvoiceQueue(session.user.roles)) {
     return error("Forbidden.", 403);
   }
   const companyId = requireActiveCompany(session);
-  return NextResponse.json(await listInvoiceQueue(prisma, companyId));
+  const scopeValue = new URL(request.url).searchParams.get("scope");
+  const scope = scopeValue === "pending" || scopeValue === "completed" ? scopeValue : undefined;
+  return NextResponse.json(await listInvoiceQueue(prisma, companyId, { scope }));
 }
 
 export async function POST(request: Request) {

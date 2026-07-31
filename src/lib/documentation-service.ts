@@ -21,7 +21,26 @@ export function validateDocumentationStatusInput(
 }
 
 const include = {
-  dispatch: { select: { id: true, dcNo: true, dispatchDate: true, receiverName: true, receiverMobile: true } },
+  dispatch: {
+    select: {
+      id: true,
+      dcNo: true,
+      dispatchDate: true,
+      receiverName: true,
+      receiverMobile: true,
+      proformaInvoice: { select: { piNo: true } },
+      lines: {
+        select: {
+          id: true,
+          qty: true,
+          product: { select: { displayName: true } },
+          serials: {
+            select: { serial: { select: { serialNumber: true } } },
+          },
+        },
+      },
+    },
+  },
   invoiceHandover: { select: { invoiceNumber: true, invoiceDate: true } },
   customer: { select: { id: true, customerName: true, mobile: true } },
   assignedTo: { select: { id: true, name: true, email: true } },
@@ -40,15 +59,36 @@ function withAgeing<T extends { createdAt: Date; completedDate: Date | null }>(r
   return { ...row, ageingDays: calculateDocumentationAgeing(row.createdAt, row.completedDate ?? new Date()) };
 }
 
+const HISTORY_STATUSES: DocumentationStatus[] = [
+  DocumentationStatus.DCR_ISSUED,
+  DocumentationStatus.NOT_REQUIRED,
+];
+
 export async function listDocumentation(
   prisma: PrismaClient,
   companyId: string,
-  filters: { status?: DocumentationStatus; assignedToId?: string; q?: string } = {},
+  filters: {
+    status?: DocumentationStatus;
+    statuses?: DocumentationStatus[];
+    scope?: "active" | "history";
+    assignedToId?: string;
+    q?: string;
+  } = {},
 ) {
+  const statusFilter = filters.status
+    ? { status: filters.status }
+    : filters.statuses?.length
+      ? { status: { in: filters.statuses } }
+      : filters.scope === "history"
+        ? { status: { in: HISTORY_STATUSES } }
+        : filters.scope === "active"
+          ? { status: { notIn: HISTORY_STATUSES } }
+          : {};
+
   const rows = await prisma.documentationRecord.findMany({
     where: {
       companyId,
-      ...(filters.status ? { status: filters.status } : {}),
+      ...statusFilter,
       ...(filters.assignedToId ? { assignedToId: filters.assignedToId } : {}),
       ...(filters.q ? { OR: [
         { dispatch: { dcNo: { contains: filters.q, mode: "insensitive" } } },
@@ -57,7 +97,7 @@ export async function listDocumentation(
       ] } : {}),
     },
     include,
-    orderBy: { createdAt: "asc" },
+    orderBy: filters.scope === "history" ? { completedDate: "desc" } : { createdAt: "asc" },
   });
   return rows.map(withAgeing);
 }

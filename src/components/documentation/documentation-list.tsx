@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { History } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
 type Row = {
@@ -8,17 +10,24 @@ type Row = {
   status: string;
   ageingDays: number;
   dispatch: { dcNo: string; dispatchDate: string };
-  invoiceHandover: { invoiceNumber: string | null };
+  invoiceHandover: { invoiceNumber: string | null; invoiceDate: string | null };
   customer: { customerName: string };
-  assignedTo: { name: string } | null;
 };
 
 export function DocumentationList({ rows }: { rows: Row[] }) {
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Documentation</h1>
-        <p className="text-sm text-slate-500">Track invoice documentation through completion.</p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Documentation</h1>
+          <p className="text-sm text-slate-500">Track invoice documentation through completion.</p>
+        </div>
+        <Button variant="outline" asChild className="h-12">
+          <Link href="/documentation/history">
+            <History className="h-4 w-4" />
+            History
+          </Link>
+        </Button>
       </div>
       <div className="grid gap-3 md:grid-cols-2">
         {rows.map((row) => (
@@ -31,7 +40,6 @@ export function DocumentationList({ rows }: { rows: Row[] }) {
                 </div>
                 <p className="text-sm text-slate-600">{row.dispatch.dcNo} · Invoice {row.invoiceHandover.invoiceNumber ?? "—"}</p>
                 <div className="flex justify-between text-xs text-slate-500">
-                  <span>{row.assignedTo?.name ?? "Unassigned"}</span>
                   <span>{row.ageingDays} day ageing</span>
                 </div>
               </CardContent>
@@ -39,7 +47,7 @@ export function DocumentationList({ rows }: { rows: Row[] }) {
           </Link>
         ))}
       </div>
-      {!rows.length ? <p className="rounded-lg border border-dashed p-8 text-center text-slate-500">No documentation records.</p> : null}
+      {!rows.length ? <p className="rounded-lg border border-dashed p-8 text-center text-slate-500">No open documentation records.</p> : null}
     </div>
   );
 }

@@ -10,9 +10,14 @@ import {
 } from "@/lib/inventory-permissions";
 import {
   calculateTotalPurchaseCost,
+  findDuplicateSerialKeys,
   getFinancialYear,
+  isWaareeBrand,
+  isWaareePanelSerial,
   normalizePurchaseInvoiceNo,
   normalizeSerialNumber,
+  parseSerialInput,
+  pendingIncomingQuantity,
   validateInwardQuantities,
 } from "@/lib/inventory";
 import { ROLES } from "@/lib/rbac";
@@ -25,6 +30,49 @@ describe("inventory helpers", () => {
 
   it("normalizes serial numbers", () => {
     expect(normalizeSerialNumber(" sn-001 ")).toBe("SN-001");
+  });
+
+  it("parses serial paste and ignores [QR] noise", () => {
+    expect(
+      parseSerialInput("WS07269074147109, [QR] WS07269074147157\nWS07269074147111"),
+    ).toEqual(["WS07269074147109", "WS07269074147157", "WS07269074147111"]);
+    expect(parseSerialInput("[QR]")).toEqual([]);
+  });
+
+  it("detects Waaree panel serial format and brand", () => {
+    expect(isWaareePanelSerial("WS07269074147109")).toBe(true);
+    expect(isWaareePanelSerial("ws07269074147109")).toBe(true);
+    expect(isWaareePanelSerial("WS0726907414710")).toBe(false);
+    expect(isWaareePanelSerial("LN07269074147109")).toBe(false);
+    expect(isWaareeBrand("Waaree")).toBe(true);
+    expect(isWaareeBrand("Longi")).toBe(false);
+  });
+
+  it("finds duplicate serial keys", () => {
+    expect(
+      findDuplicateSerialKeys([
+        "WS07269074147109",
+        "ws07269074147157",
+        "WS07269074147109",
+      ]),
+    ).toEqual(new Set(["WS07269074147109"]));
+  });
+
+  it("calculates pending incoming after partial receipt", () => {
+    expect(
+      pendingIncomingQuantity({
+        quantity: 720,
+        receivedQuantity: 72,
+        damagedQuantity: 0,
+      }),
+    ).toBe(648);
+    expect(
+      pendingIncomingQuantity({
+        quantity: 720,
+        receivedQuantity: 720,
+        damagedQuantity: 0,
+      }),
+    ).toBe(0);
   });
 
   it("calculates total purchase cost", () => {

@@ -208,7 +208,7 @@ function TimelineCard({ item, today }: { item: InventoryTimelineItem; today: str
                   </span>
                 ) : null}
               </div>
-              <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+              <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
                 <div>
                   <p className="text-slate-500">Opening</p>
                   <p className="font-semibold">{quantity(selectedDay.opening)}</p>
@@ -226,6 +226,12 @@ function TimelineCard({ item, today }: { item: InventoryTimelineItem; today: str
                   </p>
                 </div>
                 <div>
+                  <p className="text-slate-500">Dispatched</p>
+                  <p className="font-semibold text-slate-900">
+                    {quantity(selectedDay.dispatched)}
+                  </p>
+                </div>
+                <div>
                   <p className="text-slate-500">Projected closing</p>
                   <p className="font-semibold">{quantity(selectedDay.closing)}</p>
                 </div>
@@ -234,21 +240,47 @@ function TimelineCard({ item, today }: { item: InventoryTimelineItem; today: str
                 {selectedDay.events.length === 0 ? (
                   <p className="text-slate-500">No inventory events this day.</p>
                 ) : (
-                  <ul className="space-y-1">
-                    {selectedDay.events.map((event) => (
-                      <li
-                        key={event.id}
-                        className="flex flex-wrap justify-between gap-2 text-slate-700"
-                      >
-                        <span>
-                          {event.eventType.replaceAll("_", " ")}
-                          {event.sourceNumber ? ` · ${event.sourceNumber}` : ""}
-                        </span>
-                        <span className="font-medium">
-                          {quantity(event.quantity)}
-                        </span>
-                      </li>
-                    ))}
+                  <ul className="divide-y divide-emerald-100">
+                    {selectedDay.events.map((event) => {
+                      const label = [
+                        event.eventType.replaceAll("_", " "),
+                        event.sourceNumber,
+                        event.customerName,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ");
+                      const isDispatched =
+                        event.dispatchTodayStatus === "Dispatched";
+                      const statusSuffix = event.dispatchTodayStatus
+                        ? ` - ${event.dispatchTodayStatus}`
+                        : "";
+                      const shownQty =
+                        event.displayQuantity ?? event.quantity;
+                      return (
+                        <li
+                          key={event.id}
+                          className="flex w-full items-start justify-between gap-3 py-1.5 first:pt-0 last:pb-0 text-slate-700"
+                        >
+                          <span className="min-w-0 flex-1 break-words">
+                            {label}
+                            {statusSuffix ? (
+                              <span
+                                className={
+                                  isDispatched
+                                    ? "font-bold text-emerald-700"
+                                    : undefined
+                                }
+                              >
+                                {statusSuffix}
+                              </span>
+                            ) : null}
+                          </span>
+                          <span className="shrink-0 font-medium tabular-nums">
+                            {quantity(shownQty)}
+                          </span>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>

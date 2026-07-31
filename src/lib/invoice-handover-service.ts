@@ -1,23 +1,44 @@
 import { DocumentationStatus, InvoiceHandoverStatus, type PrismaClient } from "@prisma/client";
 
-export async function listInvoiceQueue(prisma: PrismaClient, companyId: string) {
-  return prisma.invoiceHandover.findMany({
-    where: { companyId },
-    include: {
-      dispatch: {
-        select: {
-          id: true,
-          dcNo: true,
-          dispatchDate: true,
-          vehicleNo: true,
-          proformaInvoice: { select: { piNo: true } },
-        },
-      },
-      customer: { select: { id: true, customerName: true } },
-      recordedBy: { select: { id: true, name: true } },
-      documentation: { select: { id: true, status: true } },
+const PENDING_STATUSES: InvoiceHandoverStatus[] = [
+  InvoiceHandoverStatus.PENDING_INVOICE,
+  InvoiceHandoverStatus.CORRECTION_REQUIRED,
+];
+
+const include = {
+  dispatch: {
+    select: {
+      id: true,
+      dcNo: true,
+      dispatchDate: true,
+      vehicleNo: true,
+      proformaInvoice: { select: { piNo: true } },
     },
-    orderBy: [{ status: "asc" }, { createdAt: "asc" }],
+  },
+  customer: { select: { id: true, customerName: true } },
+  recordedBy: { select: { id: true, name: true } },
+  documentation: { select: { id: true, status: true } },
+} as const;
+
+export async function listInvoiceQueue(
+  prisma: PrismaClient,
+  companyId: string,
+  filters: { scope?: "pending" | "completed" } = {},
+) {
+  return prisma.invoiceHandover.findMany({
+    where: {
+      companyId,
+      ...(filters.scope === "completed"
+        ? { status: InvoiceHandoverStatus.INVOICE_RECORDED }
+        : filters.scope === "pending"
+          ? { status: { in: PENDING_STATUSES } }
+          : {}),
+    },
+    include,
+    orderBy:
+      filters.scope === "completed"
+        ? [{ recordedAt: "desc" }, { createdAt: "desc" }]
+        : [{ status: "asc" }, { createdAt: "asc" }],
   });
 }
 

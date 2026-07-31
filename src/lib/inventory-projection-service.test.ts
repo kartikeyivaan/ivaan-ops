@@ -73,6 +73,9 @@ describe("inventory projection service", () => {
       inventoryEvent: {
         findMany: vi.fn(async () => []),
       },
+      inventoryLot: {
+        findMany: vi.fn(async () => []),
+      },
     } as unknown as PrismaClient;
 
     const projection = await createInventoryProjectionService(
@@ -97,5 +100,64 @@ describe("inventory projection service", () => {
         orderBy: { effectiveFrom: "desc" },
       }),
     );
+  });
+
+  it("projects only the remaining quantity for partially received lots", async () => {
+    const client = {
+      warehouse: {
+        findFirst: vi.fn(async () => ({ id: "warehouse-1" })),
+      },
+      inventorySafetyStock: {
+        findFirst: vi.fn(async () => ({ safetyQty: 20 })),
+      },
+      inventoryEvent: {
+        findMany: vi.fn(async () => [
+          {
+            id: "incoming-1",
+            eventType: InventoryEventType.PURCHASE_INCOMING,
+            status: InventoryEventStatus.ACTIVE,
+            quantity: 720,
+            effectiveDate: new Date("2026-08-03T00:00:00.000Z"),
+            expectedMinDate: new Date("2026-08-03T00:00:00.000Z"),
+            expectedMaxDate: new Date("2026-08-03T00:00:00.000Z"),
+            sourceType: "INVENTORY_LOT",
+            sourceId: "lot-6",
+            sourceNumber: "LOT-26-27-00006",
+            replacesEventId: null,
+          },
+        ]),
+      },
+      inventoryLot: {
+        findMany: vi.fn(async () => [
+          {
+            id: "lot-6",
+            quantity: 720,
+            receivedQuantity: 72,
+            damagedQuantity: 0,
+          },
+        ]),
+      },
+    } as unknown as PrismaClient;
+
+    const projection = await createInventoryProjectionService(
+      client,
+      async () => ({
+        availableStock: 72,
+        incomingStock: 648,
+        bookedStock: 0,
+        damagedStock: 0,
+      }),
+    ).projectInventory({
+      companyId: "company-1",
+      warehouseId: "warehouse-1",
+      productId: "product-1",
+      startDate: "2026-07-30",
+      endDate: "2026-08-03",
+    });
+
+    expect(projection.map((day) => day.projectedAvailableQuantity)).toEqual([
+      52, 52, 52, 52, 700,
+    ]);
+    expect(projection[4]?.incomingQuantity).toBe(648);
   });
 });

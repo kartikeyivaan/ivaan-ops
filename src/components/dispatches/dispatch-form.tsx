@@ -1,19 +1,35 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SignaturePad } from "@/components/dispatches/signature-pad";
+import {
+  ScanSerialsButton,
+  SerialScanner,
+  type SerialScanResult,
+} from "@/components/inventory/serial-scanner";
+import { normalizeSerialNumber, parseSerialInput } from "@/lib/inventory";
+import { cn } from "@/lib/utils";
 
 type BookablePi = {
   id: string;
   piNo: string;
   customer: { customerName: string };
   warehouse: { name: string } | null;
+  dispatchTodayMarkedBy?: { name: string } | null;
+  draft?: {
+    vehicleNo: string | null;
+    driverName: string | null;
+    receiverName: string | null;
+    receiverMobile: string | null;
+    notes: string | null;
+  };
   items: Array<{
     id: string;
     productId: string;
@@ -25,7 +41,9 @@ type BookablePi = {
   }>;
 };
 
-type SerialOption = { id: string; serialNumber: string };
+type SelectedSerial = { id: string; serialNumber: string };
+
+type InvalidSerial = { serialNumber: string; reason: string };
 
 type LineDraft = {
   proformaInvoiceItemId: string;
@@ -34,8 +52,15 @@ type LineDraft = {
   serialTracking: boolean;
   remainingQty: number;
   qty: string;
-  serialIds: string[];
+  serials: SelectedSerial[];
+  pasteText: string;
+  invalidSerials: InvalidSerial[];
+  lookingUp: boolean;
 };
+
+function parseSerialPaste(text: string): string[] {
+  return parseSerialInput(text);
+}
 
 export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
   const router = useRouter();
@@ -45,13 +70,16 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
   const [driverName, setDriverName] = useState("");
   const [receiverName, setReceiverName] = useState("");
   const [receiverMobile, setReceiverMobile] = useState("");
+  const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
   const [lines, setLines] = useState<LineDraft[]>([]);
-  const [serialOptions, setSerialOptions] = useState<Record<string, SerialOption[]>>({});
-  const [scanInputs, setScanInputs] = useState<Record<string, string>>({});
-  const [scanErrors, setScanErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [scannerLineIndex, setScannerLineIndex] = useState<number | null>(null);
+  const linesRef = useRef(lines);
+  linesRef.current = lines;
+  const piIdRef = useRef(piId);
+  piIdRef.current = piId;
 
   useEffect(() => {
     fetch("/api/dispatches/bookable-pis")
@@ -71,85 +99,181 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
       return;
     }
 
-    const nextLines = pi.items
-      .filter((item) => item.remainingQty > 0)
-      .map((item) => ({
-        proformaInvoiceItemId: item.id,
-        productId: item.productId,
-        productName: item.productName,
-        serialTracking: item.serialTracking,
-        remainingQty: item.remainingQty,
-        qty: String(item.remainingQty),
-        serialIds: [] as string[],
-      }));
-    setLines(nextLines);
+    setVehicleNo(pi.draft?.vehicleNo ?? "");
+    setDriverName(pi.draft?.driverName ?? "");
+    setReceiverName(pi.draft?.receiverName ?? "");
+    setReceiverMobile(pi.draft?.receiverMobile ?? "");
+    setNotes(pi.draft?.notes ?? "");
 
-    for (const item of pi.items.filter((row) => row.serialTracking && row.remainingQty > 0)) {
-      const params = new URLSearchParams({ piId: pi.id, productId: item.productId });
-      fetch(`/api/dispatches/serials?${params.toString()}`)
-        .then((response) => response.json())
-        .then((data) => {
-          if (Array.isArray(data)) {
-            setSerialOptions((current) => ({ ...current, [item.id]: data }));
-          }
-        });
-    }
+    setLines(
+      pi.items
+        .filter((item) => item.remainingQty > 0)
+        .map((item) => ({
+          proformaInvoiceItemId: item.id,
+          productId: item.productId,
+          productName: item.productName,
+          serialTracking: item.serialTracking,
+          remainingQty: item.remainingQty,
+          qty: String(item.remainingQty),
+          serials: [],
+          pasteText: "",
+          invalidSerials: [],
+          lookingUp: false,
+        })),
+    );
   }, [piId, bookablePis]);
 
   function updateLine(index: number, patch: Partial<LineDraft>) {
-    setLines((current) =>
-      current.map((line, lineIndex) => (lineIndex === index ? { ...line, ...patch } : line)),
-    );
+    setLines((current) => {
+      const next = current.map((line, lineIndex) =>
+        lineIndex === index ? { ...line, ...patch } : line,
+      );
+      linesRef.current = next;
+      return next;
+    });
   }
 
-  function toggleSerial(lineIndex: number, serialId: string) {
-    setLines((current) =>
-      current.map((line, index) => {
+  function removeSerial(lineIndex: number, serialId: string) {
+    setLines((current) => {
+      const next = current.map((line, index) => {
         if (index !== lineIndex) return line;
-        const exists = line.serialIds.includes(serialId);
-        const serialIds = exists
-          ? line.serialIds.filter((id) => id !== serialId)
-          : [...line.serialIds, serialId];
+        const serials = line.serials.filter((serial) => serial.id !== serialId);
         return {
           ...line,
-          serialIds,
-          qty: String(serialIds.length || line.qty),
+          serials,
+          qty: String(serials.length || line.qty),
         };
-      }),
-    );
+      });
+      linesRef.current = next;
+      return next;
+    });
   }
 
-  async function scanSerial(lineIndex: number, line: LineDraft) {
-    const serialNumber = scanInputs[line.proformaInvoiceItemId]?.trim();
-    if (!serialNumber || !piId) return;
+  async function addSerialsFromPaste(lineIndex: number) {
+    const line = lines[lineIndex];
+    if (!line || !piId) return;
 
-    setScanErrors((current) => ({ ...current, [line.proformaInvoiceItemId]: "" }));
-    const params = new URLSearchParams({ piId, serialNumber });
-    const response = await fetch(`/api/dispatches/lookup-serial?${params.toString()}`);
-    const data = await response.json();
-
-    if (!response.ok) {
-      setScanErrors((current) => ({
-        ...current,
-        [line.proformaInvoiceItemId]: data.message ?? "Serial not found.",
-      }));
+    const serialNumbers = parseSerialPaste(line.pasteText);
+    if (serialNumbers.length === 0) {
+      updateLine(lineIndex, {
+        invalidSerials: [{ serialNumber: "", reason: "Paste or type at least one serial number." }],
+      });
       return;
     }
 
-    if (data.product.id !== line.productId) {
-      setScanErrors((current) => ({
-        ...current,
-        [line.proformaInvoiceItemId]: "Serial belongs to a different product line.",
-      }));
-      return;
-    }
-
-    if (!line.serialIds.includes(data.id)) {
-      toggleSerial(lineIndex, data.id);
-    }
-
-    setScanInputs((current) => ({ ...current, [line.proformaInvoiceItemId]: "" }));
+    await lookupAndAddSerials(lineIndex, serialNumbers);
   }
+
+  async function lookupAndAddSerials(
+    lineIndex: number,
+    serialNumbers: string[],
+  ): Promise<SerialScanResult> {
+    const line = linesRef.current[lineIndex];
+    const currentPiId = piIdRef.current;
+    if (!line || !currentPiId) {
+      return { ok: false, reason: "Select a booked PI first." };
+    }
+
+    updateLine(lineIndex, { lookingUp: true, invalidSerials: [] });
+
+    try {
+      const response = await fetch("/api/dispatches/lookup-serials", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          piId: currentPiId,
+          productId: line.productId,
+          serialNumbers,
+        }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        const reason = data.message ?? "Unable to look up serial numbers.";
+        updateLine(lineIndex, {
+          lookingUp: false,
+          invalidSerials: [{ serialNumber: "", reason }],
+        });
+        return { ok: false, reason };
+      }
+
+      // Re-read latest line state after await
+      const latest = linesRef.current[lineIndex] ?? line;
+      const existingIds = new Set(latest.serials.map((serial) => serial.id));
+      const existingNumbers = new Set(
+        latest.serials.map((serial) => serial.serialNumber.toUpperCase()),
+      );
+      const added: SelectedSerial[] = [];
+      const invalid: InvalidSerial[] = [...(data.invalid ?? [])];
+
+      for (const found of data.valid ?? []) {
+        if (existingIds.has(found.id) || existingNumbers.has(found.serialNumber.toUpperCase())) {
+          invalid.push({
+            serialNumber: found.serialNumber,
+            reason: "Already added.",
+          });
+          continue;
+        }
+        added.push({ id: found.id, serialNumber: found.serialNumber });
+        existingIds.add(found.id);
+        existingNumbers.add(found.serialNumber.toUpperCase());
+      }
+
+      const serials = [...latest.serials, ...added];
+      updateLine(lineIndex, {
+        lookingUp: false,
+        serials,
+        qty: String(serials.length),
+        pasteText: "",
+        invalidSerials: invalid,
+      });
+
+      if (added.length === 0) {
+        const first = invalid[0];
+        return {
+          ok: false,
+          reason: first
+            ? first.serialNumber
+              ? `${normalizeSerialNumber(first.serialNumber)} — ${first.reason}`
+              : first.reason
+            : "No valid serial numbers found.",
+        };
+      }
+
+      if (invalid.length > 0) {
+        const first = invalid[0];
+        return {
+          ok: false,
+          reason: first.serialNumber
+            ? `${normalizeSerialNumber(first.serialNumber)} — ${first.reason}`
+            : first.reason,
+        };
+      }
+
+      return {
+        ok: true,
+        message: added.map((serial) => serial.serialNumber).join(", "),
+      };
+    } catch {
+      updateLine(lineIndex, {
+        lookingUp: false,
+        invalidSerials: [{ serialNumber: "", reason: "Unable to look up serial numbers." }],
+      });
+      return { ok: false, reason: "Unable to look up serial numbers." };
+    }
+  }
+
+  const handleScannedSerials = useCallback(
+    async (serialNumbers: string[]): Promise<SerialScanResult> => {
+      if (scannerLineIndex === null) {
+        return { ok: false, reason: "No dispatch line selected for scanning." };
+      }
+      return lookupAndAddSerials(scannerLineIndex, serialNumbers);
+    },
+    // lookupAndAddSerials uses refs for latest line/pi state
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [scannerLineIndex],
+  );
 
   async function handleSubmit() {
     setLoading(true);
@@ -161,6 +285,7 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
       driverName: driverName || undefined,
       receiverName,
       receiverMobile,
+      signatureUrl: signatureUrl || undefined,
       notes: notes || undefined,
       confirm: true,
       lines: lines
@@ -169,7 +294,7 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
           proformaInvoiceItemId: line.proformaInvoiceItemId,
           productId: line.productId,
           qty: Number(line.qty),
-          serialIds: line.serialTracking ? line.serialIds : undefined,
+          serialIds: line.serialTracking ? line.serials.map((serial) => serial.id) : undefined,
         })),
     };
 
@@ -196,7 +321,9 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">New Dispatch</h1>
-          <p className="text-sm text-slate-500">Dispatch from booked PI stock only.</p>
+          <p className="text-sm text-slate-500">
+            Only PIs marked Dispatch Today appear here. Sales-entered details are prefilled.
+          </p>
         </div>
         <Button variant="outline" asChild className="h-12">
           <Link href="/inventory/dispatches">
@@ -222,30 +349,58 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
                 <option key={pi.id} value={pi.id}>
                   {pi.piNo} · {pi.customer.customerName}
                   {pi.warehouse ? ` · ${pi.warehouse.name}` : ""}
+                  {pi.dispatchTodayMarkedBy ? ` · marked by ${pi.dispatchTodayMarkedBy.name}` : ""}
                 </option>
               ))}
             </select>
+            {bookablePis.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                No PIs are marked for dispatch today. Sales must mark a fully paid booked PI as
+                Dispatch Today first.
+              </p>
+            ) : null}
           </div>
           <div className="space-y-2">
             <Label>Vehicle No *</Label>
-            <Input required className="h-12 text-base" value={vehicleNo} onChange={(e) => setVehicleNo(e.target.value)} />
+            <Input
+              required
+              className="h-12 text-base"
+              value={vehicleNo}
+              onChange={(e) => setVehicleNo(e.target.value)}
+            />
           </div>
           <div className="space-y-2">
             <Label>Driver Name</Label>
-            <Input className="h-12 text-base" value={driverName} onChange={(e) => setDriverName(e.target.value)} />
+            <Input
+              className="h-12 text-base"
+              value={driverName}
+              onChange={(e) => setDriverName(e.target.value)}
+            />
           </div>
           <div className="space-y-2">
             <Label>Receiver Name *</Label>
-            <Input required className="h-12 text-base" value={receiverName} onChange={(e) => setReceiverName(e.target.value)} />
+            <Input
+              required
+              className="h-12 text-base"
+              value={receiverName}
+              onChange={(e) => setReceiverName(e.target.value)}
+            />
           </div>
           <div className="space-y-2">
             <Label>Receiver Mobile *</Label>
-            <Input required type="tel" className="h-12 text-base" value={receiverMobile} onChange={(e) => setReceiverMobile(e.target.value)} />
+            <Input
+              required
+              type="tel"
+              className="h-12 text-base"
+              value={receiverMobile}
+              onChange={(e) => setReceiverMobile(e.target.value)}
+            />
           </div>
           <div className="space-y-2 md:col-span-2">
             <Label>Notes</Label>
             <Input className="h-12 text-base" value={notes} onChange={(e) => setNotes(e.target.value)} />
           </div>
+          <SignaturePad onChange={setSignatureUrl} />
         </CardContent>
       </Card>
 
@@ -277,56 +432,83 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
                 {line.serialTracking ? (
                   <div className="mt-3 space-y-3">
                     <div className="space-y-2">
-                      <Label>Scan Serial</Label>
-                      <div className="flex gap-2">
-                        <Input
-                          className="h-12 text-base"
-                          placeholder="Scan or enter serial number"
-                          value={scanInputs[line.proformaInvoiceItemId] ?? ""}
-                          onChange={(event) =>
-                            setScanInputs((current) => ({
-                              ...current,
-                              [line.proformaInvoiceItemId]: event.target.value,
-                            }))
+                      <Label>Serial numbers</Label>
+                      <ScanSerialsButton
+                        className="h-12 w-full border-emerald-300 bg-emerald-50 text-base text-emerald-900 hover:bg-emerald-100"
+                        disabled={line.lookingUp || !piId}
+                        onClick={() => setScannerLineIndex(index)}
+                      />
+                      <p className="text-xs text-slate-500">
+                        Scan, paste, or type serials (newline, comma, or semicolon separated). Product
+                        must match this line; company ownership is ignored.
+                      </p>
+                      <textarea
+                        className={cn(
+                          "flex min-h-28 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base ring-offset-white placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500",
+                        )}
+                        placeholder={"SN-001\nSN-002\nSN-003"}
+                        value={line.pasteText}
+                        onChange={(event) =>
+                          updateLine(index, { pasteText: event.target.value })
+                        }
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+                            event.preventDefault();
+                            void addSerialsFromPaste(index);
                           }
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              event.preventDefault();
-                              void scanSerial(index, line);
-                            }
-                          }}
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="h-12"
-                          onClick={() => void scanSerial(index, line)}
-                        >
-                          Add
-                        </Button>
-                      </div>
-                      {scanErrors[line.proformaInvoiceItemId] ? (
-                        <p className="text-sm text-red-600">{scanErrors[line.proformaInvoiceItemId]}</p>
-                      ) : null}
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-12"
+                        disabled={line.lookingUp || !line.pasteText.trim()}
+                        onClick={() => void addSerialsFromPaste(index)}
+                      >
+                        {line.lookingUp ? "Checking…" : "Add Serials"}
+                      </Button>
                     </div>
-                    <div className="space-y-2">
-                      <Label>Selected Serials ({line.serialIds.length})</Label>
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        {(serialOptions[line.proformaInvoiceItemId] ?? []).map((serial) => (
-                          <label
-                            key={serial.id}
-                            className="flex h-12 items-center gap-2 rounded-md border px-3 text-sm"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={line.serialIds.includes(serial.id)}
-                              onChange={() => toggleSerial(index, serial.id)}
-                            />
-                            {serial.serialNumber}
-                          </label>
-                        ))}
+
+                    {line.serials.length > 0 ? (
+                      <div className="space-y-2">
+                        <Label>Accepted ({line.serials.length})</Label>
+                        <div className="flex flex-wrap gap-2">
+                          {line.serials.map((serial) => (
+                            <span
+                              key={serial.id}
+                              className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-sm text-emerald-900"
+                            >
+                              {serial.serialNumber}
+                              <button
+                                type="button"
+                                className="rounded p-0.5 hover:bg-emerald-100"
+                                aria-label={`Remove ${serial.serialNumber}`}
+                                onClick={() => removeSerial(index, serial.id)}
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
                       </div>
-                    </div>
+                    ) : null}
+
+                    {line.invalidSerials.length > 0 ? (
+                      <div className="space-y-2 rounded-md border border-red-200 bg-red-50 p-3">
+                        <Label className="text-red-800">Wrong / rejected serials</Label>
+                        <ul className="space-y-1 text-sm text-red-700">
+                          {line.invalidSerials.map((item, invalidIndex) => (
+                            <li key={`${item.serialNumber}-${invalidIndex}`}>
+                              {item.serialNumber ? (
+                                <span className="font-medium">{item.serialNumber}</span>
+                              ) : null}
+                              {item.serialNumber ? " — " : null}
+                              {item.reason}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
@@ -335,11 +517,32 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
         </Card>
       ) : null}
 
-      <Button className="h-12 w-full text-base" disabled={loading || !piId || !vehicleNo.trim() || !receiverName.trim() || receiverMobile.trim().length < 10} onClick={handleSubmit}>
+      <Button
+        className="h-12 w-full text-base"
+        disabled={
+          loading ||
+          !piId ||
+          !vehicleNo.trim() ||
+          !receiverName.trim() ||
+          receiverMobile.trim().length < 10
+        }
+        onClick={() => void handleSubmit()}
+      >
         {loading ? "Dispatching..." : "Confirm Dispatch & Generate DC"}
       </Button>
 
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
+
+      <SerialScanner
+        open={scannerLineIndex !== null}
+        onClose={() => setScannerLineIndex(null)}
+        onScan={handleScannedSerials}
+        title={
+          scannerLineIndex !== null
+            ? `Scan serials · ${lines[scannerLineIndex]?.productName ?? "line"}`
+            : "Scan serials"
+        }
+      />
     </div>
   );
 }

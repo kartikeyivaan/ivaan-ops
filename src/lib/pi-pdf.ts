@@ -9,18 +9,16 @@ import {
   MARGIN_BOTTOM,
   MARGIN_TOP,
   amountInWords,
-  buildGstGroups,
   companyLogo,
   createDocOptions,
   drawDocumentHeader,
   drawFooter,
-  drawGstSummary,
   drawParties,
   drawTable,
-  isIntraState,
   makeMoney,
   resolvePalette,
   resolveProfile,
+  buildDocumentTerms,
   sectionTitle,
   setupFonts,
   type DocContext,
@@ -92,7 +90,6 @@ export async function generateProformaInvoicePdf(pi: ProformaInvoiceRecord): Pro
 
   let subtotal = 0;
   let totalGst = 0;
-  const gstLines: Array<{ hsn?: string | null; taxable: number; gstRate: number; gstAmount: number }> = [];
   const rows = pi.items.map((item, i) => {
     const qty = Number(item.qty);
     const gstRate = Number(item.gstRate);
@@ -102,7 +99,6 @@ export async function generateProformaInvoicePdf(pi: ProformaInvoiceRecord): Pro
     const unitRate = qty > 0 ? taxable / qty : taxable;
     subtotal += taxable;
     totalGst += gstAmount;
-    gstLines.push({ hsn: item.product.hsn, taxable, gstRate, gstAmount });
 
     const itemLabel = item.product.hsn
       ? `${item.product.displayName}\nHSN: ${item.product.hsn}`
@@ -143,16 +139,6 @@ export async function generateProformaInvoicePdf(pi: ProformaInvoiceRecord): Pro
   doc.text(money(grandTotal), columnX.total + CELL_PAD, y + 7, { width: 63 - CELL_PAD * 2, align: "right" });
   y += totalsRowHeight + 16;
 
-  const intraState = isIntraState(pi.company.state, pi.customer.state);
-  y = drawGstSummary(ctx, {
-    top: y,
-    groups: buildGstGroups(gstLines),
-    intraState,
-    money,
-    pageBottom,
-  });
-  y += 16;
-
   const payableWidth = 240;
   const payableHeight = 36;
   const payableX = CONTENT_RIGHT - payableWidth;
@@ -184,9 +170,11 @@ export async function generateProformaInvoicePdf(pi: ProformaInvoiceRecord): Pro
   const colWidth = (CONTENT_WIDTH - colGap) / 2;
   const bankX = CONTENT_LEFT + colWidth + colGap;
 
-  const terms = pi.company.termsAndConditions
-    ? pi.company.termsAndConditions.split("\n").filter(Boolean)
-    : profile.terms;
+  const terms = buildDocumentTerms(
+    pi.company.termsAndConditions,
+    pi.deliveryTermNoteSnapshot,
+    profile.terms,
+  );
   let termsY = sectionTitle(ctx, "Terms & Conditions", CONTENT_LEFT, infoTop, colWidth) + 2;
   doc.font(fonts.regular).fontSize(8.5).fillColor(palette.ink);
   for (const term of terms) {

@@ -9,6 +9,6 @@ import { DocumentationList } from "@/components/documentation/documentation-list
 export default async function DocumentationPage() {
   const session = await auth();
   if (!session?.user || !canViewDocumentation(session.user.roles)) redirect("/dashboard");
-  const rows = await listDocumentation(prisma, requireActiveCompany(session));
+  const rows = await listDocumentation(prisma, requireActiveCompany(session), { scope: "active" });
   return <DocumentationList rows={JSON.parse(JSON.stringify(rows))} />;
 }

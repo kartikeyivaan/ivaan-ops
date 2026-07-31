@@ -9,6 +9,6 @@ import { InvoiceQueue } from "@/components/accounts/invoice-queue";
 export default async function InvoiceQueuePage() {
   const session = await auth();
   if (!session?.user || !canManageInvoiceQueue(session.user.roles)) redirect("/dashboard");
-  const rows = await listInvoiceQueue(prisma, requireActiveCompany(session));
+  const rows = await listInvoiceQueue(prisma, requireActiveCompany(session), { scope: "pending" });
   return <InvoiceQueue rows={JSON.parse(JSON.stringify(rows))} />;
 }

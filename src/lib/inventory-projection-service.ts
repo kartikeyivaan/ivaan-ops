@@ -1,11 +1,13 @@
 import {
   InventoryEventStatus,
+  InventoryEventType,
   type PrismaClient,
 } from "@prisma/client";
 
 import {
   assertCompanyWarehouseScopeWithClient,
 } from "@/lib/inventory-event-service";
+import { applyPendingIncomingToPurchaseEvents } from "@/lib/inventory-events";
 import { getWarehouseStockForProduct } from "@/lib/inventory-service";
 import {
   calculateInventoryProjection as projectInventory,
@@ -87,14 +89,18 @@ export function createInventoryProjectionService(
           },
           OR: [
             {
+              // Include past bookings so commitments already started reduce opening stock.
               effectiveDate: {
-                gte: dateAtUtcMidnight(startDate),
+                lte: dateAtUtcMidnight(endDate),
+              },
+            },
+            {
+              expectedMinDate: {
                 lte: dateAtUtcMidnight(endDate),
               },
             },
             {
               expectedMaxDate: {
-                gte: dateAtUtcMidnight(startDate),
                 lte: dateAtUtcMidnight(endDate),
               },
             },
@@ -104,30 +110,69 @@ export function createInventoryProjectionService(
       }),
     ]);
 
+    const events = rows.map((event) => ({
+      id: event.id,
+      eventType: event.eventType,
+      status: event.status,
+      quantity: Number(event.quantity),
+      effectiveDate: dateOnly(event.effectiveDate),
+      expectedMinDate: event.expectedMinDate
+        ? dateOnly(event.expectedMinDate)
+        : null,
+      expectedMaxDate: event.expectedMaxDate
+        ? dateOnly(event.expectedMaxDate)
+        : null,
+      sourceType: event.sourceType,
+      sourceId: event.sourceId,
+      sourceNumber: event.sourceNumber,
+      replacesEventId: event.replacesEventId,
+    }));
+
+    const purchaseLotIds = [
+      ...new Set(
+        events
+          .filter(
+            (event) =>
+              event.eventType === InventoryEventType.PURCHASE_INCOMING &&
+              event.sourceType === "INVENTORY_LOT" &&
+              event.sourceId,
+          )
+          .map((event) => event.sourceId as string),
+      ),
+    ];
+    const purchaseLots =
+      purchaseLotIds.length === 0
+        ? []
+        : await client.inventoryLot.findMany({
+            where: { id: { in: purchaseLotIds } },
+            select: {
+              id: true,
+              quantity: true,
+              receivedQuantity: true,
+              damagedQuantity: true,
+            },
+          });
+    const lotsById = new Map(
+      purchaseLots.map((lot) => [
+        lot.id,
+        {
+          quantity: Number(lot.quantity),
+          receivedQuantity: Number(lot.receivedQuantity),
+          damagedQuantity: Number(lot.damagedQuantity),
+        },
+      ]),
+    );
+
+    // Include booked serials in physical baseline; BOOKING_RESERVATION events
+    // reduce sales-available stock on the committed dispatch start date.
     return projectInventory({
-      physicalStock: stock.availableStock,
+      physicalStock: stock.availableStock + stock.bookedStock,
       safetyStock: resolveSafetyQty(
         safetyOverride ? Number(safetyOverride.safetyQty) : null,
       ),
       startDate,
       endDate,
-      events: rows.map((event) => ({
-        id: event.id,
-        eventType: event.eventType,
-        status: event.status,
-        quantity: Number(event.quantity),
-        effectiveDate: dateOnly(event.effectiveDate),
-        expectedMinDate: event.expectedMinDate
-          ? dateOnly(event.expectedMinDate)
-          : null,
-        expectedMaxDate: event.expectedMaxDate
-          ? dateOnly(event.expectedMaxDate)
-          : null,
-        sourceType: event.sourceType,
-        sourceId: event.sourceId,
-        sourceNumber: event.sourceNumber,
-        replacesEventId: event.replacesEventId,
-      })),
+      events: applyPendingIncomingToPurchaseEvents(events, lotsById),
     });
   }
 

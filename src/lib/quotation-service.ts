@@ -288,6 +288,10 @@ function serializeQuotationNumbers(quotation: QuotationRecord) {
   return {
     ...quotation,
     totalValue: decimalToNumber(quotation.totalValue),
+    requiredPaymentPercent:
+      quotation.requiredPaymentPercent == null
+        ? null
+        : decimalToNumber(quotation.requiredPaymentPercent),
     items: quotation.items.map((item) => ({
       ...item,
       qty: decimalToNumber(item.qty),

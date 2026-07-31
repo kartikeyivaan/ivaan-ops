@@ -6,6 +6,7 @@ import {
   getArrivalWindowDisplayData,
   getEarliestAvailabilityDate,
 } from "@/lib/inventory-projection";
+import { applyPendingIncomingToPurchaseEvents } from "@/lib/inventory-events";
 import type {
   InventoryEvent,
   InventoryEventType,
@@ -65,6 +66,52 @@ describe("inventory projection", () => {
       incomingQuantity: 50,
       outgoingQuantity: 0,
     });
+  });
+
+  it("reduces availability on the first committed dispatch day after booking", () => {
+    const projection = calculateInventoryProjection({
+      physicalStock: 200,
+      safetyStock: 0,
+      startDate: "2026-07-30",
+      endDate: "2026-08-05",
+      events: [
+        event("reserve", "BOOKING_RESERVATION", 40, "2026-07-30", {
+          expectedMinDate: "2026-08-04",
+          expectedMaxDate: "2026-08-07",
+        }),
+      ],
+    });
+
+    expect(
+      projection.map((day) => day.projectedAvailableQuantity),
+    ).toEqual([200, 200, 200, 200, 200, 160, 160]);
+    expect(projection[5]).toMatchObject({
+      date: "2026-08-04",
+      outgoingQuantity: 40,
+      projectedAvailableQuantity: 160,
+    });
+  });
+
+  it("ignores released booking reservations in projection", () => {
+    const projection = calculateInventoryProjection({
+      physicalStock: 200,
+      safetyStock: 0,
+      startDate: "2026-07-30",
+      endDate: "2026-08-05",
+      events: [
+        event("reserve", "BOOKING_RESERVATION", 40, "2026-07-30", {
+          expectedMinDate: "2026-08-04",
+          expectedMaxDate: "2026-08-07",
+        }),
+        event("release", "BOOKING_RELEASE", 40, "2026-08-01", {
+          replacesEventId: "reserve",
+        }),
+      ],
+    });
+
+    expect(
+      projection.map((day) => day.projectedAvailableQuantity),
+    ).toEqual([200, 200, 200, 200, 200, 200, 200]);
   });
 
   it("applies projection-affecting events before the requested range", () => {
@@ -137,6 +184,11 @@ describe("inventory projection", () => {
           expectedMinDate: "2026-08-20",
           expectedMaxDate: "2026-08-22",
         }),
+        event("fully-received", "PURCHASE_INCOMING", 0, "2026-08-01", {
+          expectedMinDate: "2026-08-01",
+          expectedMaxDate: "2026-08-08",
+          sourceNumber: "LOT-000",
+        }),
       ],
       "2026-08-03",
       "2026-08-06",
@@ -154,6 +206,40 @@ describe("inventory projection", () => {
         sourceNumber: "LOT-001",
       },
     ]);
+  });
+
+  it("does not double-count partially received purchase incoming stock", () => {
+    const adjustedEvents = applyPendingIncomingToPurchaseEvents(
+      [
+        event("incoming", "PURCHASE_INCOMING", 720, "2026-08-03", {
+          expectedMinDate: "2026-08-03",
+          expectedMaxDate: "2026-08-03",
+          sourceType: "INVENTORY_LOT",
+          sourceId: "lot-6",
+          sourceNumber: "LOT-26-27-00006",
+        }),
+      ],
+      new Map([
+        ["lot-6", { quantity: 720, receivedQuantity: 72, damagedQuantity: 0 }],
+      ]),
+    );
+
+    // Physical already includes the 72 received units; net today is 52 after safety.
+    const projection = calculateInventoryProjection({
+      physicalStock: 72,
+      safetyStock: 20,
+      startDate: "2026-07-30",
+      endDate: "2026-08-03",
+      events: adjustedEvents,
+    });
+
+    expect(projection.map((day) => day.projectedAvailableQuantity)).toEqual([
+      52, 52, 52, 52, 700,
+    ]);
+    expect(projection[4]).toMatchObject({
+      incomingQuantity: 648,
+      projectedAvailableQuantity: 700,
+    });
   });
 
   it("allows sales availability to go negative and validates inputs", () => {

@@ -43,6 +43,8 @@ export const INVENTORY_EVENT_EFFECTS: Record<
   RETURN_OUT: "DECREASE",
 };
 
+export type DispatchTodayEventStatus = "Pending" | "Dispatched";
+
 export type InventoryEvent = {
   id: string;
   eventType: InventoryEventType;
@@ -54,7 +56,12 @@ export type InventoryEvent = {
   sourceType?: string | null;
   sourceId?: string | null;
   sourceNumber?: string | null;
+  customerName?: string | null;
   replacesEventId?: string | null;
+  /** Present when this reservation is marked Dispatch Today. */
+  dispatchTodayStatus?: DispatchTodayEventStatus | null;
+  /** Full PI quantity for Dispatch Today display (may differ from product-line quantity). */
+  displayQuantity?: number | null;
 };
 
 export function getInventoryEventEffect(
@@ -91,12 +98,99 @@ export function inventoryEventSignedQuantity(
 export function getInventoryEventProjectionDate(
   event: Pick<
     InventoryEvent,
-    "eventType" | "effectiveDate" | "expectedMaxDate"
+    "eventType" | "effectiveDate" | "expectedMinDate" | "expectedMaxDate"
   >,
 ): string {
   if (event.eventType === "PURCHASE_INCOMING" && event.expectedMaxDate) {
     return event.expectedMaxDate;
   }
 
+  // Booking reservations reduce sales-available stock on the first day of the
+  // committed dispatch window, not on the booking confirmation day.
+  if (
+    event.eventType === "BOOKING_RESERVATION" &&
+    event.expectedMinDate
+  ) {
+    return event.expectedMinDate;
+  }
+
   return event.effectiveDate;
+}
+
+/**
+ * Events that should not affect projection because a later linked event
+ * already accounts for the same stock movement (actual dispatch, booking release).
+ */
+export function getSupersededInventoryEventIds(
+  events: readonly InventoryEvent[],
+): Set<string> {
+  const superseded = new Set<string>();
+  const activeEvents = events.filter((event) =>
+    eventAffectsProjection(event.status),
+  );
+
+  for (const event of activeEvents) {
+    if (event.eventType === "ACTUAL_DISPATCH") {
+      if (event.replacesEventId) {
+        superseded.add(event.replacesEventId);
+      }
+
+      if (event.sourceType && event.sourceId) {
+        for (const candidate of activeEvents) {
+          if (
+            candidate.eventType === "PLANNED_DISPATCH" &&
+            candidate.sourceType === event.sourceType &&
+            candidate.sourceId === event.sourceId
+          ) {
+            superseded.add(candidate.id);
+          }
+        }
+      }
+    }
+
+    if (
+      event.eventType === "BOOKING_RELEASE" &&
+      event.replacesEventId
+    ) {
+      // Drop both the reservation and its release so released bookings never
+      // reduce (or later restore) projected availability.
+      superseded.add(event.replacesEventId);
+      superseded.add(event.id);
+    }
+  }
+
+  return superseded;
+}
+
+/**
+ * PURCHASE_INCOMING events are created for the full lot quantity. After partial
+ * inward, physical stock already includes received units, so projection must use
+ * the lot's remaining pending quantity to avoid double-counting.
+ */
+export function applyPendingIncomingToPurchaseEvents(
+  events: readonly InventoryEvent[],
+  lotsById: ReadonlyMap<
+    string,
+    { quantity: number; receivedQuantity: number; damagedQuantity: number }
+  >,
+): InventoryEvent[] {
+  return events.map((event) => {
+    if (
+      event.eventType !== "PURCHASE_INCOMING" ||
+      event.sourceType !== "INVENTORY_LOT" ||
+      !event.sourceId
+    ) {
+      return event;
+    }
+
+    const lot = lotsById.get(event.sourceId);
+    if (!lot) return event;
+
+    const remaining = Math.max(
+      0,
+      lot.quantity - lot.receivedQuantity - lot.damagedQuantity,
+    );
+    if (remaining === event.quantity) return event;
+    return { ...event, quantity: remaining };
+  });
 }

@@ -1,10 +1,10 @@
 import { createHmac, timingSafeEqual } from "crypto";
 
 /**
- * Stateless, tamper-proof share tokens for public quotation PDF links.
+ * Stateless, tamper-proof share tokens for public PDF links.
  *
  * A token is `base64url(payload).base64url(hmac)` where the payload carries the
- * quotation id and an absolute expiry timestamp. Because it is signed with
+ * document id and an absolute expiry timestamp. Because it is signed with
  * AUTH_SECRET and the id is a random UUID, the resulting link is unguessable
  * ("non-traceable") and cannot be forged or have its expiry extended.
  */
@@ -13,6 +13,8 @@ const DEFAULT_TTL_DAYS = 5;
 
 type QuotationSharePayload = { q: string; e: number };
 type ProjectProposalSharePayload = { p: string; e: number };
+type ProformaInvoiceSharePayload = { pi: string; e: number };
+type DispatchSharePayload = { d: string; e: number };
 
 function getSecret(): string {
   const secret = process.env.AUTH_SECRET;
@@ -102,4 +104,44 @@ export function verifyProjectProposalShareToken(
   const payload = verifySignedPayload<ProjectProposalSharePayload>(token, "p");
   if (!payload) return null;
   return { proposalId: payload.p };
+}
+
+export function signProformaInvoiceShareToken(
+  piId: string,
+  ttlDays = DEFAULT_TTL_DAYS,
+): string {
+  const payload: ProformaInvoiceSharePayload = {
+    pi: piId,
+    e: Date.now() + ttlDays * 24 * 60 * 60 * 1000,
+  };
+  const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  return `${encoded}.${sign(encoded)}`;
+}
+
+export function verifyProformaInvoiceShareToken(
+  token: string,
+): { piId: string } | null {
+  const payload = verifySignedPayload<ProformaInvoiceSharePayload>(token, "pi");
+  if (!payload) return null;
+  return { piId: payload.pi };
+}
+
+export function signDispatchShareToken(
+  dispatchId: string,
+  ttlDays = DEFAULT_TTL_DAYS,
+): string {
+  const payload: DispatchSharePayload = {
+    d: dispatchId,
+    e: Date.now() + ttlDays * 24 * 60 * 60 * 1000,
+  };
+  const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  return `${encoded}.${sign(encoded)}`;
+}
+
+export function verifyDispatchShareToken(
+  token: string,
+): { dispatchId: string } | null {
+  const payload = verifySignedPayload<DispatchSharePayload>(token, "d");
+  if (!payload) return null;
+  return { dispatchId: payload.d };
 }

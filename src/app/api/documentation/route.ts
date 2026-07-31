@@ -16,8 +16,11 @@ export async function GET(request: Request) {
   const status = statusValue && Object.values(DocumentationStatus).includes(statusValue as DocumentationStatus)
     ? statusValue as DocumentationStatus
     : undefined;
+  const scopeValue = params.get("scope");
+  const scope = scopeValue === "active" || scopeValue === "history" ? scopeValue : undefined;
   return NextResponse.json(await listDocumentation(prisma, requireActiveCompany(session), {
     status,
+    scope,
     assignedToId: params.get("assignedToId") ?? undefined,
     q: params.get("q") ?? undefined,
   }));

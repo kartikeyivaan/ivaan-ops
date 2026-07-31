@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { ArrowLeft, Download, ShieldCheck, XCircle } from "lucide-react";
+import { ArrowLeft, Download, MessageCircle, ShieldCheck, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,7 +16,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDispatchStatus } from "@/lib/dispatches";
-import { formatCurrency } from "@/lib/quotations";
 import { formatDocumentDate } from "@/lib/utils";
 
 type DispatchDetailData = {
@@ -26,9 +25,11 @@ type DispatchDetailData = {
   dispatchDate: string;
   vehicleNo?: string | null;
   driverName?: string | null;
+  receiverName?: string | null;
+  receiverMobile?: string | null;
+  signatureUrl?: string | null;
   notes?: string | null;
-  totalValue: number;
-  customer: { customerName: string; gstNumber: string };
+  customer: { customerName: string; gstNumber: string; mobile?: string | null };
   proformaInvoice: { piNo: string };
   warehouse: { name: string };
   lines: Array<{
@@ -48,16 +49,27 @@ function statusVariant(status: string): "default" | "success" | "warning" | "dan
 
 export function DispatchDetail({
   dispatch,
+  challanWhatsappUrl,
   canManage,
   canApproveCancel,
 }: {
   dispatch: DispatchDetailData;
+  challanWhatsappUrl?: string | null;
   canManage: boolean;
   canApproveCancel: boolean;
 }) {
   const router = useRouter();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  function handleShareChallanWhatsapp() {
+    if (!challanWhatsappUrl) {
+      setError("Add a valid mobile number for this customer to share on WhatsApp.");
+      return;
+    }
+    setError("");
+    window.open(challanWhatsappUrl, "_blank", "noopener,noreferrer");
+  }
 
   async function handleConfirm() {
     setLoading(true);
@@ -130,6 +142,16 @@ export function DispatchDetail({
               </a>
             </Button>
           ) : null}
+          {dispatch.status === "DISPATCHED" ? (
+            <Button
+              variant="outline"
+              className="h-12"
+              onClick={handleShareChallanWhatsapp}
+            >
+              <MessageCircle className="h-4 w-4" />
+              Share Delivery Challan
+            </Button>
+          ) : null}
           {canManage && dispatch.status === "DRAFT" ? (
             <Button className="h-12" disabled={loading} onClick={handleConfirm}>
               Confirm Dispatch
@@ -150,7 +172,9 @@ export function DispatchDetail({
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
+      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+
+      <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader>
             <CardTitle className="text-sm">Status</CardTitle>
@@ -173,15 +197,38 @@ export function DispatchDetail({
           </CardHeader>
           <CardContent>{dispatch.warehouse.name}</CardContent>
         </Card>
+      </div>
+
+      {(dispatch.receiverName || dispatch.receiverMobile || dispatch.signatureUrl) && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">Value</CardTitle>
+            <CardTitle className="text-base">Receiver</CardTitle>
           </CardHeader>
-          <CardContent className="text-xl font-semibold">
-            {formatCurrency(dispatch.totalValue)}
+          <CardContent className="space-y-3">
+            <div className="grid gap-2 sm:grid-cols-2 text-sm">
+              <p>
+                <span className="text-slate-500">Name:</span> {dispatch.receiverName ?? "—"}
+              </p>
+              <p>
+                <span className="text-slate-500">Mobile:</span> {dispatch.receiverMobile ?? "—"}
+              </p>
+            </div>
+            {dispatch.signatureUrl ? (
+              <div className="space-y-1">
+                <p className="text-sm text-slate-500">Signature</p>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={dispatch.signatureUrl}
+                  alt="Receiver signature"
+                  className="h-24 w-auto max-w-full rounded-md border border-slate-200 bg-white"
+                />
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500">No signature captured.</p>
+            )}
           </CardContent>
         </Card>
-      </div>
+      )}
 
       <Card>
         <CardHeader>
@@ -210,8 +257,6 @@ export function DispatchDetail({
           </Table>
         </CardContent>
       </Card>
-
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
     </div>
   );
 }

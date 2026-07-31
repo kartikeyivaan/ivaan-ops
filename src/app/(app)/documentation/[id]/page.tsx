@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { canAssignDocumentation, canManageDocumentation, canViewDocumentation } from "@/lib/documentation-permissions";
+import { canManageDocumentation, canViewDocumentation } from "@/lib/documentation-permissions";
 import { getDocumentation } from "@/lib/documentation-service";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
@@ -12,14 +12,10 @@ export default async function DocumentationRecordPage({ params }: { params: Prom
   const companyId = requireActiveCompany(session);
   const record = await getDocumentation(prisma, companyId, (await params).id);
   if (!record) notFound();
-  const users = await prisma.user.findMany({
-    where: {
-      status: "ACTIVE",
-      companies: { some: { companyId } },
-      roles: { some: { role: { name: "Documentation Executive" } } },
-    },
-    select: { id: true, name: true },
-    orderBy: { name: "asc" },
-  });
-  return <DocumentationRecordView record={JSON.parse(JSON.stringify(record))} users={users} canManage={canManageDocumentation(session.user.roles)} canAssign={canAssignDocumentation(session.user.roles)} />;
+  return (
+    <DocumentationRecordView
+      record={JSON.parse(JSON.stringify(record))}
+      canManage={canManageDocumentation(session.user.roles)}
+    />
+  );
 }

@@ -1,6 +1,7 @@
 import {
   eventAffectsProjection,
   getInventoryEventProjectionDate,
+  getSupersededInventoryEventIds,
   inventoryEventSignedQuantity,
   type InventoryEvent,
 } from "@/lib/inventory-events";
@@ -41,37 +42,8 @@ function assertQuantity(value: number, label: string): void {
   }
 }
 
-function supersededPlannedEventIds(events: readonly InventoryEvent[]): Set<string> {
-  const superseded = new Set<string>();
-  const activeActualDispatches = events.filter(
-    (event) =>
-      event.eventType === "ACTUAL_DISPATCH" &&
-      eventAffectsProjection(event.status),
-  );
-
-  for (const actual of activeActualDispatches) {
-    if (actual.replacesEventId) {
-      superseded.add(actual.replacesEventId);
-    }
-
-    if (actual.sourceType && actual.sourceId) {
-      for (const candidate of events) {
-        if (
-          candidate.eventType === "PLANNED_DISPATCH" &&
-          candidate.sourceType === actual.sourceType &&
-          candidate.sourceId === actual.sourceId
-        ) {
-          superseded.add(candidate.id);
-        }
-      }
-    }
-  }
-
-  return superseded;
-}
-
 function projectionEvents(events: readonly InventoryEvent[]): InventoryEvent[] {
-  const superseded = supersededPlannedEventIds(events);
+  const superseded = getSupersededInventoryEventIds(events);
   return events.filter(
     (event) =>
       eventAffectsProjection(event.status) &&
@@ -179,6 +151,7 @@ export function getArrivalWindowDisplayData(
     .filter(
       (event) =>
         event.eventType === "PURCHASE_INCOMING" &&
+        event.quantity > 0 &&
         event.expectedMinDate &&
         event.expectedMaxDate &&
         event.expectedMinDate <= event.expectedMaxDate &&

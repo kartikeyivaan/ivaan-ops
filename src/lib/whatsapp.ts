@@ -55,6 +55,39 @@ export function buildQuotationWhatsappMessage(input: {
   );
 }
 
+/**
+ * Builds the customer-facing WhatsApp message body for a proforma invoice.
+ */
+export function buildProformaInvoiceWhatsappMessage(input: {
+  customerName: string;
+  companyName: string;
+  piNo: string;
+  pdfUrl: string;
+  salespersonName: string;
+}): string {
+  return (
+    `Hi ${input.customerName}, thank you for choosing ${input.companyName}. ` +
+    `Please find your proforma invoice ${input.piNo} here: ${input.pdfUrl}. ` +
+    `— ${input.salespersonName}`
+  );
+}
+
+/**
+ * Builds the customer-facing WhatsApp message body for a delivery challan.
+ */
+export function buildDispatchWhatsappMessage(input: {
+  customerName: string;
+  companyName: string;
+  dcNo: string;
+  piNo: string;
+  pdfUrl: string;
+}): string {
+  return (
+    `Hi ${input.customerName}, your delivery from ${input.companyName} is complete. ` +
+    `Please find Delivery Challan ${input.dcNo} (PI ${input.piNo}) here: ${input.pdfUrl}.`
+  );
+}
+
 export function buildProjectProposalWhatsappMessage(input: {
   customerName: string;
   proposalNo: string;

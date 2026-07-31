@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { canInwardMaterial } from "@/lib/inventory-permissions";
 import { receiveMaterial } from "@/lib/inventory-service";
@@ -65,6 +66,13 @@ export async function POST(request: Request) {
       if (error.message.includes("exceed") || error.message.includes("negative")) {
         return errorResponse("NEGATIVE_STOCK_BLOCKED", error.message, 400);
       }
+    }
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002" &&
+      String(error.meta?.target ?? "").includes("serial_number")
+    ) {
+      return errorResponse("DUPLICATE_SERIAL", "Serial number already exists.", 409);
     }
     throw error;
   }

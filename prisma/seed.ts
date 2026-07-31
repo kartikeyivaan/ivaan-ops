@@ -287,6 +287,24 @@ async function main() {
     },
   });
 
+  const documentationPassword = await bcrypt.hash("Documentation@123", 12);
+  await prisma.user.upsert({
+    where: { email: "documentation@ivaansolar.com" },
+    update: seedUserUpdate(documentationPassword),
+    create: {
+      name: "Documentation Executive",
+      email: "documentation@ivaansolar.com",
+      passwordHash: documentationPassword,
+      ...seedPasswordMeta,
+      roles: {
+        create: [{ roleId: roleMap[ROLES.DOCUMENTATION_EXECUTIVE] }],
+      },
+      companies: {
+        create: [{ companyId: ise.id }],
+      },
+    },
+  });
+
   const serviceExecPassword = await bcrypt.hash("Service@123", 12);
   await prisma.user.upsert({
     where: { email: "service@ivaansolar.com" },
@@ -633,6 +651,9 @@ async function main() {
   console.log("Purchase login: purchase@ivaansolar.com / Purchase@123");
   console.log("Warehouse login: warehouse@ivaansolar.com / Warehouse@123");
   console.log("Accounts login: accounts@ivaansolar.com / Accounts@123");
+  console.log(
+    "Documentation login: documentation@ivaansolar.com / Documentation@123",
+  );
   console.log("Service login: service@ivaansolar.com / Service@123");
 }
 
@@ -926,6 +947,9 @@ async function seedSampleDispatches() {
   const warehouseUser = await prisma.user.findUniqueOrThrow({
     where: { email: "warehouse@ivaansolar.com" },
   });
+  const accountsUser = await prisma.user.findUniqueOrThrow({
+    where: { email: "accounts@ivaansolar.com" },
+  });
   const warehouse = await prisma.warehouse.findFirst({
     where: { companyId: ise.id, name: "Jalgaon HO" },
   });
@@ -997,17 +1021,7 @@ async function seedSampleDispatches() {
     });
 
     if (serials.length >= 20) {
-      await prisma.inventorySerial.updateMany({
-        where: { id: { in: serials.map((serial) => serial.id) } },
-        data: { status: SerialStatus.BOOKED },
-      });
-      await prisma.proformaInvoiceSerial.createMany({
-        data: serials.map((serial) => ({
-          piId: newPi.id,
-          serialId: serial.id,
-        })),
-        skipDuplicates: true,
-      });
+      // Qty booking only — serials stay AVAILABLE until recorded on a DC.
       await prisma.inventoryTransaction.create({
         data: {
           transactionType: InventoryTransactionType.BOOK,
@@ -1022,9 +1036,33 @@ async function seedSampleDispatches() {
         },
       });
     }
+
+    // Full payment is ensured below for both new and existing booked seed PIs.
   }
 
   if (!bookedPi) return;
+
+  const existingFullPayment = await prisma.payment.findFirst({
+    where: {
+      proformaInvoiceId: bookedPi.id,
+      referenceNo: "SEED-PAY-003",
+    },
+  });
+  if (!existingFullPayment) {
+    await prisma.payment.create({
+      data: {
+        companyId: ise.id,
+        customerId: customer.id,
+        proformaInvoiceId: bookedPi.id,
+        amount: Number(bookedPi.totalValue),
+        paymentDate: piDate,
+        paymentMode: PaymentMode.RTGS,
+        referenceNo: "SEED-PAY-003",
+        recordedById: accountsUser.id,
+        notes: "100% payment — ready for dispatch",
+      },
+    });
+  }
 
   const piItem = await prisma.proformaInvoiceItem.findFirst({
     where: { piId: bookedPi.id, productId: moduleProduct.id },
@@ -1035,9 +1073,13 @@ async function seedSampleDispatches() {
   const existingDispatch = await prisma.dispatch.findFirst({ where: { dcNo } });
   if (existingDispatch) return;
 
-  const bookedSerials = await prisma.proformaInvoiceSerial.findMany({
-    where: { piId: bookedPi.id, serial: { status: SerialStatus.BOOKED } },
-    include: { serial: true },
+  const availableSerials = await prisma.inventorySerial.findMany({
+    where: {
+      productId: moduleProduct.id,
+      currentWarehouseId: warehouse.id,
+      status: SerialStatus.AVAILABLE,
+    },
+    orderBy: { createdAt: "asc" },
     take: 10,
   });
 
@@ -1060,10 +1102,10 @@ async function seedSampleDispatches() {
           {
             proformaInvoiceItemId: piItem.id,
             productId: moduleProduct.id,
-            qty: bookedSerials.length || 10,
-            serials: bookedSerials.length
+            qty: availableSerials.length || 10,
+            serials: availableSerials.length
               ? {
-                  create: bookedSerials.map((entry) => ({ serialId: entry.serialId })),
+                  create: availableSerials.map((serial) => ({ serialId: serial.id })),
                 }
               : undefined,
           },
@@ -1089,10 +1131,17 @@ async function seedSampleDispatches() {
     update: { lastSequence: 1 },
   });
 
-  const dispatchQty = bookedSerials.length || 10;
-  if (bookedSerials.length) {
+  const dispatchQty = availableSerials.length || 10;
+  if (availableSerials.length) {
+    await prisma.proformaInvoiceSerial.createMany({
+      data: availableSerials.map((serial) => ({
+        piId: bookedPi.id,
+        serialId: serial.id,
+      })),
+      skipDuplicates: true,
+    });
     await prisma.inventorySerial.updateMany({
-      where: { id: { in: bookedSerials.map((entry) => entry.serialId) } },
+      where: { id: { in: availableSerials.map((serial) => serial.id) } },
       data: { status: SerialStatus.DISPATCHED },
     });
   }

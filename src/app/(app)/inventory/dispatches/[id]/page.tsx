@@ -5,6 +5,7 @@ import {
   canManageDispatches,
   canViewDispatches,
 } from "@/lib/dispatch-permissions";
+import { buildDispatchWhatsappUrl } from "@/lib/dispatch-share";
 import { getDispatchById } from "@/lib/dispatch-service";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
@@ -20,14 +21,30 @@ export default async function DispatchDetailPage({ params }: PageProps) {
 
   const companyId = requireActiveCompany(session);
   const { id } = await params;
-  const dispatch = await getDispatchById(prisma, companyId, id);
-  if (!dispatch) {
+  const [dispatch, company] = await Promise.all([
+    getDispatchById(prisma, companyId, id),
+    prisma.company.findUnique({
+      where: { id: companyId },
+      select: { name: true },
+    }),
+  ]);
+  if (!dispatch || !company) {
     notFound();
   }
+
+  const challanWhatsappUrl = buildDispatchWhatsappUrl({
+    id: dispatch.id,
+    dcNo: dispatch.dcNo,
+    status: dispatch.status,
+    customer: dispatch.customer,
+    company,
+    proformaInvoice: dispatch.proformaInvoice,
+  });
 
   return (
     <DispatchDetail
       dispatch={JSON.parse(JSON.stringify(dispatch))}
+      challanWhatsappUrl={challanWhatsappUrl}
       canManage={canManageDispatches(session.user.roles)}
       canApproveCancel={canApproveDispatchCancel(session.user.roles)}
     />

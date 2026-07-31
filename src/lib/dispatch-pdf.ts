@@ -7,19 +7,124 @@ import {
   CONTENT_RIGHT,
   CONTENT_WIDTH,
   MARGIN_BOTTOM,
+  MARGIN_TOP,
   companyLogo,
   createDocOptions,
   drawDocumentHeader,
+  DISPATCH_TERMS,
   drawFooter,
   drawParties,
-  drawTable,
   resolvePalette,
   resolveProfile,
   sectionTitle,
   setupFonts,
   type DocContext,
-  type TableColumn,
 } from "@/lib/pdf-theme";
+
+/** Stacked product blocks: name left / qty right, serials below. */
+function drawDispatchLines(
+  ctx: DocContext,
+  opts: {
+    top: number;
+    pageBottom: number;
+    lines: DispatchRecord["lines"];
+  },
+): number {
+  const { doc, palette, fonts } = ctx;
+  const qtyWidth = 90;
+  const nameWidth = CONTENT_WIDTH - qtyWidth - 8;
+  const headerHeight = 22;
+
+  const drawHeader = (top: number): number => {
+    doc.rect(CONTENT_LEFT, top, CONTENT_WIDTH, headerHeight).fill(palette.primary);
+    doc.font(fonts.bold).fontSize(8.5).fillColor(palette.primaryText);
+    doc.text("Product", CONTENT_LEFT + 5, top + 7, { width: nameWidth });
+    doc.text("Qty", CONTENT_RIGHT - qtyWidth - 5, top + 7, {
+      width: qtyWidth,
+      align: "right",
+    });
+    return top + headerHeight;
+  };
+
+  let y = drawHeader(opts.top);
+
+  for (const [index, line] of opts.lines.entries()) {
+    const qty = decimalToNumber(line.qty);
+    const productName = line.product.displayName;
+    const qtyLabel = `${qty.toLocaleString("en-IN")} Units`;
+    const serials =
+      line.serials.map((entry) => entry.serial.serialNumber).join(", ") || "—";
+    const hsnLine = line.product.hsn ? `HSN: ${line.product.hsn}` : null;
+
+    doc.font(fonts.bold).fontSize(10);
+    const nameHeight = doc.heightOfString(productName, { width: nameWidth });
+    doc.font(fonts.regular).fontSize(8.5);
+    const hsnHeight = hsnLine ? doc.heightOfString(hsnLine, { width: CONTENT_WIDTH }) + 2 : 0;
+    const serialLabelHeight = 14;
+    const serialsHeight = doc.heightOfString(serials, { width: CONTENT_WIDTH });
+    const blockHeight =
+      Math.max(nameHeight, 12) + hsnHeight + serialLabelHeight + serialsHeight + 16;
+
+    if (y + blockHeight > opts.pageBottom && index > 0) {
+      doc.addPage();
+      y = drawHeader(MARGIN_TOP);
+    }
+
+    const nameTop = y + 8;
+    doc
+      .font(fonts.bold)
+      .fontSize(10)
+      .fillColor(palette.ink)
+      .text(productName, CONTENT_LEFT + 5, nameTop, { width: nameWidth - 5 });
+    const afterName = doc.y;
+
+    doc
+      .font(fonts.bold)
+      .fontSize(10)
+      .fillColor(palette.ink)
+      .text(qtyLabel, CONTENT_RIGHT - qtyWidth - 5, nameTop, {
+        width: qtyWidth,
+        align: "right",
+      });
+
+    y = Math.max(afterName, nameTop + 12) + 2;
+
+    if (hsnLine) {
+      doc
+        .font(fonts.regular)
+        .fontSize(8.5)
+        .fillColor(palette.muted)
+        .text(hsnLine, CONTENT_LEFT + 5, y, { width: CONTENT_WIDTH - 10 });
+      y = doc.y + 2;
+    }
+
+    doc
+      .font(fonts.bold)
+      .fontSize(8)
+      .fillColor(palette.faint)
+      .text("Serial Numbers", CONTENT_LEFT + 5, y, { width: CONTENT_WIDTH - 10 });
+    y = doc.y + 1;
+
+    doc
+      .font(fonts.regular)
+      .fontSize(8.5)
+      .fillColor(palette.ink)
+      .text(serials, CONTENT_LEFT + 5, y, { width: CONTENT_WIDTH - 10 });
+    y = doc.y + 10;
+
+    if (index < opts.lines.length - 1) {
+      doc
+        .moveTo(CONTENT_LEFT, y)
+        .lineTo(CONTENT_RIGHT, y)
+        .lineWidth(0.5)
+        .strokeColor(palette.border)
+        .stroke();
+      y += 10;
+    }
+  }
+
+  return y;
+}
 
 function collectPdfBuffer(doc: PDFKit.PDFDocument): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -29,6 +134,17 @@ function collectPdfBuffer(doc: PDFKit.PDFDocument): Promise<Buffer> {
     doc.on("error", reject);
     doc.end();
   });
+}
+
+function signatureImageBuffer(signatureUrl: string | null | undefined): Buffer | null {
+  if (!signatureUrl?.startsWith("data:image/")) return null;
+  const comma = signatureUrl.indexOf(",");
+  if (comma < 0) return null;
+  try {
+    return Buffer.from(signatureUrl.slice(comma + 1), "base64");
+  } catch {
+    return null;
+  }
 }
 
 export async function generateDispatchPdf(dispatch: DispatchRecord): Promise<Buffer> {
@@ -71,37 +187,13 @@ export async function generateDispatchPdf(dispatch: DispatchRecord): Promise<Buf
     right: { label: "DISPATCHED FROM", name: dispatch.warehouse.name, lines: dispatchLines.slice(1) },
   });
 
-  const columns: TableColumn[] = [
-    { key: "index", label: "#", width: 24, align: "center" },
-    { key: "item", label: "Item", width: 190, align: "left", bold: true },
-    { key: "qty", label: "Qty", width: 45, align: "center" },
-    { key: "serials", label: "Serial Numbers", width: 256, align: "left" },
-  ];
-
-  const rows = dispatch.lines.map((line, i) => {
-    const qty = decimalToNumber(line.qty);
-
-    const itemLabel = line.product.hsn
-      ? `${line.product.displayName}\nHSN: ${line.product.hsn}`
-      : line.product.displayName;
-    const serials = line.serials.map((entry) => entry.serial.serialNumber).join(", ") || "—";
-
-    return {
-      index: String(i + 1),
-      item: itemLabel,
-      qty: qty.toLocaleString("en-IN"),
-      serials,
-    };
-  });
-
-  const { y: tableBottom } = drawTable(ctx, {
+  const linesBottom = drawDispatchLines(ctx, {
     top: partiesBottom + 18,
-    columns,
-    rows,
     pageBottom,
+    lines: dispatch.lines,
   });
 
-  let y = tableBottom + 12;
+  let y = linesBottom + 12;
 
   if (dispatch.notes) {
     const after = sectionTitle(ctx, "Notes", CONTENT_LEFT, y);
@@ -111,22 +203,46 @@ export async function generateDispatchPdf(dispatch: DispatchRecord): Promise<Buf
     y = doc.y + 12;
   }
 
-  if (dispatch.company.termsAndConditions) {
-    const after = sectionTitle(ctx, "Terms", CONTENT_LEFT, y, CONTENT_WIDTH);
-    doc.font(fonts.regular).fontSize(8.5).fillColor(palette.ink).text(dispatch.company.termsAndConditions, CONTENT_LEFT, after + 2, {
+  const after = sectionTitle(ctx, "Terms", CONTENT_LEFT, y, CONTENT_WIDTH);
+  let termsY = after + 2;
+  doc.font(fonts.regular).fontSize(8.5).fillColor(palette.ink);
+  for (const [index, term] of DISPATCH_TERMS.entries()) {
+    doc.text(`${index + 1}. ${term}`, CONTENT_LEFT, termsY, {
       width: CONTENT_WIDTH,
     });
-    y = doc.y + 12;
+    termsY = doc.y + 4;
   }
+  y = termsY + 8;
 
+  const signatureImage = signatureImageBuffer(dispatch.signatureUrl);
+  const signatureBlockHeight = signatureImage ? 100 : 50;
   const signTop = y + 24;
-  if (signTop + 40 < pageBottom) {
+  if (signTop + signatureBlockHeight < pageBottom) {
     doc.font(fonts.regular).fontSize(9).fillColor(palette.muted).text("Received in good condition", CONTENT_LEFT, signTop, {
       width: 220,
     });
-    doc.font(fonts.bold).fontSize(9).fillColor(palette.ink).text("Receiver's Signature", CONTENT_LEFT, signTop + 26, {
+
+    let signatureLabelY = signTop + 26;
+    if (signatureImage) {
+      try {
+        doc.image(signatureImage, CONTENT_LEFT, signTop + 14, {
+          fit: [180, 48],
+        });
+        signatureLabelY = signTop + 66;
+      } catch {
+        // Fall back to label-only signature block if the image cannot be embedded.
+      }
+    }
+
+    doc.font(fonts.bold).fontSize(9).fillColor(palette.ink).text("Receiver's Signature", CONTENT_LEFT, signatureLabelY, {
       width: 220,
     });
+    if (dispatch.receiverName) {
+      doc.font(fonts.regular).fontSize(8).fillColor(palette.muted).text(dispatch.receiverName, CONTENT_LEFT, signatureLabelY + 14, {
+        width: 220,
+      });
+    }
+
     doc.font(fonts.regular).fontSize(9).fillColor(palette.muted).text(`For ${dispatch.company.name}`, CONTENT_RIGHT - 200, signTop, {
       width: 200,
       align: "right",

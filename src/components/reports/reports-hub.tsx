@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Download, FileSpreadsheet, FileText } from "lucide-react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -77,11 +78,13 @@ export function ReportsHub({
   warehouses,
   salesExecutives,
   canFilterByExecutive,
+  reportShortcuts,
 }: {
   allowedReports: ReportKey[];
   warehouses: WarehouseOption[];
   salesExecutives: SalesExecutiveOption[];
   canFilterByExecutive: boolean;
+  reportShortcuts: Array<{ label: string; description: string; href: string }>;
 }) {
   const defaults = defaultReportDateRange();
   const visibleReports = REPORTS.filter((report) => allowedReports.includes(report.key));
@@ -170,6 +173,24 @@ export function ReportsHub({
           </Button>
         ))}
       </div>
+
+      {reportShortcuts.length ? (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {reportShortcuts.map((shortcut) => (
+            <Card key={shortcut.label}>
+              <CardContent className="space-y-3 pt-6">
+                <div>
+                  <p className="font-medium text-slate-900">{shortcut.label}</p>
+                  <p className="text-sm text-slate-500">{shortcut.description}</p>
+                </div>
+                <Button asChild variant="outline">
+                  <Link href={shortcut.href}>Open report</Link>
+                </Button>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : null}
 
       <Card>
         <CardContent className="space-y-4 pt-6">

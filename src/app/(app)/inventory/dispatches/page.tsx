@@ -1,10 +1,10 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { canManageDispatches, canViewDispatches } from "@/lib/dispatch-permissions";
-import { listDispatches } from "@/lib/dispatch-service";
+import { listDispatchableProformaInvoices } from "@/lib/dispatch-service";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
-import { DispatchList } from "@/components/dispatches/dispatch-list";
+import { DispatchTodayPanel } from "@/components/dispatches/dispatch-today-panel";
 
 export default async function DispatchesPage() {
   const session = await auth();
@@ -13,11 +13,11 @@ export default async function DispatchesPage() {
   }
 
   const companyId = requireActiveCompany(session);
-  const dispatches = await listDispatches(prisma, companyId, {});
+  const tiles = await listDispatchableProformaInvoices(prisma, companyId);
 
   return (
-    <DispatchList
-      initialDispatches={JSON.parse(JSON.stringify(dispatches))}
+    <DispatchTodayPanel
+      tiles={JSON.parse(JSON.stringify(tiles))}
       canManage={canManageDispatches(session.user.roles)}
     />
   );

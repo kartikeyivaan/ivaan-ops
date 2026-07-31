@@ -196,6 +196,8 @@ export const incomingLotSchema = z.object({
   vendorId: z.string().uuid().optional(),
   purchaseInvoiceNo: z.string().trim().min(1, "Purchase invoice number is required."),
   purchaseDate: z.string(),
+  expectedMinDate: z.string().optional(),
+  expectedMaxDate: z.string().optional(),
   productId: z.string().uuid(),
   quantity: z.coerce.number().positive(),
   unitPurchaseRate: z.coerce.number().min(0),
@@ -285,15 +287,89 @@ export const quotationLineSchema = z.object({
   rate: z.coerce.number().min(0),
 });
 
-export const createQuotationSchema = z.object({
+const quotationDeliveryTermsShape = {
+  deliveryTermMode: z
+    .enum(["ADVANCE_BOOKING", "READY_STOCK", "SUBJECT_TO_AVAILABILITY"])
+    .default("SUBJECT_TO_AVAILABILITY"),
+  requiredPaymentPercent: z.coerce.number().positive().max(100).nullable().optional(),
+  dispatchMinDays: z.coerce.number().int().min(0).nullable().optional(),
+  dispatchMaxDays: z.coerce.number().int().min(0).nullable().optional(),
+};
+
+function validateQuotationDeliveryTerms(
+  data: {
+    deliveryTermMode: "ADVANCE_BOOKING" | "READY_STOCK" | "SUBJECT_TO_AVAILABILITY";
+    requiredPaymentPercent?: number | null;
+    dispatchMinDays?: number | null;
+    dispatchMaxDays?: number | null;
+  },
+  ctx: z.RefinementCtx,
+) {
+  if (data.deliveryTermMode === "ADVANCE_BOOKING") {
+    if (data.requiredPaymentPercent == null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Advance payment percentage is required.",
+        path: ["requiredPaymentPercent"],
+      });
+    }
+    if (data.dispatchMinDays == null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Minimum dispatch days are required.",
+        path: ["dispatchMinDays"],
+      });
+    }
+    if (data.dispatchMaxDays == null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Maximum dispatch days are required.",
+        path: ["dispatchMaxDays"],
+      });
+    }
+    if (
+      data.dispatchMinDays != null &&
+      data.dispatchMaxDays != null &&
+      data.dispatchMinDays > data.dispatchMaxDays
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Minimum dispatch days cannot exceed maximum dispatch days.",
+        path: ["dispatchMaxDays"],
+      });
+    }
+  }
+
+  if (
+    data.deliveryTermMode === "READY_STOCK" &&
+    data.requiredPaymentPercent != null &&
+    data.requiredPaymentPercent !== 100
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Ready stock requires 100% payment.",
+      path: ["requiredPaymentPercent"],
+    });
+  }
+}
+
+const createQuotationBaseSchema = z.object({
   customerId: z.string().uuid(),
   salesUserId: z.string().uuid().optional(),
   notes: z.string().optional(),
   send: z.boolean().default(false),
+  proceedWithWarnings: z.boolean().default(false),
   lines: z.array(quotationLineSchema).min(1),
+  ...quotationDeliveryTermsShape,
 });
 
-export const reviseQuotationSchema = createQuotationSchema.omit({ customerId: true, salesUserId: true });
+export const createQuotationSchema = createQuotationBaseSchema.superRefine(
+  validateQuotationDeliveryTerms,
+);
+
+export const reviseQuotationSchema = createQuotationBaseSchema
+  .omit({ customerId: true, salesUserId: true })
+  .superRefine(validateQuotationDeliveryTerms);
 
 export const approveQuotationPriceSchema = z.object({
   remarks: z.string().optional(),
@@ -335,6 +411,22 @@ export const approveBookingSchema = z.object({
   remarks: z.string().optional(),
 });
 
+export const dispatchTodayDraftSchema = z.object({
+  vehicleNo: z.string().trim().max(100).optional(),
+  driverName: z.string().trim().max(100).optional(),
+  receiverName: z.string().trim().max(100).optional(),
+  receiverMobile: z.string().trim().max(20).optional(),
+  notes: z.string().trim().max(500).optional(),
+});
+
+export const markDispatchTodaySchema = dispatchTodayDraftSchema.extend({
+  confirmEarly: z.boolean().optional(),
+});
+
+export const approveDispatchTodaySchema = z.object({
+  remarks: z.string().optional(),
+});
+
 export const proformaInvoiceSearchSchema = z.object({
   q: z.string().optional(),
   status: z
@@ -360,8 +452,22 @@ export const dispatchLineSchema = z.object({
 
 export const createDispatchSchema = z.object({
   proformaInvoiceId: z.string().uuid(),
-  vehicleNo: z.string().optional(),
+  vehicleNo: z.string().trim().min(1, "Vehicle number is required."),
   driverName: z.string().optional(),
+  receiverName: z.string().trim().min(1, "Receiver name is required."),
+  receiverMobile: z.string().trim().min(10, "Receiver mobile is required."),
+  signatureUrl: z
+    .string()
+    .max(200_000)
+    .refine(
+      (value) =>
+        value === "" ||
+        value.startsWith("data:image/png;base64,") ||
+        value.startsWith("data:image/jpeg;base64,") ||
+        value.startsWith("data:image/webp;base64,"),
+      "Signature must be a PNG, JPEG, or WebP image.",
+    )
+    .optional(),
   notes: z.string().optional(),
   confirm: z.boolean().default(true),
   lines: z.array(dispatchLineSchema).min(1),
@@ -372,6 +478,14 @@ export const dispatchSearchSchema = z.object({
   status: z.enum(["DRAFT", "DISPATCHED", "CANCEL_PENDING", "CANCELLED"]).optional(),
   customerId: z.string().uuid().optional(),
   proformaInvoiceId: z.string().uuid().optional(),
+  fromDate: z.string().optional(),
+  toDate: z.string().optional(),
+});
+
+export const lookupDispatchSerialsSchema = z.object({
+  piId: z.string().uuid(),
+  productId: z.string().uuid(),
+  serialNumbers: z.array(z.string().trim().min(1)).min(1).max(500),
 });
 
 export const reportSearchSchema = z.object({

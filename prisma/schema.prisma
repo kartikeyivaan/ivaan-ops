@@ -49,6 +49,61 @@ enum CapacityUnit {
 enum LotStatus {
   INCOMING
   CLOSED
+  DRAFT
+  ORDERED
+  IN_TRANSIT
+  PARTIALLY_RECEIVED
+  RECEIVED
+  DELAYED
+  CANCELLED
+}
+
+enum InventoryEventType {
+  OPENING_STOCK
+  MANUAL_ADJUSTMENT_IN
+  MANUAL_ADJUSTMENT_OUT
+  PURCHASE_INCOMING
+  STOCK_TRANSFER_IN
+  STOCK_TRANSFER_OUT
+  BOOKING_RESERVATION
+  BOOKING_RELEASE
+  PLANNED_DISPATCH
+  ACTUAL_DISPATCH
+  RETURN_IN
+  RETURN_OUT
+}
+
+enum InventoryEventStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum DeliveryTermMode {
+  ADVANCE_BOOKING
+  READY_STOCK
+  SUBJECT_TO_AVAILABILITY
+  LEGACY
+}
+
+enum QuotationWarningType {
+  PCM_NON_MODULE
+  CROSS_COMPANY_STOCK
+}
+
+enum InvoiceHandoverStatus {
+  PENDING_INVOICE
+  INVOICE_RECORDED
+  CORRECTION_REQUIRED
+}
+
+enum DocumentationStatus {
+  PENDING
+  HOLD
+  FOR_REVIEW
+  DCR_ISSUED
+  NOT_REQUIRED
 }
 
 enum SerialStatus {
@@ -118,6 +173,7 @@ enum ApprovalModuleType {
   QUOTATION
   BOOKING
   DC_CANCEL
+  DISPATCH_TODAY
 }
 
 enum ProjectProposalStatus {
@@ -271,6 +327,8 @@ model Company {
   tagline             String?
   bankDetails         String?  @map("bank_details")
   termsAndConditions  String?  @map("terms_and_conditions")
+  /// HH:mm local cut-off for ready-stock same-day dispatch (e.g. "15:00"). Null = preserve legacy behaviour.
+  dispatchCutoffTime  String?  @map("dispatch_cutoff_time")
   isActive            Boolean  @default(true) @map("is_active")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
@@ -279,12 +337,19 @@ model Company {
   userCompanies         UserCompany[]
   inventoryLots         InventoryLot[]
   inventoryTransactions InventoryTransaction[]
+  inventoryEvents       InventoryEvent[]
+  inventorySafetyStock  InventorySafetyStock[]
+  workingDays           CompanyWorkingDay[]
+  holidays              CompanyHoliday[]
   transfersFrom         InventoryTransfer[]    @relation("TransferFromCompany")
   transfersTo           InventoryTransfer[]    @relation("TransferToCompany")
   quotations            Quotation[]
+  quotationWarningLogs  QuotationWarningLog[]
   proformaInvoices      ProformaInvoice[]
   payments              Payment[]
   dispatches            Dispatch[]
+  invoiceHandovers      InvoiceHandover[]
+  documentationRecords  DocumentationRecord[]
   projectProposals      ProjectProposal[]
   serviceRequests       ServiceRequest[]
 
@@ -323,6 +388,7 @@ model User {
   salesQuotations                   Quotation[]                    @relation("QuotationSalesUser")
   salesProformaInvoices             ProformaInvoice[]              @relation("ProformaSalesUser")
   bookedProformaInvoices            ProformaInvoice[]              @relation("ProformaBookedBy")
+  dispatchTodayMarkedPis            ProformaInvoice[]              @relation("ProformaDispatchTodayMarkedBy")
   recordedPayments                  Payment[]                      @relation("PaymentRecordedBy")
   createdDispatches                 Dispatch[]                     @relation("DispatchCreatedBy")
   dispatchedOrders                  Dispatch[]                     @relation("DispatchDispatchedBy")
@@ -343,6 +409,16 @@ model User {
   serviceUpdatesCreated             ServiceUpdate[]                @relation("ServiceUpdateCreatedBy")
   serviceAttachmentsUploaded        ServiceAttachment[]            @relation("ServiceAttachmentUploadedBy")
   servicePaymentsRecorded           ServicePayment[]               @relation("ServicePaymentRecordedBy")
+  inventoryEventsCreated            InventoryEvent[]               @relation("InventoryEventCreatedBy")
+  inventoryEventsUpdated            InventoryEvent[]               @relation("InventoryEventUpdatedBy")
+  safetyStockCreated                InventorySafetyStock[]         @relation("SafetyStockCreatedBy")
+  safetyStockUpdated                InventorySafetyStock[]         @relation("SafetyStockUpdatedBy")
+  quotationWarningsProceeded        QuotationWarningLog[]          @relation("QuotationWarningProceededBy")
+  invoiceHandoversRecorded          InvoiceHandover[]              @relation("InvoiceHandoverRecordedBy")
+  documentationAssigned             DocumentationRecord[]          @relation("DocumentationAssignedTo")
+  documentationCompleted            DocumentationRecord[]          @relation("DocumentationCompletedBy")
+  documentationStatusChanges        DocumentationStatusHistory[]   @relation("DocumentationStatusChangedBy")
+  documentationAssignments          DocumentationAssignmentHistory[] @relation("DocumentationAssignmentChangedBy")
 
   @@map("users")
 }
@@ -390,11 +466,15 @@ model Warehouse {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  company          Company           @relation(fields: [companyId], references: [id])
-  inventoryLots    InventoryLot[]
-  inventorySerials InventorySerial[]
-  proformaInvoices ProformaInvoice[]
-  dispatches       Dispatch[]
+  company              Company               @relation(fields: [companyId], references: [id])
+  inventoryLots        InventoryLot[]
+  inventorySerials     InventorySerial[]
+  inventoryEvents      InventoryEvent[]
+  inventorySafetyStock InventorySafetyStock[]
+  workingDayOverrides  WarehouseWorkingDay[]
+  holidayOverrides     WarehouseHoliday[]
+  proformaInvoices     ProformaInvoice[]
+  dispatches           Dispatch[]
 
   @@unique([companyId, name])
   @@map("warehouses")
@@ -474,6 +554,8 @@ model Customer {
   proformaInvoices  ProformaInvoice[]
   payments          Payment[]
   dispatches        Dispatch[]
+  invoiceHandovers  InvoiceHandover[]
+  documentationRecords DocumentationRecord[]
 
   @@index([customerName])
   @@index([city])
@@ -555,6 +637,8 @@ model Product {
   inventoryLots            InventoryLot[]
   inventorySerials         InventorySerial[]
   inventoryTransactions    InventoryTransaction[]
+  inventoryEvents          InventoryEvent[]
+  inventorySafetyStock     InventorySafetyStock[]
   transferLines            InventoryTransferLine[]
   quotationItems           QuotationItem[]
   proformaInvoiceItems     ProformaInvoiceItem[]
@@ -593,6 +677,8 @@ model InventoryLot {
   vendorId          String?   @map("vendor_id") @db.Uuid
   purchaseInvoiceNo String    @unique @map("purchase_invoice_no")
   purchaseDate      DateTime  @map("purchase_date") @db.Date
+  expectedMinDate   DateTime? @map("expected_min_date") @db.Date
+  expectedMaxDate   DateTime? @map("expected_max_date") @db.Date
   productId         String    @map("product_id") @db.Uuid
   quantity          Decimal   @db.Decimal(12, 3)
   unitPurchaseRate  Decimal   @default(0) @map("unit_purchase_rate") @db.Decimal(12, 2)
@@ -602,6 +688,8 @@ model InventoryLot {
   receivedQuantity  Decimal   @default(0) @map("received_quantity") @db.Decimal(12, 3)
   damagedQuantity   Decimal   @default(0) @map("damaged_quantity") @db.Decimal(12, 3)
   status            LotStatus
+  remarks           String?
+  referenceNumber   String?   @map("reference_number")
   createdById       String    @map("created_by") @db.Uuid
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
@@ -617,6 +705,7 @@ model InventoryLot {
   @@index([companyId, status])
   @@index([warehouseId])
   @@index([productId])
+  @@index([expectedMaxDate])
   @@map("inventory_lots")
 }
 
@@ -742,27 +831,34 @@ model InventoryTransferLineSerial {
 }
 
 model Quotation {
-  id                String          @id @default(uuid()) @db.Uuid
-  quotationNo       String          @unique @map("quotation_no")
-  companyId         String          @map("company_id") @db.Uuid
-  customerId        String          @map("customer_id") @db.Uuid
-  salesUserId       String          @map("sales_user_id") @db.Uuid
-  status            QuotationStatus
-  revisionNo        Int             @default(1) @map("revision_no")
-  parentQuotationId String?         @map("parent_quotation_id") @db.Uuid
-  quotationDate     DateTime        @map("quotation_date") @db.Date
-  expiryDate        DateTime        @map("expiry_date") @db.Date
-  totalValue        Decimal         @map("total_value") @db.Decimal(14, 2)
-  notes             String?
-  createdAt         DateTime        @default(now()) @map("created_at")
-  updatedAt         DateTime        @updatedAt @map("updated_at")
+  id                         String            @id @default(uuid()) @db.Uuid
+  quotationNo                String            @unique @map("quotation_no")
+  companyId                  String            @map("company_id") @db.Uuid
+  customerId                 String            @map("customer_id") @db.Uuid
+  salesUserId                String            @map("sales_user_id") @db.Uuid
+  status                     QuotationStatus
+  revisionNo                 Int               @default(1) @map("revision_no")
+  parentQuotationId          String?           @map("parent_quotation_id") @db.Uuid
+  quotationDate              DateTime          @map("quotation_date") @db.Date
+  expiryDate                 DateTime          @map("expiry_date") @db.Date
+  totalValue                 Decimal           @map("total_value") @db.Decimal(14, 2)
+  notes                      String?
+  deliveryTermMode           DeliveryTermMode  @default(LEGACY) @map("delivery_term_mode")
+  bookingAllowed             Boolean           @default(false) @map("booking_allowed")
+  requiredPaymentPercent     Decimal?          @map("required_payment_percent") @db.Decimal(5, 2)
+  dispatchMinDays            Int?              @map("dispatch_min_days")
+  dispatchMaxDays            Int?              @map("dispatch_max_days")
+  deliveryTermNoteSnapshot   String?           @map("delivery_term_note_snapshot")
+  createdAt                  DateTime          @default(now()) @map("created_at")
+  updatedAt                  DateTime          @updatedAt @map("updated_at")
 
-  company         Company          @relation(fields: [companyId], references: [id])
-  customer        Customer         @relation(fields: [customerId], references: [id])
-  salesUser       User             @relation("QuotationSalesUser", fields: [salesUserId], references: [id])
-  parentQuotation Quotation?       @relation("QuotationRevisions", fields: [parentQuotationId], references: [id])
-  revisions       Quotation[]      @relation("QuotationRevisions")
+  company         Company               @relation(fields: [companyId], references: [id])
+  customer        Customer              @relation(fields: [customerId], references: [id])
+  salesUser       User                  @relation("QuotationSalesUser", fields: [salesUserId], references: [id])
+  parentQuotation Quotation?            @relation("QuotationRevisions", fields: [parentQuotationId], references: [id])
+  revisions       Quotation[]           @relation("QuotationRevisions")
   items           QuotationItem[]
+  warningLogs     QuotationWarningLog[]
   proformaInvoice ProformaInvoice?
 
   @@index([companyId, status])
@@ -808,21 +904,37 @@ model ApprovalRequest {
 }
 
 model ProformaInvoice {
-  id          String                @id @default(uuid()) @db.Uuid
-  piNo        String                @unique @map("pi_no")
-  companyId   String                @map("company_id") @db.Uuid
-  customerId  String                @map("customer_id") @db.Uuid
-  salesUserId String                @map("sales_user_id") @db.Uuid
-  quotationId String?               @unique @map("quotation_id") @db.Uuid
-  warehouseId String?               @map("warehouse_id") @db.Uuid
-  status      ProformaInvoiceStatus
-  piDate      DateTime              @map("pi_date") @db.Date
-  totalValue  Decimal               @map("total_value") @db.Decimal(14, 2)
-  notes       String?
-  bookedAt    DateTime?             @map("booked_at")
-  bookedById  String?               @map("booked_by") @db.Uuid
-  createdAt   DateTime              @default(now()) @map("created_at")
-  updatedAt   DateTime              @updatedAt @map("updated_at")
+  id                     String                @id @default(uuid()) @db.Uuid
+  piNo                   String                @unique @map("pi_no")
+  companyId              String                @map("company_id") @db.Uuid
+  customerId             String                @map("customer_id") @db.Uuid
+  salesUserId            String                @map("sales_user_id") @db.Uuid
+  quotationId            String?               @unique @map("quotation_id") @db.Uuid
+  warehouseId            String?               @map("warehouse_id") @db.Uuid
+  status                 ProformaInvoiceStatus
+  piDate                 DateTime              @map("pi_date") @db.Date
+  totalValue             Decimal               @map("total_value") @db.Decimal(14, 2)
+  notes                  String?
+  bookedAt               DateTime?             @map("booked_at")
+  bookedById             String?               @map("booked_by") @db.Uuid
+  deliveryTermMode       DeliveryTermMode?     @map("delivery_term_mode")
+  bookingAllowed         Boolean?              @map("booking_allowed")
+  requiredPaymentPercent Decimal?              @map("required_payment_percent") @db.Decimal(5, 2)
+  dispatchMinDays        Int?                  @map("dispatch_min_days")
+  dispatchMaxDays        Int?                  @map("dispatch_max_days")
+  deliveryTermNoteSnapshot String?             @map("delivery_term_note_snapshot")
+  requiredDispatchMinDate DateTime?            @map("required_dispatch_min_date") @db.Date
+  requiredDispatchMaxDate DateTime?            @map("required_dispatch_max_date") @db.Date
+  dispatchTodayDate       DateTime?            @map("dispatch_today_date") @db.Date
+  dispatchTodayMarkedAt   DateTime?            @map("dispatch_today_marked_at")
+  dispatchTodayMarkedById String?              @map("dispatch_today_marked_by") @db.Uuid
+  dispatchDraftVehicleNo  String?              @map("dispatch_draft_vehicle_no")
+  dispatchDraftDriverName String?              @map("dispatch_draft_driver_name")
+  dispatchDraftReceiverName String?            @map("dispatch_draft_receiver_name")
+  dispatchDraftReceiverMobile String?          @map("dispatch_draft_receiver_mobile")
+  dispatchDraftNotes      String?              @map("dispatch_draft_notes")
+  createdAt              DateTime              @default(now()) @map("created_at")
+  updatedAt              DateTime              @updatedAt @map("updated_at")
 
   company    Company                 @relation(fields: [companyId], references: [id])
   customer   Customer                @relation(fields: [customerId], references: [id])
@@ -830,6 +942,7 @@ model ProformaInvoice {
   quotation  Quotation?              @relation(fields: [quotationId], references: [id])
   warehouse  Warehouse?              @relation(fields: [warehouseId], references: [id])
   bookedBy   User?                   @relation("ProformaBookedBy", fields: [bookedById], references: [id])
+  dispatchTodayMarkedBy User?        @relation("ProformaDispatchTodayMarkedBy", fields: [dispatchTodayMarkedById], references: [id])
   items      ProformaInvoiceItem[]
   payments   Payment[]
   serials    ProformaInvoiceSerial[]
@@ -837,6 +950,7 @@ model ProformaInvoice {
 
   @@index([companyId, status])
   @@index([customerId])
+  @@index([companyId, dispatchTodayDate])
   @@map("proforma_invoices")
 }
 
@@ -905,6 +1019,10 @@ model Dispatch {
   dispatchDate      DateTime       @map("dispatch_date") @db.Date
   vehicleNo         String?        @map("vehicle_no")
   driverName        String?        @map("driver_name")
+  receiverName      String?        @map("receiver_name")
+  receiverMobile    String?        @map("receiver_mobile")
+  signatureUrl      String?        @map("signature_url")
+  plannedDispatchDate DateTime?    @map("planned_dispatch_date") @db.Date
   notes             String?
   createdById       String         @map("created_by") @db.Uuid
   dispatchedById    String?        @map("dispatched_by") @db.Uuid
@@ -912,13 +1030,15 @@ model Dispatch {
   createdAt         DateTime       @default(now()) @map("created_at")
   updatedAt         DateTime       @updatedAt @map("updated_at")
 
-  company         Company         @relation(fields: [companyId], references: [id])
-  customer        Customer        @relation(fields: [customerId], references: [id])
-  proformaInvoice ProformaInvoice @relation(fields: [proformaInvoiceId], references: [id])
-  warehouse       Warehouse       @relation(fields: [warehouseId], references: [id])
-  createdBy       User            @relation("DispatchCreatedBy", fields: [createdById], references: [id])
-  dispatchedBy    User?           @relation("DispatchDispatchedBy", fields: [dispatchedById], references: [id])
+  company         Company          @relation(fields: [companyId], references: [id])
+  customer        Customer         @relation(fields: [customerId], references: [id])
+  proformaInvoice ProformaInvoice  @relation(fields: [proformaInvoiceId], references: [id])
+  warehouse       Warehouse        @relation(fields: [warehouseId], references: [id])
+  createdBy       User             @relation("DispatchCreatedBy", fields: [createdById], references: [id])
+  dispatchedBy    User?            @relation("DispatchDispatchedBy", fields: [dispatchedById], references: [id])
   lines           DispatchLine[]
+  invoiceHandover InvoiceHandover?
+  documentation   DocumentationRecord?
 
   @@index([companyId, status])
   @@index([customerId])
@@ -1277,4 +1397,234 @@ model ServicePayment {
 
   @@index([serviceRequestId])
   @@map("service_payments")
+}
+
+// ---------------------------------------------------------------------------
+// Inventory intelligence, accounts handover & documentation (additive)
+// ---------------------------------------------------------------------------
+
+model InventoryEvent {
+  id                 String               @id @default(uuid()) @db.Uuid
+  companyId          String               @map("company_id") @db.Uuid
+  warehouseId        String               @map("warehouse_id") @db.Uuid
+  productId          String               @map("product_id") @db.Uuid
+  eventType          InventoryEventType   @map("event_type")
+  quantity           Decimal              @db.Decimal(12, 3)
+  quantityEffect     Int                  @map("quantity_effect")
+  effectiveDate      DateTime             @map("effective_date") @db.Date
+  expectedMinDate    DateTime?            @map("expected_min_date") @db.Date
+  expectedMaxDate    DateTime?            @map("expected_max_date") @db.Date
+  sourceType         String?              @map("source_type")
+  sourceId           String?              @map("source_id") @db.Uuid
+  sourceNumber       String?              @map("source_number")
+  replacesEventId    String?              @map("replaces_event_id") @db.Uuid
+  status             InventoryEventStatus @default(ACTIVE)
+  notes              String?
+  cancellationReason String?              @map("cancellation_reason")
+  cancelledAt        DateTime?            @map("cancelled_at")
+  createdById        String               @map("created_by") @db.Uuid
+  updatedById        String?              @map("updated_by") @db.Uuid
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @updatedAt @map("updated_at")
+
+  company       Company         @relation(fields: [companyId], references: [id])
+  warehouse     Warehouse       @relation(fields: [warehouseId], references: [id])
+  product       Product         @relation(fields: [productId], references: [id])
+  createdBy     User            @relation("InventoryEventCreatedBy", fields: [createdById], references: [id])
+  updatedBy     User?           @relation("InventoryEventUpdatedBy", fields: [updatedById], references: [id])
+  replacesEvent InventoryEvent? @relation("InventoryEventReplacement", fields: [replacesEventId], references: [id])
+  replacedBy    InventoryEvent[] @relation("InventoryEventReplacement")
+
+  @@index([companyId, warehouseId, productId, effectiveDate])
+  @@index([status, eventType])
+  @@index([sourceType, sourceId])
+  @@index([replacesEventId])
+  @@map("inventory_events")
+}
+
+model InventorySafetyStock {
+  id            String    @id @default(uuid()) @db.Uuid
+  companyId     String    @map("company_id") @db.Uuid
+  warehouseId   String    @map("warehouse_id") @db.Uuid
+  productId     String    @map("product_id") @db.Uuid
+  safetyQty     Decimal   @map("safety_qty") @db.Decimal(12, 3)
+  effectiveFrom DateTime  @map("effective_from") @db.Date
+  isActive      Boolean   @default(true) @map("is_active")
+  createdById   String    @map("created_by") @db.Uuid
+  updatedById   String?   @map("updated_by") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  company   Company   @relation(fields: [companyId], references: [id])
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  product   Product   @relation(fields: [productId], references: [id])
+  createdBy User      @relation("SafetyStockCreatedBy", fields: [createdById], references: [id])
+  updatedBy User?     @relation("SafetyStockUpdatedBy", fields: [updatedById], references: [id])
+
+  @@unique([companyId, warehouseId, productId, effectiveFrom])
+  @@index([companyId, warehouseId, productId, isActive])
+  @@map("inventory_safety_stock")
+}
+
+/// weekday: 0=Sunday .. 6=Saturday. isWorking=false marks non-working days.
+model CompanyWorkingDay {
+  id        String  @id @default(uuid()) @db.Uuid
+  companyId String  @map("company_id") @db.Uuid
+  weekday   Int
+  isWorking Boolean @default(true) @map("is_working")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, weekday])
+  @@map("company_working_days")
+}
+
+model CompanyHoliday {
+  id        String   @id @default(uuid()) @db.Uuid
+  companyId String   @map("company_id") @db.Uuid
+  holidayDate DateTime @map("holiday_date") @db.Date
+  name      String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, holidayDate])
+  @@map("company_holidays")
+}
+
+model WarehouseWorkingDay {
+  id          String  @id @default(uuid()) @db.Uuid
+  warehouseId String  @map("warehouse_id") @db.Uuid
+  weekday     Int
+  isWorking   Boolean @default(true) @map("is_working")
+
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@unique([warehouseId, weekday])
+  @@map("warehouse_working_days")
+}
+
+model WarehouseHoliday {
+  id          String   @id @default(uuid()) @db.Uuid
+  warehouseId String   @map("warehouse_id") @db.Uuid
+  holidayDate DateTime @map("holiday_date") @db.Date
+  name        String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@unique([warehouseId, holidayDate])
+  @@map("warehouse_holidays")
+}
+
+model QuotationWarningLog {
+  id          String              @id @default(uuid()) @db.Uuid
+  quotationId String              @map("quotation_id") @db.Uuid
+  companyId   String              @map("company_id") @db.Uuid
+  warningType QuotationWarningType @map("warning_type")
+  displayed   Boolean             @default(true)
+  details     Json?
+  proceededById String            @map("proceeded_by") @db.Uuid
+  proceededAt DateTime            @default(now()) @map("proceeded_at")
+
+  quotation   Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  company     Company   @relation(fields: [companyId], references: [id])
+  proceededBy User      @relation("QuotationWarningProceededBy", fields: [proceededById], references: [id])
+
+  @@index([quotationId])
+  @@index([companyId, warningType])
+  @@map("quotation_warning_logs")
+}
+
+model InvoiceHandover {
+  id                String                @id @default(uuid()) @db.Uuid
+  dispatchId        String                @unique @map("dispatch_id") @db.Uuid
+  companyId         String                @map("company_id") @db.Uuid
+  customerId        String                @map("customer_id") @db.Uuid
+  status            InvoiceHandoverStatus @default(PENDING_INVOICE)
+  invoiceNumber     String?               @map("invoice_number")
+  invoiceDate       DateTime?             @map("invoice_date") @db.Date
+  remarks           String?
+  attachmentUrl     String?               @map("attachment_url")
+  recordedById      String?               @map("recorded_by") @db.Uuid
+  recordedAt        DateTime?             @map("recorded_at")
+  createdAt         DateTime              @default(now()) @map("created_at")
+  updatedAt         DateTime              @updatedAt @map("updated_at")
+
+  dispatch   Dispatch @relation(fields: [dispatchId], references: [id], onDelete: Cascade)
+  company    Company  @relation(fields: [companyId], references: [id])
+  customer   Customer @relation(fields: [customerId], references: [id])
+  recordedBy User?    @relation("InvoiceHandoverRecordedBy", fields: [recordedById], references: [id])
+  documentation DocumentationRecord?
+
+  @@index([companyId, status])
+  @@index([customerId])
+  @@map("invoice_handovers")
+}
+
+model DocumentationRecord {
+  id                   String              @id @default(uuid()) @db.Uuid
+  dispatchId           String              @unique @map("dispatch_id") @db.Uuid
+  invoiceHandoverId    String              @unique @map("invoice_handover_id") @db.Uuid
+  companyId            String              @map("company_id") @db.Uuid
+  customerId           String              @map("customer_id") @db.Uuid
+  status               DocumentationStatus @default(PENDING)
+  assignedToId         String?             @map("assigned_to") @db.Uuid
+  assignedDate         DateTime?           @map("assigned_date") @db.Date
+  completedDate        DateTime?           @map("completed_date") @db.Date
+  completedById        String?             @map("completed_by") @db.Uuid
+  remarks              String?
+  internalNotes        String?             @map("internal_notes")
+  holdReason           String?             @map("hold_reason")
+  reviewReason         String?             @map("review_reason")
+  createdAt            DateTime            @default(now()) @map("created_at")
+  updatedAt            DateTime            @updatedAt @map("updated_at")
+
+  dispatch        Dispatch                       @relation(fields: [dispatchId], references: [id], onDelete: Cascade)
+  invoiceHandover InvoiceHandover                @relation(fields: [invoiceHandoverId], references: [id], onDelete: Cascade)
+  company         Company                        @relation(fields: [companyId], references: [id])
+  customer        Customer                       @relation(fields: [customerId], references: [id])
+  assignedTo      User?                          @relation("DocumentationAssignedTo", fields: [assignedToId], references: [id])
+  completedBy     User?                          @relation("DocumentationCompletedBy", fields: [completedById], references: [id])
+  statusHistory   DocumentationStatusHistory[]
+  assignmentHistory DocumentationAssignmentHistory[]
+
+  @@index([companyId, status])
+  @@index([assignedToId, status])
+  @@index([customerId])
+  @@map("documentation_records")
+}
+
+model DocumentationStatusHistory {
+  id                   String              @id @default(uuid()) @db.Uuid
+  documentationRecordId String             @map("documentation_record_id") @db.Uuid
+  fromStatus           DocumentationStatus? @map("from_status")
+  toStatus             DocumentationStatus @map("to_status")
+  holdReason           String?             @map("hold_reason")
+  reviewReason         String?             @map("review_reason")
+  remarks              String?
+  changedById          String              @map("changed_by") @db.Uuid
+  changedAt            DateTime            @default(now()) @map("changed_at")
+
+  documentationRecord DocumentationRecord @relation(fields: [documentationRecordId], references: [id], onDelete: Cascade)
+  changedBy           User                @relation("DocumentationStatusChangedBy", fields: [changedById], references: [id])
+
+  @@index([documentationRecordId, changedAt])
+  @@map("documentation_status_history")
+}
+
+model DocumentationAssignmentHistory {
+  id                    String   @id @default(uuid()) @db.Uuid
+  documentationRecordId String   @map("documentation_record_id") @db.Uuid
+  fromUserId            String?  @map("from_user_id") @db.Uuid
+  toUserId              String?  @map("to_user_id") @db.Uuid
+  changedById           String   @map("changed_by") @db.Uuid
+  changedAt             DateTime @default(now()) @map("changed_at")
+  reason                String?
+
+  documentationRecord DocumentationRecord @relation(fields: [documentationRecordId], references: [id], onDelete: Cascade)
+  changedBy           User                @relation("DocumentationAssignmentChangedBy", fields: [changedById], references: [id])
+
+  @@index([documentationRecordId, changedAt])
+  @@map("documentation_assignment_history")
 }

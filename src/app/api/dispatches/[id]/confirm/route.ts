@@ -47,6 +47,13 @@ export async function POST(_request: Request, context: RouteContext) {
       if (error.message === "INVALID_SERIAL_SELECTION") {
         return errorResponse("VALIDATION_ERROR", "Invalid serial selection.", 400);
       }
+      if (error.message === "MANDATORY_DISPATCH_FIELDS_REQUIRED") {
+        return errorResponse(
+          "VALIDATION_ERROR",
+          "Receiver name, receiver mobile and vehicle number are required.",
+          400,
+        );
+      }
     }
     throw error;
   }

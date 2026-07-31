@@ -54,6 +54,29 @@ export async function POST(request: Request, context: RouteContext) {
       if (error.message === "INSUFFICIENT_STOCK") {
         return errorResponse("INSUFFICIENT_STOCK", "Insufficient stock to book order.", 400);
       }
+      if (error.message.startsWith("INSUFFICIENT_PROJECTED_STOCK|")) {
+        const [, product, shortage] = error.message.split("|");
+        return errorResponse(
+          "INSUFFICIENT_PROJECTED_STOCK",
+          `Projected stock is short by ${shortage} for ${product} during the required dispatch window.`,
+          400,
+          { product, shortage: Number(shortage) },
+        );
+      }
+      if (error.message === "ADVANCE_NOT_MET") {
+        return errorResponse(
+          "ADVANCE_NOT_MET",
+          "The required payment percentage has not been received for this PI.",
+          400,
+        );
+      }
+      if (error.message === "BOOKING_NOT_ALLOWED") {
+        return errorResponse(
+          "BOOKING_NOT_ALLOWED",
+          "The selected delivery terms do not permit stock booking.",
+          400,
+        );
+      }
     }
     throw error;
   }

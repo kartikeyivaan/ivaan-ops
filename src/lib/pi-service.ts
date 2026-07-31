@@ -1,6 +1,8 @@
 import {
   ApprovalModuleType,
   ApprovalRequestStatus,
+  InventoryEventStatus,
+  InventoryEventType,
   InventoryTransactionType,
   ItemApprovalStatus,
   Prisma,
@@ -12,16 +14,26 @@ import {
 import { writeAuditLogTx } from "@/lib/audit";
 import { decimalToNumber } from "@/lib/inventory";
 import { getWarehouseStockForProduct } from "@/lib/inventory-service";
+import { createEvent } from "@/lib/inventory-event-service";
+import { getInventoryProjection } from "@/lib/inventory-projection-service";
+import { notifyBookingCreated, notifyDispatchTodayApprovalNeeded, notifyWarehouseDispatchToday } from "@/lib/notification-service";
 import {
   calculateAdvanceRequired,
   calculateOutstanding,
   canRequestBooking,
+  daysUntilCommittedDispatch,
   generateProformaInvoiceNumber,
+  isDispatchTodayActive,
+  isReadyForDispatch,
+  needsEarlyDispatchTodayApproval,
+  resolveBookingRequirement,
   toDateOnly,
 } from "@/lib/proforma-invoices";
 import { calculateLineAmounts, roundMoney } from "@/lib/quotations";
+import { addCalendarDays } from "@/lib/working-days";
+import { createWorkingDaysService } from "@/lib/working-days-service";
 
-const piInclude = {
+export const piInclude = {
   company: {
     select: {
       id: true,
@@ -55,9 +67,20 @@ const piInclude = {
   salesUser: {
     select: { id: true, name: true, email: true, mobile: true, officialContactNumber: true },
   },
-  quotation: { select: { id: true, quotationNo: true } },
+  quotation: {
+    select: {
+      id: true,
+      quotationNo: true,
+      deliveryTermMode: true,
+      bookingAllowed: true,
+      requiredPaymentPercent: true,
+      dispatchMinDays: true,
+      dispatchMaxDays: true,
+    },
+  },
   warehouse: { select: { id: true, name: true, code: true } },
   bookedBy: { select: { id: true, name: true } },
+  dispatchTodayMarkedBy: { select: { id: true, name: true } },
   items: {
     include: {
       product: {
@@ -92,11 +115,53 @@ type PiLineInput = {
   rate: number;
 };
 
-function serializePi(pi: ProformaInvoiceRecord) {
+function serializePi(
+  pi: ProformaInvoiceRecord,
+  options?: { pendingDispatchTodayApproval?: boolean },
+) {
   const totalPaid = roundMoney(
     pi.payments.reduce((sum, payment) => sum + decimalToNumber(payment.amount), 0),
   );
   const totalValue = decimalToNumber(pi.totalValue);
+  const outstanding = calculateOutstanding(totalValue, totalPaid);
+  const requirement = resolveBookingRequirement(
+    {
+      deliveryTermMode: pi.deliveryTermMode,
+      bookingAllowed: pi.bookingAllowed,
+      requiredPaymentPercent:
+        pi.requiredPaymentPercent == null
+          ? null
+          : decimalToNumber(pi.requiredPaymentPercent),
+    },
+    pi.quotation
+      ? {
+          deliveryTermMode: pi.quotation.deliveryTermMode,
+          bookingAllowed: pi.quotation.bookingAllowed,
+          requiredPaymentPercent:
+            pi.quotation.requiredPaymentPercent == null
+              ? null
+              : decimalToNumber(pi.quotation.requiredPaymentPercent),
+        }
+      : null,
+  );
+
+  const today = toDateOnly(new Date());
+  const todayString = today.toISOString().slice(0, 10);
+  const requiredDispatchMinDate = pi.requiredDispatchMinDate
+    ? pi.requiredDispatchMinDate.toISOString().slice(0, 10)
+    : null;
+  const requiredDispatchMaxDate = pi.requiredDispatchMaxDate
+    ? pi.requiredDispatchMaxDate.toISOString().slice(0, 10)
+    : null;
+  const dispatchTodayDate = pi.dispatchTodayDate
+    ? pi.dispatchTodayDate.toISOString().slice(0, 10)
+    : null;
+  const daysUntilCommitted = daysUntilCommittedDispatch(
+    requiredDispatchMinDate,
+    todayString,
+  );
+  const readyForDispatch = isReadyForDispatch(pi.status, outstanding);
+  const dispatchTodayActive = isDispatchTodayActive(dispatchTodayDate, todayString);
 
   return {
     id: pi.id,
@@ -106,9 +171,47 @@ function serializePi(pi: ProformaInvoiceRecord) {
     totalValue,
     notes: pi.notes,
     bookedAt: pi.bookedAt?.toISOString() ?? null,
+    deliveryTermMode: pi.deliveryTermMode,
+    bookingAllowed: pi.bookingAllowed,
+    requiredPaymentPercent:
+      pi.requiredPaymentPercent == null
+        ? null
+        : decimalToNumber(pi.requiredPaymentPercent),
+    dispatchMinDays: pi.dispatchMinDays,
+    dispatchMaxDays: pi.dispatchMaxDays,
+    deliveryTermNoteSnapshot: pi.deliveryTermNoteSnapshot,
+    requiredDispatchMinDate,
+    requiredDispatchMaxDate,
+    daysUntilCommittedDispatch: daysUntilCommitted,
+    dispatchToday: {
+      date: dispatchTodayDate,
+      active: dispatchTodayActive,
+      markedAt: pi.dispatchTodayMarkedAt?.toISOString() ?? null,
+      markedBy: pi.dispatchTodayMarkedBy ?? null,
+      pendingApproval: options?.pendingDispatchTodayApproval ?? false,
+      needsEarlyApproval: needsEarlyDispatchTodayApproval(
+        requiredDispatchMinDate,
+        todayString,
+      ),
+      draft: {
+        vehicleNo: pi.dispatchDraftVehicleNo,
+        driverName: pi.dispatchDraftDriverName,
+        receiverName: pi.dispatchDraftReceiverName,
+        receiverMobile: pi.dispatchDraftReceiverMobile,
+        notes: pi.dispatchDraftNotes,
+      },
+    },
     customer: pi.customer,
     salesUser: pi.salesUser,
-    quotation: pi.quotation,
+    quotation: pi.quotation
+      ? {
+          ...pi.quotation,
+          requiredPaymentPercent:
+            pi.quotation.requiredPaymentPercent == null
+              ? null
+              : decimalToNumber(pi.quotation.requiredPaymentPercent),
+        }
+      : pi.quotation,
     warehouse: pi.warehouse,
     bookedBy: pi.bookedBy,
     items: pi.items.map((item) => ({
@@ -130,9 +233,16 @@ function serializePi(pi: ProformaInvoiceRecord) {
     })),
     paymentSummary: {
       totalPaid,
-      outstanding: calculateOutstanding(totalValue, totalPaid),
-      advanceRequired: calculateAdvanceRequired(totalValue),
-      canRequestBooking: canRequestBooking(totalValue, totalPaid),
+      outstanding,
+      requiredPaymentPercent: requirement.requiredPaymentPercent,
+      advanceRequired: calculateAdvanceRequired(
+        totalValue,
+        requirement.requiredPaymentPercent,
+      ),
+      canRequestBooking: canRequestBooking(totalValue, totalPaid, requirement),
+      bookingBlockedReason: requirement.reason ?? null,
+      readyForDispatch,
+      canMarkDispatchToday: readyForDispatch && !dispatchTodayActive,
     },
   };
 }
@@ -188,31 +298,17 @@ async function bookInventoryForPi(
   for (const item of input.items) {
     if (item.serialTracking) {
       const qty = Math.ceil(item.qty);
-      const serials = await tx.inventorySerial.findMany({
+      // Qty reservation only — specific serials are assigned when recorded on a DC.
+      // Count on-hand units (available + already reserved on open DCs / legacy bookings).
+      const onHandCount = await tx.inventorySerial.count({
         where: {
           productId: item.productId,
           currentWarehouseId: input.warehouseId,
-          status: SerialStatus.AVAILABLE,
-          lot: { companyId: input.companyId },
+          status: { in: [SerialStatus.AVAILABLE, SerialStatus.BOOKED] },
         },
-        orderBy: { createdAt: "asc" },
-        take: qty,
       });
 
-      if (serials.length < qty) throw new Error("INSUFFICIENT_STOCK");
-
-      await tx.inventorySerial.updateMany({
-        where: { id: { in: serials.map((serial) => serial.id) } },
-        data: { status: SerialStatus.BOOKED },
-      });
-
-      await tx.proformaInvoiceSerial.createMany({
-        data: serials.map((serial) => ({
-          piId: input.piId,
-          serialId: serial.id,
-        })),
-        skipDuplicates: true,
-      });
+      if (onHandCount < qty) throw new Error("INSUFFICIENT_STOCK");
 
       await tx.inventoryTransaction.create({
         data: {
@@ -262,6 +358,8 @@ export async function listProformaInvoices(
     customerId?: string;
   },
 ) {
+  await clearExpiredDispatchTodayFlags(prisma, companyId);
+
   const rows = await prisma.proformaInvoice.findMany({
     where: {
       companyId,
@@ -280,7 +378,7 @@ export async function listProformaInvoices(
     orderBy: { createdAt: "desc" },
   });
 
-  return rows.map(serializePi);
+  return rows.map((row) => serializePi(row));
 }
 
 export async function getProformaInvoiceById(
@@ -288,12 +386,26 @@ export async function getProformaInvoiceById(
   companyId: string,
   piId: string,
 ) {
+  await clearExpiredDispatchTodayFlags(prisma, companyId, piId);
+
   const pi = await prisma.proformaInvoice.findFirst({
     where: { id: piId, companyId },
     include: piInclude,
   });
   if (!pi) return null;
-  return serializePi(pi);
+
+  const pendingApproval = await prisma.approvalRequest.findFirst({
+    where: {
+      moduleType: ApprovalModuleType.DISPATCH_TODAY,
+      moduleId: pi.id,
+      status: ApprovalRequestStatus.PENDING,
+    },
+    select: { id: true },
+  });
+
+  return serializePi(pi, {
+    pendingDispatchTodayApproval: Boolean(pendingApproval),
+  });
 }
 
 export async function createProformaInvoice(
@@ -411,6 +523,12 @@ export async function createProformaFromQuotation(
         piDate,
         totalValue: quotation.totalValue,
         notes: quotation.notes,
+        deliveryTermMode: quotation.deliveryTermMode,
+        bookingAllowed: quotation.bookingAllowed,
+        requiredPaymentPercent: quotation.requiredPaymentPercent,
+        dispatchMinDays: quotation.dispatchMinDays,
+        dispatchMaxDays: quotation.dispatchMaxDays,
+        deliveryTermNoteSnapshot: quotation.deliveryTermNoteSnapshot,
         items: {
           create: quotation.items.map((item) => ({
             productId: item.productId,
@@ -569,7 +687,17 @@ export async function requestBooking(
 ) {
   const pi = await prisma.proformaInvoice.findFirst({
     where: { id: input.piId, companyId: input.companyId },
-    include: { payments: true, items: { include: { product: true } } },
+    include: {
+      payments: true,
+      items: { include: { product: true } },
+      quotation: {
+        select: {
+          deliveryTermMode: true,
+          bookingAllowed: true,
+          requiredPaymentPercent: true,
+        },
+      },
+    },
   });
   if (!pi) throw new Error("NOT_FOUND");
   if (pi.status !== ProformaInvoiceStatus.ISSUED) throw new Error("INVALID_STATUS");
@@ -578,7 +706,30 @@ export async function requestBooking(
     (sum, payment) => sum + decimalToNumber(payment.amount),
     0,
   );
-  if (!canRequestBooking(decimalToNumber(pi.totalValue), totalPaid)) {
+  const requirement = resolveBookingRequirement(
+    {
+      deliveryTermMode: pi.deliveryTermMode,
+      bookingAllowed: pi.bookingAllowed,
+      requiredPaymentPercent:
+        pi.requiredPaymentPercent == null
+          ? null
+          : decimalToNumber(pi.requiredPaymentPercent),
+    },
+    pi.quotation
+      ? {
+          deliveryTermMode: pi.quotation.deliveryTermMode,
+          bookingAllowed: pi.quotation.bookingAllowed,
+          requiredPaymentPercent:
+            pi.quotation.requiredPaymentPercent == null
+              ? null
+              : decimalToNumber(pi.quotation.requiredPaymentPercent),
+        }
+      : null,
+  );
+  if (!requirement.allowed) {
+    throw new Error("BOOKING_NOT_ALLOWED");
+  }
+  if (!canRequestBooking(decimalToNumber(pi.totalValue), totalPaid, requirement)) {
     throw new Error("ADVANCE_NOT_MET");
   }
 
@@ -640,11 +791,106 @@ export async function approveBooking(
 ) {
   const pi = await prisma.proformaInvoice.findFirst({
     where: { id: input.piId, companyId: input.companyId },
-    include: { items: { include: { product: true } } },
+    include: {
+      payments: { select: { amount: true } },
+      items: { include: { product: true } },
+      quotation: {
+        select: {
+          deliveryTermMode: true,
+          bookingAllowed: true,
+          requiredPaymentPercent: true,
+          dispatchMinDays: true,
+          dispatchMaxDays: true,
+        },
+      },
+    },
   });
   if (!pi) throw new Error("NOT_FOUND");
   if (pi.status !== ProformaInvoiceStatus.PENDING_BOOKING) throw new Error("INVALID_STATUS");
   if (!pi.warehouseId) throw new Error("WAREHOUSE_REQUIRED");
+
+  const requirement = resolveBookingRequirement(
+    {
+      deliveryTermMode: pi.deliveryTermMode,
+      bookingAllowed: pi.bookingAllowed,
+      requiredPaymentPercent:
+        pi.requiredPaymentPercent == null
+          ? null
+          : decimalToNumber(pi.requiredPaymentPercent),
+    },
+    pi.quotation
+      ? {
+          deliveryTermMode: pi.quotation.deliveryTermMode,
+          bookingAllowed: pi.quotation.bookingAllowed,
+          requiredPaymentPercent:
+            pi.quotation.requiredPaymentPercent == null
+              ? null
+              : decimalToNumber(pi.quotation.requiredPaymentPercent),
+        }
+      : null,
+  );
+  if (!requirement.allowed) throw new Error("BOOKING_NOT_ALLOWED");
+  const totalPaid = pi.payments.reduce(
+    (sum, payment) => sum + decimalToNumber(payment.amount),
+    0,
+  );
+  if (!canRequestBooking(decimalToNumber(pi.totalValue), totalPaid, requirement)) {
+    throw new Error("ADVANCE_NOT_MET");
+  }
+
+  const bookingDate = new Date();
+  const bookingDateString = bookingDate.toISOString().slice(0, 10);
+  const mode = pi.deliveryTermMode ?? pi.quotation?.deliveryTermMode ?? null;
+  const minDays =
+    mode === "READY_STOCK"
+      ? 0
+      : (pi.dispatchMinDays ?? pi.quotation?.dispatchMinDays ?? 0);
+  const maxDays =
+    mode === "READY_STOCK"
+      ? 0
+      : (pi.dispatchMaxDays ?? pi.quotation?.dispatchMaxDays ?? minDays);
+  const workingDays = createWorkingDaysService(prisma);
+  const [dispatchMinString, dispatchMaxString] = await Promise.all([
+    workingDays.getNextWorkingDate(
+      input.companyId,
+      pi.warehouseId,
+      addCalendarDays(bookingDateString, minDays),
+    ),
+    workingDays.getNextWorkingDate(
+      input.companyId,
+      pi.warehouseId,
+      addCalendarDays(bookingDateString, maxDays),
+    ),
+  ]);
+  const requiredDispatchMinDate = new Date(`${dispatchMinString}T00:00:00.000Z`);
+  const requiredDispatchMaxDate = new Date(`${dispatchMaxString}T00:00:00.000Z`);
+
+  const quantitiesByProduct = new Map<string, number>();
+  for (const item of pi.items) {
+    quantitiesByProduct.set(
+      item.productId,
+      (quantitiesByProduct.get(item.productId) ?? 0) + decimalToNumber(item.qty),
+    );
+  }
+  for (const [productId, quantity] of quantitiesByProduct) {
+    const projection = await getInventoryProjection({
+      companyId: input.companyId,
+      warehouseId: pi.warehouseId,
+      productId,
+      startDate: bookingDateString,
+      endDate: dispatchMaxString,
+    });
+    const minimumProjected = projection.length
+      ? Math.min(...projection.map((day) => day.projectedAvailableQuantity))
+      : 0;
+    if (minimumProjected < quantity) {
+      const product = pi.items.find((item) => item.productId === productId)?.product;
+      const shortage = roundMoney(quantity - minimumProjected);
+      throw new Error(
+        `INSUFFICIENT_PROJECTED_STOCK|${product?.displayName ?? productId}|${shortage}`,
+      );
+    }
+  }
 
   return prisma.$transaction(async (tx) => {
     await bookInventoryForPi(tx, {
@@ -660,12 +906,33 @@ export async function approveBooking(
       performedById: input.approvedById,
     });
 
+    for (const item of pi.items) {
+      await createEvent(tx, {
+        companyId: input.companyId,
+        warehouseId: pi.warehouseId!,
+        productId: item.productId,
+        eventType: InventoryEventType.BOOKING_RESERVATION,
+        quantity: decimalToNumber(item.qty),
+        effectiveDate: bookingDate,
+        expectedMinDate: requiredDispatchMinDate,
+        expectedMaxDate: requiredDispatchMaxDate,
+        sourceType: "PROFORMA_INVOICE",
+        sourceId: pi.id,
+        sourceNumber: pi.piNo,
+        notes: `Reserved for ${pi.piNo}`,
+        createdById: input.approvedById,
+      });
+    }
+
     const updated = await tx.proformaInvoice.update({
       where: { id: pi.id },
       data: {
         status: ProformaInvoiceStatus.BOOKED,
-        bookedAt: new Date(),
+        bookedAt: bookingDate,
         bookedById: input.approvedById,
+        requiredPaymentPercent: requirement.requiredPaymentPercent,
+        requiredDispatchMinDate,
+        requiredDispatchMaxDate,
       },
       include: piInclude,
     });
@@ -693,6 +960,11 @@ export async function approveBooking(
       reference: pi.piNo,
     });
 
+    await notifyBookingCreated(tx, {
+      salesUserId: pi.salesUserId,
+      piNo: pi.piNo,
+    });
+
     return serializePi(updated);
   });
 }
@@ -713,15 +985,22 @@ export async function countPendingBookingApprovals(
 }
 
 export async function countPendingPayments(prisma: PrismaClient, companyId: string) {
-  const issuedPis = await prisma.proformaInvoice.findMany({
+  const openPis = await prisma.proformaInvoice.findMany({
     where: {
       companyId,
-      status: { in: [ProformaInvoiceStatus.ISSUED, ProformaInvoiceStatus.PENDING_BOOKING] },
+      status: {
+        in: [
+          ProformaInvoiceStatus.ISSUED,
+          ProformaInvoiceStatus.PENDING_BOOKING,
+          ProformaInvoiceStatus.BOOKED,
+          ProformaInvoiceStatus.PARTIALLY_DISPATCHED,
+        ],
+      },
     },
     include: { payments: true },
   });
 
-  return issuedPis.filter((pi) => {
+  return openPis.filter((pi) => {
     const totalPaid = pi.payments.reduce(
       (sum, payment) => sum + decimalToNumber(payment.amount),
       0,
@@ -776,3 +1055,326 @@ export async function getProformaInvoiceRecord(
     include: piInclude,
   });
 }
+
+type DispatchTodayDraftInput = {
+  vehicleNo?: string;
+  driverName?: string;
+  receiverName?: string;
+  receiverMobile?: string;
+  notes?: string;
+};
+
+function draftFieldsFromInput(draft?: DispatchTodayDraftInput) {
+  if (!draft) return {};
+  return {
+    ...(draft.vehicleNo !== undefined
+      ? { dispatchDraftVehicleNo: draft.vehicleNo || null }
+      : {}),
+    ...(draft.driverName !== undefined
+      ? { dispatchDraftDriverName: draft.driverName || null }
+      : {}),
+    ...(draft.receiverName !== undefined
+      ? { dispatchDraftReceiverName: draft.receiverName || null }
+      : {}),
+    ...(draft.receiverMobile !== undefined
+      ? { dispatchDraftReceiverMobile: draft.receiverMobile || null }
+      : {}),
+    ...(draft.notes !== undefined ? { dispatchDraftNotes: draft.notes || null } : {}),
+  };
+}
+
+export async function clearExpiredDispatchTodayFlags(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  companyId: string,
+  piId?: string,
+) {
+  const today = toDateOnly(new Date());
+  await prisma.proformaInvoice.updateMany({
+    where: {
+      companyId,
+      ...(piId ? { id: piId } : {}),
+      dispatchTodayDate: { not: null, lt: today },
+      status: {
+        in: [ProformaInvoiceStatus.BOOKED, ProformaInvoiceStatus.PARTIALLY_DISPATCHED],
+      },
+    },
+    data: {
+      dispatchTodayDate: null,
+      dispatchTodayMarkedAt: null,
+      dispatchTodayMarkedById: null,
+    },
+  });
+}
+
+async function pullBookingReservationToToday(
+  tx: Prisma.TransactionClient,
+  input: {
+    companyId: string;
+    piId: string;
+    today: Date;
+    updatedById: string;
+  },
+) {
+  await tx.inventoryEvent.updateMany({
+    where: {
+      companyId: input.companyId,
+      sourceType: "PROFORMA_INVOICE",
+      sourceId: input.piId,
+      eventType: InventoryEventType.BOOKING_RESERVATION,
+      status: InventoryEventStatus.ACTIVE,
+    },
+    data: {
+      expectedMinDate: input.today,
+      expectedMaxDate: input.today,
+      updatedById: input.updatedById,
+    },
+  });
+}
+
+async function activateDispatchToday(
+  tx: Prisma.TransactionClient,
+  input: {
+    companyId: string;
+    piId: string;
+    piNo: string;
+    markedById: string;
+    draft?: DispatchTodayDraftInput;
+  },
+) {
+  const today = toDateOnly(new Date());
+  await pullBookingReservationToToday(tx, {
+    companyId: input.companyId,
+    piId: input.piId,
+    today,
+    updatedById: input.markedById,
+  });
+
+  const updated = await tx.proformaInvoice.update({
+    where: { id: input.piId },
+    data: {
+      dispatchTodayDate: today,
+      dispatchTodayMarkedAt: new Date(),
+      dispatchTodayMarkedById: input.markedById,
+      ...draftFieldsFromInput(input.draft),
+    },
+    include: piInclude,
+  });
+
+  await tx.approvalRequest.updateMany({
+    where: {
+      moduleType: ApprovalModuleType.DISPATCH_TODAY,
+      moduleId: input.piId,
+      status: ApprovalRequestStatus.PENDING,
+    },
+    data: {
+      status: ApprovalRequestStatus.APPROVED,
+      approvedById: input.markedById,
+    },
+  });
+
+  await writeAuditLogTx(tx, {
+    tableName: "proforma_invoices",
+    recordId: input.piId,
+    action: "UPDATE",
+    newValue: { dispatchTodayDate: today.toISOString().slice(0, 10) },
+    performedBy: input.markedById,
+    companyId: input.companyId,
+    reference: input.piNo,
+  });
+
+  await notifyWarehouseDispatchToday(tx, {
+    companyId: input.companyId,
+    piNo: input.piNo,
+  });
+
+  return updated;
+}
+
+/**
+ * Sales marks PI for dispatch today. If committed min date is still in the
+ * future and the actor cannot approve early moves, creates a pending approval
+ * instead of activating immediately.
+ */
+export async function markDispatchToday(
+  prisma: PrismaClient,
+  input: {
+    companyId: string;
+    piId: string;
+    markedById: string;
+    canApproveEarly: boolean;
+    confirmEarly?: boolean;
+    draft?: DispatchTodayDraftInput;
+  },
+) {
+  await clearExpiredDispatchTodayFlags(prisma, input.companyId, input.piId);
+
+  const pi = await prisma.proformaInvoice.findFirst({
+    where: { id: input.piId, companyId: input.companyId },
+    include: { ...piInclude, payments: true, items: true },
+  });
+  if (!pi) throw new Error("NOT_FOUND");
+
+  const totalPaid = pi.payments.reduce(
+    (sum, payment) => sum + decimalToNumber(payment.amount),
+    0,
+  );
+  const outstanding = calculateOutstanding(decimalToNumber(pi.totalValue), totalPaid);
+  if (!isReadyForDispatch(pi.status, outstanding)) {
+    throw new Error("NOT_READY_FOR_DISPATCH");
+  }
+
+  const todayString = toDateOnly(new Date()).toISOString().slice(0, 10);
+  if (isDispatchTodayActive(pi.dispatchTodayDate, todayString)) {
+    // Already marked — allow draft detail updates only.
+    const updated = await prisma.proformaInvoice.update({
+      where: { id: pi.id },
+      data: draftFieldsFromInput(input.draft),
+      include: piInclude,
+    });
+    return serializePi(updated, { pendingDispatchTodayApproval: false });
+  }
+
+  const daysUntil = daysUntilCommittedDispatch(pi.requiredDispatchMinDate, todayString);
+  const needsApproval = needsEarlyDispatchTodayApproval(
+    pi.requiredDispatchMinDate,
+    todayString,
+  );
+
+  if (needsApproval && !input.canApproveEarly) {
+    if (!input.confirmEarly) {
+      throw new Error(
+        `EARLY_DISPATCH_CONFIRMATION_REQUIRED|${daysUntil ?? 0}|${
+          pi.requiredDispatchMinDate?.toISOString().slice(0, 10) ?? ""
+        }`,
+      );
+    }
+
+    const existing = await prisma.approvalRequest.findFirst({
+      where: {
+        moduleType: ApprovalModuleType.DISPATCH_TODAY,
+        moduleId: pi.id,
+        status: ApprovalRequestStatus.PENDING,
+      },
+    });
+    if (existing) throw new Error("DISPATCH_TODAY_ALREADY_REQUESTED");
+
+    return prisma.$transaction(async (tx) => {
+      if (input.draft) {
+        await tx.proformaInvoice.update({
+          where: { id: pi.id },
+          data: draftFieldsFromInput(input.draft),
+        });
+      }
+
+      await tx.approvalRequest.create({
+        data: {
+          moduleType: ApprovalModuleType.DISPATCH_TODAY,
+          moduleId: pi.id,
+          requestedById: input.markedById,
+          status: ApprovalRequestStatus.PENDING,
+          remarks:
+            daysUntil != null
+              ? `Committed delivery is after ${daysUntil} day(s)`
+              : "Early dispatch today requested",
+        },
+      });
+
+      await writeAuditLogTx(tx, {
+        tableName: "proforma_invoices",
+        recordId: pi.id,
+        action: "UPDATE",
+        newValue: { dispatchTodayPendingApproval: true, daysUntil },
+        performedBy: input.markedById,
+        companyId: input.companyId,
+        reference: pi.piNo,
+      });
+
+      await notifyDispatchTodayApprovalNeeded(tx, {
+        companyId: input.companyId,
+        piNo: pi.piNo,
+        daysUntil: daysUntil ?? 0,
+      });
+
+      const refreshed = await tx.proformaInvoice.findFirstOrThrow({
+        where: { id: pi.id },
+        include: piInclude,
+      });
+      return serializePi(refreshed, { pendingDispatchTodayApproval: true });
+    });
+  }
+
+  if (needsApproval && input.canApproveEarly && !input.confirmEarly) {
+    throw new Error(
+      `EARLY_DISPATCH_CONFIRMATION_REQUIRED|${daysUntil ?? 0}|${
+        pi.requiredDispatchMinDate?.toISOString().slice(0, 10) ?? ""
+      }`,
+    );
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const updated = await activateDispatchToday(tx, {
+      companyId: input.companyId,
+      piId: pi.id,
+      piNo: pi.piNo,
+      markedById: input.markedById,
+      draft: input.draft,
+    });
+    return serializePi(updated, { pendingDispatchTodayApproval: false });
+  });
+}
+
+export async function approveDispatchToday(
+  prisma: PrismaClient,
+  input: {
+    companyId: string;
+    piId: string;
+    approvedById: string;
+    remarks?: string;
+  },
+) {
+  await clearExpiredDispatchTodayFlags(prisma, input.companyId, input.piId);
+
+  const pi = await prisma.proformaInvoice.findFirst({
+    where: { id: input.piId, companyId: input.companyId },
+    include: { ...piInclude, payments: true },
+  });
+  if (!pi) throw new Error("NOT_FOUND");
+
+  const pending = await prisma.approvalRequest.findFirst({
+    where: {
+      moduleType: ApprovalModuleType.DISPATCH_TODAY,
+      moduleId: pi.id,
+      status: ApprovalRequestStatus.PENDING,
+    },
+  });
+  if (!pending) throw new Error("NO_PENDING_DISPATCH_TODAY");
+
+  const totalPaid = pi.payments.reduce(
+    (sum, payment) => sum + decimalToNumber(payment.amount),
+    0,
+  );
+  const outstanding = calculateOutstanding(decimalToNumber(pi.totalValue), totalPaid);
+  if (!isReadyForDispatch(pi.status, outstanding)) {
+    throw new Error("NOT_READY_FOR_DISPATCH");
+  }
+
+  return prisma.$transaction(async (tx) => {
+    await tx.approvalRequest.update({
+      where: { id: pending.id },
+      data: {
+        status: ApprovalRequestStatus.APPROVED,
+        approvedById: input.approvedById,
+        remarks: input.remarks,
+      },
+    });
+
+    const updated = await activateDispatchToday(tx, {
+      companyId: input.companyId,
+      piId: pi.id,
+      piNo: pi.piNo,
+      markedById: input.approvedById,
+    });
+    return serializePi(updated, { pendingDispatchTodayApproval: false });
+  });
+}
+

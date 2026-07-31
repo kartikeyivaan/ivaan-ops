@@ -137,6 +137,37 @@ export const DEFAULT_TERMS = [
   "Title & Risk: Title and risk in the goods pass to the client upon dispatch from our warehouse.",
 ];
 
+/** Terms printed on Delivery Challans only. */
+export const DISPATCH_TERMS = [
+  "Inspection of Goods: Fragile or damage-prone items must be inspected at the time of dispatch / delivery. No claims for transit or handling damage shall be entertained after dispatch.",
+  "Title & Risk: Title and risk in the goods pass to the client upon dispatch from our warehouse.",
+] as const;
+
+/**
+ * Builds printable terms, putting the quotation/PI delivery-term snapshot first
+ * and dropping the generic default payment line so it does not contradict it.
+ */
+export function buildDocumentTerms(
+  companyTermsAndConditions: string | null | undefined,
+  deliveryTermNote: string | null | undefined,
+  fallbackTerms: readonly string[] = DEFAULT_TERMS,
+): string[] {
+  const companyTerms = companyTermsAndConditions
+    ? companyTermsAndConditions.split("\n").filter(Boolean)
+    : [];
+  const base = companyTerms.length > 0 ? companyTerms : [...fallbackTerms];
+  const note = deliveryTermNote?.trim();
+  if (!note) return base;
+
+  const withoutGenericPayment = base.filter(
+    (term) => !/^Payment:\s/i.test(term.trim()),
+  );
+  if (withoutGenericPayment.some((term) => term.trim() === note)) {
+    return withoutGenericPayment;
+  }
+  return [note, ...withoutGenericPayment];
+}
+
 /** Company fields read from the database to build a printable document profile. */
 export type CompanyProfileSource = {
   address?: string | null;
@@ -632,103 +663,4 @@ export function amountInWords(value: number): string {
   let words = `Rupees ${numberToIndianWords(rupees)}`;
   if (paise > 0) words += ` and ${twoDigitWords(paise)} Paise`;
   return `${words} Only`;
-}
-
-// ---------------------------------------------------------------------------
-// HSN-wise GST summary (place-of-supply aware: CGST+SGST intra-state, IGST inter-state).
-// ---------------------------------------------------------------------------
-export type GstGroup = { hsn: string; taxable: number; gstRate: number; gstAmount: number };
-
-export function isIntraState(companyState?: string | null, customerState?: string | null): boolean {
-  if (!companyState || !customerState) return true; // default to local supply
-  return companyState.trim().toLowerCase() === customerState.trim().toLowerCase();
-}
-
-/** Aggregates per-line taxable/GST amounts into HSN + rate groups. */
-export function buildGstGroups(
-  lines: Array<{ hsn?: string | null; taxable: number; gstRate: number; gstAmount: number }>,
-): GstGroup[] {
-  const map = new Map<string, GstGroup>();
-  for (const line of lines) {
-    const hsn = line.hsn?.trim() || "—";
-    const key = `${hsn}|${line.gstRate}`;
-    const existing = map.get(key);
-    if (existing) {
-      existing.taxable += line.taxable;
-      existing.gstAmount += line.gstAmount;
-    } else {
-      map.set(key, { hsn, taxable: line.taxable, gstRate: line.gstRate, gstAmount: line.gstAmount });
-    }
-  }
-  return [...map.values()];
-}
-
-/** Draws the HSN-wise GST summary table. Returns the y after the table. */
-export function drawGstSummary(
-  ctx: DocContext,
-  opts: {
-    top: number;
-    groups: GstGroup[];
-    intraState: boolean;
-    money: (value: number) => string;
-    pageBottom: number;
-  },
-): number {
-  if (opts.groups.length === 0) return opts.top;
-
-  const after = sectionTitle(ctx, "HSN-wise GST Summary", CONTENT_LEFT, opts.top);
-  const tableTop = after + 4;
-
-  const columns: TableColumn[] = opts.intraState
-    ? [
-        { key: "hsn", label: "HSN", width: 78, align: "left", bold: true },
-        { key: "taxable", label: "Taxable Value", width: 92, align: "right" },
-        { key: "cgstR", label: "CGST %", width: 52, align: "center" },
-        { key: "cgstA", label: "CGST Amt", width: 78, align: "right" },
-        { key: "sgstR", label: "SGST %", width: 52, align: "center" },
-        { key: "sgstA", label: "SGST Amt", width: 78, align: "right" },
-        { key: "total", label: "Total Tax", width: 85, align: "right" },
-      ]
-    : [
-        { key: "hsn", label: "HSN", width: 110, align: "left", bold: true },
-        { key: "taxable", label: "Taxable Value", width: 130, align: "right" },
-        { key: "igstR", label: "IGST %", width: 70, align: "center" },
-        { key: "igstA", label: "IGST Amt", width: 105, align: "right" },
-        { key: "total", label: "Total Tax", width: 100, align: "right" },
-      ];
-
-  let totalTaxable = 0;
-  let totalGst = 0;
-  const rows: Array<Record<string, string>> = [];
-  for (const group of opts.groups) {
-    totalTaxable += group.taxable;
-    totalGst += group.gstAmount;
-    const half = group.gstAmount / 2;
-    const halfRate = group.gstRate / 2;
-    const row: Record<string, string> = { hsn: group.hsn, taxable: opts.money(group.taxable) };
-    if (opts.intraState) {
-      row.cgstR = `${halfRate}%`;
-      row.cgstA = opts.money(half);
-      row.sgstR = `${halfRate}%`;
-      row.sgstA = opts.money(half);
-    } else {
-      row.igstR = `${group.gstRate}%`;
-      row.igstA = opts.money(group.gstAmount);
-    }
-    row.total = opts.money(group.gstAmount);
-    rows.push(row);
-  }
-
-  const totalRow: Record<string, string> = { hsn: "Total", taxable: opts.money(totalTaxable) };
-  if (opts.intraState) {
-    totalRow.cgstA = opts.money(totalGst / 2);
-    totalRow.sgstA = opts.money(totalGst / 2);
-  } else {
-    totalRow.igstA = opts.money(totalGst);
-  }
-  totalRow.total = opts.money(totalGst);
-  rows.push(totalRow);
-
-  const { y } = drawTable(ctx, { top: tableTop, columns, rows, pageBottom: opts.pageBottom });
-  return y;
 }

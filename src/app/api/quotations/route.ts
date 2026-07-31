@@ -5,7 +5,11 @@ import {
   canManageQuotations,
   canViewQuotations,
 } from "@/lib/quotation-permissions";
-import { createQuotation, listQuotations } from "@/lib/quotation-service";
+import {
+  createQuotation,
+  listQuotations,
+  QuotationWarningsRequiredError,
+} from "@/lib/quotation-service";
 import { buildQuotationWhatsappUrl } from "@/lib/quotation-share";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
@@ -87,12 +91,26 @@ export async function POST(request: Request) {
       notes: parsed.data.notes,
       send: parsed.data.send,
       lines: parsed.data.lines,
+      deliveryTermMode: parsed.data.deliveryTermMode,
+      requiredPaymentPercent: parsed.data.requiredPaymentPercent,
+      dispatchMinDays: parsed.data.dispatchMinDays,
+      dispatchMaxDays: parsed.data.dispatchMaxDays,
+      permittedCompanyIds: userCompanyIds,
+      proceedWithWarnings: parsed.data.proceedWithWarnings,
     });
 
     const whatsappUrl = parsed.data.send ? buildQuotationWhatsappUrl(quotation) : null;
 
     return NextResponse.json({ ...quotation, whatsappUrl }, { status: 201 });
   } catch (error) {
+    if (error instanceof QuotationWarningsRequiredError) {
+      return errorResponse(
+        "QUOTATION_WARNINGS_REQUIRED",
+        "Review the quotation warnings before proceeding.",
+        409,
+        { warnings: error.warnings },
+      );
+    }
     if (error instanceof Error) {
       if (error.message === "CUSTOMER_NOT_FOUND") {
         return errorResponse("NOT_FOUND", "Customer not found.", 404);

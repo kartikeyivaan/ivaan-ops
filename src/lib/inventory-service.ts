@@ -1,4 +1,6 @@
 import {
+  InventoryEventStatus,
+  InventoryEventType,
   InventoryTransactionType,
   LotStatus,
   Prisma,
@@ -12,11 +14,13 @@ import {
   generateLotNumber,
   normalizePurchaseInvoiceNo,
   normalizeSerialNumber,
+  pendingIncomingQuantity,
   systemPurchaseInvoiceNo,
   type StockSummary,
   validateInwardQuantities,
 } from "@/lib/inventory";
 import { writeAuditLogTx } from "@/lib/audit";
+import { toSignedInventoryQuantity } from "@/lib/inventory-events";
 
 const lotInclude = {
   company: true,
@@ -96,7 +100,11 @@ export async function getWarehouseStockForProduct(
     const damaged = decimalToNumber(lot.damagedQuantity);
 
     if (lot.status === LotStatus.INCOMING) {
-      incomingStock += Math.max(0, quantity - received - damaged);
+      incomingStock += pendingIncomingQuantity({
+        quantity,
+        receivedQuantity: received,
+        damagedQuantity: damaged,
+      });
     }
 
     if (!product.serialTracking) {
@@ -301,6 +309,8 @@ export async function findSimilarIncomingLots(
     vendorId?: string | null;
     productId: string;
     purchaseDate: Date;
+    expectedMinDate?: Date | null;
+    expectedMaxDate?: Date | null;
     quantity: number;
     unitPurchaseRate: number;
     excludeLotId?: string;
@@ -393,6 +403,8 @@ export async function createIncomingLot(
     vendorId?: string | null;
     purchaseInvoiceNo?: string | null;
     purchaseDate: Date;
+    expectedMinDate?: Date | null;
+    expectedMaxDate?: Date | null;
     productId: string;
     quantity: number;
     unitPurchaseRate: number;
@@ -411,6 +423,9 @@ export async function createIncomingLot(
   if (!product || !product.isActive) throw new Error("PRODUCT_NOT_FOUND");
 
   if (input.quantity <= 0) throw new Error("INVALID_QUANTITY");
+  if (input.expectedMinDate && input.expectedMaxDate && input.expectedMinDate > input.expectedMaxDate) {
+    throw new Error("INVALID_ARRIVAL_WINDOW");
+  }
 
   const transportCharges = input.transportCharges ?? 0;
   const commissionCharges = input.commissionCharges ?? 0;
@@ -451,6 +466,8 @@ export async function createIncomingLot(
         vendorId: input.vendorId ?? null,
         purchaseInvoiceNo,
         purchaseDate: input.purchaseDate,
+        expectedMinDate: input.expectedMinDate,
+        expectedMaxDate: input.expectedMaxDate,
         productId: input.productId,
         quantity: input.quantity,
         unitPurchaseRate: input.unitPurchaseRate,
@@ -475,6 +492,25 @@ export async function createIncomingLot(
         quantity: input.quantity,
         unitPurchaseRate: input.unitPurchaseRate,
         totalPurchaseCost,
+      },
+    });
+
+    await tx.inventoryEvent.create({
+      data: {
+        companyId: input.companyId,
+        warehouseId: input.warehouseId,
+        productId: input.productId,
+        eventType: InventoryEventType.PURCHASE_INCOMING,
+        quantity: input.quantity,
+        quantityEffect: toSignedInventoryQuantity(InventoryEventType.PURCHASE_INCOMING, input.quantity),
+        effectiveDate: input.expectedMaxDate ?? input.expectedMinDate ?? input.purchaseDate,
+        expectedMinDate: input.expectedMinDate,
+        expectedMaxDate: input.expectedMaxDate,
+        sourceType: "INVENTORY_LOT",
+        sourceId: lot.id,
+        sourceNumber: lot.lotNumber,
+        status: InventoryEventStatus.ACTIVE,
+        createdById: input.createdById,
       },
     });
 
@@ -503,6 +539,8 @@ export async function updateIncomingLot(
     vendorId?: string | null;
     purchaseInvoiceNo?: string | null;
     purchaseDate: Date;
+    expectedMinDate?: Date | null;
+    expectedMaxDate?: Date | null;
     productId: string;
     quantity: number;
     unitPurchaseRate: number;
@@ -527,6 +565,9 @@ export async function updateIncomingLot(
   if (!product || !product.isActive) throw new Error("PRODUCT_NOT_FOUND");
 
   if (input.quantity <= 0) throw new Error("INVALID_QUANTITY");
+  if (input.expectedMinDate && input.expectedMaxDate && input.expectedMinDate > input.expectedMaxDate) {
+    throw new Error("INVALID_ARRIVAL_WINDOW");
+  }
 
   const transportCharges = input.transportCharges ?? 0;
   const commissionCharges = input.commissionCharges ?? 0;
@@ -566,6 +607,8 @@ export async function updateIncomingLot(
         vendorId: input.vendorId ?? null,
         purchaseInvoiceNo,
         purchaseDate: input.purchaseDate,
+        expectedMinDate: input.expectedMinDate,
+        expectedMaxDate: input.expectedMaxDate,
         productId: input.productId,
         quantity: input.quantity,
         unitPurchaseRate: input.unitPurchaseRate,
@@ -594,6 +637,37 @@ export async function updateIncomingLot(
         totalPurchaseCost,
       },
     });
+
+    const event = await tx.inventoryEvent.findFirst({
+      where: {
+        sourceType: "INVENTORY_LOT",
+        sourceId: lotId,
+        eventType: InventoryEventType.PURCHASE_INCOMING,
+        status: { not: InventoryEventStatus.CANCELLED },
+      },
+    });
+    const eventData = {
+      companyId,
+      warehouseId: input.warehouseId,
+      productId: input.productId,
+      quantity: input.quantity,
+      quantityEffect: toSignedInventoryQuantity(InventoryEventType.PURCHASE_INCOMING, input.quantity),
+      effectiveDate: input.expectedMaxDate ?? input.expectedMinDate ?? input.purchaseDate,
+      expectedMinDate: input.expectedMinDate,
+      expectedMaxDate: input.expectedMaxDate,
+      sourceType: "INVENTORY_LOT",
+      sourceId: lotId,
+      sourceNumber: lot.lotNumber,
+      status: InventoryEventStatus.ACTIVE,
+      updatedById: input.updatedById,
+    };
+    if (event) {
+      await tx.inventoryEvent.update({ where: { id: event.id }, data: eventData });
+    } else {
+      await tx.inventoryEvent.create({
+        data: { ...eventData, eventType: InventoryEventType.PURCHASE_INCOMING, createdById: input.updatedById },
+      });
+    }
 
     return updatedLot;
   });
@@ -630,8 +704,29 @@ export async function deleteIncomingLot(
       },
     });
 
+    await tx.inventoryEvent.updateMany({
+      where: { sourceType: "INVENTORY_LOT", sourceId: lotId, status: { not: InventoryEventStatus.CANCELLED } },
+      data: {
+        status: InventoryEventStatus.CANCELLED,
+        cancellationReason: "Incoming lot deleted",
+        cancelledAt: new Date(),
+        updatedById: deletedById,
+      },
+    });
+
     await tx.inventoryLot.delete({ where: { id: lotId } });
   });
+}
+
+function isDuplicateSerialUniqueViolation(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+    return false;
+  }
+  const target = error.meta?.target;
+  if (Array.isArray(target)) {
+    return target.some((value) => String(value).includes("serial_number"));
+  }
+  return String(target ?? "").includes("serial_number");
 }
 
 export async function receiveMaterial(
@@ -665,61 +760,39 @@ export async function receiveMaterial(
   });
   if (validationError) throw new Error(validationError);
 
+  const normalizedSerials = lot.product.serialTracking
+    ? (input.serialNumbers ?? []).map(normalizeSerialNumber)
+    : [];
+
   if (lot.product.serialTracking) {
     if (input.receivedQty <= 0) {
       throw new Error("Serial-tracked products require received quantity.");
     }
-    const serials = (input.serialNumbers ?? []).map(normalizeSerialNumber);
-    if (serials.length !== input.receivedQty) {
+    if (normalizedSerials.length !== input.receivedQty) {
       throw new Error("SERIAL_COUNT_MISMATCH");
     }
-    if (new Set(serials).size !== serials.length) {
+    if (new Set(normalizedSerials).size !== normalizedSerials.length) {
       throw new Error("DUPLICATE_SERIAL_IN_REQUEST");
-    }
-
-    const existing = await prisma.inventorySerial.findMany({
-      where: { serialNumber: { in: serials } },
-      select: { serialNumber: true },
-    });
-    if (existing.length > 0) {
-      throw new Error("DUPLICATE_SERIAL");
     }
   }
 
-  return prisma.$transaction(async (tx) => {
-    const nextReceived = receivedQuantity + input.receivedQty;
-    const nextDamaged = damagedQuantity + input.damagedQty;
-    const isComplete = nextReceived + nextDamaged >= quantity;
-
-    const updatedLot = await tx.inventoryLot.update({
-      where: { id: lot.id },
-      data: {
-        receivedQuantity: nextReceived,
-        damagedQuantity: nextDamaged,
-        status: isComplete ? LotStatus.CLOSED : LotStatus.INCOMING,
-      },
-      include: lotInclude,
-    });
-
-    if (input.receivedQty > 0) {
-      await tx.inventoryTransaction.create({
-        data: {
-          transactionType: InventoryTransactionType.INWARD,
-          companyId: input.companyId,
-          productId: lot.productId,
-          lotId: lot.id,
-          qty: input.receivedQty,
-          toWarehouseId: lot.warehouseId,
-          referenceType: "LOT",
-          referenceId: lot.id,
-          createdById: input.createdById,
-        },
-      });
-
+  try {
+    return await prisma.$transaction(async (tx) => {
+      // Re-validate serial uniqueness inside the transaction so a concurrent /
+      // double submit cannot bump lot qty while the duplicate attempt "fails".
       if (lot.product.serialTracking) {
-        const serials = (input.serialNumbers ?? []).map(normalizeSerialNumber);
+        const existing = await tx.inventorySerial.findMany({
+          where: { serialNumber: { in: normalizedSerials } },
+          select: { serialNumber: true },
+        });
+        if (existing.length > 0) {
+          throw new Error("DUPLICATE_SERIAL");
+        }
+
+        // Insert serials before lot qty / ledger writes so a unique violation
+        // cannot leave stock counts ahead of serial rows.
         await tx.inventorySerial.createMany({
-          data: serials.map((serialNumber) => ({
+          data: normalizedSerials.map((serialNumber) => ({
             lotId: lot.id,
             productId: lot.productId,
             serialNumber,
@@ -728,45 +801,111 @@ export async function receiveMaterial(
           })),
         });
       }
-    }
 
-    if (input.damagedQty > 0) {
-      await tx.inventoryTransaction.create({
+      const nextReceived = receivedQuantity + input.receivedQty;
+      const nextDamaged = damagedQuantity + input.damagedQty;
+      const isComplete = nextReceived + nextDamaged >= quantity;
+
+      const updatedLot = await tx.inventoryLot.update({
+        where: { id: lot.id },
         data: {
-          transactionType: InventoryTransactionType.DAMAGE,
-          companyId: input.companyId,
-          productId: lot.productId,
-          lotId: lot.id,
-          qty: input.damagedQty,
-          fromWarehouseId: lot.warehouseId,
-          referenceType: "LOT",
-          referenceId: lot.id,
-          notes: "Damaged during inwarding",
-          createdById: input.createdById,
+          receivedQuantity: nextReceived,
+          damagedQuantity: nextDamaged,
+          status: isComplete ? LotStatus.CLOSED : LotStatus.INCOMING,
         },
+        include: lotInclude,
       });
-    }
 
-    await writeAuditLogTx(tx, {
-      tableName: "inventory_lots",
-      recordId: lot.id,
-      action: "UPDATE",
-      performedBy: input.createdById,
-      companyId: input.companyId,
-      oldValue: {
-        receivedQuantity,
-        damagedQuantity,
-        status: lot.status,
-      },
-      newValue: {
+      if (input.receivedQty > 0) {
+        await tx.inventoryTransaction.create({
+          data: {
+            transactionType: InventoryTransactionType.INWARD,
+            companyId: input.companyId,
+            productId: lot.productId,
+            lotId: lot.id,
+            qty: input.receivedQty,
+            toWarehouseId: lot.warehouseId,
+            referenceType: "LOT",
+            referenceId: lot.id,
+            createdById: input.createdById,
+          },
+        });
+      }
+
+      if (input.damagedQty > 0) {
+        await tx.inventoryTransaction.create({
+          data: {
+            transactionType: InventoryTransactionType.DAMAGE,
+            companyId: input.companyId,
+            productId: lot.productId,
+            lotId: lot.id,
+            qty: input.damagedQty,
+            fromWarehouseId: lot.warehouseId,
+            referenceType: "LOT",
+            referenceId: lot.id,
+            notes: "Damaged during inwarding",
+            createdById: input.createdById,
+          },
+        });
+      }
+
+      const remainingIncoming = pendingIncomingQuantity({
+        quantity,
         receivedQuantity: nextReceived,
         damagedQuantity: nextDamaged,
-        status: updatedLot.status,
-      },
-    });
+      });
+      const purchaseEvent = await tx.inventoryEvent.findFirst({
+        where: {
+          sourceType: "INVENTORY_LOT",
+          sourceId: lot.id,
+          eventType: InventoryEventType.PURCHASE_INCOMING,
+          status: { not: InventoryEventStatus.CANCELLED },
+        },
+      });
+      if (purchaseEvent) {
+        await tx.inventoryEvent.update({
+          where: { id: purchaseEvent.id },
+          data: {
+            quantity: remainingIncoming,
+            quantityEffect: toSignedInventoryQuantity(
+              InventoryEventType.PURCHASE_INCOMING,
+              remainingIncoming,
+            ),
+            status:
+              remainingIncoming <= 0
+                ? InventoryEventStatus.COMPLETED
+                : InventoryEventStatus.ACTIVE,
+            updatedById: input.createdById,
+          },
+        });
+      }
 
-    return updatedLot;
-  });
+      await writeAuditLogTx(tx, {
+        tableName: "inventory_lots",
+        recordId: lot.id,
+        action: "UPDATE",
+        performedBy: input.createdById,
+        companyId: input.companyId,
+        oldValue: {
+          receivedQuantity,
+          damagedQuantity,
+          status: lot.status,
+        },
+        newValue: {
+          receivedQuantity: nextReceived,
+          damagedQuantity: nextDamaged,
+          status: updatedLot.status,
+        },
+      });
+
+      return updatedLot;
+    });
+  } catch (error) {
+    if (isDuplicateSerialUniqueViolation(error)) {
+      throw new Error("DUPLICATE_SERIAL");
+    }
+    throw error;
+  }
 }
 
 export async function reportDamage(
@@ -1079,6 +1218,8 @@ export function serializeLotForRole(
     receivedQuantity: decimalToNumber(lot.receivedQuantity),
     damagedQuantity: decimalToNumber(lot.damagedQuantity),
     purchaseDate: lot.purchaseDate.toISOString(),
+    expectedMinDate: lot.expectedMinDate?.toISOString() ?? null,
+    expectedMaxDate: lot.expectedMaxDate?.toISOString() ?? null,
     createdAt: lot.createdAt.toISOString(),
     updatedAt: lot.updatedAt.toISOString(),
     product: {

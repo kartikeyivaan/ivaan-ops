@@ -9,18 +9,16 @@ import {
   MARGIN_BOTTOM,
   MARGIN_TOP,
   amountInWords,
-  buildGstGroups,
   companyLogo,
   createDocOptions,
   drawDocumentHeader,
   drawFooter,
-  drawGstSummary,
   drawParties,
   drawTable,
-  isIntraState,
   makeMoney,
   resolvePalette,
   resolveProfile,
+  buildDocumentTerms,
   sectionTitle,
   setupFonts,
   type DocContext,
@@ -99,7 +97,6 @@ export async function generateQuotationPdf(quotation: QuotationRecord): Promise<
 
   let subtotal = 0;
   let totalGst = 0;
-  const gstLines: Array<{ hsn?: string | null; taxable: number; gstRate: number; gstAmount: number }> = [];
   const rows = quotation.items.map((item, i) => {
     const qty = Number(item.qty);
     const gstRate = Number(item.gstRate);
@@ -109,7 +106,6 @@ export async function generateQuotationPdf(quotation: QuotationRecord): Promise<
     const unitRate = qty > 0 ? taxable / qty : taxable;
     subtotal += taxable;
     totalGst += gstAmount;
-    gstLines.push({ hsn: item.product.hsn, taxable, gstRate, gstAmount });
 
     const itemLabel = item.product.hsn
       ? `${item.product.displayName}\nHSN: ${item.product.hsn}`
@@ -151,17 +147,6 @@ export async function generateQuotationPdf(quotation: QuotationRecord): Promise<
   doc.text(money(grandTotal), columnX.total + CELL_PAD, y + 7, { width: 63 - CELL_PAD * 2, align: "right" });
   y += totalsRowHeight + 16;
 
-  // ---- HSN-wise GST summary ----------------------------------------------
-  const intraState = isIntraState(quotation.company.state, quotation.customer.state);
-  y = drawGstSummary(ctx, {
-    top: y,
-    groups: buildGstGroups(gstLines),
-    intraState,
-    money,
-    pageBottom,
-  });
-  y += 16;
-
   // ---- Amount in words + amount payable ----------------------------------
   const payableWidth = 240;
   const payableHeight = 36;
@@ -195,9 +180,11 @@ export async function generateQuotationPdf(quotation: QuotationRecord): Promise<
   const colWidth = (CONTENT_WIDTH - colGap) / 2;
   const bankX = CONTENT_LEFT + colWidth + colGap;
 
-  const terms = quotation.company.termsAndConditions
-    ? quotation.company.termsAndConditions.split("\n").filter(Boolean)
-    : profile.terms;
+  const terms = buildDocumentTerms(
+    quotation.company.termsAndConditions,
+    quotation.deliveryTermNoteSnapshot,
+    profile.terms,
+  );
   let termsY = sectionTitle(ctx, "Terms & Conditions", CONTENT_LEFT, infoTop, colWidth) + 2;
   doc.font(fonts.regular).fontSize(8.5).fillColor(palette.ink);
   for (const term of terms) {

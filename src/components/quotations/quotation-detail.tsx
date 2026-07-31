@@ -28,6 +28,11 @@ type QuotationDetailData = {
   expiryDate: string;
   totalValue: number;
   notes?: string | null;
+  deliveryTermMode?: string | null;
+  requiredPaymentPercent?: number | null;
+  dispatchMinDays?: number | null;
+  dispatchMaxDays?: number | null;
+  deliveryTermNoteSnapshot?: string | null;
   customer: {
     id: string;
     customerName: string;
@@ -335,12 +340,21 @@ export function QuotationDetail({
         </CardContent>
       </Card>
 
-      {(quotation.company.bankDetails || quotation.company.termsAndConditions || quotation.notes) && (
+      {(quotation.company.bankDetails ||
+        quotation.company.termsAndConditions ||
+        quotation.deliveryTermNoteSnapshot ||
+        quotation.notes) && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Footer Details</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4 text-sm">
+            {quotation.deliveryTermNoteSnapshot ? (
+              <div>
+                <p className="font-medium">Delivery Terms</p>
+                <p className="text-slate-600">{quotation.deliveryTermNoteSnapshot}</p>
+              </div>
+            ) : null}
             {quotation.company.bankDetails ? (
               <div>
                 <p className="font-medium">Bank Details</p>

@@ -32,6 +32,8 @@ export async function GET(request: Request) {
     status: searchParams.get("status") ?? undefined,
     customerId: searchParams.get("customerId") ?? undefined,
     proformaInvoiceId: searchParams.get("proformaInvoiceId") ?? undefined,
+    fromDate: searchParams.get("fromDate") ?? undefined,
+    toDate: searchParams.get("toDate") ?? undefined,
   });
 
   if (!parsed.success) {
@@ -73,6 +75,9 @@ export async function POST(request: Request) {
       createdById: session.user.id,
       vehicleNo: parsed.data.vehicleNo,
       driverName: parsed.data.driverName,
+      receiverName: parsed.data.receiverName,
+      receiverMobile: parsed.data.receiverMobile,
+      signatureUrl: parsed.data.signatureUrl || undefined,
       notes: parsed.data.notes,
       confirm: parsed.data.confirm,
       lines: parsed.data.lines,
@@ -83,6 +88,16 @@ export async function POST(request: Request) {
       const map: Record<string, [string, string, number]> = {
         NOT_FOUND: ["NOT_FOUND", "Proforma invoice not found.", 404],
         INVALID_PI_STATUS: ["INVALID_STATUS", "PI is not ready for dispatch.", 400],
+        PAYMENT_INCOMPLETE: [
+          "PAYMENT_INCOMPLETE",
+          "Full payment is required before dispatch.",
+          400,
+        ],
+        NOT_MARKED_DISPATCH_TODAY: [
+          "NOT_MARKED_DISPATCH_TODAY",
+          "Sales must mark this PI for dispatch today before warehouse can create a DC.",
+          400,
+        ],
         WAREHOUSE_REQUIRED: ["VALIDATION_ERROR", "PI warehouse is required.", 400],
         WAREHOUSE_MISMATCH: ["VALIDATION_ERROR", "Warehouse mismatch.", 400],
         LINES_REQUIRED: ["VALIDATION_ERROR", "Add at least one line.", 400],
@@ -91,6 +106,11 @@ export async function POST(request: Request) {
         EXCEEDS_REMAINING_QTY: ["VALIDATION_ERROR", "Quantity exceeds remaining booked qty.", 400],
         SERIAL_REQUIRED: ["VALIDATION_ERROR", "Serial selection required.", 400],
         INVALID_SERIAL_SELECTION: ["VALIDATION_ERROR", "Invalid serial selection.", 400],
+        MANDATORY_DISPATCH_FIELDS_REQUIRED: [
+          "VALIDATION_ERROR",
+          "Receiver name, receiver mobile and vehicle number are required.",
+          400,
+        ],
       };
       const mapped = map[error.message];
       if (mapped) {

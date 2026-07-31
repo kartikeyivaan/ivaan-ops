@@ -58,7 +58,11 @@ export async function POST(request: Request, context: RouteContext) {
         return errorResponse("NOT_FOUND", "Proforma invoice not found.", 404);
       }
       if (error.message === "INVALID_STATUS") {
-        return errorResponse("INVALID_STATUS", "Payments can only be recorded on issued PIs.", 400);
+        return errorResponse(
+          "INVALID_STATUS",
+          "Payments cannot be recorded on draft or cancelled PIs.",
+          400,
+        );
       }
       if (error.message === "INVALID_AMOUNT") {
         return errorResponse("VALIDATION_ERROR", "Payment amount must be positive.", 400);

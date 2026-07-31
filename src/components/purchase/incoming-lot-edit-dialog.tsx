@@ -73,6 +73,8 @@ export function IncomingLotEditDialog({
     vendorId: lot.vendor?.id ?? "",
     purchaseInvoiceNo: lot.purchaseInvoiceNo ?? "",
     purchaseDate: formatDateInput(lot.purchaseDate),
+    expectedMinDate: lot.expectedMinDate ? formatDateInput(lot.expectedMinDate) : "",
+    expectedMaxDate: lot.expectedMaxDate ? formatDateInput(lot.expectedMaxDate) : "",
     productId: lot.product.id,
     quantity: String(lot.quantity),
     unitPurchaseRate: String(lot.unitPurchaseRate),
@@ -90,6 +92,8 @@ export function IncomingLotEditDialog({
       vendorId: lot.vendor?.id ?? "",
       purchaseInvoiceNo: lot.purchaseInvoiceNo ?? "",
       purchaseDate: formatDateInput(lot.purchaseDate),
+      expectedMinDate: lot.expectedMinDate ? formatDateInput(lot.expectedMinDate) : "",
+      expectedMaxDate: lot.expectedMaxDate ? formatDateInput(lot.expectedMaxDate) : "",
       productId: lot.product.id,
       quantity: String(lot.quantity),
       unitPurchaseRate: String(lot.unitPurchaseRate),
@@ -238,6 +242,8 @@ export function IncomingLotEditDialog({
       vendorId: form.vendorId || undefined,
       purchaseInvoiceNo: form.purchaseInvoiceNo.trim(),
       purchaseDate: form.purchaseDate,
+      expectedMinDate: form.expectedMinDate || undefined,
+      expectedMaxDate: form.expectedMaxDate || undefined,
       productId: form.productId,
       quantity: quantityResult.value,
       unitPurchaseRate: unitRateResult.value,
@@ -369,6 +375,14 @@ export function IncomingLotEditDialog({
                 onChange={(e) => setForm({ ...form, purchaseDate: e.target.value })}
                 required
               />
+            </div>
+            <div className="space-y-2">
+              <Label>Expected arrival from</Label>
+              <Input type="date" value={form.expectedMinDate} onChange={(e) => setForm({ ...form, expectedMinDate: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>Expected arrival by</Label>
+              <Input type="date" min={form.expectedMinDate || undefined} value={form.expectedMaxDate} onChange={(e) => setForm({ ...form, expectedMaxDate: e.target.value })} />
             </div>
             <FormulaInput
               label="Expected quantity"

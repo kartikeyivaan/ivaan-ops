@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   changePasswordSchema,
   companySchema,
+  createQuotationSchema,
   loginSchema,
   userSchema,
   warehouseSchema,
@@ -71,5 +72,50 @@ describe("validations", () => {
       confirmPassword: "weakpass",
     });
     expect(result.success).toBe(false);
+  });
+
+  it("defaults new quotations to subject-to-availability delivery terms", () => {
+    const result = createQuotationSchema.safeParse({
+      customerId: "550e8400-e29b-41d4-a716-446655440000",
+      lines: [
+        {
+          productId: "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+          qty: 1,
+          rate: 100,
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.deliveryTermMode).toBe("SUBJECT_TO_AVAILABILITY");
+      expect(result.data.proceedWithWarnings).toBe(false);
+    }
+  });
+
+  it("validates advance-booking delivery fields", () => {
+    const base = {
+      customerId: "550e8400-e29b-41d4-a716-446655440000",
+      deliveryTermMode: "ADVANCE_BOOKING",
+      requiredPaymentPercent: 30,
+      dispatchMinDays: 8,
+      dispatchMaxDays: 5,
+      lines: [
+        {
+          productId: "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+          qty: 1,
+          rate: 100,
+        },
+      ],
+    };
+
+    expect(createQuotationSchema.safeParse(base).success).toBe(false);
+    expect(
+      createQuotationSchema.safeParse({
+        ...base,
+        dispatchMinDays: 5,
+        dispatchMaxDays: 8,
+      }).success,
+    ).toBe(true);
   });
 });

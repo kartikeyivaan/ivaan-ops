@@ -2,6 +2,8 @@ import {
   ApprovalModuleType,
   ApprovalRequestStatus,
   DispatchStatus,
+  InventoryEventStatus,
+  InventoryEventType,
   InventoryTransactionType,
   Prisma,
   ProformaInvoiceStatus,
@@ -15,10 +17,17 @@ import {
   toDateOnly,
 } from "@/lib/dispatches";
 import { decimalToNumber, normalizeSerialNumber } from "@/lib/inventory";
+import { toSignedInventoryQuantity } from "@/lib/inventory-events";
+import {
+  notifyDispatchCompleted,
+  notifyInvoicePending,
+} from "@/lib/notification-service";
+import { calculateOutstanding } from "@/lib/proforma-invoices";
+import { clearExpiredDispatchTodayFlags } from "@/lib/pi-service";
 import { deductNonSerialStock } from "@/lib/transfer-service";
 import { roundMoney } from "@/lib/quotations";
 
-const dispatchInclude = {
+export const dispatchInclude = {
   company: {
     select: {
       id: true,
@@ -100,6 +109,9 @@ function serializeDispatch(dispatch: DispatchRecord) {
     dispatchDate: dispatch.dispatchDate.toISOString().slice(0, 10),
     vehicleNo: dispatch.vehicleNo,
     driverName: dispatch.driverName,
+    receiverName: dispatch.receiverName,
+    receiverMobile: dispatch.receiverMobile,
+    signatureUrl: dispatch.signatureUrl,
     notes: dispatch.notes,
     dispatchedAt: dispatch.dispatchedAt?.toISOString() ?? null,
     customer: dispatch.customer,
@@ -157,10 +169,19 @@ async function refreshPiDispatchStatus(
     status = ProformaInvoiceStatus.BOOKED;
   }
 
-  if (status !== pi.status) {
+  if (status !== pi.status || allDispatched) {
     await tx.proformaInvoice.update({
       where: { id: piId },
-      data: { status },
+      data: {
+        status,
+        ...(allDispatched
+          ? {
+              dispatchTodayDate: null,
+              dispatchTodayMarkedAt: null,
+              dispatchTodayMarkedById: null,
+            }
+          : {}),
+      },
     });
   }
 }
@@ -173,8 +194,13 @@ export async function listDispatches(
     status?: DispatchStatus;
     customerId?: string;
     proformaInvoiceId?: string;
+    fromDate?: string;
+    toDate?: string;
   },
 ) {
+  const fromDate = filters.fromDate ? toDateOnly(new Date(filters.fromDate)) : undefined;
+  const toDate = filters.toDate ? toDateOnly(new Date(filters.toDate)) : undefined;
+
   const rows = await prisma.dispatch.findMany({
     where: {
       companyId,
@@ -183,18 +209,29 @@ export async function listDispatches(
       ...(filters.proformaInvoiceId
         ? { proformaInvoiceId: filters.proformaInvoiceId }
         : {}),
+      ...(fromDate || toDate
+        ? {
+            dispatchDate: {
+              ...(fromDate ? { gte: fromDate } : {}),
+              ...(toDate ? { lte: toDate } : {}),
+            },
+          }
+        : {}),
       ...(filters.q
         ? {
             OR: [
               { dcNo: { contains: filters.q, mode: "insensitive" } },
               { customer: { customerName: { contains: filters.q, mode: "insensitive" } } },
               { proformaInvoice: { piNo: { contains: filters.q, mode: "insensitive" } } },
+              { vehicleNo: { contains: filters.q, mode: "insensitive" } },
+              { receiverName: { contains: filters.q, mode: "insensitive" } },
+              { driverName: { contains: filters.q, mode: "insensitive" } },
             ],
           }
         : {}),
     },
     include: dispatchInclude,
-    orderBy: { createdAt: "desc" },
+    orderBy: [{ dispatchDate: "desc" }, { createdAt: "desc" }],
   });
 
   return rows.map(serializeDispatch);
@@ -228,16 +265,22 @@ export async function listDispatchableProformaInvoices(
   prisma: PrismaClient,
   companyId: string,
 ) {
+  await clearExpiredDispatchTodayFlags(prisma, companyId);
+
+  const today = toDateOnly(new Date());
   const rows = await prisma.proformaInvoice.findMany({
     where: {
       companyId,
       status: {
         in: [ProformaInvoiceStatus.BOOKED, ProformaInvoiceStatus.PARTIALLY_DISPATCHED],
       },
+      dispatchTodayDate: today,
     },
     include: {
       customer: { select: { id: true, customerName: true, customerCode: true } },
       warehouse: { select: { id: true, name: true } },
+      payments: { select: { amount: true } },
+      dispatchTodayMarkedBy: { select: { id: true, name: true } },
       items: {
         include: {
           product: {
@@ -254,26 +297,44 @@ export async function listDispatchableProformaInvoices(
   });
 
   return rows
-    .map((pi) => ({
-      id: pi.id,
-      piNo: pi.piNo,
-      status: pi.status,
-      customer: pi.customer,
-      warehouse: pi.warehouse,
-      items: pi.items.map((item) => ({
-        id: item.id,
-        productId: item.productId,
-        productName: item.product.displayName,
-        serialTracking: item.product.serialTracking,
-        orderedQty: decimalToNumber(item.qty),
-        dispatchedQty: decimalToNumber(item.dispatchedQty),
-        remainingQty: getRemainingQty(
-          decimalToNumber(item.qty),
-          decimalToNumber(item.dispatchedQty),
-        ),
-      })),
-    }))
-    .filter((pi) => pi.items.some((item) => item.remainingQty > 0));
+    .map((pi) => {
+      const totalPaid = pi.payments.reduce(
+        (sum, payment) => sum + decimalToNumber(payment.amount),
+        0,
+      );
+      const outstanding = calculateOutstanding(decimalToNumber(pi.totalValue), totalPaid);
+      return {
+        id: pi.id,
+        piNo: pi.piNo,
+        status: pi.status,
+        customer: pi.customer,
+        warehouse: pi.warehouse,
+        outstanding,
+        dispatchTodayMarkedBy: pi.dispatchTodayMarkedBy,
+        draft: {
+          vehicleNo: pi.dispatchDraftVehicleNo,
+          driverName: pi.dispatchDraftDriverName,
+          receiverName: pi.dispatchDraftReceiverName,
+          receiverMobile: pi.dispatchDraftReceiverMobile,
+          notes: pi.dispatchDraftNotes,
+        },
+        items: pi.items.map((item) => ({
+          id: item.id,
+          productId: item.productId,
+          productName: item.product.displayName,
+          serialTracking: item.product.serialTracking,
+          orderedQty: decimalToNumber(item.qty),
+          dispatchedQty: decimalToNumber(item.dispatchedQty),
+          remainingQty: getRemainingQty(
+            decimalToNumber(item.qty),
+            decimalToNumber(item.dispatchedQty),
+          ),
+        })),
+      };
+    })
+    .filter(
+      (pi) => pi.outstanding <= 0 && pi.items.some((item) => item.remainingQty > 0),
+    );
 }
 
 export async function listBookedSerialsForPi(
@@ -289,23 +350,15 @@ export async function listBookedSerialsForPi(
   });
   if (!pi) throw new Error("NOT_FOUND");
 
-  const serials = await prisma.proformaInvoiceSerial.findMany({
+  // Serials are not pre-linked to the PI; list available units of the product from any warehouse.
+  return prisma.inventorySerial.findMany({
     where: {
-      piId: input.piId,
-      serial: {
-        productId: input.productId,
-        status: SerialStatus.BOOKED,
-      },
+      productId: input.productId,
+      status: SerialStatus.AVAILABLE,
     },
-    include: {
-      serial: {
-        select: { id: true, serialNumber: true, status: true },
-      },
-    },
-    orderBy: { serial: { serialNumber: "asc" } },
+    select: { id: true, serialNumber: true, status: true },
+    orderBy: { serialNumber: "asc" },
   });
-
-  return serials.map((entry) => entry.serial);
 }
 
 export async function lookupBookedSerialForDispatch(
@@ -314,6 +367,28 @@ export async function lookupBookedSerialForDispatch(
     companyId: string;
     piId: string;
     serialNumber: string;
+    productId?: string;
+  },
+) {
+  const result = await lookupSerialsForDispatch(prisma, {
+    companyId: input.companyId,
+    piId: input.piId,
+    productId: input.productId,
+    serialNumbers: [input.serialNumber],
+  });
+  if (result.valid[0]) return result.valid[0];
+  const reason = result.invalid[0]?.reason;
+  if (reason?.includes("different product")) throw new Error("WRONG_PRODUCT");
+  throw new Error("SERIAL_NOT_FOUND");
+}
+
+export async function lookupSerialsForDispatch(
+  prisma: PrismaClient,
+  input: {
+    companyId: string;
+    piId: string;
+    productId?: string;
+    serialNumbers: string[];
   },
 ) {
   const pi = await prisma.proformaInvoice.findFirst({
@@ -321,26 +396,79 @@ export async function lookupBookedSerialForDispatch(
   });
   if (!pi) throw new Error("NOT_FOUND");
 
-  const serial = await prisma.inventorySerial.findFirst({
-    where: {
-      serialNumber: normalizeSerialNumber(input.serialNumber),
-      status: SerialStatus.BOOKED,
-      lot: { companyId: input.companyId },
-      proformaInvoiceSerials: { some: { piId: input.piId } },
-    },
-    include: {
-      product: {
-        select: { id: true, displayName: true, serialTracking: true },
-      },
-    },
-  });
+  const valid: Array<{
+    id: string;
+    serialNumber: string;
+    product: { id: string; displayName: string; serialTracking: boolean };
+  }> = [];
+  const invalid: Array<{ serialNumber: string; reason: string }> = [];
+  const seen = new Set<string>();
 
-  if (!serial) throw new Error("SERIAL_NOT_FOUND");
-  return {
-    id: serial.id,
-    serialNumber: serial.serialNumber,
-    product: serial.product,
-  };
+  for (const raw of input.serialNumbers) {
+    const serialNumber = normalizeSerialNumber(raw);
+    if (!serialNumber) continue;
+
+    if (seen.has(serialNumber)) {
+      invalid.push({ serialNumber, reason: "Duplicate in list." });
+      continue;
+    }
+    seen.add(serialNumber);
+
+    // Any AVAILABLE serial of the matching product (any warehouse) may be used.
+    // Legacy: BOOKED serials already linked to this PI remain valid until released.
+    // Serial ↔ PI link for AVAILABLE units is created when the DC is saved.
+    const serial = await prisma.inventorySerial.findFirst({
+      where: {
+        serialNumber,
+        OR: [
+          { status: SerialStatus.AVAILABLE },
+          {
+            status: SerialStatus.BOOKED,
+            proformaInvoiceSerials: { some: { piId: input.piId } },
+          },
+        ],
+      },
+      include: {
+        product: {
+          select: { id: true, displayName: true, serialTracking: true },
+        },
+      },
+    });
+
+    if (!serial) {
+      const existing = await prisma.inventorySerial.findFirst({
+        where: { serialNumber },
+        select: { id: true, status: true, productId: true },
+      });
+      if (!existing) {
+        invalid.push({ serialNumber, reason: "Serial not found." });
+      } else if (input.productId && existing.productId !== input.productId) {
+        invalid.push({ serialNumber, reason: "Belongs to a different product." });
+      } else {
+        invalid.push({
+          serialNumber,
+          reason: "Not available (already reserved or dispatched).",
+        });
+      }
+      continue;
+    }
+
+    if (input.productId && serial.productId !== input.productId) {
+      invalid.push({
+        serialNumber,
+        reason: "Belongs to a different product.",
+      });
+      continue;
+    }
+
+    valid.push({
+      id: serial.id,
+      serialNumber: serial.serialNumber,
+      product: serial.product,
+    });
+  }
+
+  return { valid, invalid };
 }
 
 async function validateDispatchLines(
@@ -356,7 +484,7 @@ async function validateDispatchLines(
 
   const pi = await prisma.proformaInvoice.findFirst({
     where: { id: input.piId, companyId: input.companyId },
-    include: { items: { include: { product: true } } },
+    include: { items: { include: { product: true } }, payments: true },
   });
   if (!pi) throw new Error("NOT_FOUND");
   if (
@@ -365,6 +493,22 @@ async function validateDispatchLines(
   ) {
     throw new Error("INVALID_PI_STATUS");
   }
+
+  const totalPaid = pi.payments.reduce(
+    (sum, payment) => sum + decimalToNumber(payment.amount),
+    0,
+  );
+  const outstanding = calculateOutstanding(decimalToNumber(pi.totalValue), totalPaid);
+  if (outstanding > 0) throw new Error("PAYMENT_INCOMPLETE");
+
+  const today = toDateOnly(new Date());
+  if (
+    !pi.dispatchTodayDate ||
+    pi.dispatchTodayDate.toISOString().slice(0, 10) !== today.toISOString().slice(0, 10)
+  ) {
+    throw new Error("NOT_MARKED_DISPATCH_TODAY");
+  }
+
   if (pi.warehouseId !== input.warehouseId) throw new Error("WAREHOUSE_MISMATCH");
 
   for (const line of input.lines) {
@@ -383,18 +527,20 @@ async function validateDispatchLines(
       const serialIds = line.serialIds ?? [];
       if (serialIds.length !== Math.ceil(line.qty)) throw new Error("SERIAL_REQUIRED");
 
-      const booked = await prisma.proformaInvoiceSerial.findMany({
+      const selectable = await prisma.inventorySerial.findMany({
         where: {
-          piId: input.piId,
-          serialId: { in: serialIds },
-          serial: {
-            productId: line.productId,
-            status: SerialStatus.BOOKED,
-            currentWarehouseId: input.warehouseId,
-          },
+          id: { in: serialIds },
+          productId: line.productId,
+          OR: [
+            { status: SerialStatus.AVAILABLE },
+            {
+              status: SerialStatus.BOOKED,
+              proformaInvoiceSerials: { some: { piId: input.piId } },
+            },
+          ],
         },
       });
-      if (booked.length !== serialIds.length) throw new Error("INVALID_SERIAL_SELECTION");
+      if (selectable.length !== serialIds.length) throw new Error("INVALID_SERIAL_SELECTION");
     }
   }
 
@@ -409,6 +555,9 @@ export async function createDispatch(
     createdById: string;
     vehicleNo?: string;
     driverName?: string;
+    receiverName?: string;
+    receiverMobile?: string;
+    signatureUrl?: string;
     notes?: string;
     confirm: boolean;
     lines: DispatchLineInput[];
@@ -437,6 +586,34 @@ export async function createDispatch(
   );
 
   return prisma.$transaction(async (tx) => {
+    const serialIds = input.lines.flatMap((line) => line.serialIds ?? []);
+    if (serialIds.length > 0) {
+      const uniqueIds = [...new Set(serialIds)];
+      if (uniqueIds.length !== serialIds.length) throw new Error("INVALID_SERIAL_SELECTION");
+
+      const selectable = await tx.inventorySerial.findMany({
+        where: {
+          id: { in: uniqueIds },
+          OR: [
+            { status: SerialStatus.AVAILABLE },
+            {
+              status: SerialStatus.BOOKED,
+              proformaInvoiceSerials: { some: { piId: pi.id } },
+            },
+          ],
+        },
+      });
+      if (selectable.length !== uniqueIds.length) throw new Error("INVALID_SERIAL_SELECTION");
+
+      for (const line of input.lines) {
+        if (!line.serialIds?.length) continue;
+        const wrongProduct = selectable.some(
+          (serial) => line.serialIds!.includes(serial.id) && serial.productId !== line.productId,
+        );
+        if (wrongProduct) throw new Error("INVALID_SERIAL_SELECTION");
+      }
+    }
+
     const dispatch = await tx.dispatch.create({
       data: {
         dcNo,
@@ -448,6 +625,9 @@ export async function createDispatch(
         dispatchDate,
         vehicleNo: input.vehicleNo,
         driverName: input.driverName,
+        receiverName: input.receiverName,
+        receiverMobile: input.receiverMobile,
+        signatureUrl: input.signatureUrl,
         notes: input.notes,
         createdById: input.createdById,
         lines: {
@@ -465,6 +645,21 @@ export async function createDispatch(
       },
       include: dispatchInclude,
     });
+
+    // Assign selected serials to this PI when they are recorded on the DC.
+    if (serialIds.length > 0) {
+      await tx.proformaInvoiceSerial.createMany({
+        data: serialIds.map((serialId) => ({
+          piId: pi.id,
+          serialId,
+        })),
+        skipDuplicates: true,
+      });
+      await tx.inventorySerial.updateMany({
+        where: { id: { in: serialIds }, status: SerialStatus.AVAILABLE },
+        data: { status: SerialStatus.BOOKED },
+      });
+    }
 
     await writeAuditLogTx(tx, {
       tableName: "dispatches",
@@ -499,6 +694,7 @@ async function confirmDispatchTx(
   const dispatch = await tx.dispatch.findFirst({
     where: { id: input.dispatchId, companyId: input.companyId },
     include: {
+      proformaInvoice: { select: { salesUserId: true } },
       lines: {
         include: {
           product: true,
@@ -510,6 +706,13 @@ async function confirmDispatchTx(
   });
   if (!dispatch) throw new Error("NOT_FOUND");
   if (dispatch.status !== DispatchStatus.DRAFT) throw new Error("INVALID_STATUS");
+  if (
+    !dispatch.vehicleNo?.trim() ||
+    !dispatch.receiverName?.trim() ||
+    !dispatch.receiverMobile?.trim()
+  ) {
+    throw new Error("MANDATORY_DISPATCH_FIELDS_REQUIRED");
+  }
 
   for (const line of dispatch.lines) {
     const qty = decimalToNumber(line.qty);
@@ -522,14 +725,15 @@ async function confirmDispatchTx(
 
     if (line.product.serialTracking) {
       const serialIds = line.serials.map((entry) => entry.serialId);
-      const booked = await tx.proformaInvoiceSerial.findMany({
+      // Serials were linked to the PI and marked BOOKED when recorded on the DC.
+      const linked = await tx.proformaInvoiceSerial.findMany({
         where: {
           piId: dispatch.proformaInvoiceId,
           serialId: { in: serialIds },
           serial: { status: SerialStatus.BOOKED },
         },
       });
-      if (booked.length !== serialIds.length) throw new Error("INVALID_SERIAL_SELECTION");
+      if (linked.length !== serialIds.length) throw new Error("INVALID_SERIAL_SELECTION");
 
       await tx.inventorySerial.updateMany({
         where: { id: { in: serialIds } },
@@ -558,6 +762,48 @@ async function confirmDispatchTx(
       },
     });
 
+    const existingActualEvent = await tx.inventoryEvent.findFirst({
+      where: {
+        sourceType: "DISPATCH",
+        sourceId: dispatch.id,
+        productId: line.productId,
+        eventType: InventoryEventType.ACTUAL_DISPATCH,
+        status: { not: InventoryEventStatus.CANCELLED },
+      },
+    });
+    if (!existingActualEvent) {
+      await tx.inventoryEvent.create({
+        data: {
+          companyId: input.companyId,
+          warehouseId: dispatch.warehouseId,
+          productId: line.productId,
+          eventType: InventoryEventType.ACTUAL_DISPATCH,
+          quantity: qty,
+          quantityEffect: toSignedInventoryQuantity(InventoryEventType.ACTUAL_DISPATCH, qty),
+          effectiveDate: dispatch.dispatchDate,
+          sourceType: "DISPATCH",
+          sourceId: dispatch.id,
+          sourceNumber: dispatch.dcNo,
+          status: InventoryEventStatus.COMPLETED,
+          createdById: input.performedById,
+        },
+      });
+    }
+
+    await tx.inventoryEvent.updateMany({
+      where: {
+        sourceType: "DISPATCH",
+        sourceId: dispatch.id,
+        productId: line.productId,
+        eventType: InventoryEventType.PLANNED_DISPATCH,
+        status: InventoryEventStatus.ACTIVE,
+      },
+      data: {
+        status: InventoryEventStatus.COMPLETED,
+        updatedById: input.performedById,
+      },
+    });
+
     await tx.proformaInvoiceItem.update({
       where: { id: piItem.id },
       data: {
@@ -578,6 +824,17 @@ async function confirmDispatchTx(
 
   await refreshPiDispatchStatus(tx, dispatch.proformaInvoiceId);
 
+  await tx.invoiceHandover.upsert({
+    where: { dispatchId: dispatch.id },
+    create: {
+      dispatchId: dispatch.id,
+      companyId: dispatch.companyId,
+      customerId: dispatch.customerId,
+      status: "PENDING_INVOICE",
+    },
+    update: {},
+  });
+
   await writeAuditLogTx(tx, {
     tableName: "dispatches",
     recordId: dispatch.id,
@@ -588,6 +845,17 @@ async function confirmDispatchTx(
     companyId: input.companyId,
     reference: dispatch.dcNo,
   });
+
+  await Promise.all([
+    notifyDispatchCompleted(tx, {
+      salesUserId: dispatch.proformaInvoice.salesUserId,
+      dcNo: dispatch.dcNo,
+    }),
+    notifyInvoicePending(tx, {
+      companyId: input.companyId,
+      dcNo: dispatch.dcNo,
+    }),
+  ]);
 
   return serializeDispatch(updated);
 }
@@ -690,7 +958,13 @@ export async function approveDispatchCancel(
         const serialIds = line.serials.map((entry) => entry.serialId);
         await tx.inventorySerial.updateMany({
           where: { id: { in: serialIds } },
-          data: { status: SerialStatus.BOOKED },
+          data: { status: SerialStatus.AVAILABLE },
+        });
+        await tx.proformaInvoiceSerial.deleteMany({
+          where: {
+            piId: dispatch.proformaInvoiceId,
+            serialId: { in: serialIds },
+          },
         });
       }
 

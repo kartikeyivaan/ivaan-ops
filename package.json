@@ -15,6 +15,7 @@
     "db:push": "prisma db push",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
+    "db:backfill:opening-stock": "tsx scripts/backfill-opening-stock.ts",
     "db:setup:local": "powershell -ExecutionPolicy Bypass -File scripts/setup-local-db.ps1",
     "postinstall": "node scripts/prisma-generate.mjs"
   },
@@ -36,6 +37,7 @@
     "bcryptjs": "^3.0.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "html5-qrcode": "^2.3.8",
     "lucide-react": "^0.511.0",
     "next": "15.3.8",
     "next-auth": "^5.0.0-beta.28",

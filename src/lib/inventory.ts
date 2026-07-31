@@ -116,6 +116,57 @@ export function normalizeSerialNumber(serial: string): string {
   return serial.trim().toUpperCase();
 }
 
+/** Scanner paste often includes this noise; ignore it when parsing serials. */
+const SERIAL_QR_NOISE = /\[QR\]/gi;
+
+/** Waaree module serials look like WS07269074147109 (WS + 14 digits). */
+const WAAREE_PANEL_SERIAL_PATTERN = /^WS\d{14}$/;
+
+export function isWaareeBrand(brandName: string): boolean {
+  return brandName.trim().toLowerCase() === "waaree";
+}
+
+export function isWaareePanelSerial(serial: string): boolean {
+  return WAAREE_PANEL_SERIAL_PATTERN.test(normalizeSerialNumber(serial));
+}
+
+/**
+ * Split pasted serial text on newlines/commas/semicolons/tabs.
+ * Strips `[QR]` scanner noise and empty tokens.
+ */
+export function parseSerialInput(text: string): string[] {
+  return text
+    .replace(SERIAL_QR_NOISE, " ")
+    .split(/[\n,;\t]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+/** Normalized serials that appear more than once in the list. */
+export function findDuplicateSerialKeys(serials: string[]): Set<string> {
+  const counts = new Map<string, number>();
+  for (const serial of serials) {
+    const key = normalizeSerialNumber(serial);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const duplicates = new Set<string>();
+  for (const [key, count] of counts) {
+    if (count > 1) duplicates.add(key);
+  }
+  return duplicates;
+}
+
+export function pendingIncomingQuantity(input: {
+  quantity: number;
+  receivedQuantity: number;
+  damagedQuantity: number;
+}): number {
+  return Math.max(
+    0,
+    input.quantity - input.receivedQuantity - input.damagedQuantity,
+  );
+}
+
 export function validateInwardQuantities(input: {
   quantity: number;
   receivedQuantity: number;
@@ -123,8 +174,7 @@ export function validateInwardQuantities(input: {
   receivedQty: number;
   damagedQty: number;
 }): string | null {
-  const pending =
-    input.quantity - input.receivedQuantity - input.damagedQuantity;
+  const pending = pendingIncomingQuantity(input);
   const totalIncoming = input.receivedQty + input.damagedQty;
 
   if (input.receivedQty < 0 || input.damagedQty < 0) {

@@ -25,6 +25,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const piId = searchParams.get("piId");
   const serialNumber = searchParams.get("serialNumber");
+  const productId = searchParams.get("productId") ?? undefined;
   if (!piId || !serialNumber) {
     return errorResponse("VALIDATION_ERROR", "piId and serialNumber are required.", 400);
   }
@@ -34,6 +35,7 @@ export async function GET(request: Request) {
       companyId,
       piId,
       serialNumber,
+      productId,
     });
     return NextResponse.json(serial);
   } catch (error) {
@@ -41,8 +43,11 @@ export async function GET(request: Request) {
       if (error.message === "NOT_FOUND") {
         return errorResponse("NOT_FOUND", "Proforma invoice not found.", 404);
       }
+      if (error.message === "WRONG_PRODUCT") {
+        return errorResponse("WRONG_PRODUCT", "Serial belongs to a different product.", 400);
+      }
       if (error.message === "SERIAL_NOT_FOUND") {
-        return errorResponse("NOT_FOUND", "Serial not found or not booked for this PI.", 404);
+        return errorResponse("NOT_FOUND", "Serial not found or not available.", 404);
       }
     }
     throw error;

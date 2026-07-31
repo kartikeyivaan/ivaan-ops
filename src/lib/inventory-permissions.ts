@@ -9,6 +9,14 @@ const VIEW_ROLES = [
   ROLES.ACCOUNTS,
 ] as const;
 
+const TIMELINE_ROLES = [
+  ROLES.SUPER_ADMIN,
+  ROLES.SALES_MANAGER,
+  ROLES.SALES_EXECUTIVE,
+  ROLES.WAREHOUSE,
+  ROLES.PURCHASE,
+] as const;
+
 const INCOMING_ROLES = [ROLES.SUPER_ADMIN, ROLES.PURCHASE] as const;
 
 const INWARD_ROLES = [ROLES.SUPER_ADMIN, ROLES.WAREHOUSE] as const;
@@ -25,6 +33,10 @@ const SERIAL_VIEW_ROLES = [
 
 export function canViewInventory(userRoles: string[]): boolean {
   return hasRole(userRoles, [...VIEW_ROLES]);
+}
+
+export function canViewInventoryTimeline(userRoles: string[]): boolean {
+  return hasRole(userRoles, [...TIMELINE_ROLES]);
 }
 
 export function canCreateIncoming(userRoles: string[]): boolean {

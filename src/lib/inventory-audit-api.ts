@@ -68,8 +68,13 @@ export function mapAuditServiceError(error: unknown) {
       409,
     ],
     DAMAGED_MODULES_ONLY: [
-      "DAMAGED_MODULES_ONLY",
-      "Damaged section is only for Modules in v1.",
+      "DAMAGED_SERIAL_PRODUCTS_ONLY",
+      "Damaged section is only for serial-tracked Modules and Inverters.",
+      400,
+    ],
+    DAMAGED_SERIAL_PRODUCTS_ONLY: [
+      "DAMAGED_SERIAL_PRODUCTS_ONLY",
+      "Damaged section is only for serial-tracked Modules and Inverters.",
       400,
     ],
     INVALID_QUANTITY: ["INVALID_QUANTITY", "Quantity is invalid.", 400],

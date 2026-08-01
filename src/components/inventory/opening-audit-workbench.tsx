@@ -138,12 +138,17 @@ export function OpeningAuditWorkbench({
   const damagedLines = audit.lines.filter((line) => line.condition === "DAMAGED");
   const visibleLines = section === "GOOD" ? goodLines : damagedLines;
 
-  const moduleProducts = useMemo(
-    () => products.filter((p) => p.category.name === "Modules" && p.serialTracking),
+  const damagedProducts = useMemo(
+    () =>
+      products.filter(
+        (p) =>
+          (p.category.name === "Modules" || p.category.name === "Inverters") &&
+          p.serialTracking,
+      ),
     [products],
   );
 
-  const selectableProducts = section === "DAMAGED" ? moduleProducts : products;
+  const selectableProducts = section === "DAMAGED" ? damagedProducts : products;
 
   async function saveLine() {
     if (!productId || !selectedProduct) return;
@@ -305,13 +310,13 @@ export function OpeningAuditWorkbench({
             setQty("");
           }}
         >
-          Damaged modules ({damagedLines.length})
+          Damaged ({damagedLines.length})
         </button>
       </div>
 
       {section === "DAMAGED" ? (
         <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl p-3">
-          Damaged section is for Modules only. Scan or type serials here after finishing Good stock.
+          Damaged section is for Modules and Inverters. Scan or type serials here after finishing Good stock.
         </p>
       ) : null}
 

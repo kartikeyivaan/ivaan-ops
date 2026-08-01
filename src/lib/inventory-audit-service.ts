@@ -22,7 +22,7 @@ import {
   systemPurchaseInvoiceNo,
 } from "@/lib/inventory";
 import { getWarehouseStockForProduct } from "@/lib/inventory-service";
-import { PRODUCT_CATEGORY_NAMES } from "@/lib/products";
+import { PRODUCT_CATEGORY_NAMES, resolveSerialTracking } from "@/lib/products";
 
 export const OPENING_AUDIT_SOURCE = "OPENING_STOCK_AUDIT";
 
@@ -394,11 +394,11 @@ export async function upsertOpeningLine(
   if (!product || !product.isActive) throw new Error("PRODUCT_NOT_FOUND");
 
   if (input.condition === OpeningLineCondition.DAMAGED) {
-    if (product.category.name !== "Modules") {
-      throw new Error("DAMAGED_MODULES_ONLY");
-    }
-    if (!product.serialTracking) {
-      throw new Error("SERIAL_REQUIRED");
+    if (
+      !resolveSerialTracking(product.category.name) ||
+      !product.serialTracking
+    ) {
+      throw new Error("DAMAGED_SERIAL_PRODUCTS_ONLY");
     }
   }
 
@@ -664,7 +664,7 @@ export async function approveOpeningAudit(
             fromWarehouseId: audit.warehouseId,
             referenceType: "OPENING_AUDIT",
             referenceId: audit.id,
-            notes: `Opening damaged modules ${audit.auditNumber}`,
+            notes: `Opening damaged stock ${audit.auditNumber}`,
             createdById: input.approvedById,
           },
         });

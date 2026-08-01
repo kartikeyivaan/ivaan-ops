@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Camera, Plus, Trash2 } from "lucide-react";
@@ -8,9 +8,31 @@ import { SerialScanner } from "@/components/inventory/serial-scanner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { normalizeSerialNumber, parseSerialInput } from "@/lib/inventory";
 import { CAPACITY_UNITS, generateDisplayName } from "@/lib/products";
 import { CapacityUnit } from "@prisma/client";
 import { cn } from "@/lib/utils";
+
+function mergeUniqueSerials(current: string[], entries: string[]) {
+  const next = [...current];
+  const seen = new Set(next.map((item) => normalizeSerialNumber(item)));
+  let added = 0;
+  let skipped = 0;
+
+  for (const entry of entries.flatMap((value) => parseSerialInput(value))) {
+    const normalized = normalizeSerialNumber(entry);
+    if (!normalized) continue;
+    if (seen.has(normalized)) {
+      skipped += 1;
+      continue;
+    }
+    seen.add(normalized);
+    next.push(normalized);
+    added += 1;
+  }
+
+  return { next, added, skipped };
+}
 
 type ProductOption = {
   id: string;
@@ -69,10 +91,45 @@ export function OpeningAuditWorkbench({
   const [qty, setQty] = useState("");
   const [remarks, setRemarks] = useState("");
   const [serials, setSerials] = useState<string[]>([]);
+  const serialsRef = useRef(serials);
+  serialsRef.current = serials;
+  const [serialInput, setSerialInput] = useState("");
   const [scannerOpen, setScannerOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showCreateProduct, setShowCreateProduct] = useState(false);
+
+  function resetSerialEntry() {
+    serialsRef.current = [];
+    setSerials([]);
+    setSerialInput("");
+  }
+
+  function addSerials(entries: string[]) {
+    const merged = mergeUniqueSerials(serialsRef.current, entries);
+    serialsRef.current = merged.next;
+    setSerials(merged.next);
+    return { added: merged.added, skipped: merged.skipped };
+  }
+
+  function addSerialsFromText() {
+    const parsed = parseSerialInput(serialInput);
+    if (parsed.length === 0) {
+      setMessage("Type or paste at least one serial number.");
+      return;
+    }
+    const { added, skipped } = addSerials(parsed);
+    setSerialInput("");
+    if (added === 0 && skipped > 0) {
+      setMessage("All typed serials were already added.");
+      return;
+    }
+    setMessage(
+      skipped > 0
+        ? `Added ${added} serial${added === 1 ? "" : "s"} (${skipped} duplicate skipped).`
+        : null,
+    );
+  }
 
   const isDraft = audit.status === "DRAFT";
   const selectedProduct = products.find((p) => p.id === productId);
@@ -119,7 +176,7 @@ export function OpeningAuditWorkbench({
     setProductId("");
     setQty("");
     setRemarks("");
-    setSerials([]);
+    resetSerialEntry();
   }
 
   async function removeLine(lineId: string) {
@@ -191,7 +248,10 @@ export function OpeningAuditWorkbench({
     setProductId(line.productId);
     setQty(String(line.physicalQty));
     setRemarks(line.remarks ?? "");
-    setSerials(line.serials.map((s) => s.serialNumber));
+    const nextSerials = line.serials.map((s) => s.serialNumber);
+    serialsRef.current = nextSerials;
+    setSerials(nextSerials);
+    setSerialInput("");
   }
 
   return (
@@ -226,7 +286,7 @@ export function OpeningAuditWorkbench({
           onClick={() => {
             setSection("GOOD");
             setProductId("");
-            setSerials([]);
+            resetSerialEntry();
             setQty("");
           }}
         >
@@ -241,7 +301,7 @@ export function OpeningAuditWorkbench({
           onClick={() => {
             setSection("DAMAGED");
             setProductId("");
-            setSerials([]);
+            resetSerialEntry();
             setQty("");
           }}
         >
@@ -251,7 +311,7 @@ export function OpeningAuditWorkbench({
 
       {section === "DAMAGED" ? (
         <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl p-3">
-          Damaged section is for Modules only. Scan serials here after finishing Good stock.
+          Damaged section is for Modules only. Scan or type serials here after finishing Good stock.
         </p>
       ) : null}
 
@@ -263,7 +323,7 @@ export function OpeningAuditWorkbench({
             value={productId}
             onChange={(event) => {
               setProductId(event.target.value);
-              setSerials([]);
+              resetSerialEntry();
               setQty("");
             }}
           >
@@ -308,7 +368,7 @@ export function OpeningAuditWorkbench({
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium text-slate-700">
-                  Scanned qty: {serials.length}
+                  Serial qty: {serials.length}
                 </p>
                 <Button
                   type="button"
@@ -316,7 +376,36 @@ export function OpeningAuditWorkbench({
                   onClick={() => setScannerOpen(true)}
                 >
                   <Camera className="mr-2 h-4 w-4" />
-                  Scan
+                  Scan QR
+                </Button>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="opening-serial-input">Or type / paste serials</Label>
+                <textarea
+                  id="opening-serial-input"
+                  className="min-h-28 w-full resize-y rounded-md border border-slate-300 bg-white px-3 py-2 font-mono text-sm ring-offset-white placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                  placeholder={"SN-001\nSN-002\nSN-003"}
+                  value={serialInput}
+                  onChange={(event) => setSerialInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+                      event.preventDefault();
+                      addSerialsFromText();
+                    }
+                  }}
+                  spellCheck={false}
+                />
+                <p className="text-xs text-slate-500">
+                  One per line, or separated by commas / semicolons. Ctrl/Cmd+Enter to add.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 w-full"
+                  disabled={!serialInput.trim()}
+                  onClick={() => addSerialsFromText()}
+                >
+                  Add serials
                 </Button>
               </div>
               <ul className="max-h-40 space-y-1 overflow-y-auto text-sm">
@@ -329,9 +418,11 @@ export function OpeningAuditWorkbench({
                     <button
                       type="button"
                       className="text-rose-600"
-                      onClick={() =>
-                        setSerials((prev) => prev.filter((item) => item !== serial))
-                      }
+                      onClick={() => {
+                        const next = serialsRef.current.filter((item) => item !== serial);
+                        serialsRef.current = next;
+                        setSerials(next);
+                      }}
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -468,18 +559,10 @@ export function OpeningAuditWorkbench({
         onClose={() => setScannerOpen(false)}
         title="Scan serial numbers"
         onScan={async (scanned) => {
-          const next = [...serials];
-          let added = 0;
-          for (const serial of scanned) {
-            const normalized = serial.trim().toUpperCase();
-            if (!normalized) continue;
-            if (next.some((item) => item.toUpperCase() === normalized)) {
-              return { ok: false, reason: "Already scanned" };
-            }
-            next.push(serial.trim());
-            added += 1;
+          const { added, skipped } = addSerials(scanned);
+          if (added === 0 && skipped > 0) {
+            return { ok: false, reason: "Already added" };
           }
-          setSerials(next);
           return {
             ok: true,
             message: added > 0 ? `Added ${added}` : undefined,

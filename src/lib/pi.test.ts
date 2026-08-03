@@ -21,6 +21,7 @@ import {
   canRecordPayments,
   canViewProformaInvoices,
 } from "@/lib/pi-permissions";
+import { resolveBookingStockDecision } from "@/lib/pi-service";
 import { ROLES } from "@/lib/rbac";
 
 describe("proforma invoice calculations", () => {
@@ -158,5 +159,57 @@ describe("proforma invoice permissions", () => {
     expect(canMarkDispatchToday([ROLES.WAREHOUSE])).toBe(false);
     expect(canApproveDispatchToday([ROLES.SALES_MANAGER])).toBe(true);
     expect(canApproveDispatchToday([ROLES.SALES_EXECUTIVE])).toBe(false);
+  });
+});
+
+describe("cross-company booking stock decision", () => {
+  const shortage = [
+    {
+      productId: "p1",
+      displayName: "Modules - Waaree - TOPCon N-DCR - 580 Wp",
+      requiredQty: 2,
+      localProjectedAvailable: 0,
+      shortageQty: 2,
+    },
+  ];
+
+  it("allows booking when local projected stock is enough", () => {
+    expect(
+      resolveBookingStockDecision({
+        shortages: [],
+        coveringCompanyCodes: [],
+        allowCrossCompanyShortfall: false,
+      }),
+    ).toBe("OK");
+  });
+
+  it("requires approval when another company can cover the shortfall", () => {
+    expect(
+      resolveBookingStockDecision({
+        shortages: shortage,
+        coveringCompanyCodes: ["ISE"],
+        allowCrossCompanyShortfall: false,
+      }),
+    ).toBe("NEED_APPROVAL");
+  });
+
+  it("allows approved booking when another company covers the shortfall", () => {
+    expect(
+      resolveBookingStockDecision({
+        shortages: shortage,
+        coveringCompanyCodes: ["ISE"],
+        allowCrossCompanyShortfall: true,
+      }),
+    ).toBe("OK");
+  });
+
+  it("blocks booking when no company can cover the shortfall", () => {
+    expect(
+      resolveBookingStockDecision({
+        shortages: shortage,
+        coveringCompanyCodes: [],
+        allowCrossCompanyShortfall: true,
+      }),
+    ).toBe("UNAVAILABLE");
   });
 });

@@ -260,7 +260,8 @@ async function listPendingBookingApprovals(
         moduleId: row.id,
         documentNo: row.piNo,
         subjectName: row.customer.customerName,
-        reason: "Stock booking approval requested",
+        reason:
+          approval.remarks?.trim() || "Stock booking approval requested",
         requestedByName: approval.requestedBy.name,
         requestedAt: toIso(approval.createdAt),
         href: `/sales/proforma-invoices/${row.id}`,

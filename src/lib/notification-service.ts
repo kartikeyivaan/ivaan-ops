@@ -34,6 +34,38 @@ export async function notifyBookingCreated(
   );
 }
 
+export async function notifyBookingApprovalNeeded(
+  client: NotificationClient,
+  input: {
+    companyId: string;
+    piNo: string;
+    coveringCompanyCodes: string[];
+  },
+) {
+  const users = await client.user.findMany({
+    where: {
+      status: "ACTIVE",
+      companies: { some: { companyId: input.companyId } },
+      roles: {
+        some: {
+          role: { name: { in: [ROLES.SALES_MANAGER, ROLES.SUPER_ADMIN] } },
+        },
+      },
+    },
+    select: { id: true },
+  });
+  if (!users.length) return { count: 0 };
+  const fromLabel = input.coveringCompanyCodes.join(", ") || "another company";
+  return client.notification.createMany({
+    data: users.map(({ id }) => ({
+      userId: id,
+      title: "Booking approval needed",
+      message: `${input.piNo} needs approval to book using stock from ${fromLabel}.`,
+      module: "booking",
+    })),
+  });
+}
+
 export async function notifyDispatchCompleted(
   client: NotificationClient,
   input: { salesUserId: string; dcNo: string },

@@ -16,6 +16,7 @@ import {
 import { writeAuditLogTx } from "@/lib/audit";
 import {
   createOrReplaceCrossCompanyPlan,
+  getCompanyAvailableQty,
   prepareDispatchTodayCrossCompany,
   requestCrossCompanyPlanApproval,
   type SerializedPlan,
@@ -29,6 +30,7 @@ import {
   mergeFulfillmentQuantities,
 } from "@/lib/kit-fulfillment";
 import {
+  notifyBookingApprovalNeeded,
   notifyBookingCreated,
   notifyDispatchTodayApprovalNeeded,
   notifyPiCancelApprovalNeeded,
@@ -317,6 +319,8 @@ async function bookInventoryForPi(
     piNo: string;
     items: Array<{ productId: string; qty: number; serialTracking: boolean }>;
     performedById: string;
+    /** When true, local physical stock may be short — covered by another company after approval. */
+    allowCrossCompanyShortfall?: boolean;
   },
 ) {
   for (const item of input.items) {
@@ -332,7 +336,9 @@ async function bookInventoryForPi(
         },
       });
 
-      if (onHandCount < qty) throw new Error("INSUFFICIENT_STOCK");
+      if (onHandCount < qty && !input.allowCrossCompanyShortfall) {
+        throw new Error("INSUFFICIENT_STOCK");
+      }
 
       await tx.inventoryTransaction.create({
         data: {
@@ -343,7 +349,9 @@ async function bookInventoryForPi(
           fromWarehouseId: input.warehouseId,
           referenceType: "PROFORMA_INVOICE",
           referenceId: input.piId,
-          notes: `Booked for ${input.piNo}`,
+          notes: input.allowCrossCompanyShortfall
+            ? `Booked for ${input.piNo} (cross-company shortfall approved)`
+            : `Booked for ${input.piNo}`,
           createdById: input.performedById,
         },
       });
@@ -354,7 +362,9 @@ async function bookInventoryForPi(
         item.productId,
         input.warehouseId,
       );
-      if (stock.availableStock < item.qty) throw new Error("INSUFFICIENT_STOCK");
+      if (stock.availableStock < item.qty && !input.allowCrossCompanyShortfall) {
+        throw new Error("INSUFFICIENT_STOCK");
+      }
 
       await tx.inventoryTransaction.create({
         data: {
@@ -365,12 +375,102 @@ async function bookInventoryForPi(
           fromWarehouseId: input.warehouseId,
           referenceType: "PROFORMA_INVOICE",
           referenceId: input.piId,
-          notes: `Booked for ${input.piNo}`,
+          notes: input.allowCrossCompanyShortfall
+            ? `Booked for ${input.piNo} (cross-company shortfall approved)`
+            : `Booked for ${input.piNo}`,
           createdById: input.performedById,
         },
       });
     }
   }
+}
+
+export type BookingStockShortage = {
+  productId: string;
+  displayName: string;
+  requiredQty: number;
+  localProjectedAvailable: number;
+  shortageQty: number;
+};
+
+export type BookingStockCoverage = {
+  shortages: BookingStockShortage[];
+  coveringCompanyCodes: string[];
+};
+
+/** Pure decision helper for booking stock + cross-company approval. */
+export function resolveBookingStockDecision(input: {
+  shortages: BookingStockShortage[];
+  coveringCompanyCodes: string[];
+  allowCrossCompanyShortfall: boolean;
+}): "OK" | "NEED_APPROVAL" | "UNAVAILABLE" {
+  if (input.shortages.length === 0) return "OK";
+  if (input.coveringCompanyCodes.length === 0) return "UNAVAILABLE";
+  if (input.allowCrossCompanyShortfall) return "OK";
+  return "NEED_APPROVAL";
+}
+
+async function assessBookingStockCoverage(
+  prisma: PrismaClient,
+  input: {
+    companyId: string;
+    warehouseId: string;
+    quantitiesByProduct: Map<
+      string,
+      { qty: number; serialTracking: boolean; displayName: string }
+    >;
+    bookingDateString: string;
+    dispatchMaxString: string;
+  },
+): Promise<BookingStockCoverage> {
+  const shortages: BookingStockShortage[] = [];
+
+  for (const [productId, entry] of input.quantitiesByProduct) {
+    const projection = await getInventoryProjection({
+      companyId: input.companyId,
+      warehouseId: input.warehouseId,
+      productId,
+      startDate: input.bookingDateString,
+      endDate: input.dispatchMaxString,
+    });
+    const minimumProjected = projection.length
+      ? Math.min(...projection.map((day) => day.projectedAvailableQuantity))
+      : 0;
+    if (minimumProjected < entry.qty) {
+      shortages.push({
+        productId,
+        displayName: entry.displayName,
+        requiredQty: entry.qty,
+        localProjectedAvailable: minimumProjected,
+        shortageQty: roundMoney(entry.qty - minimumProjected),
+      });
+    }
+  }
+
+  if (shortages.length === 0) {
+    return { shortages, coveringCompanyCodes: [] };
+  }
+
+  const otherCompanies = await prisma.company.findMany({
+    where: { id: { not: input.companyId }, isPractice: false },
+    select: { id: true, code: true },
+    orderBy: { code: "asc" },
+  });
+
+  const coveringCompanyCodes: string[] = [];
+  for (const company of otherCompanies) {
+    let canCoverAll = true;
+    for (const line of shortages) {
+      const available = await getCompanyAvailableQty(prisma, company.id, line.productId);
+      if (available < line.shortageQty) {
+        canCoverAll = false;
+        break;
+      }
+    }
+    if (canCoverAll) coveringCompanyCodes.push(company.code);
+  }
+
+  return { shortages, coveringCompanyCodes };
 }
 
 export async function listProformaInvoices(
@@ -961,6 +1061,8 @@ async function completePiStockBooking(
     auditAction: "UPDATE" | "APPROVE";
     remarks?: string;
     completePendingApproval?: boolean;
+    /** Manager approval may rely on available stock in other companies. */
+    allowCrossCompanyShortfall?: boolean;
   },
 ) {
   const { pi, warehouseId } = input;
@@ -1003,24 +1105,32 @@ async function completePiStockBooking(
   );
   const quantitiesByProduct = mergeFulfillmentQuantities(fulfillmentLines);
 
-  for (const [productId, entry] of quantitiesByProduct) {
-    const projection = await getInventoryProjection({
-      companyId: input.companyId,
-      warehouseId,
-      productId,
-      startDate: bookingDateString,
-      endDate: dispatchMaxString,
-    });
-    const minimumProjected = projection.length
-      ? Math.min(...projection.map((day) => day.projectedAvailableQuantity))
-      : 0;
-    if (minimumProjected < entry.qty) {
-      const shortage = roundMoney(entry.qty - minimumProjected);
-      throw new Error(
-        `INSUFFICIENT_PROJECTED_STOCK|${entry.displayName}|${shortage}`,
-      );
-    }
+  const coverage = await assessBookingStockCoverage(prisma, {
+    companyId: input.companyId,
+    warehouseId,
+    quantitiesByProduct,
+    bookingDateString,
+    dispatchMaxString,
+  });
+  const decision = resolveBookingStockDecision({
+    shortages: coverage.shortages,
+    coveringCompanyCodes: coverage.coveringCompanyCodes,
+    allowCrossCompanyShortfall: Boolean(input.allowCrossCompanyShortfall),
+  });
+
+  if (decision === "UNAVAILABLE") {
+    const first = coverage.shortages[0]!;
+    throw new Error(
+      `INSUFFICIENT_PROJECTED_STOCK|${first.displayName}|${first.shortageQty}`,
+    );
   }
+  if (decision === "NEED_APPROVAL") {
+    throw new Error(
+      `CROSS_COMPANY_BOOKING_APPROVAL_REQUIRED|${coverage.coveringCompanyCodes.join(",")}`,
+    );
+  }
+
+  const usingCrossCompanyShortfall = coverage.shortages.length > 0;
 
   return prisma.$transaction(async (tx) => {
     await bookInventoryForPi(tx, {
@@ -1034,6 +1144,7 @@ async function completePiStockBooking(
         serialTracking: entry.serialTracking,
       })),
       performedById: input.performedById,
+      allowCrossCompanyShortfall: usingCrossCompanyShortfall,
     });
 
     for (const [productId, entry] of quantitiesByProduct) {
@@ -1049,7 +1160,9 @@ async function completePiStockBooking(
         sourceType: "PROFORMA_INVOICE",
         sourceId: pi.id,
         sourceNumber: pi.piNo,
-        notes: `Reserved for ${pi.piNo}`,
+        notes: usingCrossCompanyShortfall
+          ? `Reserved for ${pi.piNo} (incl. cross-company cover from ${coverage.coveringCompanyCodes.join(", ")})`
+          : `Reserved for ${pi.piNo}`,
         createdById: input.performedById,
       });
     }
@@ -1087,7 +1200,12 @@ async function completePiStockBooking(
       tableName: "proforma_invoices",
       recordId: pi.id,
       action: input.auditAction,
-      newValue: { status: ProformaInvoiceStatus.BOOKED },
+      newValue: {
+        status: ProformaInvoiceStatus.BOOKED,
+        ...(usingCrossCompanyShortfall
+          ? { crossCompanyCoverFrom: coverage.coveringCompanyCodes }
+          : {}),
+      },
       performedBy: input.performedById,
       companyId: input.companyId,
       reference: pi.piNo,
@@ -1096,6 +1214,68 @@ async function completePiStockBooking(
     await notifyBookingCreated(tx, {
       salesUserId: pi.salesUserId,
       piNo: pi.piNo,
+    });
+
+    return serializePi(updated);
+  });
+}
+
+async function submitCrossCompanyBookingForApproval(
+  prisma: PrismaClient,
+  input: {
+    companyId: string;
+    pi: BookingPiRecord;
+    warehouseId: string;
+    requestedById: string;
+    coveringCompanyCodes: string[];
+    shortages: BookingStockShortage[];
+  },
+) {
+  const shortageSummary = input.shortages
+    .map((row) => `${row.displayName} short ${row.shortageQty}`)
+    .join("; ");
+  const remarks =
+    `Local stock short during dispatch window (${shortageSummary}). ` +
+    `Coverable from ${input.coveringCompanyCodes.join(", ")}.`;
+
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.proformaInvoice.update({
+      where: { id: input.pi.id },
+      data: {
+        status: ProformaInvoiceStatus.PENDING_BOOKING,
+        warehouseId: input.warehouseId,
+      },
+      include: piInclude,
+    });
+
+    await tx.approvalRequest.create({
+      data: {
+        moduleType: ApprovalModuleType.BOOKING,
+        moduleId: input.pi.id,
+        requestedById: input.requestedById,
+        status: ApprovalRequestStatus.PENDING,
+        remarks,
+      },
+    });
+
+    await writeAuditLogTx(tx, {
+      tableName: "proforma_invoices",
+      recordId: input.pi.id,
+      action: "UPDATE",
+      oldValue: { status: ProformaInvoiceStatus.ISSUED },
+      newValue: {
+        status: ProformaInvoiceStatus.PENDING_BOOKING,
+        crossCompanyCoverFrom: input.coveringCompanyCodes,
+      },
+      performedBy: input.requestedById,
+      companyId: input.companyId,
+      reference: input.pi.piNo,
+    });
+
+    await notifyBookingApprovalNeeded(tx, {
+      companyId: input.companyId,
+      piNo: input.pi.piNo,
+      coveringCompanyCodes: input.coveringCompanyCodes,
     });
 
     return serializePi(updated);
@@ -1135,15 +1315,79 @@ export async function requestBooking(
   });
   if (!warehouse) throw new Error("WAREHOUSE_NOT_FOUND");
 
-  // Payment conditions already met — book stock immediately (no approval loop).
-  return completePiStockBooking(prisma, {
-    companyId: input.companyId,
-    pi,
-    warehouseId: input.warehouseId,
-    performedById: input.requestedById,
-    requiredPaymentPercent: requirement.requiredPaymentPercent,
-    auditAction: "UPDATE",
-  });
+  try {
+    // Local projected stock sufficient — book immediately.
+    return await completePiStockBooking(prisma, {
+      companyId: input.companyId,
+      pi,
+      warehouseId: input.warehouseId,
+      performedById: input.requestedById,
+      requiredPaymentPercent: requirement.requiredPaymentPercent,
+      auditAction: "UPDATE",
+      allowCrossCompanyShortfall: false,
+    });
+  } catch (error) {
+    if (
+      !(error instanceof Error) ||
+      !error.message.startsWith("CROSS_COMPANY_BOOKING_APPROVAL_REQUIRED|")
+    ) {
+      throw error;
+    }
+
+    const coveringCompanyCodes = error.message
+      .slice("CROSS_COMPANY_BOOKING_APPROVAL_REQUIRED|".length)
+      .split(",")
+      .map((code) => code.trim())
+      .filter(Boolean);
+
+    // Re-assess for shortage details used in the approval remark.
+    const bookingDateString = new Date().toISOString().slice(0, 10);
+    const mode = pi.deliveryTermMode ?? pi.quotation?.deliveryTermMode ?? null;
+    const minDays =
+      mode === "READY_STOCK"
+        ? 0
+        : (pi.dispatchMinDays ?? pi.quotation?.dispatchMinDays ?? 0);
+    const maxDays =
+      mode === "READY_STOCK"
+        ? 0
+        : (pi.dispatchMaxDays ?? pi.quotation?.dispatchMaxDays ?? minDays);
+    const workingDays = createWorkingDaysService(prisma);
+    const dispatchMaxString = await workingDays.getNextWorkingDate(
+      input.companyId,
+      input.warehouseId,
+      addCalendarDays(bookingDateString, maxDays),
+    );
+    const fulfillmentLines = await explodeItemsForFulfillment(
+      prisma,
+      pi.items.map((item) => ({
+        productId: item.productId,
+        qty: decimalToNumber(item.qty),
+        serialTracking: item.product.serialTracking,
+        displayName: item.product.displayName,
+        categoryName: item.product.category.name,
+      })),
+    );
+    const quantitiesByProduct = mergeFulfillmentQuantities(fulfillmentLines);
+    const coverage = await assessBookingStockCoverage(prisma, {
+      companyId: input.companyId,
+      warehouseId: input.warehouseId,
+      quantitiesByProduct,
+      bookingDateString,
+      dispatchMaxString,
+    });
+
+    return submitCrossCompanyBookingForApproval(prisma, {
+      companyId: input.companyId,
+      pi,
+      warehouseId: input.warehouseId,
+      requestedById: input.requestedById,
+      coveringCompanyCodes:
+        coveringCompanyCodes.length > 0
+          ? coveringCompanyCodes
+          : coverage.coveringCompanyCodes,
+      shortages: coverage.shortages,
+    });
+  }
 }
 
 export async function approveBooking(
@@ -1182,6 +1426,7 @@ export async function approveBooking(
     auditAction: "APPROVE",
     remarks: input.remarks,
     completePendingApproval: true,
+    allowCrossCompanyShortfall: true,
   });
 }
 

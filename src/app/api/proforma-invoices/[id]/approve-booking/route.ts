@@ -58,7 +58,7 @@ export async function POST(request: Request, context: RouteContext) {
         const [, product, shortage] = error.message.split("|");
         return errorResponse(
           "INSUFFICIENT_PROJECTED_STOCK",
-          `Projected stock is short by ${shortage} for ${product} during the required dispatch window.`,
+          `Projected stock is short by ${shortage} for ${product} during the required dispatch window, and no other company has enough available stock to cover it.`,
           400,
           { product, shortage: Number(shortage) },
         );

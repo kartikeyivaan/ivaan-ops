@@ -935,6 +935,35 @@ export function ProformaInvoiceDetail({
             <Button disabled={loading || !warehouseId} onClick={handleRequestBooking}>
               Book Stock
             </Button>
+            <p className="basis-full text-xs text-slate-500">
+              If this company is short but another company has stock, booking is sent for manager
+              approval.
+            </p>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {pi.status === "PENDING_BOOKING" ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Booking Pending Approval</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-slate-600">
+            <p>
+              Local projected stock is short for the dispatch window. Manager approval can proceed
+              when another company has enough available stock to cover the shortfall
+              {pi.warehouse ? ` (warehouse: ${pi.warehouse.name})` : ""}.
+            </p>
+            {canApproveBooking ? (
+              <p className="font-medium text-amber-700">
+                Approving confirms booking against cross-company stock cover. Transfer is completed
+                at dispatch if still needed.
+              </p>
+            ) : (
+              <p className="font-medium text-amber-700">
+                Waiting for Sales Manager / Super Admin approval.
+              </p>
+            )}
           </CardContent>
         </Card>
       ) : null}

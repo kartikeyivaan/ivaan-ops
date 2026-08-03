@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import {
   canRaisePurchaseRequest,
   canViewAllPurchaseRequests,
+  getAccessiblePurchaseCompanyIds,
+  isSuperAdmin,
 } from "@/lib/purchase-request-permissions";
 import {
   createPurchaseRequest,
@@ -25,10 +27,8 @@ export async function GET(request: Request) {
     return errorResponse("FORBIDDEN", "You do not have permission for this action.", 403);
   }
 
-  let companyId: string;
-  try {
-    companyId = requireActiveCompany(session);
-  } catch {
+  const companyIds = await getAccessiblePurchaseCompanyIds(prisma, session);
+  if (!companyIds.length) {
     return errorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
   }
 
@@ -41,7 +41,7 @@ export async function GET(request: Request) {
   }
 
   const requests = await listPurchaseRequests(prisma, {
-    companyId,
+    companyIds,
     status: parsed.data.status,
     requestedById: canViewAllPurchaseRequests(session.user.roles)
       ? undefined
@@ -69,7 +69,9 @@ export async function POST(request: Request) {
     return errorResponse("VALIDATION_ERROR", "Invalid purchase request data.", 400, parsed.error.flatten());
   }
 
-  const allowedCompanyIds = getSessionCompanyIds(session);
+  const allowedCompanyIds = isSuperAdmin(session.user.roles)
+    ? await getAccessiblePurchaseCompanyIds(prisma, session)
+    : getSessionCompanyIds(session);
   if (!allowedCompanyIds.includes(parsed.data.companyId)) {
     return errorResponse("FORBIDDEN", "You do not have access to the selected company.", 403);
   }

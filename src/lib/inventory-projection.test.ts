@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   calculateInventoryProjection,
   findEarliestAvailabilityDate,
+  findFeasibleReservationStartDate,
   getArrivalWindowDisplayData,
   getEarliestAvailabilityDate,
 } from "@/lib/inventory-projection";
@@ -170,6 +171,45 @@ describe("inventory projection", () => {
 
     expect(findEarliestAvailabilityDate(projection, 60)).toBe("2026-08-04");
     expect(getEarliestAvailabilityDate(input, 80)).toBeNull();
+  });
+
+  it("finds a feasible reservation start when incoming arrives mid dispatch window", () => {
+    // Physical 0 after safety; lot arrives on max date (day 8 of a 4–8 window).
+    // PI commits dispatch days 5–10 — reservation should start when stock exists.
+    const projection = calculateInventoryProjection({
+      physicalStock: 100,
+      safetyStock: 100,
+      startDate: "2026-08-08", // dispatch min (booking + 5)
+      endDate: "2026-08-13", // dispatch max (booking + 10)
+      events: [
+        event("incoming", "PURCHASE_INCOMING", 80, "2026-08-07", {
+          expectedMinDate: "2026-08-07", // booking + 4
+          expectedMaxDate: "2026-08-11", // booking + 8
+        }),
+      ],
+    });
+
+    expect(findEarliestAvailabilityDate(projection, 50)).toBe("2026-08-11");
+    expect(findFeasibleReservationStartDate(projection, 50)).toBe("2026-08-11");
+    expect(findFeasibleReservationStartDate(projection, 90)).toBeNull();
+  });
+
+  it("rejects a reservation start that would leave later days short", () => {
+    const projection = calculateInventoryProjection({
+      physicalStock: 160,
+      safetyStock: 100,
+      startDate: "2026-08-01",
+      endDate: "2026-08-05",
+      events: [
+        event("other-reserve", "BOOKING_RESERVATION", 40, "2026-08-03", {
+          expectedMinDate: "2026-08-03",
+        }),
+      ],
+    });
+    // Day 1–2 have 60; from day 3 onward only 20. Need 50 → no feasible start.
+    expect(findEarliestAvailabilityDate(projection, 50)).toBe("2026-08-01");
+    expect(findFeasibleReservationStartDate(projection, 50)).toBeNull();
+    expect(findFeasibleReservationStartDate(projection, 20)).toBe("2026-08-01");
   });
 
   it("builds clipped display bars while retaining full arrival windows", () => {

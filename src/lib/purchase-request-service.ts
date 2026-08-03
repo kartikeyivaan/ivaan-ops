@@ -29,6 +29,8 @@ const requestInclude = {
         select: {
           id: true,
           displayName: true,
+          capacity: true,
+          capacityUnit: true,
           gstRate: true,
           category: { select: { id: true, name: true } },
           brand: { select: { id: true, name: true } },
@@ -56,6 +58,8 @@ export type SerializedPurchaseRequestLine = {
   productName: string;
   categoryName: string;
   brandName: string;
+  capacity: number;
+  capacityUnit: CapacityUnit;
   gstRate: number;
   requestedQty: number;
   fulfilledQty: number;
@@ -127,6 +131,8 @@ export function serializePurchaseRequest(row: RequestRecord): SerializedPurchase
         productName: line.product.displayName,
         categoryName: line.categoryName,
         brandName: line.brandName,
+        capacity: decimalToNumber(line.product.capacity),
+        capacityUnit: line.product.capacityUnit,
         gstRate: decimalToNumber(line.product.gstRate),
         requestedQty,
         fulfilledQty,
@@ -225,14 +231,16 @@ export type CreatePurchaseRequestLineInput = {
 export async function listPurchaseRequests(
   prisma: PrismaClient,
   input: {
-    companyId: string;
+    companyIds: string[];
     status?: PurchaseRequestStatus;
     requestedById?: string;
   },
 ) {
+  if (!input.companyIds.length) return [];
+
   const rows = await prisma.purchaseRequest.findMany({
     where: {
-      companyId: input.companyId,
+      companyId: { in: input.companyIds },
       ...(input.status ? { status: input.status } : {}),
       ...(input.requestedById ? { requestedById: input.requestedById } : {}),
     },

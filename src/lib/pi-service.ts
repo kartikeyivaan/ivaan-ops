@@ -10,7 +10,6 @@ import {
   Prisma,
   ProformaInvoiceStatus,
   QuotationStatus,
-  SerialStatus,
   type PrismaClient,
 } from "@prisma/client";
 import { writeAuditLogTx } from "@/lib/audit";
@@ -22,8 +21,8 @@ import {
   type SerializedPlan,
 } from "@/lib/cross-company-transfer-service";
 import { decimalToNumber } from "@/lib/inventory";
-import { getWarehouseStockForProduct } from "@/lib/inventory-service";
 import { createEvent } from "@/lib/inventory-event-service";
+import { findFeasibleReservationStartDate } from "@/lib/inventory-projection";
 import { getInventoryProjection } from "@/lib/inventory-projection-service";
 import {
   explodeItemsForFulfillment,
@@ -319,69 +318,30 @@ async function bookInventoryForPi(
     piNo: string;
     items: Array<{ productId: string; qty: number; serialTracking: boolean }>;
     performedById: string;
-    /** When true, local physical stock may be short — covered by another company after approval. */
+    /** When true, local projected stock is short — covered by another company after approval. */
     allowCrossCompanyShortfall?: boolean;
   },
 ) {
+  // Booking is a projected reservation only (PRD C2). Physical / serial on-hand
+  // is validated at dispatch; coverage was already checked via projection
+  // (including incoming lots that arrive within the dispatch window).
   for (const item of input.items) {
-    if (item.serialTracking) {
-      const qty = Math.ceil(item.qty);
-      // Qty reservation only — specific serials are assigned when recorded on a DC.
-      // Count on-hand units (available + already reserved on open DCs / legacy bookings).
-      const onHandCount = await tx.inventorySerial.count({
-        where: {
-          productId: item.productId,
-          currentWarehouseId: input.warehouseId,
-          status: { in: [SerialStatus.AVAILABLE, SerialStatus.BOOKED] },
-        },
-      });
-
-      if (onHandCount < qty && !input.allowCrossCompanyShortfall) {
-        throw new Error("INSUFFICIENT_STOCK");
-      }
-
-      await tx.inventoryTransaction.create({
-        data: {
-          transactionType: InventoryTransactionType.BOOK,
-          companyId: input.companyId,
-          productId: item.productId,
-          qty,
-          fromWarehouseId: input.warehouseId,
-          referenceType: "PROFORMA_INVOICE",
-          referenceId: input.piId,
-          notes: input.allowCrossCompanyShortfall
-            ? `Booked for ${input.piNo} (cross-company shortfall approved)`
-            : `Booked for ${input.piNo}`,
-          createdById: input.performedById,
-        },
-      });
-    } else {
-      const stock = await getWarehouseStockForProduct(
-        tx as unknown as PrismaClient,
-        input.companyId,
-        item.productId,
-        input.warehouseId,
-      );
-      if (stock.availableStock < item.qty && !input.allowCrossCompanyShortfall) {
-        throw new Error("INSUFFICIENT_STOCK");
-      }
-
-      await tx.inventoryTransaction.create({
-        data: {
-          transactionType: InventoryTransactionType.BOOK,
-          companyId: input.companyId,
-          productId: item.productId,
-          qty: item.qty,
-          fromWarehouseId: input.warehouseId,
-          referenceType: "PROFORMA_INVOICE",
-          referenceId: input.piId,
-          notes: input.allowCrossCompanyShortfall
-            ? `Booked for ${input.piNo} (cross-company shortfall approved)`
-            : `Booked for ${input.piNo}`,
-          createdById: input.performedById,
-        },
-      });
-    }
+    const qty = item.serialTracking ? Math.ceil(item.qty) : item.qty;
+    await tx.inventoryTransaction.create({
+      data: {
+        transactionType: InventoryTransactionType.BOOK,
+        companyId: input.companyId,
+        productId: item.productId,
+        qty,
+        fromWarehouseId: input.warehouseId,
+        referenceType: "PROFORMA_INVOICE",
+        referenceId: input.piId,
+        notes: input.allowCrossCompanyShortfall
+          ? `Booked for ${input.piNo} (cross-company shortfall approved)`
+          : `Booked for ${input.piNo}`,
+        createdById: input.performedById,
+      },
+    });
   }
 }
 
@@ -396,6 +356,8 @@ export type BookingStockShortage = {
 export type BookingStockCoverage = {
   shortages: BookingStockShortage[];
   coveringCompanyCodes: string[];
+  /** Feasible reservation start (YYYY-MM-DD) per product when locally coverable. */
+  reservationStartByProduct: Map<string, string>;
 };
 
 /** Pure decision helper for booking stock + cross-company approval. */
@@ -419,36 +381,44 @@ async function assessBookingStockCoverage(
       string,
       { qty: number; serialTracking: boolean; displayName: string }
     >;
-    bookingDateString: string;
+    dispatchMinString: string;
     dispatchMaxString: string;
   },
 ): Promise<BookingStockCoverage> {
   const shortages: BookingStockShortage[] = [];
+  const reservationStartByProduct = new Map<string, string>();
 
   for (const [productId, entry] of input.quantitiesByProduct) {
     const projection = await getInventoryProjection({
       companyId: input.companyId,
       warehouseId: input.warehouseId,
       productId,
-      startDate: input.bookingDateString,
+      startDate: input.dispatchMinString,
       endDate: input.dispatchMaxString,
     });
-    const minimumProjected = projection.length
-      ? Math.min(...projection.map((day) => day.projectedAvailableQuantity))
-      : 0;
-    if (minimumProjected < entry.qty) {
-      shortages.push({
-        productId,
-        displayName: entry.displayName,
-        requiredQty: entry.qty,
-        localProjectedAvailable: minimumProjected,
-        shortageQty: roundMoney(entry.qty - minimumProjected),
-      });
+    const reservationStart = findFeasibleReservationStartDate(
+      projection,
+      entry.qty,
+    );
+    if (reservationStart) {
+      reservationStartByProduct.set(productId, reservationStart);
+      continue;
     }
+
+    const bestProjected = projection.length
+      ? Math.max(...projection.map((day) => day.projectedAvailableQuantity))
+      : 0;
+    shortages.push({
+      productId,
+      displayName: entry.displayName,
+      requiredQty: entry.qty,
+      localProjectedAvailable: bestProjected,
+      shortageQty: roundMoney(entry.qty - bestProjected),
+    });
   }
 
   if (shortages.length === 0) {
-    return { shortages, coveringCompanyCodes: [] };
+    return { shortages, coveringCompanyCodes: [], reservationStartByProduct };
   }
 
   const otherCompanies = await prisma.company.findMany({
@@ -470,7 +440,7 @@ async function assessBookingStockCoverage(
     if (canCoverAll) coveringCompanyCodes.push(company.code);
   }
 
-  return { shortages, coveringCompanyCodes };
+  return { shortages, coveringCompanyCodes, reservationStartByProduct };
 }
 
 export async function listProformaInvoices(
@@ -1109,7 +1079,7 @@ async function completePiStockBooking(
     companyId: input.companyId,
     warehouseId,
     quantitiesByProduct,
-    bookingDateString,
+    dispatchMinString,
     dispatchMaxString,
   });
   const decision = resolveBookingStockDecision({
@@ -1148,6 +1118,8 @@ async function completePiStockBooking(
     });
 
     for (const [productId, entry] of quantitiesByProduct) {
+      const reservationStart =
+        coverage.reservationStartByProduct.get(productId) ?? dispatchMinString;
       await createEvent(tx, {
         companyId: input.companyId,
         warehouseId,
@@ -1155,7 +1127,7 @@ async function completePiStockBooking(
         eventType: InventoryEventType.BOOKING_RESERVATION,
         quantity: entry.qty,
         effectiveDate: bookingDate,
-        expectedMinDate: requiredDispatchMinDate,
+        expectedMinDate: new Date(`${reservationStart}T00:00:00.000Z`),
         expectedMaxDate: requiredDispatchMaxDate,
         sourceType: "PROFORMA_INVOICE",
         sourceId: pi.id,
@@ -1352,11 +1324,18 @@ export async function requestBooking(
         ? 0
         : (pi.dispatchMaxDays ?? pi.quotation?.dispatchMaxDays ?? minDays);
     const workingDays = createWorkingDaysService(prisma);
-    const dispatchMaxString = await workingDays.getNextWorkingDate(
-      input.companyId,
-      input.warehouseId,
-      addCalendarDays(bookingDateString, maxDays),
-    );
+    const [dispatchMinString, dispatchMaxString] = await Promise.all([
+      workingDays.getNextWorkingDate(
+        input.companyId,
+        input.warehouseId,
+        addCalendarDays(bookingDateString, minDays),
+      ),
+      workingDays.getNextWorkingDate(
+        input.companyId,
+        input.warehouseId,
+        addCalendarDays(bookingDateString, maxDays),
+      ),
+    ]);
     const fulfillmentLines = await explodeItemsForFulfillment(
       prisma,
       pi.items.map((item) => ({
@@ -1372,7 +1351,7 @@ export async function requestBooking(
       companyId: input.companyId,
       warehouseId: input.warehouseId,
       quantitiesByProduct,
-      bookingDateString,
+      dispatchMinString,
       dispatchMaxString,
     });
 

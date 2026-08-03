@@ -4,10 +4,10 @@ import { PurchaseRequestsList } from "@/components/purchase/purchase-requests-li
 import {
   canRaisePurchaseRequest,
   canViewAllPurchaseRequests,
+  getAccessiblePurchaseCompanyIds,
 } from "@/lib/purchase-request-permissions";
 import { listPurchaseRequests } from "@/lib/purchase-request-service";
 import { prisma } from "@/lib/prisma";
-import { requireActiveCompany } from "@/lib/session";
 
 export default async function PurchaseRequestsPage() {
   const session = await auth();
@@ -15,9 +15,9 @@ export default async function PurchaseRequestsPage() {
     redirect("/dashboard");
   }
 
-  const companyId = requireActiveCompany(session);
+  const companyIds = await getAccessiblePurchaseCompanyIds(prisma, session);
   const requests = await listPurchaseRequests(prisma, {
-    companyId,
+    companyIds,
     requestedById: canViewAllPurchaseRequests(session.user.roles)
       ? undefined
       : session.user.id,

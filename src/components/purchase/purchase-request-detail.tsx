@@ -22,14 +22,17 @@ import {
   PURCHASE_REQUEST_STATUS_LABELS,
 } from "@/lib/purchase-request-constants";
 import type { SerializedPurchaseRequest } from "@/lib/purchase-request-service";
+import { formatCapacityUnit } from "@/lib/products";
 
 export function PurchaseRequestDetail({
   initialRequest,
   canManage,
+  canCreateIncomingLot = false,
   isRequester,
 }: {
   initialRequest: SerializedPurchaseRequest;
   canManage: boolean;
+  canCreateIncomingLot?: boolean;
   isRequester: boolean;
 }) {
   const router = useRouter();
@@ -126,6 +129,7 @@ export function PurchaseRequestDetail({
                 <TableHead>Product</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Brand</TableHead>
+                <TableHead>Capacity</TableHead>
                 <TableHead>Qty</TableHead>
                 <TableHead>Fulfilled</TableHead>
                 <TableHead>Target</TableHead>
@@ -149,6 +153,9 @@ export function PurchaseRequestDetail({
                   </TableCell>
                   <TableCell>{line.categoryName}</TableCell>
                   <TableCell>{line.brandName}</TableCell>
+                  <TableCell>
+                    {line.capacity} {formatCapacityUnit(line.capacityUnit)}
+                  </TableCell>
                   <TableCell>{line.requestedQty}</TableCell>
                   <TableCell>
                     {line.fulfilledQty}
@@ -161,7 +168,7 @@ export function PurchaseRequestDetail({
                   <TableCell>{line.targetDate ?? "—"}</TableCell>
                   <TableCell>{line.priorityLabel}</TableCell>
                   <TableCell>
-                    {canManage &&
+                    {canCreateIncomingLot &&
                     line.remainingQty > 0 &&
                     !["REJECTED", "CANCELLED", "FULFILLED"].includes(request.status) ? (
                       <Button asChild size="sm" variant="outline">

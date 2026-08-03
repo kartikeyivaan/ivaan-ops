@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import {
   canAccessPurchaseModule,
-  canManagePurchaseRequests,
+  canManagePurchaseOps,
 } from "@/lib/purchase-request-permissions";
 
 export default async function PurchasePage() {
@@ -11,7 +11,7 @@ export default async function PurchasePage() {
     redirect("/dashboard");
   }
 
-  if (canManagePurchaseRequests(session.user.roles)) {
+  if (canManagePurchaseOps(session.user.roles)) {
     redirect("/purchase/incoming");
   }
 

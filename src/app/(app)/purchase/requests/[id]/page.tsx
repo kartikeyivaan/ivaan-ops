@@ -2,13 +2,15 @@ import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { PurchaseRequestDetail } from "@/components/purchase/purchase-request-detail";
 import {
+  canAccessPurchaseRequestCompany,
+  canManagePurchaseOps,
   canManagePurchaseRequests,
   canRaisePurchaseRequest,
   canViewAllPurchaseRequests,
+  getAccessiblePurchaseCompanyIds,
 } from "@/lib/purchase-request-permissions";
 import { getPurchaseRequest } from "@/lib/purchase-request-service";
 import { prisma } from "@/lib/prisma";
-import { requireActiveCompany } from "@/lib/session";
 
 type PageProps = { params: Promise<{ id: string }> };
 
@@ -18,10 +20,10 @@ export default async function PurchaseRequestDetailPage({ params }: PageProps) {
     redirect("/dashboard");
   }
 
-  const companyId = requireActiveCompany(session);
+  const companyIds = await getAccessiblePurchaseCompanyIds(prisma, session);
   const { id } = await params;
   const request = await getPurchaseRequest(prisma, id);
-  if (!request || request.companyId !== companyId) {
+  if (!request || !canAccessPurchaseRequestCompany(companyIds, request.companyId)) {
     notFound();
   }
 
@@ -36,6 +38,7 @@ export default async function PurchaseRequestDetailPage({ params }: PageProps) {
     <PurchaseRequestDetail
       initialRequest={request}
       canManage={canManagePurchaseRequests(session.user.roles)}
+      canCreateIncomingLot={canManagePurchaseOps(session.user.roles)}
       isRequester={request.requestedById === session.user.id}
     />
   );

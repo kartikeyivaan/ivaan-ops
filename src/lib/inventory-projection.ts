@@ -126,6 +126,39 @@ export function findEarliestAvailabilityDate(
   );
 }
 
+/**
+ * Earliest day D in the projection window where reserving `requiredQuantity`
+ * from D through the end of the window stays covered
+ * (min projectedAvailable[D..end] >= requiredQuantity).
+ *
+ * Used for PI booking against incoming lots: stock may arrive after dispatch
+ * min but still within the committed dispatch max.
+ */
+export function findFeasibleReservationStartDate(
+  projection: readonly InventoryProjectionDay[],
+  requiredQuantity: number,
+): string | null {
+  assertQuantity(requiredQuantity, "Required quantity");
+  if (projection.length === 0) return null;
+
+  const suffixMin = new Array<number>(projection.length);
+  const last = projection.length - 1;
+  suffixMin[last] = projection[last]!.projectedAvailableQuantity;
+  for (let i = last - 1; i >= 0; i -= 1) {
+    suffixMin[i] = Math.min(
+      projection[i]!.projectedAvailableQuantity,
+      suffixMin[i + 1]!,
+    );
+  }
+
+  for (let i = 0; i < projection.length; i += 1) {
+    if (suffixMin[i]! >= requiredQuantity) {
+      return projection[i]!.date;
+    }
+  }
+  return null;
+}
+
 export function getEarliestAvailabilityDate(
   input: InventoryProjectionInput,
   requiredQuantity: number,

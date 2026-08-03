@@ -1,16 +1,17 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import {
+  canAccessPurchaseRequestCompany,
   canManagePurchaseRequests,
   canRaisePurchaseRequest,
   canViewAllPurchaseRequests,
+  getAccessiblePurchaseCompanyIds,
 } from "@/lib/purchase-request-permissions";
 import {
   getPurchaseRequest,
   updatePurchaseRequestStatus,
 } from "@/lib/purchase-request-service";
 import { prisma } from "@/lib/prisma";
-import { requireActiveCompany } from "@/lib/session";
 import { updatePurchaseRequestStatusSchema } from "@/lib/validations";
 
 function errorResponse(code: string, message: string, status: number, details?: unknown) {
@@ -25,16 +26,14 @@ export async function GET(_request: Request, context: RouteContext) {
     return errorResponse("FORBIDDEN", "You do not have permission for this action.", 403);
   }
 
-  let companyId: string;
-  try {
-    companyId = requireActiveCompany(session);
-  } catch {
+  const companyIds = await getAccessiblePurchaseCompanyIds(prisma, session);
+  if (!companyIds.length) {
     return errorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
   }
 
   const { id } = await context.params;
   const request = await getPurchaseRequest(prisma, id);
-  if (!request || request.companyId !== companyId) {
+  if (!request || !canAccessPurchaseRequestCompany(companyIds, request.companyId)) {
     return errorResponse("NOT_FOUND", "Purchase request not found.", 404);
   }
 
@@ -54,16 +53,14 @@ export async function PATCH(request: Request, context: RouteContext) {
     return errorResponse("FORBIDDEN", "You do not have permission for this action.", 403);
   }
 
-  let companyId: string;
-  try {
-    companyId = requireActiveCompany(session);
-  } catch {
+  const companyIds = await getAccessiblePurchaseCompanyIds(prisma, session);
+  if (!companyIds.length) {
     return errorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
   }
 
   const { id } = await context.params;
   const existing = await getPurchaseRequest(prisma, id);
-  if (!existing || existing.companyId !== companyId) {
+  if (!existing || !canAccessPurchaseRequestCompany(companyIds, existing.companyId)) {
     return errorResponse("NOT_FOUND", "Purchase request not found.", 404);
   }
 

@@ -85,6 +85,20 @@ export function canRecordPaymentAgainstPi(status: string, outstanding: number): 
   );
 }
 
+/** Existing payments may be edited/deleted except on draft or cancelled PIs. */
+export function canManageExistingPiPayment(status: string): boolean {
+  return status !== "DRAFT" && status !== "CANCEL_PENDING" && status !== "CANCELLED";
+}
+
+/** Max amount allowed when editing a payment (current outstanding + this payment). */
+export function maxPaymentAmountOnEdit(
+  totalValue: number,
+  totalPaid: number,
+  existingPaymentAmount: number,
+): number {
+  return roundMoney(calculateOutstanding(totalValue, totalPaid) + existingPaymentAmount);
+}
+
 /** Booked (or partially dispatched) PIs become dispatch-ready only once fully paid. */
 export function isReadyForDispatch(status: string, outstanding: number): boolean {
   return (

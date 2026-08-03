@@ -130,6 +130,21 @@ export async function POST(request: Request) {
           "Receiver name, receiver mobile and vehicle number are required.",
           400,
         ],
+        CROSS_COMPANY_PLAN_REQUIRED: [
+          "CROSS_COMPANY_PLAN_REQUIRED",
+          "Serials from another company require an approved cross-company transfer plan. Request approval from Dispatch Today.",
+          400,
+        ],
+        CROSS_COMPANY_REAPPROVAL_REQUIRED: [
+          "CROSS_COMPANY_REAPPROVAL_REQUIRED",
+          "Serials are from a different company than approved. Request re-approval with the correct source company.",
+          400,
+        ],
+        CROSS_COMPANY_QTY_EXCEEDED: [
+          "CROSS_COMPANY_QTY_EXCEEDED",
+          "Cross-company serial quantity exceeds the approved shortfall plan.",
+          400,
+        ],
       };
       const mapped = map[error.message];
       if (mapped) {

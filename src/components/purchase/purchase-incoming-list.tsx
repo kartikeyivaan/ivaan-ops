@@ -41,6 +41,7 @@ export function PurchaseIncomingList({
   vendors,
   defaultCompanyId,
   canCreate,
+  createDefaults,
 }: {
   initialLots: SerializedInventoryLot[];
   companies: Company[];
@@ -49,6 +50,14 @@ export function PurchaseIncomingList({
   vendors: Vendor[];
   defaultCompanyId: string;
   canCreate: boolean;
+  createDefaults?: {
+    companyId?: string;
+    warehouseId?: string;
+    productId?: string;
+    quantity?: string;
+    purchaseRequestLineId?: string;
+    purchaseRequestId?: string;
+  };
 }) {
   const [lots, setLots] = useState(initialLots);
   const [editingLot, setEditingLot] = useState<SerializedInventoryLot | null>(null);
@@ -77,6 +86,7 @@ export function PurchaseIncomingList({
           warehouses={warehouses}
           vendors={vendors}
           defaultCompanyId={defaultCompanyId}
+          defaults={createDefaults}
           onCreated={refreshLots}
         />
       ) : null}

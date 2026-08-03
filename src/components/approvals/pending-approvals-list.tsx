@@ -39,6 +39,11 @@ function approveEndpoint(item: PendingApprovalItem): { url: string; body?: objec
         url: `/api/proforma-invoices/${item.moduleId}/approve-dispatch-today`,
         body: {},
       };
+    case "CROSS_COMPANY_TRANSFER":
+      return {
+        url: `/api/cross-company-transfers/${item.moduleId}/approve`,
+        body: {},
+      };
     case "DC_CANCEL":
       return { url: `/api/dispatches/${item.moduleId}/approve-cancel`, body: {} };
     case "PI_CANCEL":
@@ -67,6 +72,11 @@ function rejectEndpoint(
     case "DISPATCH_TODAY":
       return {
         url: `/api/proforma-invoices/${item.moduleId}/reject-dispatch-today`,
+        body: { reason },
+      };
+    case "CROSS_COMPANY_TRANSFER":
+      return {
+        url: `/api/cross-company-transfers/${item.moduleId}/reject`,
         body: { reason },
       };
     case "DC_CANCEL":

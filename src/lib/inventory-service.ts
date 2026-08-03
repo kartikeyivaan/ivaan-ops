@@ -21,6 +21,7 @@ import {
 } from "@/lib/inventory";
 import { writeAuditLogTx } from "@/lib/audit";
 import { toSignedInventoryQuantity } from "@/lib/inventory-events";
+import { applyIncomingFulfillment } from "@/lib/purchase-request-service";
 
 const lotInclude = {
   company: true,
@@ -406,6 +407,7 @@ export async function createIncomingLot(
     expectedMinDate?: Date | null;
     expectedMaxDate?: Date | null;
     productId: string;
+    purchaseRequestLineId?: string | null;
     quantity: number;
     unitPurchaseRate: number;
     transportCharges?: number;
@@ -448,6 +450,20 @@ export async function createIncomingLot(
     if (!vendor) throw new Error("VENDOR_NOT_FOUND");
   }
 
+  if (input.purchaseRequestLineId) {
+    const prLine = await prisma.purchaseRequestLine.findUnique({
+      where: { id: input.purchaseRequestLineId },
+      include: { purchaseRequest: { select: { companyId: true, status: true } } },
+    });
+    if (!prLine) throw new Error("PURCHASE_REQUEST_LINE_NOT_FOUND");
+    if (prLine.purchaseRequest.companyId !== input.companyId) {
+      throw new Error("PURCHASE_REQUEST_COMPANY_MISMATCH");
+    }
+    if (prLine.productId !== input.productId) {
+      throw new Error("PURCHASE_REQUEST_PRODUCT_MISMATCH");
+    }
+  }
+
   const purchaseInvoiceNo = await validateIncomingLotUniqueness(prisma, {
     purchaseInvoiceNo: input.purchaseInvoiceNo ?? "",
     companyId: input.companyId,
@@ -473,6 +489,7 @@ export async function createIncomingLot(
         expectedMinDate: input.expectedMinDate,
         expectedMaxDate: input.expectedMaxDate,
         productId: input.productId,
+        purchaseRequestLineId: input.purchaseRequestLineId ?? null,
         quantity: input.quantity,
         unitPurchaseRate: input.unitPurchaseRate,
         transportCharges,
@@ -496,6 +513,7 @@ export async function createIncomingLot(
         quantity: input.quantity,
         unitPurchaseRate: input.unitPurchaseRate,
         totalPurchaseCost,
+        purchaseRequestLineId: input.purchaseRequestLineId ?? null,
       },
     });
 
@@ -517,6 +535,14 @@ export async function createIncomingLot(
         createdById: input.createdById,
       },
     });
+
+    if (input.purchaseRequestLineId) {
+      await applyIncomingFulfillment(tx, {
+        purchaseRequestLineId: input.purchaseRequestLineId,
+        quantity: input.quantity,
+        updatedById: input.createdById,
+      });
+    }
 
     return lot;
   });

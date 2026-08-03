@@ -206,6 +206,20 @@ enum ApprovalModuleType {
   DISPATCH_TODAY
   PI_CANCEL
   PANEL_DAMAGE
+  CROSS_COMPANY_TRANSFER
+}
+
+enum TransferOrigin {
+  MANUAL
+  DISPATCH_SHORTFALL
+}
+
+enum PiCrossCompanyTransferPlanStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUPERSEDED
+  COMPLETED
 }
 
 enum DamageReportStatus {
@@ -219,6 +233,23 @@ enum DamageCategory {
   STORAGE
   TRANSIT_AFTER_INWARD
   OTHER
+}
+
+enum PurchaseRequestStatus {
+  OPEN
+  IN_PROGRESS
+  ORDERED
+  PARTIALLY_FULFILLED
+  FULFILLED
+  REJECTED
+  CANCELLED
+}
+
+enum PurchaseRequestPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
 }
 
 enum ProjectProposalStatus {
@@ -377,6 +408,8 @@ model Company {
   /// Opening Stock Audit gate: ops blocked while IN_PROGRESS until all warehouses approved.
   inventoryOpeningPhase      InventoryOpeningPhase @default(NOT_STARTED) @map("inventory_opening_phase")
   inventoryTrackingStartDate DateTime?             @map("inventory_tracking_start_date")
+  /// Sandbox company used only while Learning Mode is on. Never use for real ops.
+  isPractice          Boolean  @default(false) @map("is_practice")
   isActive            Boolean  @default(true) @map("is_active")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
@@ -391,6 +424,8 @@ model Company {
   holidays              CompanyHoliday[]
   transfersFrom         InventoryTransfer[]    @relation("TransferFromCompany")
   transfersTo           InventoryTransfer[]    @relation("TransferToCompany")
+  crossCompanyPlansFrom PiCrossCompanyTransferPlan[] @relation("CrossCompanyPlanFrom")
+  crossCompanyPlansTo   PiCrossCompanyTransferPlan[] @relation("CrossCompanyPlanTo")
   quotations            Quotation[]
   quotationWarningLogs  QuotationWarningLog[]
   proformaInvoices      ProformaInvoice[]
@@ -403,6 +438,7 @@ model Company {
   openingAudits         InventoryOpeningAudit[]
   dailyAudits           InventoryDailyAudit[]
   damageReports         InventoryDamageReport[]
+  purchaseRequests      PurchaseRequest[]
 
   @@map("companies")
 }
@@ -421,11 +457,13 @@ model User {
   failedLoginAttempts    Int        @default(0) @map("failed_login_attempts")
   lockedUntil            DateTime?  @map("locked_until")
   status                 UserStatus @default(ACTIVE)
+  learningPromptDismissedAt DateTime? @map("learning_prompt_dismissed_at")
   createdAt              DateTime   @default(now()) @map("created_at")
   updatedAt              DateTime   @updatedAt @map("updated_at")
 
   roles                             UserRole[]
   companies                         UserCompany[]
+  learningProgress                  LearningProgress[]
   auditLogs                         AuditLog[]                     @relation("AuditPerformedBy")
   notifications                     Notification[]
   assignedCustomers                 Customer[]                     @relation("AssignedSalesExecutive")
@@ -436,6 +474,9 @@ model User {
   createdTransfers                  InventoryTransfer[]            @relation("TransferCreatedBy")
   dispatchedTransfers               InventoryTransfer[]            @relation("TransferDispatchedBy")
   receivedTransfers                 InventoryTransfer[]            @relation("TransferReceivedBy")
+  approvedTransfers                 InventoryTransfer[]            @relation("TransferApprovedBy")
+  crossCompanyPlansRequested        PiCrossCompanyTransferPlan[]   @relation("CrossCompanyPlanRequestedBy")
+  crossCompanyPlansApproved         PiCrossCompanyTransferPlan[]   @relation("CrossCompanyPlanApprovedBy")
   salesQuotations                   Quotation[]                    @relation("QuotationSalesUser")
   salesProformaInvoices             ProformaInvoice[]              @relation("ProformaSalesUser")
   bookedProformaInvoices            ProformaInvoice[]              @relation("ProformaBookedBy")
@@ -477,6 +518,8 @@ model User {
   dailyAuditsSubmitted              InventoryDailyAudit[]          @relation("DailyAuditSubmittedBy")
   damageReportsRequested            InventoryDamageReport[]        @relation("DamageReportRequestedBy")
   damageReportsDecided              InventoryDamageReport[]        @relation("DamageReportDecidedBy")
+  purchaseRequestsRequested         PurchaseRequest[]              @relation("PurchaseRequestRequestedBy")
+  purchaseRequestsUpdated           PurchaseRequest[]              @relation("PurchaseRequestUpdatedBy")
 
   @@map("users")
 }
@@ -515,6 +558,20 @@ model UserCompany {
   @@map("user_companies")
 }
 
+/// Checklist completion for Learning Mode lessons (practice-company actions or tours).
+model LearningProgress {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  lessonId    String   @map("lesson_id")
+  completedAt DateTime @default(now()) @map("completed_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId])
+  @@index([userId])
+  @@map("learning_progress")
+}
+
 model Warehouse {
   id        String   @id @default(uuid()) @db.Uuid
   companyId String   @map("company_id") @db.Uuid
@@ -536,6 +593,7 @@ model Warehouse {
   openingAudits        InventoryOpeningAudit[]
   dailyAudits          InventoryDailyAudit[]
   damageReports        InventoryDamageReport[]
+  purchaseRequests     PurchaseRequest[]
 
   @@unique([companyId, name])
   @@map("warehouses")
@@ -704,12 +762,14 @@ model Product {
   inventorySafetyStock     InventorySafetyStock[]
   damageReports            InventoryDamageReport[]
   transferLines            InventoryTransferLine[]
+  crossCompanyPlanLines    PiCrossCompanyTransferPlanLine[]
   quotationItems           QuotationItem[]
   proformaInvoiceItems     ProformaInvoiceItem[]
   dispatchLines            DispatchLine[]
   projectProposalRevisions ProjectProposalRevision[]
   openingAuditLines        InventoryOpeningAuditLine[]
   dailyAuditLines          InventoryDailyAuditLine[]
+  purchaseRequestLines     PurchaseRequestLine[]
 
   @@index([displayName])
   @@index([categoryId])
@@ -762,33 +822,36 @@ model InventoryLot {
   purchaseDate      DateTime  @map("purchase_date") @db.Date
   expectedMinDate   DateTime? @map("expected_min_date") @db.Date
   expectedMaxDate   DateTime? @map("expected_max_date") @db.Date
-  productId         String    @map("product_id") @db.Uuid
-  quantity          Decimal   @db.Decimal(12, 3)
-  unitPurchaseRate  Decimal   @default(0) @map("unit_purchase_rate") @db.Decimal(12, 2)
-  transportCharges  Decimal   @default(0) @map("transport_charges") @db.Decimal(12, 2)
-  commissionCharges Decimal   @default(0) @map("commission_charges") @db.Decimal(12, 2)
-  totalPurchaseCost Decimal   @default(0) @map("total_purchase_cost") @db.Decimal(14, 2)
-  receivedQuantity  Decimal   @default(0) @map("received_quantity") @db.Decimal(12, 3)
-  damagedQuantity   Decimal   @default(0) @map("damaged_quantity") @db.Decimal(12, 3)
-  status            LotStatus
-  remarks           String?
-  referenceNumber   String?   @map("reference_number")
-  createdById       String    @map("created_by") @db.Uuid
-  createdAt         DateTime  @default(now()) @map("created_at")
-  updatedAt         DateTime  @updatedAt @map("updated_at")
+  productId              String    @map("product_id") @db.Uuid
+  purchaseRequestLineId  String?   @map("purchase_request_line_id") @db.Uuid
+  quantity               Decimal   @db.Decimal(12, 3)
+  unitPurchaseRate       Decimal   @default(0) @map("unit_purchase_rate") @db.Decimal(12, 2)
+  transportCharges       Decimal   @default(0) @map("transport_charges") @db.Decimal(12, 2)
+  commissionCharges      Decimal   @default(0) @map("commission_charges") @db.Decimal(12, 2)
+  totalPurchaseCost      Decimal   @default(0) @map("total_purchase_cost") @db.Decimal(14, 2)
+  receivedQuantity       Decimal   @default(0) @map("received_quantity") @db.Decimal(12, 3)
+  damagedQuantity        Decimal   @default(0) @map("damaged_quantity") @db.Decimal(12, 3)
+  status                 LotStatus
+  remarks                String?
+  referenceNumber        String?   @map("reference_number")
+  createdById            String    @map("created_by") @db.Uuid
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
 
-  company      Company                @relation(fields: [companyId], references: [id])
-  warehouse    Warehouse              @relation(fields: [warehouseId], references: [id])
-  vendor       Vendor?                @relation(fields: [vendorId], references: [id])
-  product      Product                @relation(fields: [productId], references: [id])
-  createdBy    User                   @relation("LotCreatedBy", fields: [createdById], references: [id])
-  serials      InventorySerial[]
-  transactions InventoryTransaction[]
+  company             Company              @relation(fields: [companyId], references: [id])
+  warehouse           Warehouse            @relation(fields: [warehouseId], references: [id])
+  vendor              Vendor?              @relation(fields: [vendorId], references: [id])
+  product             Product              @relation(fields: [productId], references: [id])
+  purchaseRequestLine PurchaseRequestLine? @relation(fields: [purchaseRequestLineId], references: [id])
+  createdBy           User                 @relation("LotCreatedBy", fields: [createdById], references: [id])
+  serials             InventorySerial[]
+  transactions        InventoryTransaction[]
 
   @@index([companyId, status])
   @@index([warehouseId])
   @@index([productId])
   @@index([expectedMaxDate])
+  @@index([purchaseRequestLineId])
   @@map("inventory_lots")
 }
 
@@ -809,6 +872,7 @@ model InventorySerial {
   proformaInvoiceSerials ProformaInvoiceSerial[]
   dispatchLineSerials    DispatchLineSerial[]
   damageReports          InventoryDamageReport[]
+  crossCompanyPlanSerials PiCrossCompanyTransferPlanSerial[]
 
   @@index([productId, status])
   @@index([currentWarehouseId])
@@ -843,6 +907,56 @@ model InventoryDamageReport {
   @@index([serialId, status])
   @@index([warehouseId])
   @@map("inventory_damage_reports")
+}
+
+model PurchaseRequest {
+  id            String                  @id @default(uuid()) @db.Uuid
+  requestNumber String                  @unique @map("request_number")
+  companyId     String                  @map("company_id") @db.Uuid
+  warehouseId   String?                 @map("warehouse_id") @db.Uuid
+  status        PurchaseRequestStatus   @default(OPEN)
+  priority      PurchaseRequestPriority @default(NORMAL)
+  remarks       String?
+  statusRemarks String?                 @map("status_remarks")
+  requestedById String                  @map("requested_by") @db.Uuid
+  updatedById   String?                 @map("updated_by") @db.Uuid
+  createdAt     DateTime                @default(now()) @map("created_at")
+  updatedAt     DateTime                @updatedAt @map("updated_at")
+
+  company     Company               @relation(fields: [companyId], references: [id])
+  warehouse   Warehouse?            @relation(fields: [warehouseId], references: [id])
+  requestedBy User                  @relation("PurchaseRequestRequestedBy", fields: [requestedById], references: [id])
+  updatedBy   User?                 @relation("PurchaseRequestUpdatedBy", fields: [updatedById], references: [id])
+  lines       PurchaseRequestLine[]
+
+  @@index([companyId, status])
+  @@index([requestedById])
+  @@index([warehouseId])
+  @@map("purchase_requests")
+}
+
+model PurchaseRequestLine {
+  id                String                  @id @default(uuid()) @db.Uuid
+  purchaseRequestId String                  @map("purchase_request_id") @db.Uuid
+  productId         String                  @map("product_id") @db.Uuid
+  categoryName      String                  @map("category_name")
+  brandName         String                  @map("brand_name")
+  requestedQty      Decimal                 @map("requested_qty") @db.Decimal(12, 3)
+  fulfilledQty      Decimal                 @default(0) @map("fulfilled_qty") @db.Decimal(12, 3)
+  targetDate        DateTime?               @map("target_date") @db.Date
+  priority          PurchaseRequestPriority @default(NORMAL)
+  remarks           String?
+  sortOrder         Int                     @default(0) @map("sort_order")
+  createdAt         DateTime                @default(now()) @map("created_at")
+  updatedAt         DateTime                @updatedAt @map("updated_at")
+
+  purchaseRequest PurchaseRequest @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade)
+  product         Product         @relation(fields: [productId], references: [id])
+  lots            InventoryLot[]
+
+  @@index([purchaseRequestId])
+  @@index([productId])
+  @@map("purchase_request_lines")
 }
 
 model InventoryTransaction {
@@ -889,32 +1003,100 @@ model ProductPrice {
 }
 
 model InventoryTransfer {
-  id              String         @id @default(uuid()) @db.Uuid
-  transferNumber  String         @unique @map("transfer_number")
-  fromCompanyId   String         @map("from_company_id") @db.Uuid
-  toCompanyId     String         @map("to_company_id") @db.Uuid
-  fromWarehouseId String         @map("from_warehouse_id") @db.Uuid
-  toWarehouseId   String         @map("to_warehouse_id") @db.Uuid
-  status          TransferStatus
-  notes           String?
-  createdById     String         @map("created_by") @db.Uuid
-  dispatchedById  String?        @map("dispatched_by") @db.Uuid
-  dispatchedAt    DateTime?      @map("dispatched_at")
-  receivedById    String?        @map("received_by") @db.Uuid
-  receivedAt      DateTime?      @map("received_at")
-  createdAt       DateTime       @default(now()) @map("created_at")
-  updatedAt       DateTime       @updatedAt @map("updated_at")
+  id                 String         @id @default(uuid()) @db.Uuid
+  transferNumber     String         @unique @map("transfer_number")
+  fromCompanyId      String         @map("from_company_id") @db.Uuid
+  toCompanyId        String         @map("to_company_id") @db.Uuid
+  fromWarehouseId    String         @map("from_warehouse_id") @db.Uuid
+  toWarehouseId      String         @map("to_warehouse_id") @db.Uuid
+  status             TransferStatus
+  origin             TransferOrigin @default(MANUAL)
+  notes              String?
+  proformaInvoiceId  String?        @map("proforma_invoice_id") @db.Uuid
+  dispatchId         String?        @map("dispatch_id") @db.Uuid
+  approvedById       String?        @map("approved_by") @db.Uuid
+  createdById        String         @map("created_by") @db.Uuid
+  dispatchedById     String?        @map("dispatched_by") @db.Uuid
+  dispatchedAt       DateTime?      @map("dispatched_at")
+  receivedById       String?        @map("received_by") @db.Uuid
+  receivedAt         DateTime?      @map("received_at")
+  createdAt          DateTime       @default(now()) @map("created_at")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
 
-  fromCompany  Company                 @relation("TransferFromCompany", fields: [fromCompanyId], references: [id])
-  toCompany    Company                 @relation("TransferToCompany", fields: [toCompanyId], references: [id])
-  createdBy    User                    @relation("TransferCreatedBy", fields: [createdById], references: [id])
-  dispatchedBy User?                   @relation("TransferDispatchedBy", fields: [dispatchedById], references: [id])
-  receivedBy   User?                   @relation("TransferReceivedBy", fields: [receivedById], references: [id])
-  lines        InventoryTransferLine[]
+  fromCompany     Company                 @relation("TransferFromCompany", fields: [fromCompanyId], references: [id])
+  toCompany       Company                 @relation("TransferToCompany", fields: [toCompanyId], references: [id])
+  createdBy       User                    @relation("TransferCreatedBy", fields: [createdById], references: [id])
+  dispatchedBy    User?                   @relation("TransferDispatchedBy", fields: [dispatchedById], references: [id])
+  receivedBy      User?                   @relation("TransferReceivedBy", fields: [receivedById], references: [id])
+  approvedBy      User?                   @relation("TransferApprovedBy", fields: [approvedById], references: [id])
+  proformaInvoice ProformaInvoice?        @relation(fields: [proformaInvoiceId], references: [id])
+  dispatch        Dispatch?               @relation(fields: [dispatchId], references: [id])
+  lines           InventoryTransferLine[]
+  crossCompanyPlan PiCrossCompanyTransferPlan?
 
   @@index([fromCompanyId, status])
   @@index([toCompanyId, status])
+  @@index([origin, createdAt])
+  @@index([proformaInvoiceId])
   @@map("inventory_transfers")
+}
+
+model PiCrossCompanyTransferPlan {
+  id                  String                            @id @default(uuid()) @db.Uuid
+  piId                String                            @map("pi_id") @db.Uuid
+  fromCompanyId       String                            @map("from_company_id") @db.Uuid
+  toCompanyId         String                            @map("to_company_id") @db.Uuid
+  status              PiCrossCompanyTransferPlanStatus
+  requestedById       String                            @map("requested_by") @db.Uuid
+  approvedById        String?                           @map("approved_by") @db.Uuid
+  approvedAt          DateTime?                         @map("approved_at")
+  rejectionReason     String?                           @map("rejection_reason")
+  inventoryTransferId String?                           @unique @map("inventory_transfer_id") @db.Uuid
+  dispatchId          String?                           @map("dispatch_id") @db.Uuid
+  createdAt           DateTime                          @default(now()) @map("created_at")
+  updatedAt           DateTime                          @updatedAt @map("updated_at")
+
+  pi                ProformaInvoice                   @relation(fields: [piId], references: [id], onDelete: Cascade)
+  fromCompany       Company                           @relation("CrossCompanyPlanFrom", fields: [fromCompanyId], references: [id])
+  toCompany         Company                           @relation("CrossCompanyPlanTo", fields: [toCompanyId], references: [id])
+  requestedBy       User                              @relation("CrossCompanyPlanRequestedBy", fields: [requestedById], references: [id])
+  approvedBy        User?                             @relation("CrossCompanyPlanApprovedBy", fields: [approvedById], references: [id])
+  inventoryTransfer InventoryTransfer?                @relation(fields: [inventoryTransferId], references: [id])
+  dispatch          Dispatch?                         @relation(fields: [dispatchId], references: [id])
+  lines             PiCrossCompanyTransferPlanLine[]
+
+  @@index([piId, status])
+  @@index([status, createdAt])
+  @@map("pi_cross_company_transfer_plans")
+}
+
+model PiCrossCompanyTransferPlanLine {
+  id               String  @id @default(uuid()) @db.Uuid
+  planId           String  @map("plan_id") @db.Uuid
+  productId        String  @map("product_id") @db.Uuid
+  qty              Decimal @db.Decimal(12, 3)
+  actualQty        Decimal @default(0) @map("actual_qty") @db.Decimal(12, 3)
+  unitPurchaseCost Decimal @default(0) @map("unit_purchase_cost") @db.Decimal(12, 2)
+
+  plan     PiCrossCompanyTransferPlan         @relation(fields: [planId], references: [id], onDelete: Cascade)
+  product  Product                            @relation(fields: [productId], references: [id])
+  serials  PiCrossCompanyTransferPlanSerial[]
+
+  @@index([planId])
+  @@map("pi_cross_company_transfer_plan_lines")
+}
+
+model PiCrossCompanyTransferPlanSerial {
+  id               String  @id @default(uuid()) @db.Uuid
+  planLineId       String  @map("plan_line_id") @db.Uuid
+  serialId         String  @map("serial_id") @db.Uuid
+  unitPurchaseCost Decimal @default(0) @map("unit_purchase_cost") @db.Decimal(12, 2)
+
+  planLine PiCrossCompanyTransferPlanLine @relation(fields: [planLineId], references: [id], onDelete: Cascade)
+  serial   InventorySerial                @relation(fields: [serialId], references: [id])
+
+  @@unique([planLineId, serialId])
+  @@map("pi_cross_company_transfer_plan_serials")
 }
 
 model InventoryTransferLine {
@@ -1057,10 +1239,12 @@ model ProformaInvoice {
   warehouse  Warehouse?              @relation(fields: [warehouseId], references: [id])
   bookedBy   User?                   @relation("ProformaBookedBy", fields: [bookedById], references: [id])
   dispatchTodayMarkedBy User?        @relation("ProformaDispatchTodayMarkedBy", fields: [dispatchTodayMarkedById], references: [id])
-  items      ProformaInvoiceItem[]
-  payments   Payment[]
-  serials    ProformaInvoiceSerial[]
-  dispatches Dispatch[]
+  items                 ProformaInvoiceItem[]
+  payments              Payment[]
+  serials               ProformaInvoiceSerial[]
+  dispatches            Dispatch[]
+  inventoryTransfers    InventoryTransfer[]
+  crossCompanyPlans     PiCrossCompanyTransferPlan[]
 
   @@index([companyId, status])
   @@index([customerId])
@@ -1151,9 +1335,11 @@ model Dispatch {
   warehouse       Warehouse        @relation(fields: [warehouseId], references: [id])
   createdBy       User             @relation("DispatchCreatedBy", fields: [createdById], references: [id])
   dispatchedBy    User?            @relation("DispatchDispatchedBy", fields: [dispatchedById], references: [id])
-  lines           DispatchLine[]
-  invoiceHandover InvoiceHandover?
-  documentation   DocumentationRecord?
+  lines                DispatchLine[]
+  invoiceHandover      InvoiceHandover?
+  documentation        DocumentationRecord?
+  inventoryTransfers   InventoryTransfer[]
+  crossCompanyPlans    PiCrossCompanyTransferPlan[]
 
   @@index([companyId, status])
   @@index([customerId])

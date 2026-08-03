@@ -101,6 +101,9 @@ export async function POST(request: Request) {
 
     const whatsappUrl = parsed.data.send ? buildQuotationWhatsappUrl(quotation) : null;
 
+    const { recordLearningEvent } = await import("@/lib/learning/progress");
+    await recordLearningEvent(session, "quotation.created");
+
     return NextResponse.json({ ...quotation, whatsappUrl }, { status: 201 });
   } catch (error) {
     if (error instanceof QuotationWarningsRequiredError) {

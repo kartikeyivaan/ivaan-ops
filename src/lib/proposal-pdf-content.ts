@@ -71,7 +71,7 @@ export function formatCommercialOfferSubsidyNote(
 export const PROJECT_DOCUMENTS_PHONE = "+91 8390 201918";
 
 export const GENERATION_DISCLAIMER =
-  "Generation estimates are based on 1,700 kWh/kWp/year for Maharashtra, with monthly distribution reflecting average solar irradiance at Jalgaon. Actual generation depends on site conditions, shading, cleaning, and grid availability.";
+  "Generation estimates are based on 1,550 kWh/kWp/year for Maharashtra, with monthly distribution reflecting average solar irradiance at Jalgaon. Actual generation depends on site conditions, shading, cleaning, and grid availability.";
 
 export const PROPOSAL_TERMS = [
   "Any MNRE subsidy or exemption shall be passed on to the client as per applicable government policy.",

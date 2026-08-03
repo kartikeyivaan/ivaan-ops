@@ -1,4 +1,4 @@
-export const SPECIFIC_GENERATION_KWH_PER_KWP = 1700;
+export const SPECIFIC_GENERATION_KWH_PER_KWP = 1550;
 export const ESTIMATED_PERFORMANCE_RATIO = 75;
 export const SYSTEM_LIFETIME_YEARS = 25;
 /** India grid emission factor (kg CO₂ per kWh). */

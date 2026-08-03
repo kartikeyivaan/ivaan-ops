@@ -47,6 +47,8 @@ export async function POST(request: Request, context: RouteContext) {
       markedById: session.user.id,
       canApproveEarly: canApproveDispatchToday(session.user.roles),
       confirmEarly: parsed.data.confirmEarly,
+      confirmCrossCompany: parsed.data.confirmCrossCompany,
+      fromCompanyId: parsed.data.fromCompanyId,
       draft: {
         vehicleNo: parsed.data.vehicleNo,
         driverName: parsed.data.driverName,
@@ -71,8 +73,36 @@ export async function POST(request: Request, context: RouteContext) {
       if (error.message === "DISPATCH_TODAY_ALREADY_REQUESTED") {
         return errorResponse(
           "DISPATCH_TODAY_ALREADY_REQUESTED",
-          "Early dispatch today is already pending approval.",
+          "Dispatch today is already pending approval.",
           400,
+        );
+      }
+      if (error.message === "STOCK_UNAVAILABLE") {
+        return errorResponse(
+          "STOCK_UNAVAILABLE",
+          "Stock is not available in any company for the remaining PI quantity.",
+          400,
+        );
+      }
+      if (error.message === "SHORTFALL_SOURCE_REQUIRED") {
+        return errorResponse(
+          "SHORTFALL_SOURCE_REQUIRED",
+          "PI company stock is short. Select a source company to transfer the shortfall.",
+          409,
+        );
+      }
+      if (error.message === "SOURCE_INSUFFICIENT_STOCK") {
+        return errorResponse(
+          "SOURCE_INSUFFICIENT_STOCK",
+          "Selected company does not have enough available stock for the shortfall.",
+          400,
+        );
+      }
+      if (error.message === "CROSS_COMPANY_CONFIRMATION_REQUIRED") {
+        return errorResponse(
+          "CROSS_COMPANY_CONFIRMATION_REQUIRED",
+          "Confirm cross-company shortfall transfer to continue.",
+          409,
         );
       }
       if (error.message.startsWith("EARLY_DISPATCH_CONFIRMATION_REQUIRED|")) {

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { ArrowLeft, Download, MessageCircle, Send, ShieldCheck, Truck, XCircle } from "lucide-react";
+import { ArrowLeft, Download, MessageCircle, Pencil, Send, ShieldCheck, Trash2, Truck, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,13 +24,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  canManageExistingPiPayment,
   canRecordPaymentAgainstPi,
   formatPaymentMode,
   formatProformaStatus,
   formatReceivedInAccount,
 } from "@/lib/proforma-invoices";
 import { formatCurrency } from "@/lib/quotations";
-import { formatDocumentDate } from "@/lib/utils";
+import { formatDocumentDate, formatPaymentDate } from "@/lib/utils";
 import { formatPricingType } from "@/lib/products";
 
 type Warehouse = { id: string; name: string; code: string | null };
@@ -74,6 +75,22 @@ type ProformaInvoiceDetailData = {
       notes: string | null;
     };
   };
+  crossCompanyTransfer?: {
+    id: string;
+    status: string;
+    fromCompany: { id: string; code: string; name: string };
+    toCompany: { id: string; code: string; name: string };
+    lines: Array<{
+      productId: string;
+      displayName: string;
+      qty: number;
+      actualQty: number;
+      unitPurchaseCost: number;
+      serials: Array<{ serialId: string; serialNumber: string; unitPurchaseCost: number }>;
+    }>;
+    approvedBy: { id: string; name: string } | null;
+    approvedAt: string | null;
+  } | null;
   items: Array<{
     id: string;
     qty: number;
@@ -143,6 +160,7 @@ export function ProformaInvoiceDetail({
   const [paymentMode, setPaymentMode] = useState("BANK_TRANSFER");
   const [receivedInAccount, setReceivedInAccount] = useState("");
   const [referenceNo, setReferenceNo] = useState("");
+  const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? "");
   const [vehicleNo, setVehicleNo] = useState(pi.dispatchToday?.draft.vehicleNo ?? "");
   const [driverName, setDriverName] = useState(pi.dispatchToday?.draft.driverName ?? "");
@@ -151,9 +169,21 @@ export function ProformaInvoiceDetail({
     pi.dispatchToday?.draft.receiverMobile ?? "",
   );
   const [dispatchNotes, setDispatchNotes] = useState(pi.dispatchToday?.draft.notes ?? "");
+  const [fromCompanyId, setFromCompanyId] = useState("");
+  const [shortfallCandidates, setShortfallCandidates] = useState<
+    Array<{ companyId: string; companyCode: string; companyName: string; canCoverAll: boolean }>
+  >([]);
+  const [shortfallLines, setShortfallLines] = useState<
+    Array<{ productId: string; displayName: string; shortfallQty: number }>
+  >([]);
+  const [crossCompanyWarning, setCrossCompanyWarning] = useState(false);
+  const [earlyWarning, setEarlyWarning] = useState(false);
+  const canManagePayments =
+    canRecordPayments && canManageExistingPiPayment(pi.status);
   const showRecordPayment =
     canRecordPayments &&
     canRecordPaymentAgainstPi(pi.status, pi.paymentSummary.outstanding);
+  const showPaymentForm = showRecordPayment || editingPaymentId !== null;
   const readyForDispatch =
     pi.paymentSummary.readyForDispatch ??
     ((pi.status === "BOOKED" || pi.status === "PARTIALLY_DISPATCHED") &&
@@ -174,6 +204,25 @@ export function ProformaInvoiceDetail({
       return;
     }
     router.refresh();
+  }
+
+  function resetPaymentForm() {
+    setEditingPaymentId(null);
+    setPaymentAmount("");
+    setPaymentDate(new Date().toISOString().slice(0, 10));
+    setPaymentMode("BANK_TRANSFER");
+    setReceivedInAccount("");
+    setReferenceNo("");
+  }
+
+  function startEditPayment(payment: ProformaInvoiceDetailData["payments"][number]) {
+    setError("");
+    setEditingPaymentId(payment.id);
+    setPaymentAmount(String(payment.amount));
+    setPaymentDate(payment.paymentDate.slice(0, 10));
+    setPaymentMode(payment.paymentMode);
+    setReceivedInAccount(payment.receivedInAccount ?? "");
+    setReferenceNo(payment.referenceNo ?? "");
   }
 
   async function handleRecordPayment() {
@@ -200,26 +249,47 @@ export function ProformaInvoiceDetail({
     }
 
     setLoading(true);
-    const response = await fetch(`/api/proforma-invoices/${pi.id}/payments`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        amount: Number(paymentAmount),
-        paymentDate,
-        paymentMode,
-        receivedInAccount,
-        referenceNo: referenceNo.trim(),
-      }),
+    const payload = {
+      amount: Number(paymentAmount),
+      paymentDate,
+      paymentMode,
+      receivedInAccount,
+      referenceNo: referenceNo.trim(),
+    };
+    const response = await fetch(
+      editingPaymentId
+        ? `/api/proforma-invoices/${pi.id}/payments/${editingPaymentId}`
+        : `/api/proforma-invoices/${pi.id}/payments`,
+      {
+        method: editingPaymentId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+    );
+    const data = await response.json();
+    setLoading(false);
+    if (!response.ok) {
+      setError(data.message ?? (editingPaymentId ? "Unable to update payment." : "Unable to record payment."));
+      return;
+    }
+    resetPaymentForm();
+    router.refresh();
+  }
+
+  async function handleDeletePayment(paymentId: string) {
+    if (!window.confirm("Delete this payment? This cannot be undone.")) return;
+    setLoading(true);
+    setError("");
+    const response = await fetch(`/api/proforma-invoices/${pi.id}/payments/${paymentId}`, {
+      method: "DELETE",
     });
     const data = await response.json();
     setLoading(false);
     if (!response.ok) {
-      setError(data.message ?? "Unable to record payment.");
+      setError(data.message ?? "Unable to delete payment.");
       return;
     }
-    setPaymentAmount("");
-    setReceivedInAccount("");
-    setReferenceNo("");
+    if (editingPaymentId === paymentId) resetPaymentForm();
     router.refresh();
   }
 
@@ -234,7 +304,7 @@ export function ProformaInvoiceDetail({
     const data = await response.json();
     setLoading(false);
     if (!response.ok) {
-      setError(data.message ?? "Unable to request booking.");
+      setError(data.message ?? "Unable to book stock.");
       return;
     }
     router.refresh();
@@ -280,7 +350,7 @@ export function ProformaInvoiceDetail({
     router.refresh();
   }
 
-  async function submitDispatchToday(confirmEarly = false) {
+  async function submitDispatchToday(confirmEarly = false, confirmCrossCompany = false) {
     setLoading(true);
     setError("");
     setWarning("");
@@ -289,6 +359,8 @@ export function ProformaInvoiceDetail({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         confirmEarly,
+        confirmCrossCompany,
+        fromCompanyId: fromCompanyId || undefined,
         vehicleNo: vehicleNo || undefined,
         driverName: driverName || undefined,
         receiverName: receiverName || undefined,
@@ -300,6 +372,7 @@ export function ProformaInvoiceDetail({
     setLoading(false);
     if (response.status === 409 && data.code === "EARLY_DISPATCH_CONFIRMATION_REQUIRED") {
       const days = data.details?.daysUntil ?? pi.daysUntilCommittedDispatch ?? "?";
+      setEarlyWarning(true);
       setWarning(
         `Committed delivery date is after ${days} day(s)` +
           (data.details?.committedDate
@@ -309,10 +382,45 @@ export function ProformaInvoiceDetail({
       );
       return;
     }
+    if (response.status === 409 && data.code === "SHORTFALL_SOURCE_REQUIRED") {
+      const checkRes = await fetch(`/api/proforma-invoices/${pi.id}/dispatch-today/stock-check`);
+      const check = await checkRes.json();
+      if (checkRes.ok) {
+        setShortfallLines(
+          (check.lines ?? [])
+            .filter((line: { shortfallQty: number }) => line.shortfallQty > 0)
+            .map((line: { productId: string; displayName: string; shortfallQty: number }) => ({
+              productId: line.productId,
+              displayName: line.displayName,
+              shortfallQty: line.shortfallQty,
+            })),
+        );
+        setShortfallCandidates(check.candidateCompanies ?? []);
+        setCrossCompanyWarning(true);
+        setWarning(
+          "PI company stock is short. Select a source company to transfer the shortfall, then confirm.",
+        );
+      } else {
+        setError(data.message ?? "Stock shortfall requires a source company.");
+      }
+      return;
+    }
+    if (response.status === 409 && data.code === "CROSS_COMPANY_CONFIRMATION_REQUIRED") {
+      setCrossCompanyWarning(true);
+      setWarning(
+        "Stock will be transferred from the selected company to the PI company for shortfall qty. Confirm to continue.",
+      );
+      return;
+    }
     if (!response.ok) {
       setError(data.message ?? "Unable to mark dispatch today.");
       return;
     }
+    setShortfallCandidates([]);
+    setShortfallLines([]);
+    setFromCompanyId("");
+    setCrossCompanyWarning(false);
+    setEarlyWarning(false);
     router.refresh();
   }
 
@@ -666,12 +774,13 @@ export function ProformaInvoiceDetail({
                   <TableHead>Reference</TableHead>
                   <TableHead>Recorded By</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
+                  {canManagePayments ? <TableHead className="w-[1%] text-right">Actions</TableHead> : null}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {pi.payments.map((payment) => (
                   <TableRow key={payment.id}>
-                    <TableCell>{payment.paymentDate}</TableCell>
+                    <TableCell>{formatPaymentDate(payment.paymentDate)}</TableCell>
                     <TableCell>{formatPaymentMode(payment.paymentMode)}</TableCell>
                     <TableCell>
                       {payment.receivedInAccount
@@ -681,14 +790,45 @@ export function ProformaInvoiceDetail({
                     <TableCell>{payment.referenceNo ?? "—"}</TableCell>
                     <TableCell>{payment.recordedBy.name}</TableCell>
                     <TableCell className="text-right">{formatCurrency(payment.amount)}</TableCell>
+                    {canManagePayments ? (
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            disabled={loading}
+                            onClick={() => startEditPayment(payment)}
+                            aria-label="Edit payment"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            disabled={loading}
+                            onClick={() => handleDeletePayment(payment.id)}
+                            aria-label="Delete payment"
+                          >
+                            <Trash2 className="h-4 w-4 text-red-600" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    ) : null}
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           )}
 
-          {showRecordPayment ? (
+          {showPaymentForm ? (
             <div className="grid gap-3 rounded-md border p-4 md:grid-cols-3 lg:grid-cols-6">
+              {editingPaymentId ? (
+                <div className="md:col-span-3 lg:col-span-6">
+                  <p className="text-sm font-medium text-slate-700">Editing payment</p>
+                </div>
+              ) : null}
               <div className="space-y-2">
                 <Label>
                   Amount <span className="text-red-500">*</span>
@@ -757,10 +897,15 @@ export function ProformaInvoiceDetail({
                   onChange={(event) => setReferenceNo(event.target.value)}
                 />
               </div>
-              <div className="flex items-end">
+              <div className="flex items-end gap-2">
                 <Button disabled={loading} onClick={handleRecordPayment}>
-                  Record Payment
+                  {editingPaymentId ? "Update Payment" : "Record Payment"}
                 </Button>
+                {editingPaymentId ? (
+                  <Button type="button" variant="outline" disabled={loading} onClick={resetPaymentForm}>
+                    Cancel
+                  </Button>
+                ) : null}
               </div>
             </div>
           ) : null}
@@ -770,7 +915,7 @@ export function ProformaInvoiceDetail({
       {canManage && pi.status === "ISSUED" && pi.paymentSummary.canRequestBooking ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Request Booking</CardTitle>
+            <CardTitle className="text-base">Book Stock</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-wrap items-end gap-3">
             <div className="space-y-2">
@@ -788,7 +933,7 @@ export function ProformaInvoiceDetail({
               </select>
             </div>
             <Button disabled={loading || !warehouseId} onClick={handleRequestBooking}>
-              Request Booking Approval
+              Book Stock
             </Button>
           </CardContent>
         </Card>
@@ -839,8 +984,31 @@ export function ProformaInvoiceDetail({
             ) : null}
             {dispatchToday?.pendingApproval ? (
               <p className="text-sm text-amber-700">
-                Early dispatch today is pending sales manager / admin approval.
+                Dispatch today is pending sales manager / admin approval
+                {pi.crossCompanyTransfer
+                  ? ` (includes cross-company transfer from ${pi.crossCompanyTransfer.fromCompany.code})`
+                  : ""}
+                .
               </p>
+            ) : null}
+            {pi.crossCompanyTransfer &&
+            (pi.crossCompanyTransfer.status === "APPROVED" ||
+              pi.crossCompanyTransfer.status === "COMPLETED") ? (
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                Stock will be transferred from{" "}
+                <strong>{pi.crossCompanyTransfer.fromCompany.code}</strong> (
+                {pi.crossCompanyTransfer.fromCompany.name}) to the PI company for shortfall
+                quantities. Warehouse may scan/dispatch serials directly from the source company;
+                transfer is booked automatically when the DC is confirmed.
+                <ul className="mt-2 list-disc pl-5">
+                  {pi.crossCompanyTransfer.lines.map((line) => (
+                    <li key={line.productId}>
+                      {line.displayName}: up to {line.qty}
+                      {line.actualQty > 0 ? ` (actual ${line.actualQty})` : ""}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ) : null}
             {!dispatchToday?.active && !dispatchToday?.pendingApproval && dispatchToday?.needsEarlyApproval ? (
               <p className="text-sm text-amber-700">
@@ -857,6 +1025,38 @@ export function ProformaInvoiceDetail({
                 <p className="text-sm text-slate-600">
                   Optional dispatch details below are saved for warehouse and can be updated there.
                 </p>
+                {shortfallCandidates.length > 0 ? (
+                  <div className="space-y-2 rounded-md border border-slate-200 p-3">
+                    <p className="text-sm font-medium text-slate-800">Shortfall items</p>
+                    <ul className="list-disc pl-5 text-sm text-slate-700">
+                      {shortfallLines.map((line) => (
+                        <li key={line.productId}>
+                          {line.displayName}: {line.shortfallQty}
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="space-y-2">
+                      <Label>Source company</Label>
+                      <select
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        value={fromCompanyId}
+                        onChange={(e) => setFromCompanyId(e.target.value)}
+                      >
+                        <option value="">Select company</option>
+                        {shortfallCandidates.map((company) => (
+                          <option
+                            key={company.companyId}
+                            value={company.companyId}
+                            disabled={!company.canCoverAll}
+                          >
+                            {company.companyCode} — {company.companyName}
+                            {company.canCoverAll ? "" : " (insufficient)"}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                ) : null}
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Vehicle No</Label>
@@ -887,8 +1087,13 @@ export function ProformaInvoiceDetail({
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button
-                    disabled={loading}
-                    onClick={() => submitDispatchToday(Boolean(warning))}
+                    disabled={loading || (shortfallCandidates.length > 0 && !fromCompanyId)}
+                    onClick={() =>
+                      submitDispatchToday(
+                        earlyWarning,
+                        crossCompanyWarning && Boolean(fromCompanyId),
+                      )
+                    }
                   >
                     <Truck className="h-4 w-4" />
                     {dispatchToday?.active
@@ -903,6 +1108,8 @@ export function ProformaInvoiceDetail({
                       disabled={loading}
                       onClick={() => {
                         setWarning("");
+                        setCrossCompanyWarning(false);
+                        setEarlyWarning(false);
                       }}
                     >
                       Cancel

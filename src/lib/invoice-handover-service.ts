@@ -1,4 +1,6 @@
 import { DocumentationStatus, InvoiceHandoverStatus, type PrismaClient } from "@prisma/client";
+import { decimalToNumber } from "@/lib/inventory";
+import { roundMoney } from "@/lib/quotations";
 
 const PENDING_STATUSES: InvoiceHandoverStatus[] = [
   InvoiceHandoverStatus.PENDING_INVOICE,
@@ -18,6 +20,54 @@ const include = {
   customer: { select: { id: true, customerName: true } },
   recordedBy: { select: { id: true, name: true } },
   documentation: { select: { id: true, status: true } },
+} as const;
+
+const detailInclude = {
+  customer: { select: { id: true, customerName: true } },
+  recordedBy: { select: { id: true, name: true } },
+  dispatch: {
+    select: {
+      id: true,
+      dcNo: true,
+      dispatchDate: true,
+      vehicleNo: true,
+      driverName: true,
+      receiverName: true,
+      receiverMobile: true,
+      lines: {
+        select: {
+          id: true,
+          qty: true,
+          product: { select: { id: true, displayName: true } },
+          proformaInvoiceItem: { select: { rate: true } },
+          serials: {
+            select: { serial: { select: { id: true, serialNumber: true } } },
+          },
+        },
+      },
+      proformaInvoice: {
+        select: {
+          id: true,
+          piNo: true,
+          totalValue: true,
+          salesUser: { select: { id: true, name: true } },
+          payments: {
+            select: {
+              id: true,
+              amount: true,
+              paymentDate: true,
+              paymentMode: true,
+              receivedInAccount: true,
+              referenceNo: true,
+              notes: true,
+              recordedBy: { select: { id: true, name: true } },
+            },
+            orderBy: { paymentDate: "desc" as const },
+          },
+        },
+      },
+    },
+  },
 } as const;
 
 export async function listInvoiceQueue(
@@ -40,6 +90,76 @@ export async function listInvoiceQueue(
         ? [{ recordedAt: "desc" }, { createdAt: "desc" }]
         : [{ status: "asc" }, { createdAt: "asc" }],
   });
+}
+
+export async function getInvoiceHandoverDetail(
+  prisma: PrismaClient,
+  companyId: string,
+  handoverId: string,
+) {
+  const handover = await prisma.invoiceHandover.findFirst({
+    where: { id: handoverId, companyId },
+    include: detailInclude,
+  });
+  if (!handover) return null;
+
+  const lines = handover.dispatch.lines.map((line) => {
+    const qty = decimalToNumber(line.qty);
+    const rate = decimalToNumber(line.proformaInvoiceItem.rate);
+    return {
+      id: line.id,
+      qty,
+      rate,
+      amount: roundMoney(qty * rate),
+      product: line.product,
+      serials: line.serials.map((entry) => ({
+        id: entry.serial.id,
+        serialNumber: entry.serial.serialNumber,
+      })),
+    };
+  });
+
+  const dispatchTotal = roundMoney(lines.reduce((sum, line) => sum + line.amount, 0));
+  const payments = handover.dispatch.proformaInvoice.payments.map((payment) => ({
+    id: payment.id,
+    amount: decimalToNumber(payment.amount),
+    paymentDate: payment.paymentDate.toISOString().slice(0, 10),
+    paymentMode: payment.paymentMode,
+    receivedInAccount: payment.receivedInAccount,
+    referenceNo: payment.referenceNo,
+    notes: payment.notes,
+    recordedBy: payment.recordedBy,
+  }));
+  const totalPaid = roundMoney(payments.reduce((sum, payment) => sum + payment.amount, 0));
+
+  return {
+    id: handover.id,
+    status: handover.status,
+    invoiceNumber: handover.invoiceNumber,
+    invoiceDate: handover.invoiceDate?.toISOString().slice(0, 10) ?? null,
+    remarks: handover.remarks,
+    customer: handover.customer,
+    recordedBy: handover.recordedBy,
+    dispatch: {
+      id: handover.dispatch.id,
+      dcNo: handover.dispatch.dcNo,
+      dispatchDate: handover.dispatch.dispatchDate.toISOString().slice(0, 10),
+      vehicleNo: handover.dispatch.vehicleNo,
+      driverName: handover.dispatch.driverName,
+      receiverName: handover.dispatch.receiverName,
+      receiverMobile: handover.dispatch.receiverMobile,
+      totalAmount: dispatchTotal,
+      lines,
+    },
+    proformaInvoice: {
+      id: handover.dispatch.proformaInvoice.id,
+      piNo: handover.dispatch.proformaInvoice.piNo,
+      totalValue: decimalToNumber(handover.dispatch.proformaInvoice.totalValue),
+      salesUser: handover.dispatch.proformaInvoice.salesUser,
+      payments,
+      totalPaid,
+    },
+  };
 }
 
 export async function recordInvoice(

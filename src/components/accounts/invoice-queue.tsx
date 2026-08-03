@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FileCheck } from "lucide-react";
+import { InvoiceHandoverDetailDialog } from "@/components/accounts/invoice-handover-detail-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -20,6 +21,7 @@ type QueueRow = {
 export function InvoiceQueue({ rows }: { rows: QueueRow[] }) {
   const router = useRouter();
   const [editing, setEditing] = useState<string | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
   const [error, setError] = useState("");
@@ -57,7 +59,17 @@ export function InvoiceQueue({ rows }: { rows: QueueRow[] }) {
           <Card key={row.id}>
             <CardHeader className="pb-3">
               <CardTitle className="flex flex-wrap justify-between gap-2 text-base">
-                <span>{row.dispatch.dcNo} · {row.customer.customerName}</span>
+                <span className="min-w-0">
+                  <span className="text-slate-500">{row.dispatch.dcNo} · </span>
+                  <button
+                    type="button"
+                    className="cursor-pointer font-semibold text-slate-900 underline-offset-2 hover:underline"
+                    title="Double-click to view details"
+                    onDoubleClick={() => setDetailId(row.id)}
+                  >
+                    {row.customer.customerName}
+                  </button>
+                </span>
                 <span className="text-sm font-medium text-emerald-700">{row.status.replaceAll("_", " ")}</span>
               </CardTitle>
             </CardHeader>
@@ -78,6 +90,9 @@ export function InvoiceQueue({ rows }: { rows: QueueRow[] }) {
         {!rows.length ? <p className="rounded-lg border border-dashed p-8 text-center text-slate-500">No pending invoice handovers.</p> : null}
       </div>
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {detailId ? (
+        <InvoiceHandoverDetailDialog handoverId={detailId} onClose={() => setDetailId(null)} />
+      ) : null}
     </div>
   );
 }

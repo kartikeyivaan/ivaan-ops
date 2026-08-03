@@ -195,3 +195,60 @@ export async function notifyDocumentationStatusChanged(
     client,
   );
 }
+
+export async function notifyCrossCompanyTransferApprovalNeeded(
+  client: NotificationClient,
+  input: { companyId: string; piNo: string; fromCompanyCode: string },
+) {
+  const users = await client.user.findMany({
+    where: {
+      status: "ACTIVE",
+      companies: { some: { companyId: input.companyId } },
+      roles: {
+        some: {
+          role: { name: { in: [ROLES.SALES_MANAGER, ROLES.SUPER_ADMIN] } },
+        },
+      },
+    },
+    select: { id: true },
+  });
+  if (!users.length) return { count: 0 };
+  return client.notification.createMany({
+    data: users.map(({ id }) => ({
+      userId: id,
+      title: "Cross-company transfer approval needed",
+      message: `${input.piNo} needs approval to transfer shortfall stock from ${input.fromCompanyCode}.`,
+      module: "dispatch",
+    })),
+  });
+}
+
+export async function notifyAccountsStockTransfer(
+  client: NotificationClient,
+  input: {
+    companyId: string;
+    transferNumber: string;
+    piNo: string;
+    dcNo: string;
+  },
+) {
+  const users = await client.user.findMany({
+    where: {
+      status: "ACTIVE",
+      companies: { some: { companyId: input.companyId } },
+      roles: {
+        some: { role: { name: { in: [ROLES.ACCOUNTS, ROLES.SUPER_ADMIN] } } },
+      },
+    },
+    select: { id: true },
+  });
+  if (!users.length) return { count: 0 };
+  return client.notification.createMany({
+    data: users.map(({ id }) => ({
+      userId: id,
+      title: "Stock transfer recorded",
+      message: `${input.transferNumber} linked to ${input.piNo} / ${input.dcNo} is ready for accounts review.`,
+      module: "accounts",
+    })),
+  });
+}

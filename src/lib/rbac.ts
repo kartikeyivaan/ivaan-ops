@@ -23,6 +23,7 @@ export type NavItem = {
 
 export const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", roles: ALL_ROLES },
+  { label: "Help & Learning", href: "/help", roles: ALL_ROLES },
   {
     label: "Approvals",
     href: "/approvals",
@@ -117,7 +118,15 @@ export const NAV_ITEMS: NavItem[] = [
   {
     label: "Purchase",
     href: "/purchase",
-    roles: [ROLES.SUPER_ADMIN, ROLES.PURCHASE],
+    roles: [
+      ROLES.SUPER_ADMIN,
+      ROLES.PURCHASE,
+      ROLES.WAREHOUSE,
+      ROLES.SALES_MANAGER,
+      ROLES.SALES_EXECUTIVE,
+      ROLES.PROJECTS_MANAGER,
+      ROLES.PROJECTS_SALES_EXECUTIVE,
+    ],
   },
   {
     label: "Safety Stock",
@@ -167,6 +176,11 @@ export const NAV_ITEMS: NavItem[] = [
   {
     label: "Invoice Queue",
     href: "/accounts/invoice-queue",
+    roles: [ROLES.SUPER_ADMIN, ROLES.ACCOUNTS],
+  },
+  {
+    label: "Stock Transfers",
+    href: "/accounts/stock-transfers",
     roles: [ROLES.SUPER_ADMIN, ROLES.ACCOUNTS],
   },
   {

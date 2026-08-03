@@ -4,6 +4,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Building2, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isPracticeCompany, operationalCompanies } from "@/lib/learning/mode";
 
 export function CompanySwitcher({ className }: { className?: string }) {
   const { data: session, update } = useSession();
@@ -13,27 +14,39 @@ export function CompanySwitcher({ className }: { className?: string }) {
     return null;
   }
 
-  const activeCompany = session.user.companies.find(
-    (c) => c.id === session.user.activeCompanyId,
-  );
+  const learningMode = Boolean(session.user.learningMode);
+  const companies = learningMode
+    ? session.user.companies.filter((c) => isPracticeCompany(c))
+    : operationalCompanies(session.user.companies);
+
+  const activeCompany =
+    session.user.companies.find((c) => c.id === session.user.activeCompanyId) ??
+    companies[0];
 
   async function handleChange(companyId: string) {
+    if (learningMode) return;
     await update({ activeCompanyId: companyId });
     router.refresh();
   }
 
-  if (session.user.companies.length === 1) {
+  if (learningMode || companies.length <= 1) {
     return (
       <div
         className={cn(
-          "flex w-full min-w-0 items-center gap-2 rounded-md bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800",
+          "flex w-full min-w-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-medium",
+          learningMode
+            ? "bg-amber-50 text-amber-900"
+            : "bg-emerald-50 text-emerald-800",
           className,
         )}
       >
         <Building2 className="h-4 w-4 shrink-0" />
-        <span className="truncate sm:hidden">{activeCompany?.code ?? session.user.companies[0].code}</span>
+        <span className="truncate sm:hidden">
+          {activeCompany?.code ?? companies[0]?.code}
+        </span>
         <span className="hidden truncate sm:inline">
-          {activeCompany?.name ?? session.user.companies[0].name}
+          {activeCompany?.name ?? companies[0]?.name}
+          {learningMode ? " · Learning" : ""}
         </span>
       </div>
     );
@@ -52,7 +65,7 @@ export function CompanySwitcher({ className }: { className?: string }) {
           value={session.user.activeCompanyId ?? ""}
           onChange={(e) => handleChange(e.target.value)}
         >
-          {session.user.companies.map((company) => (
+          {companies.map((company) => (
             <option key={company.id} value={company.id}>
               {company.name} ({company.code})
             </option>

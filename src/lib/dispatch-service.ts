@@ -5,12 +5,17 @@ import {
   InventoryEventStatus,
   InventoryEventType,
   InventoryTransactionType,
+  PiCrossCompanyTransferPlanStatus,
   Prisma,
   ProformaInvoiceStatus,
   SerialStatus,
   type PrismaClient,
 } from "@prisma/client";
 import { writeAuditLogTx } from "@/lib/audit";
+import {
+  assertSerialsMatchApprovedPlan,
+  completeCrossCompanyTransferOnDispatch,
+} from "@/lib/cross-company-transfer-service";
 import {
   generateDispatchNumber,
   getRemainingQty,
@@ -360,6 +365,11 @@ export async function listDispatchableProformaInvoices(
       warehouse: pi.warehouse,
       outstanding,
       dispatchTodayMarkedBy: pi.dispatchTodayMarkedBy,
+      crossCompanyTransfer: null as null | {
+        fromCompanyCode: string;
+        fromCompanyName: string;
+        lines: Array<{ displayName: string; qty: number }>;
+      },
       draft: {
         vehicleNo: pi.dispatchDraftVehicleNo,
         driverName: pi.dispatchDraftDriverName,
@@ -369,6 +379,35 @@ export async function listDispatchableProformaInvoices(
       },
       items,
     });
+  }
+
+  const piIds = result.map((row) => row.id);
+  if (piIds.length > 0) {
+    const plans = await prisma.piCrossCompanyTransferPlan.findMany({
+      where: {
+        piId: { in: piIds },
+        status: PiCrossCompanyTransferPlanStatus.APPROVED,
+      },
+      include: {
+        fromCompany: { select: { code: true, name: true } },
+        lines: {
+          include: { product: { select: { displayName: true } } },
+        },
+      },
+    });
+    const planByPi = new Map(plans.map((plan) => [plan.piId, plan]));
+    for (const row of result) {
+      const plan = planByPi.get(row.id);
+      if (!plan) continue;
+      row.crossCompanyTransfer = {
+        fromCompanyCode: plan.fromCompany.code,
+        fromCompanyName: plan.fromCompany.name,
+        lines: plan.lines.map((line) => ({
+          displayName: line.product.displayName,
+          qty: decimalToNumber(line.qty),
+        })),
+      };
+    }
   }
 
   return result.filter(
@@ -552,6 +591,13 @@ async function validateDispatchLines(
   }
 
   if (pi.warehouseId !== input.warehouseId) throw new Error("WAREHOUSE_MISMATCH");
+
+  const serialIdsForPlanCheck = input.lines.flatMap((line) => line.serialIds ?? []);
+  await assertSerialsMatchApprovedPlan(prisma, {
+    piId: input.piId,
+    piCompanyId: input.companyId,
+    serialIds: serialIdsForPlanCheck,
+  });
 
   const kitProductIds = pi.items
     .filter((item) => isKitCategory(item.product.category.name))
@@ -852,6 +898,27 @@ async function confirmDispatchTx(
       piItemKitQty.set(piItemId, qty);
     }
   }
+
+  const pi = await tx.proformaInvoice.findUniqueOrThrow({
+    where: { id: dispatch.proformaInvoiceId },
+    select: { piNo: true },
+  });
+
+  await completeCrossCompanyTransferOnDispatch(tx, {
+    companyId: input.companyId,
+    piId: dispatch.proformaInvoiceId,
+    piNo: pi.piNo,
+    dispatchId: dispatch.id,
+    dcNo: dispatch.dcNo,
+    toWarehouseId: dispatch.warehouseId,
+    performedById: input.performedById,
+    lines: dispatch.lines.map((line) => ({
+      productId: line.productId,
+      qty: decimalToNumber(line.qty),
+      serialTracking: line.product.serialTracking,
+      serialIds: line.serials.map((entry) => entry.serialId),
+    })),
+  });
 
   for (const line of dispatch.lines) {
     const qty = decimalToNumber(line.qty);

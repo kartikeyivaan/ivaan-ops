@@ -197,7 +197,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         const activeCompanies = user.companies
           .map((uc) => uc.company)
-          .filter((c) => c.isActive);
+          .filter((c) => c.isActive && !c.isPractice);
 
         await writeAuditLog({
           tableName: "users",
@@ -218,10 +218,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             id: c.id,
             name: c.name,
             code: c.code,
+            isPractice: c.isPractice,
           })),
           activeCompanyId: activeCompanies[0]?.id ?? null,
           mustChangePassword: user.mustChangePassword,
           passwordChangedAt: user.passwordChangedAt?.toISOString() ?? null,
+          learningMode: false,
+          learningReturnCompanyId: null,
         };
       },
     }),

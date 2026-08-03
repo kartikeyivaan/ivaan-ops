@@ -205,6 +205,7 @@ export const incomingLotSchema = z.object({
   expectedMinDate: z.string().optional(),
   expectedMaxDate: z.string().optional(),
   productId: z.string().uuid(),
+  purchaseRequestLineId: z.string().uuid().optional().nullable(),
   quantity: z.coerce.number().positive(),
   unitPurchaseRate: z.coerce.number().min(0),
   transportCharges: z.coerce.number().min(0).default(0),
@@ -249,6 +250,61 @@ export const createDamageReportSchema = z.object({
 
 export const rejectDamageReportSchema = z.object({
   reason: z.string().trim().min(1, "Rejection reason is required"),
+});
+
+export const purchaseRequestNewProductSchema = z.object({
+  categoryId: z.string().uuid(),
+  brandName: z.string().trim().min(2),
+  technologyName: z.string().trim().optional(),
+  capacity: z.coerce.number().positive(),
+  capacityUnit: z.enum(["WP", "KW", "KVA", "NOS", "METER"]),
+  gstRate: z.coerce.number().min(0).max(100),
+  hsn: z.string().optional(),
+});
+
+export const purchaseRequestLineSchema = z
+  .object({
+    productId: z.string().uuid().optional(),
+    newProduct: purchaseRequestNewProductSchema.optional(),
+    requestedQty: z.coerce.number().positive(),
+    targetDate: z.string().optional().nullable(),
+    priority: z.enum(["LOW", "NORMAL", "HIGH", "URGENT"]).default("NORMAL"),
+    remarks: z.string().optional().nullable(),
+  })
+  .refine((line) => Boolean(line.productId) || Boolean(line.newProduct), {
+    message: "Select an existing product or provide new product details.",
+  });
+
+export const createPurchaseRequestSchema = z.object({
+  companyId: z.string().uuid(),
+  warehouseId: z.string().uuid().optional().nullable(),
+  remarks: z.string().optional().nullable(),
+  lines: z.array(purchaseRequestLineSchema).min(1),
+});
+
+export const updatePurchaseRequestStatusSchema = z.object({
+  status: z.enum([
+    "OPEN",
+    "IN_PROGRESS",
+    "ORDERED",
+    "REJECTED",
+    "CANCELLED",
+  ]),
+  statusRemarks: z.string().optional().nullable(),
+});
+
+export const purchaseRequestSearchSchema = z.object({
+  status: z
+    .enum([
+      "OPEN",
+      "IN_PROGRESS",
+      "ORDERED",
+      "PARTIALLY_FULFILLED",
+      "FULFILLED",
+      "REJECTED",
+      "CANCELLED",
+    ])
+    .optional(),
 });
 
 export const adjustStockSchema = z.object({
@@ -446,6 +502,8 @@ export const recordPaymentSchema = z.object({
   notes: z.string().optional(),
 });
 
+export const updatePaymentSchema = recordPaymentSchema;
+
 export const requestBookingSchema = z.object({
   warehouseId: z.string().uuid(),
 });
@@ -464,6 +522,8 @@ export const dispatchTodayDraftSchema = z.object({
 
 export const markDispatchTodaySchema = dispatchTodayDraftSchema.extend({
   confirmEarly: z.boolean().optional(),
+  confirmCrossCompany: z.boolean().optional(),
+  fromCompanyId: z.string().uuid().optional(),
 });
 
 export const approveDispatchTodaySchema = z.object({

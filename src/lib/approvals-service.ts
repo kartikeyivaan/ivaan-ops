@@ -26,7 +26,8 @@ export type ApprovalType =
   | "PI_CANCEL"
   | "PROJECT_PROPOSAL"
   | "OPENING_STOCK"
-  | "PANEL_DAMAGE";
+  | "PANEL_DAMAGE"
+  | "CROSS_COMPANY_TRANSFER";
 
 export type PendingApprovalItem = {
   id: string;
@@ -65,6 +66,7 @@ const TYPE_LABELS: Record<ApprovalType, string> = {
   PROJECT_PROPOSAL: "Project proposal",
   OPENING_STOCK: "Opening stock",
   PANEL_DAMAGE: "Panel damage",
+  CROSS_COMPANY_TRANSFER: "Cross-company transfer",
 };
 
 export function approvalTypeLabel(type: ApprovalType): string {
@@ -103,6 +105,7 @@ export async function listPendingApprovals(
   }
   if (canApproveDispatchToday(userRoles)) {
     buckets.push(listPendingDispatchTodayApprovals(prisma, companyId));
+    buckets.push(listPendingCrossCompanyTransferApprovals(prisma, companyId));
   }
   if (canApproveDispatchCancel(userRoles)) {
     buckets.push(listPendingDcCancelApprovals(prisma, companyId));
@@ -140,6 +143,7 @@ export async function listApprovalHistory(
   }
   if (canApproveDispatchToday(userRoles)) {
     buckets.push(listDispatchTodayApprovalHistory(prisma, companyId));
+    buckets.push(listCrossCompanyTransferApprovalHistory(prisma, companyId));
   }
   if (canApproveDispatchCancel(userRoles)) {
     buckets.push(listDcCancelApprovalHistory(prisma, companyId));
@@ -302,10 +306,62 @@ async function listPendingDispatchTodayApprovals(
         moduleId: pi.id,
         documentNo: pi.piNo,
         subjectName: pi.customer.customerName,
-        reason: "Early dispatch today approval requested",
+        reason: approval.remarks?.trim() || "Dispatch today approval requested",
         requestedByName: approval.requestedBy.name,
         requestedAt: toIso(approval.createdAt),
         href: `/sales/proforma-invoices/${pi.id}`,
+        canReject: true,
+      },
+    ];
+  });
+}
+
+async function listPendingCrossCompanyTransferApprovals(
+  prisma: PrismaClient,
+  companyId: string,
+): Promise<PendingApprovalItem[]> {
+  const approvals = await prisma.approvalRequest.findMany({
+    where: {
+      moduleType: ApprovalModuleType.CROSS_COMPANY_TRANSFER,
+      status: ApprovalRequestStatus.PENDING,
+    },
+    include: { requestedBy: { select: { name: true } } },
+    orderBy: { createdAt: "desc" },
+  });
+  if (approvals.length === 0) return [];
+
+  const plans = await prisma.piCrossCompanyTransferPlan.findMany({
+    where: {
+      toCompanyId: companyId,
+      id: { in: approvals.map((row) => row.moduleId) },
+    },
+    include: {
+      pi: {
+        include: {
+          customer: { select: { customerName: true } },
+        },
+      },
+      fromCompany: { select: { code: true } },
+    },
+  });
+  const planMap = new Map(plans.map((plan) => [plan.id, plan]));
+
+  return approvals.flatMap((approval) => {
+    const plan = planMap.get(approval.moduleId);
+    if (!plan) return [];
+    return [
+      {
+        id: `CROSS_COMPANY_TRANSFER:${plan.id}`,
+        type: "CROSS_COMPANY_TRANSFER" as const,
+        moduleId: plan.id,
+        documentNo: plan.pi.piNo,
+        subjectName: plan.pi.customer.customerName,
+        reason:
+          approval.remarks?.trim() ||
+          `Transfer shortfall stock from ${plan.fromCompany.code}`,
+        requestedByName: approval.requestedBy.name,
+        requestedAt: toIso(approval.createdAt),
+        href: `/sales/proforma-invoices/${plan.piId}`,
         canReject: true,
       },
     ];
@@ -531,6 +587,18 @@ async function listDispatchTodayApprovalHistory(
     companyId,
     ApprovalModuleType.DISPATCH_TODAY,
     "DISPATCH_TODAY",
+  );
+}
+
+async function listCrossCompanyTransferApprovalHistory(
+  prisma: PrismaClient,
+  companyId: string,
+): Promise<ApprovalHistoryItem[]> {
+  return listApprovalRequestHistory(
+    prisma,
+    companyId,
+    ApprovalModuleType.CROSS_COMPANY_TRANSFER,
+    "CROSS_COMPANY_TRANSFER",
   );
 }
 
@@ -790,6 +858,22 @@ async function loadModuleMeta(
         subjectName: row.customer.customerName,
         reason: "DC cancellation",
         href: `/inventory/dispatches/${row.id}`,
+      });
+    }
+  } else if (moduleType === ApprovalModuleType.CROSS_COMPANY_TRANSFER) {
+    const rows = await prisma.piCrossCompanyTransferPlan.findMany({
+      where: { toCompanyId: companyId, id: { in: moduleIds } },
+      include: {
+        pi: { include: { customer: { select: { customerName: true } } } },
+        fromCompany: { select: { code: true } },
+      },
+    });
+    for (const row of rows) {
+      map.set(row.id, {
+        documentNo: row.pi.piNo,
+        subjectName: row.pi.customer.customerName,
+        reason: `Cross-company transfer from ${row.fromCompany.code}`,
+        href: `/sales/proforma-invoices/${row.piId}`,
       });
     }
   } else if (moduleType === ApprovalModuleType.PANEL_DAMAGE) {

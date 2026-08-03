@@ -16,10 +16,10 @@ import {
 import { formatProposalDocumentNumber, formatRevisionProposalLabel } from "@/lib/project-proposals";
 
 describe("proposal generation", () => {
-  it("calculates annual generation at 1700 kWh/kWp", () => {
+  it("calculates annual generation at 1550 kWh/kWp", () => {
     const result = calculateGenerationEstimate(3.3);
     expect(result.annualGenerationKwh).toBe(Math.round(3.3 * SPECIFIC_GENERATION_KWH_PER_KWP));
-    expect(result.specificGenerationKwhPerKwp).toBe(1700);
+    expect(result.specificGenerationKwhPerKwp).toBe(1550);
   });
 
   it("derives environmental impact from annual generation", () => {

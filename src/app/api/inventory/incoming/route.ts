@@ -87,6 +87,7 @@ export async function POST(request: Request) {
       expectedMinDate: parsed.data.expectedMinDate ? new Date(parsed.data.expectedMinDate) : null,
       expectedMaxDate: parsed.data.expectedMaxDate ? new Date(parsed.data.expectedMaxDate) : null,
       productId: parsed.data.productId,
+      purchaseRequestLineId: parsed.data.purchaseRequestLineId,
       quantity: parsed.data.quantity,
       unitPurchaseRate: parsed.data.unitPurchaseRate,
       transportCharges: parsed.data.transportCharges,
@@ -142,6 +143,37 @@ export async function POST(request: Request) {
           "DUPLICATE_PURCHASE_INVOICE",
           "This purchase invoice number already exists.",
           409,
+        );
+      }
+      if (error.message === "PURCHASE_REQUEST_LINE_NOT_FOUND") {
+        return errorResponse("NOT_FOUND", "Purchase request line not found.", 404);
+      }
+      if (error.message === "PURCHASE_REQUEST_COMPANY_MISMATCH") {
+        return errorResponse(
+          "VALIDATION_ERROR",
+          "Purchase request does not belong to the selected company.",
+          400,
+        );
+      }
+      if (error.message === "PURCHASE_REQUEST_PRODUCT_MISMATCH") {
+        return errorResponse(
+          "VALIDATION_ERROR",
+          "Product must match the purchase request line.",
+          400,
+        );
+      }
+      if (error.message === "PURCHASE_REQUEST_CLOSED") {
+        return errorResponse(
+          "VALIDATION_ERROR",
+          "This purchase request is closed and cannot be fulfilled.",
+          400,
+        );
+      }
+      if (error.message === "FULFILLMENT_EXCEEDS_REQUEST") {
+        return errorResponse(
+          "VALIDATION_ERROR",
+          "Quantity exceeds remaining requested quantity on the purchase request line.",
+          400,
         );
       }
     }

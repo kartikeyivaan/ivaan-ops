@@ -6,6 +6,7 @@ import {
   InventoryEventType,
   InventoryTransactionType,
   ItemApprovalStatus,
+  PiCrossCompanyTransferPlanStatus,
   Prisma,
   ProformaInvoiceStatus,
   QuotationStatus,
@@ -13,6 +14,12 @@ import {
   type PrismaClient,
 } from "@prisma/client";
 import { writeAuditLogTx } from "@/lib/audit";
+import {
+  createOrReplaceCrossCompanyPlan,
+  prepareDispatchTodayCrossCompany,
+  requestCrossCompanyPlanApproval,
+  type SerializedPlan,
+} from "@/lib/cross-company-transfer-service";
 import { decimalToNumber } from "@/lib/inventory";
 import { getWarehouseStockForProduct } from "@/lib/inventory-service";
 import { createEvent } from "@/lib/inventory-event-service";
@@ -36,6 +43,7 @@ import {
   generateProformaInvoiceNumber,
   isDispatchTodayActive,
   isReadyForDispatch,
+  maxPaymentAmountOnEdit,
   needsEarlyDispatchTodayApproval,
   resolveBookingRequirement,
   toDateOnly,
@@ -128,7 +136,10 @@ type PiLineInput = {
 
 function serializePi(
   pi: ProformaInvoiceRecord,
-  options?: { pendingDispatchTodayApproval?: boolean },
+  options?: {
+    pendingDispatchTodayApproval?: boolean;
+    crossCompanyTransfer?: SerializedPlan | null;
+  },
 ) {
   const totalPaid = roundMoney(
     pi.payments.reduce((sum, payment) => sum + decimalToNumber(payment.amount), 0),
@@ -212,6 +223,7 @@ function serializePi(
         notes: pi.dispatchDraftNotes,
       },
     },
+    crossCompanyTransfer: options?.crossCompanyTransfer ?? null,
     customer: pi.customer,
     salesUser: pi.salesUser,
     quotation: pi.quotation
@@ -415,8 +427,59 @@ export async function getProformaInvoiceById(
     select: { id: true },
   });
 
+  const plan = await prisma.piCrossCompanyTransferPlan.findFirst({
+    where: {
+      piId: pi.id,
+      status: {
+        in: [
+          PiCrossCompanyTransferPlanStatus.PENDING,
+          PiCrossCompanyTransferPlanStatus.APPROVED,
+          PiCrossCompanyTransferPlanStatus.COMPLETED,
+        ],
+      },
+    },
+    include: {
+      fromCompany: { select: { id: true, code: true, name: true } },
+      toCompany: { select: { id: true, code: true, name: true } },
+      approvedBy: { select: { id: true, name: true } },
+      lines: {
+        include: {
+          product: { select: { id: true, displayName: true, serialTracking: true } },
+          serials: {
+            include: { serial: { select: { id: true, serialNumber: true } } },
+          },
+        },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
   return serializePi(pi, {
     pendingDispatchTodayApproval: Boolean(pendingApproval),
+    crossCompanyTransfer: plan
+      ? {
+          id: plan.id,
+          status: plan.status,
+          fromCompany: plan.fromCompany,
+          toCompany: plan.toCompany,
+          lines: plan.lines.map((line) => ({
+            productId: line.productId,
+            displayName: line.product.displayName,
+            qty: decimalToNumber(line.qty),
+            actualQty: decimalToNumber(line.actualQty),
+            unitPurchaseCost: decimalToNumber(line.unitPurchaseCost),
+            serials: line.serials.map((row) => ({
+              serialId: row.serialId,
+              serialNumber: row.serial.serialNumber,
+              unitPurchaseCost: decimalToNumber(row.unitPurchaseCost),
+            })),
+          })),
+          approvedBy: plan.approvedBy,
+          approvedAt: plan.approvedAt?.toISOString() ?? null,
+          inventoryTransferId: plan.inventoryTransferId,
+          dispatchId: plan.dispatchId,
+        }
+      : null,
   });
 }
 
@@ -691,140 +754,180 @@ export async function recordPayment(
   });
 }
 
-export async function requestBooking(
+async function loadPiForPaymentMutation(
+  prisma: PrismaClient,
+  companyId: string,
+  piId: string,
+  paymentId: string,
+) {
+  const pi = await prisma.proformaInvoice.findFirst({
+    where: { id: piId, companyId },
+    include: { payments: true },
+  });
+  if (!pi) throw new Error("NOT_FOUND");
+  if (
+    pi.status === ProformaInvoiceStatus.DRAFT ||
+    pi.status === ProformaInvoiceStatus.CANCEL_PENDING ||
+    pi.status === ProformaInvoiceStatus.CANCELLED
+  ) {
+    throw new Error("INVALID_STATUS");
+  }
+
+  const payment = pi.payments.find((row) => row.id === paymentId);
+  if (!payment) throw new Error("PAYMENT_NOT_FOUND");
+
+  return { pi, payment };
+}
+
+export async function updatePayment(
   prisma: PrismaClient,
   input: {
     companyId: string;
     piId: string;
-    warehouseId: string;
-    requestedById: string;
+    paymentId: string;
+    amount: number;
+    paymentDate: Date;
+    paymentMode: string;
+    receivedInAccount: string;
+    referenceNo: string;
+    notes?: string;
+    performedById: string;
   },
 ) {
-  const pi = await prisma.proformaInvoice.findFirst({
-    where: { id: input.piId, companyId: input.companyId },
-    include: {
-      payments: true,
-      items: { include: { product: true } },
-      quotation: {
-        select: {
-          deliveryTermMode: true,
-          bookingAllowed: true,
-          requiredPaymentPercent: true,
-        },
-      },
-    },
-  });
-  if (!pi) throw new Error("NOT_FOUND");
-  if (pi.status !== ProformaInvoiceStatus.ISSUED) throw new Error("INVALID_STATUS");
+  if (input.amount <= 0) throw new Error("INVALID_AMOUNT");
+
+  const { pi, payment } = await loadPiForPaymentMutation(
+    prisma,
+    input.companyId,
+    input.piId,
+    input.paymentId,
+  );
 
   const totalPaid = pi.payments.reduce(
-    (sum, payment) => sum + decimalToNumber(payment.amount),
+    (sum, row) => sum + decimalToNumber(row.amount),
     0,
   );
-  const requirement = resolveBookingRequirement(
-    {
-      deliveryTermMode: pi.deliveryTermMode,
-      bookingAllowed: pi.bookingAllowed,
-      requiredPaymentPercent:
-        pi.requiredPaymentPercent == null
-          ? null
-          : decimalToNumber(pi.requiredPaymentPercent),
-    },
-    pi.quotation
-      ? {
-          deliveryTermMode: pi.quotation.deliveryTermMode,
-          bookingAllowed: pi.quotation.bookingAllowed,
-          requiredPaymentPercent:
-            pi.quotation.requiredPaymentPercent == null
-              ? null
-              : decimalToNumber(pi.quotation.requiredPaymentPercent),
-        }
-      : null,
+  const maxAmount = maxPaymentAmountOnEdit(
+    decimalToNumber(pi.totalValue),
+    totalPaid,
+    decimalToNumber(payment.amount),
   );
-  if (!requirement.allowed) {
-    throw new Error("BOOKING_NOT_ALLOWED");
-  }
-  if (!canRequestBooking(decimalToNumber(pi.totalValue), totalPaid, requirement)) {
-    throw new Error("ADVANCE_NOT_MET");
-  }
-
-  const warehouse = await prisma.warehouse.findFirst({
-    where: { id: input.warehouseId, companyId: input.companyId, isActive: true },
-  });
-  if (!warehouse) throw new Error("WAREHOUSE_NOT_FOUND");
-
-  const existingApproval = await prisma.approvalRequest.findFirst({
-    where: {
-      moduleType: ApprovalModuleType.BOOKING,
-      moduleId: pi.id,
-      status: ApprovalRequestStatus.PENDING,
-    },
-  });
-  if (existingApproval) throw new Error("BOOKING_ALREADY_REQUESTED");
+  if (input.amount > maxAmount) throw new Error("PAYMENT_EXCEEDS_OUTSTANDING");
 
   return prisma.$transaction(async (tx) => {
-    const updated = await tx.proformaInvoice.update({
-      where: { id: pi.id },
+    await tx.payment.update({
+      where: { id: payment.id },
       data: {
-        status: ProformaInvoiceStatus.PENDING_BOOKING,
-        warehouseId: input.warehouseId,
-      },
-      include: piInclude,
-    });
-
-    await tx.approvalRequest.create({
-      data: {
-        moduleType: ApprovalModuleType.BOOKING,
-        moduleId: pi.id,
-        requestedById: input.requestedById,
-        status: ApprovalRequestStatus.PENDING,
+        amount: input.amount,
+        paymentDate: input.paymentDate,
+        paymentMode: input.paymentMode as never,
+        receivedInAccount: input.receivedInAccount as never,
+        referenceNo: input.referenceNo,
+        notes: input.notes,
       },
     });
 
     await writeAuditLogTx(tx, {
-      tableName: "proforma_invoices",
-      recordId: pi.id,
+      tableName: "payments",
+      recordId: payment.id,
       action: "UPDATE",
-      newValue: { status: ProformaInvoiceStatus.PENDING_BOOKING },
-      performedBy: input.requestedById,
+      oldValue: {
+        amount: decimalToNumber(payment.amount),
+        paymentDate: payment.paymentDate,
+        paymentMode: payment.paymentMode,
+        receivedInAccount: payment.receivedInAccount,
+        referenceNo: payment.referenceNo,
+        notes: payment.notes,
+      },
+      newValue: {
+        amount: input.amount,
+        paymentDate: input.paymentDate,
+        paymentMode: input.paymentMode,
+        receivedInAccount: input.receivedInAccount,
+        referenceNo: input.referenceNo,
+        notes: input.notes ?? null,
+        piNo: pi.piNo,
+      },
+      performedBy: input.performedById,
       companyId: input.companyId,
       reference: pi.piNo,
+    });
+
+    const updated = await tx.proformaInvoice.findUniqueOrThrow({
+      where: { id: pi.id },
+      include: piInclude,
     });
 
     return serializePi(updated);
   });
 }
 
-export async function approveBooking(
+export async function deletePayment(
   prisma: PrismaClient,
   input: {
     companyId: string;
     piId: string;
-    approvedById: string;
-    remarks?: string;
+    paymentId: string;
+    performedById: string;
   },
 ) {
-  const pi = await prisma.proformaInvoice.findFirst({
-    where: { id: input.piId, companyId: input.companyId },
-    include: {
-      payments: { select: { amount: true } },
-      items: { include: { product: { include: { category: true } } } },
-      quotation: {
-        select: {
-          deliveryTermMode: true,
-          bookingAllowed: true,
-          requiredPaymentPercent: true,
-          dispatchMinDays: true,
-          dispatchMaxDays: true,
-        },
-      },
-    },
-  });
-  if (!pi) throw new Error("NOT_FOUND");
-  if (pi.status !== ProformaInvoiceStatus.PENDING_BOOKING) throw new Error("INVALID_STATUS");
-  if (!pi.warehouseId) throw new Error("WAREHOUSE_REQUIRED");
+  const { pi, payment } = await loadPiForPaymentMutation(
+    prisma,
+    input.companyId,
+    input.piId,
+    input.paymentId,
+  );
 
-  const requirement = resolveBookingRequirement(
+  return prisma.$transaction(async (tx) => {
+    await tx.payment.delete({ where: { id: payment.id } });
+
+    await writeAuditLogTx(tx, {
+      tableName: "payments",
+      recordId: payment.id,
+      action: "CANCEL",
+      oldValue: {
+        amount: decimalToNumber(payment.amount),
+        paymentDate: payment.paymentDate,
+        paymentMode: payment.paymentMode,
+        receivedInAccount: payment.receivedInAccount,
+        referenceNo: payment.referenceNo,
+        notes: payment.notes,
+        piNo: pi.piNo,
+      },
+      performedBy: input.performedById,
+      companyId: input.companyId,
+      reference: pi.piNo,
+    });
+
+    const updated = await tx.proformaInvoice.findUniqueOrThrow({
+      where: { id: pi.id },
+      include: piInclude,
+    });
+
+    return serializePi(updated);
+  });
+}
+
+const bookingPiInclude = {
+  payments: { select: { amount: true } },
+  items: { include: { product: { include: { category: true } } } },
+  quotation: {
+    select: {
+      deliveryTermMode: true,
+      bookingAllowed: true,
+      requiredPaymentPercent: true,
+      dispatchMinDays: true,
+      dispatchMaxDays: true,
+    },
+  },
+} as const;
+
+type BookingPiRecord = Prisma.ProformaInvoiceGetPayload<{
+  include: typeof bookingPiInclude;
+}>;
+
+function resolvePiBookingRequirement(pi: BookingPiRecord) {
+  return resolveBookingRequirement(
     {
       deliveryTermMode: pi.deliveryTermMode,
       bookingAllowed: pi.bookingAllowed,
@@ -844,15 +947,23 @@ export async function approveBooking(
         }
       : null,
   );
-  if (!requirement.allowed) throw new Error("BOOKING_NOT_ALLOWED");
-  const totalPaid = pi.payments.reduce(
-    (sum, payment) => sum + decimalToNumber(payment.amount),
-    0,
-  );
-  if (!canRequestBooking(decimalToNumber(pi.totalValue), totalPaid, requirement)) {
-    throw new Error("ADVANCE_NOT_MET");
-  }
+}
 
+/** Reserve stock and mark the PI BOOKED. Used for direct booking and legacy approvals. */
+async function completePiStockBooking(
+  prisma: PrismaClient,
+  input: {
+    companyId: string;
+    pi: BookingPiRecord;
+    warehouseId: string;
+    performedById: string;
+    requiredPaymentPercent: number;
+    auditAction: "UPDATE" | "APPROVE";
+    remarks?: string;
+    completePendingApproval?: boolean;
+  },
+) {
+  const { pi, warehouseId } = input;
   const bookingDate = new Date();
   const bookingDateString = bookingDate.toISOString().slice(0, 10);
   const mode = pi.deliveryTermMode ?? pi.quotation?.deliveryTermMode ?? null;
@@ -868,12 +979,12 @@ export async function approveBooking(
   const [dispatchMinString, dispatchMaxString] = await Promise.all([
     workingDays.getNextWorkingDate(
       input.companyId,
-      pi.warehouseId,
+      warehouseId,
       addCalendarDays(bookingDateString, minDays),
     ),
     workingDays.getNextWorkingDate(
       input.companyId,
-      pi.warehouseId,
+      warehouseId,
       addCalendarDays(bookingDateString, maxDays),
     ),
   ]);
@@ -895,7 +1006,7 @@ export async function approveBooking(
   for (const [productId, entry] of quantitiesByProduct) {
     const projection = await getInventoryProjection({
       companyId: input.companyId,
-      warehouseId: pi.warehouseId,
+      warehouseId,
       productId,
       startDate: bookingDateString,
       endDate: dispatchMaxString,
@@ -914,7 +1025,7 @@ export async function approveBooking(
   return prisma.$transaction(async (tx) => {
     await bookInventoryForPi(tx, {
       companyId: input.companyId,
-      warehouseId: pi.warehouseId!,
+      warehouseId,
       piId: pi.id,
       piNo: pi.piNo,
       items: [...quantitiesByProduct.entries()].map(([productId, entry]) => ({
@@ -922,13 +1033,13 @@ export async function approveBooking(
         qty: entry.qty,
         serialTracking: entry.serialTracking,
       })),
-      performedById: input.approvedById,
+      performedById: input.performedById,
     });
 
     for (const [productId, entry] of quantitiesByProduct) {
       await createEvent(tx, {
         companyId: input.companyId,
-        warehouseId: pi.warehouseId!,
+        warehouseId,
         productId,
         eventType: InventoryEventType.BOOKING_RESERVATION,
         quantity: entry.qty,
@@ -939,7 +1050,7 @@ export async function approveBooking(
         sourceId: pi.id,
         sourceNumber: pi.piNo,
         notes: `Reserved for ${pi.piNo}`,
-        createdById: input.approvedById,
+        createdById: input.performedById,
       });
     }
 
@@ -947,34 +1058,37 @@ export async function approveBooking(
       where: { id: pi.id },
       data: {
         status: ProformaInvoiceStatus.BOOKED,
+        warehouseId,
         bookedAt: bookingDate,
-        bookedById: input.approvedById,
-        requiredPaymentPercent: requirement.requiredPaymentPercent,
+        bookedById: input.performedById,
+        requiredPaymentPercent: input.requiredPaymentPercent,
         requiredDispatchMinDate,
         requiredDispatchMaxDate,
       },
       include: piInclude,
     });
 
-    await tx.approvalRequest.updateMany({
-      where: {
-        moduleType: ApprovalModuleType.BOOKING,
-        moduleId: pi.id,
-        status: ApprovalRequestStatus.PENDING,
-      },
-      data: {
-        status: ApprovalRequestStatus.APPROVED,
-        approvedById: input.approvedById,
-        remarks: input.remarks,
-      },
-    });
+    if (input.completePendingApproval) {
+      await tx.approvalRequest.updateMany({
+        where: {
+          moduleType: ApprovalModuleType.BOOKING,
+          moduleId: pi.id,
+          status: ApprovalRequestStatus.PENDING,
+        },
+        data: {
+          status: ApprovalRequestStatus.APPROVED,
+          approvedById: input.performedById,
+          remarks: input.remarks,
+        },
+      });
+    }
 
     await writeAuditLogTx(tx, {
       tableName: "proforma_invoices",
       recordId: pi.id,
-      action: "APPROVE",
+      action: input.auditAction,
       newValue: { status: ProformaInvoiceStatus.BOOKED },
-      performedBy: input.approvedById,
+      performedBy: input.performedById,
       companyId: input.companyId,
       reference: pi.piNo,
     });
@@ -985,6 +1099,89 @@ export async function approveBooking(
     });
 
     return serializePi(updated);
+  });
+}
+
+export async function requestBooking(
+  prisma: PrismaClient,
+  input: {
+    companyId: string;
+    piId: string;
+    warehouseId: string;
+    requestedById: string;
+  },
+) {
+  const pi = await prisma.proformaInvoice.findFirst({
+    where: { id: input.piId, companyId: input.companyId },
+    include: bookingPiInclude,
+  });
+  if (!pi) throw new Error("NOT_FOUND");
+  if (pi.status !== ProformaInvoiceStatus.ISSUED) throw new Error("INVALID_STATUS");
+
+  const totalPaid = pi.payments.reduce(
+    (sum, payment) => sum + decimalToNumber(payment.amount),
+    0,
+  );
+  const requirement = resolvePiBookingRequirement(pi);
+  if (!requirement.allowed) {
+    throw new Error("BOOKING_NOT_ALLOWED");
+  }
+  if (!canRequestBooking(decimalToNumber(pi.totalValue), totalPaid, requirement)) {
+    throw new Error("ADVANCE_NOT_MET");
+  }
+
+  const warehouse = await prisma.warehouse.findFirst({
+    where: { id: input.warehouseId, companyId: input.companyId, isActive: true },
+  });
+  if (!warehouse) throw new Error("WAREHOUSE_NOT_FOUND");
+
+  // Payment conditions already met — book stock immediately (no approval loop).
+  return completePiStockBooking(prisma, {
+    companyId: input.companyId,
+    pi,
+    warehouseId: input.warehouseId,
+    performedById: input.requestedById,
+    requiredPaymentPercent: requirement.requiredPaymentPercent,
+    auditAction: "UPDATE",
+  });
+}
+
+export async function approveBooking(
+  prisma: PrismaClient,
+  input: {
+    companyId: string;
+    piId: string;
+    approvedById: string;
+    remarks?: string;
+  },
+) {
+  const pi = await prisma.proformaInvoice.findFirst({
+    where: { id: input.piId, companyId: input.companyId },
+    include: bookingPiInclude,
+  });
+  if (!pi) throw new Error("NOT_FOUND");
+  if (pi.status !== ProformaInvoiceStatus.PENDING_BOOKING) throw new Error("INVALID_STATUS");
+  if (!pi.warehouseId) throw new Error("WAREHOUSE_REQUIRED");
+
+  const requirement = resolvePiBookingRequirement(pi);
+  if (!requirement.allowed) throw new Error("BOOKING_NOT_ALLOWED");
+  const totalPaid = pi.payments.reduce(
+    (sum, payment) => sum + decimalToNumber(payment.amount),
+    0,
+  );
+  if (!canRequestBooking(decimalToNumber(pi.totalValue), totalPaid, requirement)) {
+    throw new Error("ADVANCE_NOT_MET");
+  }
+
+  return completePiStockBooking(prisma, {
+    companyId: input.companyId,
+    pi,
+    warehouseId: pi.warehouseId,
+    performedById: input.approvedById,
+    requiredPaymentPercent: requirement.requiredPaymentPercent,
+    auditAction: "APPROVE",
+    remarks: input.remarks,
+    completePendingApproval: true,
   });
 }
 
@@ -1274,7 +1471,7 @@ async function activateDispatchToday(
 
 /**
  * Sales marks PI for dispatch today. If committed min date is still in the
- * future and the actor cannot approve early moves, creates a pending approval
+ * future and/or PI-company stock is short, creates pending approval(s)
  * instead of activating immediately.
  */
 export async function markDispatchToday(
@@ -1285,6 +1482,8 @@ export async function markDispatchToday(
     markedById: string;
     canApproveEarly: boolean;
     confirmEarly?: boolean;
+    confirmCrossCompany?: boolean;
+    fromCompanyId?: string;
     draft?: DispatchTodayDraftInput;
   },
 ) {
@@ -1307,7 +1506,6 @@ export async function markDispatchToday(
 
   const todayString = toDateOnly(new Date()).toISOString().slice(0, 10);
   if (isDispatchTodayActive(pi.dispatchTodayDate, todayString)) {
-    // Already marked — allow draft detail updates only.
     const updated = await prisma.proformaInvoice.update({
       where: { id: pi.id },
       data: draftFieldsFromInput(input.draft),
@@ -1316,21 +1514,33 @@ export async function markDispatchToday(
     return serializePi(updated, { pendingDispatchTodayApproval: false });
   }
 
+  const prepared = await prepareDispatchTodayCrossCompany(prisma, {
+    companyId: input.companyId,
+    piId: pi.id,
+    fromCompanyId: input.fromCompanyId,
+  });
+
   const daysUntil = daysUntilCommittedDispatch(pi.requiredDispatchMinDate, todayString);
-  const needsApproval = needsEarlyDispatchTodayApproval(
+  const needsEarlyApproval = needsEarlyDispatchTodayApproval(
     pi.requiredDispatchMinDate,
     todayString,
   );
+  const needsCrossCompanyApproval = prepared.needsPlan;
+  const needsApproval = needsEarlyApproval || needsCrossCompanyApproval;
+
+  if (needsEarlyApproval && !input.confirmEarly) {
+    throw new Error(
+      `EARLY_DISPATCH_CONFIRMATION_REQUIRED|${daysUntil ?? 0}|${
+        pi.requiredDispatchMinDate?.toISOString().slice(0, 10) ?? ""
+      }`,
+    );
+  }
+
+  if (needsCrossCompanyApproval && !input.confirmCrossCompany) {
+    throw new Error("CROSS_COMPANY_CONFIRMATION_REQUIRED");
+  }
 
   if (needsApproval && !input.canApproveEarly) {
-    if (!input.confirmEarly) {
-      throw new Error(
-        `EARLY_DISPATCH_CONFIRMATION_REQUIRED|${daysUntil ?? 0}|${
-          pi.requiredDispatchMinDate?.toISOString().slice(0, 10) ?? ""
-        }`,
-      );
-    }
-
     const existing = await prisma.approvalRequest.findFirst({
       where: {
         moduleType: ApprovalModuleType.DISPATCH_TODAY,
@@ -1340,6 +1550,13 @@ export async function markDispatchToday(
     });
     if (existing) throw new Error("DISPATCH_TODAY_ALREADY_REQUESTED");
 
+    const fromCompany = needsCrossCompanyApproval
+      ? await prisma.company.findUniqueOrThrow({
+          where: { id: prepared.fromCompanyId! },
+          select: { code: true },
+        })
+      : null;
+
     return prisma.$transaction(async (tx) => {
       if (input.draft) {
         await tx.proformaInvoice.update({
@@ -1348,16 +1565,58 @@ export async function markDispatchToday(
         });
       }
 
+      let planSerialized: SerializedPlan | null = null;
+      if (needsCrossCompanyApproval) {
+        const plan = await createOrReplaceCrossCompanyPlan(tx, {
+          piId: pi.id,
+          toCompanyId: input.companyId,
+          fromCompanyId: prepared.fromCompanyId!,
+          shortfallLines: prepared.shortfallLines,
+          requestedById: input.markedById,
+          status: PiCrossCompanyTransferPlanStatus.PENDING,
+        });
+        await requestCrossCompanyPlanApproval(tx, {
+          planId: plan.id,
+          piNo: pi.piNo,
+          companyId: input.companyId,
+          requestedById: input.markedById,
+          fromCompanyCode: fromCompany!.code,
+        });
+        planSerialized = {
+          id: plan.id,
+          status: plan.status,
+          fromCompany: plan.fromCompany,
+          toCompany: plan.toCompany,
+          lines: plan.lines.map((line) => ({
+            productId: line.productId,
+            displayName: line.product.displayName,
+            qty: decimalToNumber(line.qty),
+            actualQty: decimalToNumber(line.actualQty),
+            unitPurchaseCost: decimalToNumber(line.unitPurchaseCost),
+            serials: [],
+          })),
+          approvedBy: null,
+          approvedAt: null,
+          inventoryTransferId: null,
+          dispatchId: null,
+        };
+      }
+
+      const remarkParts: string[] = [];
+      if (needsEarlyApproval && daysUntil != null) {
+        remarkParts.push(`Committed delivery is after ${daysUntil} day(s)`);
+      }
+      if (needsCrossCompanyApproval && fromCompany) {
+        remarkParts.push(`Cross-company shortfall transfer from ${fromCompany.code}`);
+      }
+
       await tx.approvalRequest.create({
         data: {
           moduleType: ApprovalModuleType.DISPATCH_TODAY,
           moduleId: pi.id,
           requestedById: input.markedById,
           status: ApprovalRequestStatus.PENDING,
-          remarks:
-            daysUntil != null
-              ? `Committed delivery is after ${daysUntil} day(s)`
-              : "Early dispatch today requested",
+          remarks: remarkParts.join("; ") || "Dispatch today requested",
         },
       });
 
@@ -1365,7 +1624,11 @@ export async function markDispatchToday(
         tableName: "proforma_invoices",
         recordId: pi.id,
         action: "UPDATE",
-        newValue: { dispatchTodayPendingApproval: true, daysUntil },
+        newValue: {
+          dispatchTodayPendingApproval: true,
+          daysUntil,
+          crossCompanyFrom: fromCompany?.code ?? null,
+        },
         performedBy: input.markedById,
         companyId: input.companyId,
         reference: pi.piNo,
@@ -1381,19 +1644,45 @@ export async function markDispatchToday(
         where: { id: pi.id },
         include: piInclude,
       });
-      return serializePi(refreshed, { pendingDispatchTodayApproval: true });
+      return serializePi(refreshed, {
+        pendingDispatchTodayApproval: true,
+        crossCompanyTransfer: planSerialized,
+      });
     });
   }
 
-  if (needsApproval && input.canApproveEarly && !input.confirmEarly) {
-    throw new Error(
-      `EARLY_DISPATCH_CONFIRMATION_REQUIRED|${daysUntil ?? 0}|${
-        pi.requiredDispatchMinDate?.toISOString().slice(0, 10) ?? ""
-      }`,
-    );
-  }
-
   return prisma.$transaction(async (tx) => {
+    let planSerialized: SerializedPlan | null = null;
+    if (needsCrossCompanyApproval) {
+      const plan = await createOrReplaceCrossCompanyPlan(tx, {
+        piId: pi.id,
+        toCompanyId: input.companyId,
+        fromCompanyId: prepared.fromCompanyId!,
+        shortfallLines: prepared.shortfallLines,
+        requestedById: input.markedById,
+        status: PiCrossCompanyTransferPlanStatus.APPROVED,
+        approvedById: input.markedById,
+      });
+      planSerialized = {
+        id: plan.id,
+        status: plan.status,
+        fromCompany: plan.fromCompany,
+        toCompany: plan.toCompany,
+        lines: plan.lines.map((line) => ({
+          productId: line.productId,
+          displayName: line.product.displayName,
+          qty: decimalToNumber(line.qty),
+          actualQty: decimalToNumber(line.actualQty),
+          unitPurchaseCost: decimalToNumber(line.unitPurchaseCost),
+          serials: [],
+        })),
+        approvedBy: { id: input.markedById, name: "" },
+        approvedAt: new Date().toISOString(),
+        inventoryTransferId: null,
+        dispatchId: null,
+      };
+    }
+
     const updated = await activateDispatchToday(tx, {
       companyId: input.companyId,
       piId: pi.id,
@@ -1401,7 +1690,10 @@ export async function markDispatchToday(
       markedById: input.markedById,
       draft: input.draft,
     });
-    return serializePi(updated, { pendingDispatchTodayApproval: false });
+    return serializePi(updated, {
+      pendingDispatchTodayApproval: false,
+      crossCompanyTransfer: planSerialized,
+    });
   });
 }
 
@@ -1450,13 +1742,94 @@ export async function approveDispatchToday(
       },
     });
 
+    const pendingPlan = await tx.piCrossCompanyTransferPlan.findFirst({
+      where: {
+        piId: pi.id,
+        status: PiCrossCompanyTransferPlanStatus.PENDING,
+      },
+      include: {
+        fromCompany: { select: { id: true, code: true, name: true } },
+        toCompany: { select: { id: true, code: true, name: true } },
+        lines: {
+          include: {
+            product: { select: { id: true, displayName: true, serialTracking: true } },
+            serials: { include: { serial: { select: { id: true, serialNumber: true } } } },
+          },
+        },
+      },
+    });
+
+    let planSerialized: SerializedPlan | null = null;
+    if (pendingPlan) {
+      await tx.approvalRequest.updateMany({
+        where: {
+          moduleType: ApprovalModuleType.CROSS_COMPANY_TRANSFER,
+          moduleId: pendingPlan.id,
+          status: ApprovalRequestStatus.PENDING,
+        },
+        data: {
+          status: ApprovalRequestStatus.APPROVED,
+          approvedById: input.approvedById,
+          remarks: input.remarks,
+        },
+      });
+
+      const updatedPlan = await tx.piCrossCompanyTransferPlan.update({
+        where: { id: pendingPlan.id },
+        data: {
+          status: PiCrossCompanyTransferPlanStatus.APPROVED,
+          approvedById: input.approvedById,
+          approvedAt: new Date(),
+        },
+        include: {
+          fromCompany: { select: { id: true, code: true, name: true } },
+          toCompany: { select: { id: true, code: true, name: true } },
+          approvedBy: { select: { id: true, name: true } },
+          lines: {
+            include: {
+              product: { select: { id: true, displayName: true, serialTracking: true } },
+              serials: {
+                include: { serial: { select: { id: true, serialNumber: true } } },
+              },
+            },
+          },
+        },
+      });
+
+      planSerialized = {
+        id: updatedPlan.id,
+        status: updatedPlan.status,
+        fromCompany: updatedPlan.fromCompany,
+        toCompany: updatedPlan.toCompany,
+        lines: updatedPlan.lines.map((line) => ({
+          productId: line.productId,
+          displayName: line.product.displayName,
+          qty: decimalToNumber(line.qty),
+          actualQty: decimalToNumber(line.actualQty),
+          unitPurchaseCost: decimalToNumber(line.unitPurchaseCost),
+          serials: line.serials.map((row) => ({
+            serialId: row.serialId,
+            serialNumber: row.serial.serialNumber,
+            unitPurchaseCost: decimalToNumber(row.unitPurchaseCost),
+          })),
+        })),
+        approvedBy: updatedPlan.approvedBy,
+        approvedAt: updatedPlan.approvedAt?.toISOString() ?? null,
+        inventoryTransferId: updatedPlan.inventoryTransferId,
+        dispatchId: updatedPlan.dispatchId,
+      };
+    }
+
     const updated = await activateDispatchToday(tx, {
       companyId: input.companyId,
       piId: pi.id,
       piNo: pi.piNo,
       markedById: input.approvedById,
     });
-    return serializePi(updated, { pendingDispatchTodayApproval: false });
+    return serializePi(updated, {
+      pendingDispatchTodayApproval: false,
+      crossCompanyTransfer: planSerialized,
+    });
   });
 }
 
@@ -1494,6 +1867,36 @@ export async function rejectDispatchToday(
         remarks: input.reason,
       },
     });
+
+    const pendingPlans = await tx.piCrossCompanyTransferPlan.findMany({
+      where: {
+        piId: pi.id,
+        status: PiCrossCompanyTransferPlanStatus.PENDING,
+      },
+      select: { id: true },
+    });
+
+    if (pendingPlans.length) {
+      await tx.piCrossCompanyTransferPlan.updateMany({
+        where: { id: { in: pendingPlans.map((row) => row.id) } },
+        data: {
+          status: PiCrossCompanyTransferPlanStatus.REJECTED,
+          rejectionReason: input.reason,
+        },
+      });
+      await tx.approvalRequest.updateMany({
+        where: {
+          moduleType: ApprovalModuleType.CROSS_COMPANY_TRANSFER,
+          moduleId: { in: pendingPlans.map((row) => row.id) },
+          status: ApprovalRequestStatus.PENDING,
+        },
+        data: {
+          status: ApprovalRequestStatus.REJECTED,
+          approvedById: input.rejectedById,
+          remarks: input.reason,
+        },
+      });
+    }
 
     const updated = await tx.proformaInvoice.findUniqueOrThrow({
       where: { id: pi.id },

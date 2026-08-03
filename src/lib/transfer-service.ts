@@ -3,6 +3,7 @@ import {
   LotStatus,
   Prisma,
   SerialStatus,
+  TransferOrigin,
   TransferStatus,
   type PrismaClient,
 } from "@prisma/client";
@@ -160,7 +161,7 @@ export async function deductNonSerialStock(
   if (remaining > 0) throw new Error("NEGATIVE_STOCK_BLOCKED");
 }
 
-async function addNonSerialStock(
+export async function addNonSerialStock(
   tx: Prisma.TransactionClient,
   input: {
     companyId: string;
@@ -230,6 +231,7 @@ export async function listTransfers(
   return prisma.inventoryTransfer.findMany({
     where: {
       ...where,
+      origin: TransferOrigin.MANUAL,
       ...(filters.status ? { status: filters.status } : {}),
     },
     include: transferInclude,
@@ -244,6 +246,7 @@ export async function countPendingIncomingTransfers(
   return prisma.inventoryTransfer.count({
     where: {
       toCompanyId: companyId,
+      origin: TransferOrigin.MANUAL,
       status: { in: [TransferStatus.DISPATCHED, TransferStatus.PARTIALLY_RECEIVED] },
     },
   });

@@ -54,6 +54,7 @@ export function IncomingCreateForm({
   warehouses,
   vendors,
   defaultCompanyId,
+  defaults,
   onCreated,
 }: {
   companies: Company[];
@@ -61,26 +62,41 @@ export function IncomingCreateForm({
   warehouses: Warehouse[];
   vendors: Vendor[];
   defaultCompanyId: string;
+  defaults?: {
+    companyId?: string;
+    warehouseId?: string;
+    productId?: string;
+    quantity?: string;
+    purchaseRequestLineId?: string;
+    purchaseRequestId?: string;
+  };
   onCreated?: () => void | Promise<void>;
 }) {
   const router = useRouter();
-  const initialCompanyId = defaultCompanyId || companies[0]?.id || "";
+  const initialCompanyId = defaults?.companyId || defaultCompanyId || companies[0]?.id || "";
   const initialWarehouses = warehouses.filter((warehouse) => warehouse.companyId === initialCompanyId);
+  const initialWarehouseId =
+    defaults?.warehouseId &&
+    initialWarehouses.some((warehouse) => warehouse.id === defaults.warehouseId)
+      ? defaults.warehouseId
+      : (initialWarehouses[0]?.id ?? "");
 
   const [form, setForm] = useState({
     companyId: initialCompanyId,
-    warehouseId: initialWarehouses[0]?.id ?? "",
+    warehouseId: initialWarehouseId,
     vendorId: "",
     purchaseInvoiceNo: "",
     purchaseDate: new Date().toISOString().slice(0, 10),
     expectedMinDate: "",
     expectedMaxDate: "",
-    productId: "",
-    quantity: "",
+    productId: defaults?.productId ?? "",
+    quantity: defaults?.quantity ?? "",
     unitPurchaseRate: "",
     transportCharges: "0",
     commissionCharges: "0",
   });
+  const [purchaseRequestLineId] = useState(defaults?.purchaseRequestLineId ?? "");
+  const [purchaseRequestId] = useState(defaults?.purchaseRequestId ?? "");
   const [error, setError] = useState("");
   const [invoiceWarning, setInvoiceWarning] = useState("");
   const [similarWarning, setSimilarWarning] = useState("");
@@ -242,6 +258,7 @@ export function IncomingCreateForm({
       expectedMinDate: form.expectedMinDate || undefined,
       expectedMaxDate: form.expectedMaxDate || undefined,
       productId: form.productId,
+      purchaseRequestLineId: purchaseRequestLineId || undefined,
       quantity: quantityResult.value,
       unitPurchaseRate: unitRateResult.value,
       transportCharges: transportResult.value ?? 0,
@@ -290,6 +307,16 @@ export function IncomingCreateForm({
     setInvoiceWarning("");
     setSimilarWarning("");
 
+    if (purchaseRequestLineId) {
+      router.push(
+        purchaseRequestId
+          ? `/purchase/requests/${purchaseRequestId}`
+          : "/purchase/requests",
+      );
+      router.refresh();
+      return;
+    }
+
     if (onCreated) {
       await onCreated();
     } else {
@@ -301,6 +328,11 @@ export function IncomingCreateForm({
     <Card>
       <CardHeader>
         <CardTitle>Create incoming lot</CardTitle>
+        {purchaseRequestLineId ? (
+          <p className="text-sm text-emerald-700">
+            Linked to a purchase request line. Saving will update fulfillment on that request.
+          </p>
+        ) : null}
       </CardHeader>
       <CardContent>
         <form onSubmit={createIncoming} className="grid gap-4 md:grid-cols-2">

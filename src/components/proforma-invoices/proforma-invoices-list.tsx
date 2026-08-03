@@ -78,7 +78,7 @@ export function ProformaInvoicesList({
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Proforma Invoices</h1>
           <p className="text-sm text-slate-500">
-            PI from quotations or direct entry, payments, and booking approval.
+            PI from quotations or direct entry, payments, and stock booking.
           </p>
         </div>
         {canManage ? (

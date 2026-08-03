@@ -4,10 +4,12 @@ import {
   calculateAdvanceRequired,
   calculateOutstanding,
   canRecordPaymentAgainstPi,
+  canManageExistingPiPayment,
   canRequestBooking,
   daysUntilCommittedDispatch,
   isDispatchTodayActive,
   isReadyForDispatch,
+  maxPaymentAmountOnEdit,
   needsEarlyDispatchTodayApproval,
   resolveBookingRequirement,
 } from "@/lib/proforma-invoices";
@@ -55,6 +57,20 @@ describe("proforma invoice calculations", () => {
     expect(canRecordPaymentAgainstPi("PARTIALLY_DISPATCHED", 1000)).toBe(true);
     expect(canRecordPaymentAgainstPi("BOOKED", 0)).toBe(false);
     expect(canRecordPaymentAgainstPi("FULLY_DISPATCHED", 100)).toBe(false);
+  });
+
+  it("allows editing existing payments except on draft or cancelled PIs", () => {
+    expect(canManageExistingPiPayment("ISSUED")).toBe(true);
+    expect(canManageExistingPiPayment("BOOKED")).toBe(true);
+    expect(canManageExistingPiPayment("FULLY_DISPATCHED")).toBe(true);
+    expect(canManageExistingPiPayment("DRAFT")).toBe(false);
+    expect(canManageExistingPiPayment("CANCELLED")).toBe(false);
+    expect(canManageExistingPiPayment("CANCEL_PENDING")).toBe(false);
+  });
+
+  it("caps edited payment amount to outstanding plus the current payment", () => {
+    expect(maxPaymentAmountOnEdit(100000, 40000, 10000)).toBe(70000);
+    expect(maxPaymentAmountOnEdit(100000, 100000, 25000)).toBe(25000);
   });
 
   it("marks booked PIs ready for dispatch only when fully paid", () => {

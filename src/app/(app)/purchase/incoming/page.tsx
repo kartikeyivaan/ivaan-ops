@@ -8,7 +8,18 @@ import { isSuperAdmin } from "@/lib/rbac";
 import { getSessionCompanyIds, requireActiveCompany } from "@/lib/session";
 import { PurchaseIncomingList } from "@/components/purchase/purchase-incoming-list";
 
-export default async function PurchaseIncomingPage() {
+type PageProps = {
+  searchParams: Promise<{
+    prLineId?: string;
+    productId?: string;
+    quantity?: string;
+    companyId?: string;
+    warehouseId?: string;
+    requestId?: string;
+  }>;
+};
+
+export default async function PurchaseIncomingPage({ searchParams }: PageProps) {
   const session = await auth();
   if (!session?.user || !canCreateIncoming(session.user.roles)) {
     redirect("/dashboard");
@@ -17,6 +28,7 @@ export default async function PurchaseIncomingPage() {
   const companyId = requireActiveCompany(session);
   const includeSerials = canViewSerialNumbers(session.user.roles);
   const companyIds = getSessionCompanyIds(session);
+  const params = await searchParams;
 
   const [lots, products, warehouses, vendors, companies] = await Promise.all([
     listIncomingLots(prisma, companyId, {}),
@@ -57,6 +69,14 @@ export default async function PurchaseIncomingPage() {
       vendors={vendors}
       defaultCompanyId={companyId}
       canCreate={canCreateIncoming(session.user.roles)}
+      createDefaults={{
+        purchaseRequestLineId: params.prLineId,
+        purchaseRequestId: params.requestId,
+        productId: params.productId,
+        quantity: params.quantity,
+        companyId: params.companyId,
+        warehouseId: params.warehouseId,
+      }}
     />
   );
 }

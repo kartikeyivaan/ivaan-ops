@@ -51,7 +51,7 @@ export async function POST(request: Request, context: RouteContext) {
         return errorResponse("NOT_FOUND", "Proforma invoice not found.", 404);
       }
       if (error.message === "INVALID_STATUS") {
-        return errorResponse("INVALID_STATUS", "Only issued PIs can request booking.", 400);
+        return errorResponse("INVALID_STATUS", "Only issued PIs can be booked.", 400);
       }
       if (error.message === "ADVANCE_NOT_MET") {
         return errorResponse(
@@ -70,8 +70,25 @@ export async function POST(request: Request, context: RouteContext) {
       if (error.message === "WAREHOUSE_NOT_FOUND") {
         return errorResponse("NOT_FOUND", "Warehouse not found.", 404);
       }
-      if (error.message === "BOOKING_ALREADY_REQUESTED") {
-        return errorResponse("BOOKING_ALREADY_REQUESTED", "Booking already pending approval.", 400);
+      if (error.message === "INSUFFICIENT_STOCK") {
+        return errorResponse("INSUFFICIENT_STOCK", "Insufficient stock to book order.", 400);
+      }
+      if (error.message.startsWith("INSUFFICIENT_PROJECTED_STOCK|")) {
+        const [, product, shortage] = error.message.split("|");
+        return errorResponse(
+          "INSUFFICIENT_PROJECTED_STOCK",
+          `Projected stock is short by ${shortage} for ${product} during the required dispatch window.`,
+          400,
+          { product, shortage: Number(shortage) },
+        );
+      }
+      if (error.message.startsWith("KIT_BOM_EMPTY|")) {
+        const [, product] = error.message.split("|");
+        return errorResponse(
+          "KIT_BOM_EMPTY",
+          `Kit "${product}" has no components configured.`,
+          400,
+        );
       }
     }
     throw error;

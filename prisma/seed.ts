@@ -20,6 +20,7 @@ import { PRODUCT_CATEGORY_NAMES } from "../src/lib/products";
 import { generateLotNumber, getFinancialYear } from "../src/lib/inventory";
 import { addDays, toDateOnly } from "../src/lib/quotations";
 import { seedProjectProposalMasters } from "./seed-project-proposal-masters";
+import { seedLearningPractice } from "./seed-learning";
 
 const prisma = new PrismaClient();
 
@@ -105,6 +106,8 @@ async function main() {
       await prisma.warehouse.create({ data: warehouse });
     }
   }
+
+  await seedLearningPractice(prisma);
 
   const passwordHash = await bcrypt.hash("Admin@123", 12);
 
@@ -1171,6 +1174,11 @@ async function seedSampleDispatches() {
     where: { id: bookedPi.id },
     data: { status: ProformaInvoiceStatus.PARTIALLY_DISPATCHED },
   });
+
+  // Re-run learning seed so practice UserCompany links include users created above.
+  await seedLearningPractice(prisma);
+
+  console.log("Seed completed.");
 }
 
 main()

@@ -578,6 +578,11 @@ export function QuotationForm({
                     step="any"
                     value={line.rate}
                     onChange={(event) => updateLine(index, { rate: event.target.value })}
+                    onKeyDown={(event) => {
+                      if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+                        event.preventDefault();
+                      }
+                    }}
                   />
                 </div>
                 <div className="space-y-2">

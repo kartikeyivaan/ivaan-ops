@@ -23,6 +23,11 @@ type BookablePi = {
   customer: { customerName: string };
   warehouse: { name: string } | null;
   dispatchTodayMarkedBy?: { name: string } | null;
+  crossCompanyTransfer?: {
+    fromCompanyCode: string;
+    fromCompanyName: string;
+    lines: Array<{ displayName: string; qty: number }>;
+  } | null;
   draft?: {
     vehicleNo: string | null;
     driverName: string | null;
@@ -403,6 +408,22 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
           <SignaturePad onChange={setSignatureUrl} />
         </CardContent>
       </Card>
+
+      {selectedPi?.crossCompanyTransfer ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          Cross-company shortfall approved from{" "}
+          <strong>{selectedPi.crossCompanyTransfer.fromCompanyCode}</strong> (
+          {selectedPi.crossCompanyTransfer.fromCompanyName}). Scan/dispatch serials directly from
+          that company; transfer is booked automatically when this DC is confirmed.
+          <ul className="mt-2 list-disc pl-5">
+            {selectedPi.crossCompanyTransfer.lines.map((line) => (
+              <li key={line.displayName}>
+                {line.displayName}: up to {line.qty}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {selectedPi ? (
         <Card>

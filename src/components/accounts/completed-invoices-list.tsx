@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { InvoiceHandoverDetailDialog } from "@/components/accounts/invoice-handover-detail-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -26,6 +28,8 @@ type CompletedRow = {
 };
 
 export function CompletedInvoicesList({ rows }: { rows: CompletedRow[] }) {
+  const [detailId, setDetailId] = useState<string | null>(null);
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -59,7 +63,16 @@ export function CompletedInvoicesList({ rows }: { rows: CompletedRow[] }) {
               <TableBody>
                 {rows.map((row) => (
                   <TableRow key={row.id}>
-                    <TableCell className="font-medium text-slate-900">{row.customer.customerName}</TableCell>
+                    <TableCell className="font-medium text-slate-900">
+                      <button
+                        type="button"
+                        className="cursor-pointer text-left underline-offset-2 hover:underline"
+                        title="Double-click to view details"
+                        onDoubleClick={() => setDetailId(row.id)}
+                      >
+                        {row.customer.customerName}
+                      </button>
+                    </TableCell>
                     <TableCell>{row.dispatch.dcNo}</TableCell>
                     <TableCell>{row.dispatch.proformaInvoice.piNo}</TableCell>
                     <TableCell>{row.invoiceNumber ?? "—"}</TableCell>
@@ -81,6 +94,9 @@ export function CompletedInvoicesList({ rows }: { rows: CompletedRow[] }) {
           )}
         </CardContent>
       </Card>
+      {detailId ? (
+        <InvoiceHandoverDetailDialog handoverId={detailId} onClose={() => setDetailId(null)} />
+      ) : null}
     </div>
   );
 }

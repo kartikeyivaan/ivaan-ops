@@ -28,3 +28,12 @@ export function formatDocumentDate(value: Date | string): string {
     timeZone: "UTC",
   }).format(parseDateOnly(value));
 }
+
+/** e.g. 03-08-26 — for recorded payment dates */
+export function formatPaymentDate(value: Date | string): string {
+  const date = parseDateOnly(value);
+  const dd = String(date.getUTCDate()).padStart(2, "0");
+  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const yy = String(date.getUTCFullYear()).slice(-2);
+  return `${dd}-${mm}-${yy}`;
+}

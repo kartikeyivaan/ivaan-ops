@@ -54,6 +54,34 @@ export async function POST(_request: Request, context: RouteContext) {
           400,
         );
       }
+      if (error.message === "CROSS_COMPANY_PLAN_REQUIRED") {
+        return errorResponse(
+          "CROSS_COMPANY_PLAN_REQUIRED",
+          "Serials from another company require an approved cross-company transfer plan.",
+          400,
+        );
+      }
+      if (error.message === "CROSS_COMPANY_REAPPROVAL_REQUIRED") {
+        return errorResponse(
+          "CROSS_COMPANY_REAPPROVAL_REQUIRED",
+          "Serials are from a different company than approved. Request re-approval with the correct source company.",
+          400,
+        );
+      }
+      if (error.message === "CROSS_COMPANY_QTY_EXCEEDED") {
+        return errorResponse(
+          "CROSS_COMPANY_QTY_EXCEEDED",
+          "Cross-company quantity exceeds the approved shortfall plan.",
+          400,
+        );
+      }
+      if (error.message === "SOURCE_INSUFFICIENT_STOCK") {
+        return errorResponse(
+          "SOURCE_INSUFFICIENT_STOCK",
+          "Source company no longer has enough available stock for the shortfall.",
+          400,
+        );
+      }
     }
     throw error;
   }

@@ -11,6 +11,9 @@ import { cn } from "@/lib/utils";
 import { CompanySwitcher } from "@/components/layout/company-switcher";
 import { IvaanLogo } from "@/components/layout/ivaan-logo";
 import { SignOutButton } from "@/components/layout/sign-out-button";
+import { LearningBanner } from "@/components/learning/learning-banner";
+import { LearningFirstLoginPrompt } from "@/components/learning/learning-first-login-prompt";
+import { LearningTourOverlay } from "@/components/learning/learning-tour-overlay";
 
 type NavItem = (typeof NAV_ITEMS)[number];
 
@@ -117,6 +120,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
+      <LearningBanner />
+      <LearningFirstLoginPrompt />
+      <LearningTourOverlay />
+
       <Dialog.Root open={drawerOpen} onOpenChange={setDrawerOpen}>
         <Dialog.Portal>
           <Dialog.Overlay
@@ -146,7 +153,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </button>
               </Dialog.Close>
             </div>
-            <div className="flex-1 overflow-y-auto p-3">
+            <div className="flex-1 overflow-y-auto p-3" data-tour="app-nav">
               <NavLinks
                 items={navItems}
                 pathname={pathname}
@@ -158,10 +165,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </Dialog.Root>
 
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-4 sm:px-6 sm:py-6 lg:flex-row">
-        <aside className="hidden h-fit w-full shrink-0 rounded-xl border border-slate-200 bg-white p-3 lg:block lg:w-[220px]">
+        <aside
+          data-tour="app-nav"
+          className="hidden h-fit w-full shrink-0 rounded-xl border border-slate-200 bg-white p-3 lg:block lg:w-[220px]"
+        >
           <NavLinks items={navItems} pathname={pathname} />
         </aside>
-        <main className="min-w-0 w-full flex-1">{children}</main>
+        <main data-tour="page-main" className="min-w-0 w-full flex-1">
+          {children}
+        </main>
       </div>
     </div>
   );

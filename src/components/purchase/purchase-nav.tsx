@@ -4,17 +4,36 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
-const PURCHASE_LINKS = [
-  { label: "Incoming Material", href: "/purchase/incoming" },
-  { label: "Vendors", href: "/purchase/vendors" },
-];
+type PurchaseNavLink = {
+  label: string;
+  href: string;
+  visible?: boolean;
+};
 
-export function PurchaseNav() {
+export function PurchaseNav({
+  canManagePurchase,
+}: {
+  canManagePurchase: boolean;
+}) {
   const pathname = usePathname();
+
+  const links: PurchaseNavLink[] = [
+    { label: "Requests", href: "/purchase/requests", visible: true },
+    {
+      label: "Incoming Material",
+      href: "/purchase/incoming",
+      visible: canManagePurchase,
+    },
+    {
+      label: "Vendors",
+      href: "/purchase/vendors",
+      visible: canManagePurchase,
+    },
+  ].filter((link) => link.visible !== false);
 
   return (
     <nav className="flex flex-wrap gap-2 border-b border-slate-200 pb-4">
-      {PURCHASE_LINKS.map((link) => {
+      {links.map((link) => {
         const active = pathname === link.href || pathname.startsWith(`${link.href}/`);
         return (
           <Link

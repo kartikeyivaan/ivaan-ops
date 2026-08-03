@@ -114,6 +114,9 @@ export async function POST(request: Request) {
       },
     });
 
+    const { recordLearningEvent } = await import("@/lib/learning/progress");
+    await recordLearningEvent(session, "customer.created");
+
     return NextResponse.json(customer, { status: 201 });
   } catch (error) {
     if (error instanceof Error) {

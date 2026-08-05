@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { canCreateIncoming } from "@/lib/inventory-permissions";
+import {
+  canCreateIncoming,
+  canProposeIncomingLotReceiveEdit,
+} from "@/lib/inventory-permissions";
 import {
   findDuplicatePurchaseInvoice,
   findSimilarIncomingLots,
@@ -15,7 +18,13 @@ function errorResponse(code: string, message: string, status: number, details?: 
 
 export async function GET(request: Request) {
   const session = await auth();
-  if (!session?.user || !canCreateIncoming(session.user.roles)) {
+  if (
+    !session?.user ||
+    !(
+      canCreateIncoming(session.user.roles) ||
+      canProposeIncomingLotReceiveEdit(session.user.roles)
+    )
+  ) {
     return errorResponse("FORBIDDEN", "You do not have permission for this action.", 403);
   }
 

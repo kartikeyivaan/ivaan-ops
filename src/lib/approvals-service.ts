@@ -3,6 +3,7 @@ import {
   ApprovalRequestStatus,
   DamageReportStatus,
   DispatchStatus,
+  IncomingLotChangeStatus,
   ItemApprovalStatus,
   OpeningAuditStatus,
   PrismaClient,
@@ -13,7 +14,10 @@ import {
 import { canApproveDispatchCancel } from "@/lib/dispatch-permissions";
 import { DAMAGE_CATEGORY_LABELS } from "@/lib/damage-report-constants";
 import { canApproveOpeningStock } from "@/lib/inventory-audit-permissions";
-import { canApprovePanelDamage } from "@/lib/inventory-permissions";
+import {
+  canApproveIncomingLotEdit,
+  canApprovePanelDamage,
+} from "@/lib/inventory-permissions";
 import { canApproveBooking, canApproveDispatchToday, canApprovePiCancel } from "@/lib/pi-permissions";
 import { canApproveProjectProposals } from "@/lib/project-proposal-permissions";
 import { canApproveQuotationPricing } from "@/lib/quotation-permissions";
@@ -27,7 +31,8 @@ export type ApprovalType =
   | "PROJECT_PROPOSAL"
   | "OPENING_STOCK"
   | "PANEL_DAMAGE"
-  | "CROSS_COMPANY_TRANSFER";
+  | "CROSS_COMPANY_TRANSFER"
+  | "INCOMING_LOT_EDIT";
 
 export type PendingApprovalItem = {
   id: string;
@@ -67,6 +72,7 @@ const TYPE_LABELS: Record<ApprovalType, string> = {
   OPENING_STOCK: "Opening stock",
   PANEL_DAMAGE: "Panel damage",
   CROSS_COMPANY_TRANSFER: "Cross-company transfer",
+  INCOMING_LOT_EDIT: "Incoming lot edit",
 };
 
 export function approvalTypeLabel(type: ApprovalType): string {
@@ -122,6 +128,9 @@ export async function listPendingApprovals(
   if (canApprovePanelDamage(userRoles)) {
     buckets.push(listPendingPanelDamageApprovals(prisma, companyId));
   }
+  if (canApproveIncomingLotEdit(userRoles)) {
+    buckets.push(listPendingIncomingLotEditApprovals(prisma, companyId));
+  }
 
   const groups = await Promise.all(buckets);
   return groups.flat().sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
@@ -159,6 +168,9 @@ export async function listApprovalHistory(
   }
   if (canApprovePanelDamage(userRoles)) {
     buckets.push(listPanelDamageApprovalHistory(prisma, companyId));
+  }
+  if (canApproveIncomingLotEdit(userRoles)) {
+    buckets.push(listIncomingLotEditApprovalHistory(prisma, companyId));
   }
 
   const groups = await Promise.all(buckets);
@@ -565,6 +577,52 @@ async function listPendingPanelDamageApprovals(
   }));
 }
 
+async function listPendingIncomingLotEditApprovals(
+  prisma: PrismaClient,
+  companyId: string,
+): Promise<PendingApprovalItem[]> {
+  const rows = await prisma.incomingLotChangeRequest.findMany({
+    where: { companyId, status: IncomingLotChangeStatus.PENDING },
+    include: {
+      lot: { select: { lotNumber: true, warehouse: { select: { name: true } } } },
+      previousProduct: { select: { displayName: true } },
+      proposedProduct: { select: { displayName: true } },
+      requestedBy: { select: { name: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return rows.map((row) => {
+    const parts: string[] = [];
+    if (row.previousProductId !== row.proposedProductId) {
+      parts.push(
+        `Product: ${row.previousProduct.displayName} → ${row.proposedProduct.displayName}`,
+      );
+    }
+    if (Number(row.previousQuantity) !== Number(row.proposedQuantity)) {
+      parts.push(`Qty: ${Number(row.previousQuantity)} → ${Number(row.proposedQuantity)}`);
+    }
+    if (row.previousPurchaseInvoiceNo !== row.proposedPurchaseInvoiceNo) {
+      parts.push(
+        `Invoice: ${row.previousPurchaseInvoiceNo} → ${row.proposedPurchaseInvoiceNo}`,
+      );
+    }
+
+    return {
+      id: `INCOMING_LOT_EDIT:${row.id}`,
+      type: "INCOMING_LOT_EDIT" as const,
+      moduleId: row.id,
+      documentNo: row.lot.lotNumber,
+      subjectName: `${row.proposedProduct.displayName} · ${row.lot.warehouse.name}`,
+      reason: parts.join(" · ") || "Receive-time lot edit",
+      requestedByName: row.requestedBy.name,
+      requestedAt: toIso(row.createdAt),
+      href: `/inventory/incoming/${row.lotId}`,
+      canReject: true,
+    };
+  });
+}
+
 async function listQuotationApprovalHistory(
   prisma: PrismaClient,
   companyId: string,
@@ -802,6 +860,18 @@ async function listPanelDamageApprovalHistory(
   );
 }
 
+async function listIncomingLotEditApprovalHistory(
+  prisma: PrismaClient,
+  companyId: string,
+): Promise<ApprovalHistoryItem[]> {
+  return listApprovalRequestHistory(
+    prisma,
+    companyId,
+    ApprovalModuleType.INCOMING_LOT_EDIT,
+    "INCOMING_LOT_EDIT",
+  );
+}
+
 async function loadModuleMeta(
   prisma: PrismaClient,
   companyId: string,
@@ -891,6 +961,22 @@ async function loadModuleMeta(
         subjectName: `${row.product.displayName} · ${row.warehouse.name}`,
         reason: `${DAMAGE_CATEGORY_LABELS[row.category]}: ${row.reason}`,
         href: `/inventory/damaged?highlight=${row.id}`,
+      });
+    }
+  } else if (moduleType === ApprovalModuleType.INCOMING_LOT_EDIT) {
+    const rows = await prisma.incomingLotChangeRequest.findMany({
+      where: { companyId, id: { in: moduleIds } },
+      include: {
+        lot: { select: { lotNumber: true, warehouse: { select: { name: true } } } },
+        proposedProduct: { select: { displayName: true } },
+      },
+    });
+    for (const row of rows) {
+      map.set(row.id, {
+        documentNo: row.lot.lotNumber,
+        subjectName: `${row.proposedProduct.displayName} · ${row.lot.warehouse.name}`,
+        reason: "Receive-time lot edit",
+        href: `/inventory/incoming/${row.lotId}`,
       });
     }
   }

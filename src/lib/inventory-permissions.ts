@@ -45,6 +45,20 @@ export function canCreateIncoming(userRoles: string[]): boolean {
   return hasRole(userRoles, [...INCOMING_ROLES]);
 }
 
+/** Purchase applies receive-field edits immediately; warehouse may propose them. */
+export function canProposeIncomingLotReceiveEdit(userRoles: string[]): boolean {
+  return canInwardMaterial(userRoles);
+}
+
+export function canApplyIncomingLotReceiveEdit(userRoles: string[]): boolean {
+  return canCreateIncoming(userRoles);
+}
+
+/** Purchase (or Super Admin) approves warehouse receive-field edits. */
+export function canApproveIncomingLotEdit(userRoles: string[]): boolean {
+  return hasRole(userRoles, [...INCOMING_ROLES]);
+}
+
 export function canInwardMaterial(userRoles: string[]): boolean {
   return hasRole(userRoles, [...INWARD_ROLES]);
 }

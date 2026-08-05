@@ -229,6 +229,7 @@ enum ApprovalModuleType {
   PI_CANCEL
   PANEL_DAMAGE
   CROSS_COMPANY_TRANSFER
+  INCOMING_LOT_EDIT
 }
 
 enum TransferOrigin {
@@ -245,6 +246,12 @@ enum PiCrossCompanyTransferPlanStatus {
 }
 
 enum DamageReportStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum IncomingLotChangeStatus {
   PENDING
   APPROVED
   REJECTED
@@ -460,6 +467,7 @@ model Company {
   openingAudits         InventoryOpeningAudit[]
   dailyAudits           InventoryDailyAudit[]
   damageReports         InventoryDamageReport[]
+  incomingLotChanges    IncomingLotChangeRequest[]
   purchaseRequests      PurchaseRequest[]
   manualStockEntries    ManualStockEntry[]
 
@@ -541,6 +549,8 @@ model User {
   dailyAuditsSubmitted              InventoryDailyAudit[]          @relation("DailyAuditSubmittedBy")
   damageReportsRequested            InventoryDamageReport[]        @relation("DamageReportRequestedBy")
   damageReportsDecided              InventoryDamageReport[]        @relation("DamageReportDecidedBy")
+  incomingLotChangesRequested       IncomingLotChangeRequest[]     @relation("IncomingLotChangeRequestedBy")
+  incomingLotChangesDecided         IncomingLotChangeRequest[]     @relation("IncomingLotChangeDecidedBy")
   purchaseRequestsRequested         PurchaseRequest[]              @relation("PurchaseRequestRequestedBy")
   purchaseRequestsUpdated           PurchaseRequest[]              @relation("PurchaseRequestUpdatedBy")
   manualStockEntriesCreated         ManualStockEntry[]             @relation("ManualStockEntryCreatedBy")
@@ -786,6 +796,8 @@ model Product {
   inventoryEvents          InventoryEvent[]
   inventorySafetyStock     InventorySafetyStock[]
   damageReports            InventoryDamageReport[]
+  incomingLotChangesProposed IncomingLotChangeRequest[] @relation("IncomingLotChangeProposedProduct")
+  incomingLotChangesPrevious IncomingLotChangeRequest[] @relation("IncomingLotChangePreviousProduct")
   transferLines            InventoryTransferLine[]
   crossCompanyPlanLines    PiCrossCompanyTransferPlanLine[]
   quotationItems           QuotationItem[]
@@ -872,6 +884,7 @@ model InventoryLot {
   createdBy           User                 @relation("LotCreatedBy", fields: [createdById], references: [id])
   serials             InventorySerial[]
   transactions        InventoryTransaction[]
+  changeRequests      IncomingLotChangeRequest[]
 
   @@index([companyId, status])
   @@index([warehouseId])
@@ -976,6 +989,36 @@ model InventoryDamageReport {
   @@index([serialId, status])
   @@index([warehouseId])
   @@map("inventory_damage_reports")
+}
+
+model IncomingLotChangeRequest {
+  id                         String                   @id @default(uuid()) @db.Uuid
+  companyId                  String                   @map("company_id") @db.Uuid
+  lotId                      String                   @map("lot_id") @db.Uuid
+  previousProductId          String                   @map("previous_product_id") @db.Uuid
+  previousQuantity           Decimal                  @map("previous_quantity") @db.Decimal(12, 3)
+  previousPurchaseInvoiceNo  String                   @map("previous_purchase_invoice_no")
+  proposedProductId          String                   @map("proposed_product_id") @db.Uuid
+  proposedQuantity           Decimal                  @map("proposed_quantity") @db.Decimal(12, 3)
+  proposedPurchaseInvoiceNo  String                   @map("proposed_purchase_invoice_no")
+  status                     IncomingLotChangeStatus  @default(PENDING)
+  requestedById              String                   @map("requested_by") @db.Uuid
+  decidedById                String?                  @map("decided_by") @db.Uuid
+  decidedAt                  DateTime?                @map("decided_at")
+  decisionRemarks            String?                  @map("decision_remarks")
+  createdAt                  DateTime                 @default(now()) @map("created_at")
+  updatedAt                  DateTime                 @updatedAt @map("updated_at")
+
+  company         Company       @relation(fields: [companyId], references: [id])
+  lot             InventoryLot  @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  previousProduct Product       @relation("IncomingLotChangePreviousProduct", fields: [previousProductId], references: [id])
+  proposedProduct Product       @relation("IncomingLotChangeProposedProduct", fields: [proposedProductId], references: [id])
+  requestedBy     User          @relation("IncomingLotChangeRequestedBy", fields: [requestedById], references: [id])
+  decidedBy       User?         @relation("IncomingLotChangeDecidedBy", fields: [decidedById], references: [id])
+
+  @@index([companyId, status])
+  @@index([lotId, status])
+  @@map("incoming_lot_change_requests")
 }
 
 model PurchaseRequest {

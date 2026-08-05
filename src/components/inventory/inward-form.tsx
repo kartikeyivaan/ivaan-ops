@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,7 @@ import {
   SerialScanner,
   type SerialScanResult,
 } from "@/components/inventory/serial-scanner";
+import { IncomingLotReceiveEditDialog } from "@/components/inventory/incoming-lot-receive-edit-dialog";
 import {
   findDuplicateSerialKeys,
   isWaareeBrand,
@@ -20,7 +21,10 @@ import {
   normalizeSerialNumber,
   parseSerialInput,
 } from "@/lib/inventory";
+import type { SerializedIncomingLotChangeRequest } from "@/lib/incoming-lot-change-service";
 import type { SerializedInventoryLot } from "@/lib/inventory-service";
+
+type Product = { id: string; displayName: string; gstRate: number };
 
 function SerialHighlightOverlay({
   value,
@@ -61,14 +65,34 @@ function SerialHighlightOverlay({
   );
 }
 
-export function InwardForm({ lot }: { lot: SerializedInventoryLot }) {
+export function InwardForm({
+  lot: initialLot,
+  products,
+  canEditLot,
+  requiresEditApproval,
+  pendingChange: initialPendingChange,
+}: {
+  lot: SerializedInventoryLot;
+  products: Product[];
+  canEditLot: boolean;
+  requiresEditApproval: boolean;
+  pendingChange: SerializedIncomingLotChangeRequest | null;
+}) {
   const router = useRouter();
+  const [lot, setLot] = useState(initialLot);
+  const [pendingChange, setPendingChange] = useState(initialPendingChange);
+  const [editOpen, setEditOpen] = useState(false);
   const pending =
     Number(lot.quantity) - Number(lot.receivedQuantity) - Number(lot.damagedQuantity);
   const submittingRef = useRef(false);
   const serialOverlayRef = useRef<HTMLDivElement>(null);
   const validateWaareeFormat =
     lot.product.serialTracking && isWaareeBrand(lot.product.brand.name);
+  const lotStillEditable =
+    lot.status === "INCOMING" &&
+    Number(lot.receivedQuantity) === 0 &&
+    Number(lot.damagedQuantity) === 0;
+  const showEditLot = canEditLot && lotStillEditable && !pendingChange;
 
   const [receivedQty, setReceivedQty] = useState("");
   const [damagedQty, setDamagedQty] = useState("0");
@@ -78,6 +102,14 @@ export function InwardForm({ lot }: { lot: SerializedInventoryLot }) {
   const [loading, setLoading] = useState(false);
   const serialInputRef = useRef(serialInput);
   serialInputRef.current = serialInput;
+
+  useEffect(() => {
+    setLot(initialLot);
+  }, [initialLot]);
+
+  useEffect(() => {
+    setPendingChange(initialPendingChange);
+  }, [initialPendingChange]);
 
   const parsedSerials = lot.product.serialTracking ? parseSerialInput(serialInput) : [];
   const uniqueSerials = Array.from(
@@ -144,6 +176,12 @@ export function InwardForm({ lot }: { lot: SerializedInventoryLot }) {
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (submittingRef.current) return;
+
+    if (pendingChange) {
+      setError("Resolve the pending lot edit approval before confirming receipt.");
+      return;
+    }
+
     submittingRef.current = true;
     setLoading(true);
     setError("");
@@ -198,12 +236,33 @@ export function InwardForm({ lot }: { lot: SerializedInventoryLot }) {
         </Link>
       </Button>
 
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Receive material</h1>
-        <p className="text-sm text-slate-500">
-          {lot.lotNumber} · {lot.product.displayName} · {lot.warehouse.name}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Receive material</h1>
+          <p className="text-sm text-slate-500">
+            {lot.lotNumber} · {lot.product.displayName} · {lot.warehouse.name}
+          </p>
+        </div>
+        {showEditLot ? (
+          <Button type="button" variant="outline" onClick={() => setEditOpen(true)}>
+            <Pencil className="mr-2 h-4 w-4" />
+            Edit product / qty / invoice
+          </Button>
+        ) : null}
       </div>
+
+      {pendingChange ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+          <p className="font-medium">Pending Purchase approval</p>
+          <p className="mt-1 text-amber-900">
+            Proposed: {pendingChange.proposedProductName} · qty{" "}
+            {pendingChange.proposedQuantity} · invoice {pendingChange.proposedPurchaseInvoiceNo}
+          </p>
+          <p className="mt-2 text-amber-800">
+            Receipt is blocked until Purchase approves or rejects this change.
+          </p>
+        </div>
+      ) : null}
 
       <Card>
         <CardHeader>
@@ -222,6 +281,16 @@ export function InwardForm({ lot }: { lot: SerializedInventoryLot }) {
           <p>
             <span className="text-slate-500">Pending:</span> {pending}
           </p>
+          {lot.purchaseInvoiceNo ? (
+            <p>
+              <span className="text-slate-500">Invoice:</span> {lot.purchaseInvoiceNo}
+            </p>
+          ) : null}
+          {lot.vendor ? (
+            <p>
+              <span className="text-slate-500">Vendor:</span> {lot.vendor.vendorName}
+            </p>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -243,6 +312,7 @@ export function InwardForm({ lot }: { lot: SerializedInventoryLot }) {
                   value={receivedQty}
                   onChange={(e) => setReceivedQty(e.target.value)}
                   required
+                  disabled={Boolean(pendingChange)}
                 />
               </div>
               <div className="space-y-2">
@@ -255,6 +325,7 @@ export function InwardForm({ lot }: { lot: SerializedInventoryLot }) {
                   className="h-12 text-lg"
                   value={damagedQty}
                   onChange={(e) => setDamagedQty(e.target.value)}
+                  disabled={Boolean(pendingChange)}
                 />
               </div>
             </div>
@@ -265,6 +336,7 @@ export function InwardForm({ lot }: { lot: SerializedInventoryLot }) {
                 <ScanSerialsButton
                   className="h-12 w-full border-emerald-300 bg-emerald-50 text-base text-emerald-900 hover:bg-emerald-100"
                   onClick={() => setScannerOpen(true)}
+                  disabled={Boolean(pendingChange)}
                 />
                 <div className="relative">
                   <div
@@ -279,7 +351,7 @@ export function InwardForm({ lot }: { lot: SerializedInventoryLot }) {
                   </div>
                   <textarea
                     id="serials"
-                    className="relative min-h-40 w-full resize-y rounded-md border border-slate-200 bg-transparent p-3 font-mono text-sm leading-5 text-transparent caret-slate-900 placeholder:text-slate-400 selection:bg-sky-200/60"
+                    className="relative min-h-40 w-full resize-y rounded-md border border-slate-200 bg-transparent p-3 font-mono text-sm leading-5 text-transparent caret-slate-900 placeholder:text-slate-400 selection:bg-sky-200/60 disabled:opacity-60"
                     placeholder="Enter one serial per line for received units"
                     value={serialInput}
                     onChange={(e) => handleSerialChange(e.target.value)}
@@ -290,6 +362,7 @@ export function InwardForm({ lot }: { lot: SerializedInventoryLot }) {
                       overlay.scrollLeft = e.currentTarget.scrollLeft;
                     }}
                     spellCheck={false}
+                    disabled={Boolean(pendingChange)}
                   />
                 </div>
                 <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
@@ -330,7 +403,11 @@ export function InwardForm({ lot }: { lot: SerializedInventoryLot }) {
 
             {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
-            <Button type="submit" className="h-12 w-full text-base" disabled={loading}>
+            <Button
+              type="submit"
+              className="h-12 w-full text-base"
+              disabled={loading || Boolean(pendingChange)}
+            >
               {loading ? "Saving..." : "Confirm receipt"}
             </Button>
           </form>
@@ -343,6 +420,24 @@ export function InwardForm({ lot }: { lot: SerializedInventoryLot }) {
         onScan={handleScannedSerials}
         title="Scan inward serials"
       />
+
+      {editOpen ? (
+        <IncomingLotReceiveEditDialog
+          lot={lot}
+          products={products}
+          requiresApproval={requiresEditApproval}
+          onClose={() => setEditOpen(false)}
+          onApplied={async (updatedLot) => {
+            setLot(updatedLot);
+            setPendingChange(null);
+            router.refresh();
+          }}
+          onSubmittedForApproval={async (changeRequest) => {
+            setPendingChange(changeRequest);
+            router.refresh();
+          }}
+        />
+      ) : null}
     </div>
   );
 }

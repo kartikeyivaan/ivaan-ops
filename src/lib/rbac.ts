@@ -27,7 +27,7 @@ export const NAV_ITEMS: NavItem[] = [
   {
     label: "Approvals",
     href: "/approvals",
-    roles: [ROLES.SUPER_ADMIN, ROLES.SALES_MANAGER, ROLES.PROJECTS_MANAGER],
+    roles: [ROLES.SUPER_ADMIN, ROLES.SALES_MANAGER, ROLES.PROJECTS_MANAGER, ROLES.PURCHASE],
   },
   {
     label: "Customers",

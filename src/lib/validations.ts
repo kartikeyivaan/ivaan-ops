@@ -215,6 +215,12 @@ export const incomingLotSchema = z.object({
 
 export const incomingLotUpdateSchema = incomingLotSchema.omit({ companyId: true });
 
+export const incomingLotReceiveEditSchema = z.object({
+  productId: z.string().uuid(),
+  quantity: z.coerce.number().positive(),
+  purchaseInvoiceNo: z.string().trim().min(1, "Purchase invoice number is required."),
+});
+
 export const incomingLotCheckSchema = z.object({
   purchaseInvoiceNo: z.string().trim().min(1).optional(),
   companyId: z.string().uuid().optional(),

@@ -54,6 +54,7 @@ export function IncomingLotEditDialog({
   onClose,
   onSaved,
   onDeleted,
+  allowDelete = true,
 }: {
   lot: SerializedInventoryLot;
   products: Product[];
@@ -62,6 +63,7 @@ export function IncomingLotEditDialog({
   onClose: () => void;
   onSaved?: () => void | Promise<void>;
   onDeleted?: () => void | Promise<void>;
+  allowDelete?: boolean;
 }) {
   const companyWarehouses = useMemo(
     () => warehouses.filter((warehouse) => warehouse.companyId === lot.company.id),
@@ -426,15 +428,17 @@ export function IncomingLotEditDialog({
           <Button type="submit" disabled={loading || deleting}>
             {loading ? "Saving..." : "Save changes"}
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="text-red-600 hover:bg-red-50 hover:text-red-700"
-            disabled={loading || deleting}
-            onClick={handleDelete}
-          >
-            {deleting ? "Deleting..." : "Delete lot"}
-          </Button>
+          {allowDelete ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="text-red-600 hover:bg-red-50 hover:text-red-700"
+              disabled={loading || deleting}
+              onClick={handleDelete}
+            >
+              {deleting ? "Deleting..." : "Delete lot"}
+            </Button>
+          ) : null}
         </ModalFooter>
       </ModalForm>
     </Modal>

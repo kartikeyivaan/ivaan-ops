@@ -1,6 +1,9 @@
 import { canApproveDispatchCancel } from "@/lib/dispatch-permissions";
 import { canApproveOpeningStock } from "@/lib/inventory-audit-permissions";
-import { canApprovePanelDamage } from "@/lib/inventory-permissions";
+import {
+  canApproveIncomingLotEdit,
+  canApprovePanelDamage,
+} from "@/lib/inventory-permissions";
 import {
   canApproveBooking,
   canApproveDispatchToday,
@@ -15,6 +18,7 @@ export const APPROVALS_INBOX_ROLES: RoleName[] = [
   ROLES.SUPER_ADMIN,
   ROLES.SALES_MANAGER,
   ROLES.PROJECTS_MANAGER,
+  ROLES.PURCHASE,
 ];
 
 export function canAccessApprovalsInbox(userRoles: string[]): boolean {
@@ -26,6 +30,7 @@ export function canAccessApprovalsInbox(userRoles: string[]): boolean {
     canApprovePiCancel(userRoles) ||
     canApproveProjectProposals(userRoles) ||
     canApproveOpeningStock(userRoles) ||
-    canApprovePanelDamage(userRoles)
+    canApprovePanelDamage(userRoles) ||
+    canApproveIncomingLotEdit(userRoles)
   );
 }

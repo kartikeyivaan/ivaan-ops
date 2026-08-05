@@ -57,6 +57,11 @@ function approveEndpoint(item: PendingApprovalItem): { url: string; body?: objec
       };
     case "PANEL_DAMAGE":
       return { url: `/api/inventory/damage-reports/${item.moduleId}/approve`, body: {} };
+    case "INCOMING_LOT_EDIT":
+      return {
+        url: `/api/inventory/incoming/change-requests/${item.moduleId}/approve`,
+        body: {},
+      };
   }
 }
 
@@ -93,6 +98,11 @@ function rejectEndpoint(
     case "PANEL_DAMAGE":
       return {
         url: `/api/inventory/damage-reports/${item.moduleId}/reject`,
+        body: { reason },
+      };
+    case "INCOMING_LOT_EDIT":
+      return {
+        url: `/api/inventory/incoming/change-requests/${item.moduleId}/reject`,
         body: { reason },
       };
   }

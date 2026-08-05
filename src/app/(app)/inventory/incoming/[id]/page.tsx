@@ -1,10 +1,14 @@
 import { notFound, redirect } from "next/navigation";
+import { decimalToNumber } from "@/lib/inventory";
 import { auth } from "@/lib/auth";
 import {
+  canApplyIncomingLotReceiveEdit,
   canInwardMaterial,
+  canProposeIncomingLotReceiveEdit,
   canViewInventory,
   canViewSerialNumbers,
 } from "@/lib/inventory-permissions";
+import { getPendingIncomingLotChangeForLot } from "@/lib/incoming-lot-change-service";
 import { getLotById, serializeLotForRole } from "@/lib/inventory-service";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
@@ -26,7 +30,15 @@ export default async function InwardLotPage({
 
   const companyId = requireActiveCompany(session);
   const { id } = await params;
-  const lot = await getLotById(prisma, id, companyId);
+  const [lot, products, pendingChange] = await Promise.all([
+    getLotById(prisma, id, companyId),
+    prisma.product.findMany({
+      where: { isActive: true },
+      orderBy: { displayName: "asc" },
+      select: { id: true, displayName: true, gstRate: true },
+    }),
+    getPendingIncomingLotChangeForLot(prisma, id, companyId),
+  ]);
 
   if (!lot || lot.status !== "INCOMING") {
     notFound();
@@ -36,6 +48,22 @@ export default async function InwardLotPage({
     lot,
     canViewSerialNumbers(session.user.roles),
   );
+  const serializedProducts = products.map((product) => ({
+    id: product.id,
+    displayName: product.displayName,
+    gstRate: decimalToNumber(product.gstRate),
+  }));
 
-  return <InwardForm lot={sanitizedLot} />;
+  const canEditLot = canProposeIncomingLotReceiveEdit(session.user.roles);
+  const requiresEditApproval = !canApplyIncomingLotReceiveEdit(session.user.roles);
+
+  return (
+    <InwardForm
+      lot={sanitizedLot}
+      products={serializedProducts}
+      canEditLot={canEditLot}
+      requiresEditApproval={requiresEditApproval}
+      pendingChange={pendingChange}
+    />
+  );
 }

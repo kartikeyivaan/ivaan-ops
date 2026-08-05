@@ -3,8 +3,11 @@ import { describe, expect, it } from "vitest";
 import { canModifyIncomingLot } from "@/lib/inventory-service";
 import {
   canAdjustStock,
+  canApplyIncomingLotReceiveEdit,
+  canApproveIncomingLotEdit,
   canCreateIncoming,
   canInwardMaterial,
+  canProposeIncomingLotReceiveEdit,
   canViewInventory,
   canViewSerialNumbers,
 } from "@/lib/inventory-permissions";
@@ -153,6 +156,19 @@ describe("inventory permissions", () => {
 
   it("allows warehouse to inward", () => {
     expect(canInwardMaterial([ROLES.WAREHOUSE])).toBe(true);
+  });
+
+  it("allows warehouse to propose receive edits and purchase to approve", () => {
+    expect(canProposeIncomingLotReceiveEdit([ROLES.WAREHOUSE])).toBe(true);
+    expect(canApplyIncomingLotReceiveEdit([ROLES.WAREHOUSE])).toBe(false);
+    expect(canApproveIncomingLotEdit([ROLES.WAREHOUSE])).toBe(false);
+
+    expect(canProposeIncomingLotReceiveEdit([ROLES.PURCHASE])).toBe(false);
+    expect(canApplyIncomingLotReceiveEdit([ROLES.PURCHASE])).toBe(true);
+    expect(canApproveIncomingLotEdit([ROLES.PURCHASE])).toBe(true);
+
+    expect(canApplyIncomingLotReceiveEdit([ROLES.SUPER_ADMIN])).toBe(true);
+    expect(canApproveIncomingLotEdit([ROLES.SUPER_ADMIN])).toBe(true);
   });
 
   it("restricts stock adjustment to super admin", () => {

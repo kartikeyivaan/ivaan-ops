@@ -703,6 +703,109 @@ export async function updateIncomingLot(
   });
 }
 
+/**
+ * Apply receive-time field edits (product, expected qty, invoice) on a pending lot.
+ * Keeps warehouse, vendor, dates, and cost rates; recalculates total purchase cost.
+ */
+export async function applyIncomingLotReceiveEdits(
+  prisma: Prisma.TransactionClient,
+  lotId: string,
+  companyId: string,
+  input: {
+    productId: string;
+    quantity: number;
+    purchaseInvoiceNo: string;
+    updatedById: string;
+  },
+) {
+  const lot = await prisma.inventoryLot.findFirst({
+    where: { id: lotId, companyId },
+  });
+  if (!lot) throw new Error("NOT_FOUND");
+  if (!canModifyIncomingLot(lot)) throw new Error("LOT_NOT_EDITABLE");
+
+  const product = await prisma.product.findUnique({ where: { id: input.productId } });
+  if (!product || !product.isActive) throw new Error("PRODUCT_NOT_FOUND");
+  if (input.quantity <= 0) throw new Error("INVALID_QUANTITY");
+
+  const purchaseInvoiceNo = await validateIncomingLotUniqueness(prisma, {
+    purchaseInvoiceNo: input.purchaseInvoiceNo,
+    companyId,
+    warehouseId: lot.warehouseId,
+    vendorId: lot.vendorId,
+    productId: input.productId,
+    purchaseDate: lot.purchaseDate,
+    quantity: input.quantity,
+    unitPurchaseRate: decimalToNumber(lot.unitPurchaseRate),
+    confirmSimilar: true,
+    excludeLotId: lotId,
+  });
+
+  const totalPurchaseCost = calculateTotalPurchaseCost({
+    quantity: input.quantity,
+    unitPurchaseRate: decimalToNumber(lot.unitPurchaseRate),
+    gstRate: decimalToNumber(product.gstRate),
+    transportCharges: decimalToNumber(lot.transportCharges),
+    commissionCharges: decimalToNumber(lot.commissionCharges),
+  });
+
+  const updatedLot = await prisma.inventoryLot.update({
+    where: { id: lotId },
+    data: {
+      productId: input.productId,
+      quantity: input.quantity,
+      purchaseInvoiceNo,
+      totalPurchaseCost,
+    },
+    include: lotInclude,
+  });
+
+  await writeAuditLogTx(prisma, {
+    tableName: "inventory_lots",
+    recordId: lotId,
+    action: "UPDATE",
+    performedBy: input.updatedById,
+    companyId,
+    reference: lot.lotNumber,
+    oldValue: {
+      productId: lot.productId,
+      quantity: decimalToNumber(lot.quantity),
+      purchaseInvoiceNo: lot.purchaseInvoiceNo,
+    },
+    newValue: {
+      productId: input.productId,
+      quantity: input.quantity,
+      purchaseInvoiceNo,
+      totalPurchaseCost,
+    },
+  });
+
+  const event = await prisma.inventoryEvent.findFirst({
+    where: {
+      sourceType: "INVENTORY_LOT",
+      sourceId: lotId,
+      eventType: InventoryEventType.PURCHASE_INCOMING,
+      status: { not: InventoryEventStatus.CANCELLED },
+    },
+  });
+  if (event) {
+    await prisma.inventoryEvent.update({
+      where: { id: event.id },
+      data: {
+        productId: input.productId,
+        quantity: input.quantity,
+        quantityEffect: toSignedInventoryQuantity(
+          InventoryEventType.PURCHASE_INCOMING,
+          input.quantity,
+        ),
+        updatedById: input.updatedById,
+      },
+    });
+  }
+
+  return updatedLot;
+}
+
 export async function deleteIncomingLot(
   prisma: PrismaClient,
   lotId: string,

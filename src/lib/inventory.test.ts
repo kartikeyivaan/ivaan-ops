@@ -1,6 +1,6 @@
 import { LotStatus } from "@prisma/client";
 import { describe, expect, it } from "vitest";
-import { canModifyIncomingLot } from "@/lib/inventory-service";
+import { canEditIncomingLot, canModifyIncomingLot } from "@/lib/inventory-service";
 import {
   canAdjustStock,
   canApplyIncomingLotReceiveEdit,
@@ -116,7 +116,19 @@ describe("inventory helpers", () => {
     ).toContain("exceed");
   });
 
-  it("allows edit/delete only for pending incoming lots", () => {
+  it("allows edit for any INCOMING lot, delete only when no receipts", () => {
+    expect(
+      canEditIncomingLot({
+        status: LotStatus.INCOMING,
+      }),
+    ).toBe(true);
+
+    expect(
+      canEditIncomingLot({
+        status: LotStatus.CLOSED,
+      }),
+    ).toBe(false);
+
     expect(
       canModifyIncomingLot({
         status: LotStatus.INCOMING,

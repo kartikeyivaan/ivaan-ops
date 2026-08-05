@@ -548,6 +548,12 @@ export async function createIncomingLot(
   });
 }
 
+/** Purchase may edit any lot that is still INCOMING (including after partial receipt). */
+export function canEditIncomingLot(lot: { status: LotStatus }) {
+  return lot.status === LotStatus.INCOMING;
+}
+
+/** Delete and WH receive-edit require no receipts yet. */
 export function canModifyIncomingLot(lot: {
   status: LotStatus;
   receivedQuantity: Prisma.Decimal | number;
@@ -584,17 +590,33 @@ export async function updateIncomingLot(
     where: { id: lotId, companyId },
   });
   if (!lot) throw new Error("NOT_FOUND");
-  if (!canModifyIncomingLot(lot)) throw new Error("LOT_NOT_EDITABLE");
+  if (!canEditIncomingLot(lot)) throw new Error("LOT_NOT_EDITABLE");
+
+  const receivedQuantity = decimalToNumber(lot.receivedQuantity);
+  const damagedQuantity = decimalToNumber(lot.damagedQuantity);
+  const hasReceipts = receivedQuantity > 0 || damagedQuantity > 0;
+
+  if (hasReceipts) {
+    if (input.warehouseId !== lot.warehouseId || input.productId !== lot.productId) {
+      throw new Error("PRODUCT_WAREHOUSE_LOCKED");
+    }
+  }
+
+  const warehouseId = hasReceipts ? lot.warehouseId : input.warehouseId;
+  const productId = hasReceipts ? lot.productId : input.productId;
 
   const warehouse = await prisma.warehouse.findFirst({
-    where: { id: input.warehouseId, companyId, isActive: true },
+    where: { id: warehouseId, companyId, isActive: true },
   });
   if (!warehouse) throw new Error("WAREHOUSE_NOT_FOUND");
 
-  const product = await prisma.product.findUnique({ where: { id: input.productId } });
+  const product = await prisma.product.findUnique({ where: { id: productId } });
   if (!product || !product.isActive) throw new Error("PRODUCT_NOT_FOUND");
 
   if (input.quantity <= 0) throw new Error("INVALID_QUANTITY");
+  if (input.quantity < receivedQuantity + damagedQuantity) {
+    throw new Error("QUANTITY_BELOW_RECEIVED");
+  }
   if (input.expectedMinDate && input.expectedMaxDate && input.expectedMinDate > input.expectedMaxDate) {
     throw new Error("INVALID_ARRIVAL_WINDOW");
   }
@@ -619,9 +641,9 @@ export async function updateIncomingLot(
   const purchaseInvoiceNo = await validateIncomingLotUniqueness(prisma, {
     purchaseInvoiceNo: input.purchaseInvoiceNo ?? "",
     companyId,
-    warehouseId: input.warehouseId,
+    warehouseId,
     vendorId: input.vendorId,
-    productId: input.productId,
+    productId,
     purchaseDate: input.purchaseDate,
     quantity: input.quantity,
     unitPurchaseRate: input.unitPurchaseRate,
@@ -629,22 +651,31 @@ export async function updateIncomingLot(
     excludeLotId: lotId,
   });
 
+  const remainingIncoming = pendingIncomingQuantity({
+    quantity: input.quantity,
+    receivedQuantity,
+    damagedQuantity,
+  });
+  const nextStatus =
+    remainingIncoming <= 0 ? LotStatus.CLOSED : LotStatus.INCOMING;
+
   return prisma.$transaction(async (tx) => {
     const updatedLot = await tx.inventoryLot.update({
       where: { id: lotId },
       data: {
-        warehouseId: input.warehouseId,
+        warehouseId,
         vendorId: input.vendorId ?? null,
         purchaseInvoiceNo,
         purchaseDate: input.purchaseDate,
         expectedMinDate: input.expectedMinDate,
         expectedMaxDate: input.expectedMaxDate,
-        productId: input.productId,
+        productId,
         quantity: input.quantity,
         unitPurchaseRate: input.unitPurchaseRate,
         transportCharges,
         commissionCharges,
         totalPurchaseCost,
+        status: nextStatus,
       },
       include: lotInclude,
     });
@@ -659,12 +690,14 @@ export async function updateIncomingLot(
         lotNumber: lot.lotNumber,
         productId: lot.productId,
         quantity: decimalToNumber(lot.quantity),
+        status: lot.status,
       },
       newValue: {
         lotNumber: lot.lotNumber,
-        productId: input.productId,
+        productId,
         quantity: input.quantity,
         totalPurchaseCost,
+        status: nextStatus,
       },
     });
 
@@ -678,22 +711,28 @@ export async function updateIncomingLot(
     });
     const eventData = {
       companyId,
-      warehouseId: input.warehouseId,
-      productId: input.productId,
-      quantity: input.quantity,
-      quantityEffect: toSignedInventoryQuantity(InventoryEventType.PURCHASE_INCOMING, input.quantity),
+      warehouseId,
+      productId,
+      quantity: remainingIncoming,
+      quantityEffect: toSignedInventoryQuantity(
+        InventoryEventType.PURCHASE_INCOMING,
+        remainingIncoming,
+      ),
       effectiveDate: input.expectedMaxDate ?? input.expectedMinDate ?? input.purchaseDate,
       expectedMinDate: input.expectedMinDate,
       expectedMaxDate: input.expectedMaxDate,
       sourceType: "INVENTORY_LOT",
       sourceId: lotId,
       sourceNumber: lot.lotNumber,
-      status: InventoryEventStatus.ACTIVE,
+      status:
+        remainingIncoming <= 0
+          ? InventoryEventStatus.COMPLETED
+          : InventoryEventStatus.ACTIVE,
       updatedById: input.updatedById,
     };
     if (event) {
       await tx.inventoryEvent.update({ where: { id: event.id }, data: eventData });
-    } else {
+    } else if (remainingIncoming > 0) {
       await tx.inventoryEvent.create({
         data: { ...eventData, eventType: InventoryEventType.PURCHASE_INCOMING, createdById: input.updatedById },
       });

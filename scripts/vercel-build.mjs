@@ -16,4 +16,7 @@ if (missing.length > 0) {
 }
 
 execSync("npx prisma migrate deploy", { stdio: "inherit" });
+// Always regenerate so cached node_modules cannot ship a stale Prisma Client
+// (e.g. missing new enum values like CANCEL_PENDING that already exist in the DB).
+execSync("npx prisma generate", { stdio: "inherit" });
 execSync("npx next build", { stdio: "inherit" });

@@ -70,6 +70,12 @@ export function IncomingLotEditDialog({
     [warehouses, lot.company.id],
   );
 
+  const receivedQuantity = Number(lot.receivedQuantity);
+  const damagedQuantity = Number(lot.damagedQuantity);
+  const hasReceipts = receivedQuantity > 0 || damagedQuantity > 0;
+  const minExpectedQuantity = receivedQuantity + damagedQuantity;
+  const canDelete = allowDelete && !hasReceipts;
+
   const [form, setForm] = useState({
     warehouseId: lot.warehouse.id,
     vendorId: lot.vendor?.id ?? "",
@@ -239,6 +245,14 @@ export function IncomingLotEditDialog({
       return;
     }
 
+    if ((quantityResult.value ?? 0) < minExpectedQuantity) {
+      setLoading(false);
+      setError(
+        `Expected quantity cannot be less than received plus damaged (${minExpectedQuantity}).`,
+      );
+      return;
+    }
+
     const payload = {
       warehouseId: form.warehouseId,
       vendorId: form.vendorId || undefined,
@@ -324,27 +338,38 @@ export function IncomingLotEditDialog({
             </div>
             <div className="space-y-2">
               <Label>Incoming Warehouse</Label>
-              <select
-                className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
-                value={form.warehouseId}
-                onChange={(e) => setForm({ ...form, warehouseId: e.target.value })}
-                required
-              >
-                {companyWarehouses.map((warehouse) => (
-                  <option key={warehouse.id} value={warehouse.id}>
-                    {warehouse.name}
-                  </option>
-                ))}
-              </select>
+              {hasReceipts ? (
+                <Input value={lot.warehouse.name} readOnly />
+              ) : (
+                <select
+                  className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
+                  value={form.warehouseId}
+                  onChange={(e) => setForm({ ...form, warehouseId: e.target.value })}
+                  required
+                >
+                  {companyWarehouses.map((warehouse) => (
+                    <option key={warehouse.id} value={warehouse.id}>
+                      {warehouse.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
-            <TypeaheadSelect
-              label="Product"
-              options={productOptions}
-              value={form.productId}
-              onChange={(productId) => setForm({ ...form, productId })}
-              placeholder="Type product name here"
-              required
-            />
+            {hasReceipts ? (
+              <div className="space-y-2">
+                <Label>Product</Label>
+                <Input value={lot.product.displayName} readOnly />
+              </div>
+            ) : (
+              <TypeaheadSelect
+                label="Product"
+                options={productOptions}
+                value={form.productId}
+                onChange={(productId) => setForm({ ...form, productId })}
+                placeholder="Type product name here"
+                required
+              />
+            )}
             <TypeaheadSelect
               label="Vendor"
               options={vendorOptions}
@@ -386,13 +411,22 @@ export function IncomingLotEditDialog({
               <Label>Expected arrival by</Label>
               <Input type="date" min={form.expectedMinDate || undefined} value={form.expectedMaxDate} onChange={(e) => setForm({ ...form, expectedMaxDate: e.target.value })} />
             </div>
-            <FormulaInput
-              label="Expected quantity"
-              value={form.quantity}
-              onChange={(quantity) => setForm({ ...form, quantity })}
-              placeholder="100 or =20*33"
-              required
-            />
+            <div className="space-y-2">
+              <FormulaInput
+                label="Expected quantity"
+                value={form.quantity}
+                onChange={(quantity) => setForm({ ...form, quantity })}
+                placeholder="100 or =20*33"
+                required
+              />
+              {hasReceipts ? (
+                <p className="text-xs text-slate-500">
+                  Received {receivedQuantity}
+                  {damagedQuantity > 0 ? ` · Damaged ${damagedQuantity}` : ""}. Minimum expected:{" "}
+                  {minExpectedQuantity}.
+                </p>
+              ) : null}
+            </div>
             <FormulaInput
               label="Per unit purchase rate"
               value={form.unitPurchaseRate}
@@ -428,7 +462,7 @@ export function IncomingLotEditDialog({
           <Button type="submit" disabled={loading || deleting}>
             {loading ? "Saving..." : "Save changes"}
           </Button>
-          {allowDelete ? (
+          {canDelete ? (
             <Button
               type="button"
               variant="outline"
@@ -446,7 +480,7 @@ export function IncomingLotEditDialog({
 }
 
 function isEditableIncomingLot(lot: SerializedInventoryLot) {
-  return lot.status === "INCOMING" && lot.receivedQuantity === 0 && lot.damagedQuantity === 0;
+  return lot.status === "INCOMING";
 }
 
 export { isEditableIncomingLot };

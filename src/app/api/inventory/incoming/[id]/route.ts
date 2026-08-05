@@ -96,7 +96,21 @@ export async function PATCH(request: Request, context: RouteContext) {
       if (error.message === "LOT_NOT_EDITABLE") {
         return errorResponse(
           "VALIDATION_ERROR",
-          "Only pending incoming lots with no receipts can be edited.",
+          "Only incoming lots can be edited.",
+          400,
+        );
+      }
+      if (error.message === "PRODUCT_WAREHOUSE_LOCKED") {
+        return errorResponse(
+          "VALIDATION_ERROR",
+          "Product and warehouse cannot be changed after material has been received.",
+          400,
+        );
+      }
+      if (error.message === "QUANTITY_BELOW_RECEIVED") {
+        return errorResponse(
+          "VALIDATION_ERROR",
+          "Expected quantity cannot be less than received plus damaged quantity.",
           400,
         );
       }

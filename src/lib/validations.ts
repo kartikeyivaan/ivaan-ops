@@ -690,6 +690,10 @@ export const lookupDispatchSerialsSchema = z.object({
   serialNumbers: z.array(z.string().trim().min(1)).min(1).max(500),
 });
 
+export const checkInventorySerialsSchema = z.object({
+  serialNumbers: z.array(z.string().trim().min(1)).min(1).max(500),
+});
+
 export const reportSearchSchema = z.object({
   fromDate: z.string().optional(),
   toDate: z.string().optional(),

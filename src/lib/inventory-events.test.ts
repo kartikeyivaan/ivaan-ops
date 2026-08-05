@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyPendingIncomingToPurchaseEvents,
   eventAffectsProjection,
+  filterEventsForLivePhysicalProjection,
   getInventoryEventEffect,
   getInventoryEventProjectionDate,
   getSupersededInventoryEventIds,
@@ -115,6 +116,56 @@ describe("inventory events", () => {
 
     expect(superseded.has("reserve-1")).toBe(true);
     expect(superseded.has("release-1")).toBe(true);
+  });
+
+  it("filters live-physical projection to avoid double-counting dispatches", () => {
+    const events: InventoryEvent[] = [
+      {
+        id: "reserve-dispatched",
+        eventType: "BOOKING_RESERVATION",
+        status: "ACTIVE",
+        quantity: 54,
+        effectiveDate: "2026-08-04",
+        expectedMinDate: "2026-08-05",
+        sourceType: "PROFORMA_INVOICE",
+        sourceId: "pi-1",
+      },
+      {
+        id: "reserve-open",
+        eventType: "BOOKING_RESERVATION",
+        status: "ACTIVE",
+        quantity: 36,
+        effectiveDate: "2026-08-04",
+        expectedMinDate: "2026-08-05",
+        sourceType: "PROFORMA_INVOICE",
+        sourceId: "pi-2",
+      },
+      {
+        id: "actual-1",
+        eventType: "ACTUAL_DISPATCH",
+        status: "COMPLETED",
+        quantity: 54,
+        effectiveDate: "2026-08-05",
+        sourceType: "DISPATCH",
+        sourceId: "dc-1",
+      },
+      {
+        id: "planned-1",
+        eventType: "PLANNED_DISPATCH",
+        status: "ACTIVE",
+        quantity: 54,
+        effectiveDate: "2026-08-05",
+        sourceType: "DISPATCH",
+        sourceId: "dc-1",
+      },
+    ];
+
+    const filtered = filterEventsForLivePhysicalProjection(
+      events,
+      new Map([["pi-1", 54]]),
+    );
+
+    expect(filtered.map((event) => event.id)).toEqual(["reserve-open"]);
   });
 
   it("reduces purchase incoming events to the lot's pending quantity", () => {

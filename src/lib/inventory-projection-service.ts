@@ -7,7 +7,11 @@ import {
 import {
   assertCompanyWarehouseScopeWithClient,
 } from "@/lib/inventory-event-service";
-import { applyPendingIncomingToPurchaseEvents } from "@/lib/inventory-events";
+import {
+  applyPendingIncomingToPurchaseEvents,
+  filterEventsForLivePhysicalProjection,
+  type InventoryEvent,
+} from "@/lib/inventory-events";
 import { getWarehouseStockForProduct } from "@/lib/inventory-service";
 import {
   calculateInventoryProjection as projectInventory,
@@ -110,7 +114,7 @@ export function createInventoryProjectionService(
       }),
     ]);
 
-    const events = rows.map((event) => ({
+    const events: InventoryEvent[] = rows.map((event) => ({
       id: event.id,
       eventType: event.eventType,
       status: event.status,
@@ -140,10 +144,22 @@ export function createInventoryProjectionService(
           .map((event) => event.sourceId as string),
       ),
     ];
-    const purchaseLots =
+    const actualDispatchIds = [
+      ...new Set(
+        events
+          .filter(
+            (event) =>
+              event.eventType === InventoryEventType.ACTUAL_DISPATCH &&
+              event.sourceType === "DISPATCH" &&
+              event.sourceId,
+          )
+          .map((event) => event.sourceId as string),
+      ),
+    ];
+    const [purchaseLots, dispatches] = await Promise.all([
       purchaseLotIds.length === 0
-        ? []
-        : await client.inventoryLot.findMany({
+        ? Promise.resolve([])
+        : client.inventoryLot.findMany({
             where: { id: { in: purchaseLotIds } },
             select: {
               id: true,
@@ -151,7 +167,14 @@ export function createInventoryProjectionService(
               receivedQuantity: true,
               damagedQuantity: true,
             },
-          });
+          }),
+      actualDispatchIds.length === 0
+        ? Promise.resolve([])
+        : client.dispatch.findMany({
+            where: { id: { in: actualDispatchIds } },
+            select: { id: true, proformaInvoiceId: true },
+          }),
+    ]);
     const lotsById = new Map(
       purchaseLots.map((lot) => [
         lot.id,
@@ -162,9 +185,29 @@ export function createInventoryProjectionService(
         },
       ]),
     );
+    const dispatchToPiId = new Map(
+      dispatches.map((row) => [row.id, row.proformaInvoiceId]),
+    );
+    const dispatchedQtyByPiId = new Map<string, number>();
+    for (const event of events) {
+      if (
+        event.eventType !== InventoryEventType.ACTUAL_DISPATCH ||
+        event.sourceType !== "DISPATCH" ||
+        !event.sourceId
+      ) {
+        continue;
+      }
+      const piId = dispatchToPiId.get(event.sourceId);
+      if (!piId) continue;
+      dispatchedQtyByPiId.set(
+        piId,
+        (dispatchedQtyByPiId.get(piId) ?? 0) + event.quantity,
+      );
+    }
 
     // Include booked serials in physical baseline; BOOKING_RESERVATION events
     // reduce sales-available stock on the committed dispatch start date.
+    // Filter against live physical so dispatched stock is not deducted again.
     return projectInventory({
       physicalStock: stock.availableStock + stock.bookedStock,
       safetyStock: resolveSafetyQty(
@@ -172,7 +215,10 @@ export function createInventoryProjectionService(
       ),
       startDate,
       endDate,
-      events: applyPendingIncomingToPurchaseEvents(events, lotsById),
+      events: filterEventsForLivePhysicalProjection(
+        applyPendingIncomingToPurchaseEvents(events, lotsById),
+        dispatchedQtyByPiId,
+      ),
     });
   }
 

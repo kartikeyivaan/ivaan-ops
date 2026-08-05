@@ -15,23 +15,28 @@ import {
 } from "@/components/inventory/serial-scanner";
 import { IncomingLotReceiveEditDialog } from "@/components/inventory/incoming-lot-receive-edit-dialog";
 import {
-  findDuplicateSerialKeys,
-  isWaareeBrand,
-  isWaareePanelSerial,
+  classifyInwardSerials,
   normalizeSerialNumber,
   parseSerialInput,
+  type InwardSerialClassification,
 } from "@/lib/inventory";
 import type { SerializedIncomingLotChangeRequest } from "@/lib/incoming-lot-change-service";
 import type { SerializedInventoryLot } from "@/lib/inventory-service";
 
 type Product = { id: string; displayName: string; gstRate: number };
 
+type SerialHighlightSets = {
+  newKeys: Set<string>;
+  repeatKeys: Set<string>;
+  invalidKeys: Set<string>;
+};
+
 function SerialHighlightOverlay({
   value,
-  duplicateKeys,
+  highlights,
 }: {
   value: string;
-  duplicateKeys: Set<string>;
+  highlights: SerialHighlightSets | null;
 }) {
   if (!value) return null;
 
@@ -54,14 +59,62 @@ function SerialHighlightOverlay({
         const trimmed = part.trim();
         if (!trimmed) return <span key={index}>{part}</span>;
 
-        const isDuplicate = duplicateKeys.has(normalizeSerialNumber(trimmed));
+        const key = normalizeSerialNumber(trimmed);
+        let className: string | undefined;
+        if (highlights) {
+          if (highlights.invalidKeys.has(key)) {
+            className = "bg-amber-100 text-amber-900";
+          } else if (highlights.repeatKeys.has(key)) {
+            className = "bg-red-100 text-red-700";
+          } else if (highlights.newKeys.has(key)) {
+            className = "bg-emerald-100 text-emerald-800";
+          }
+        }
         return (
-          <span key={index} className={isDuplicate ? "bg-red-100 text-red-700" : undefined}>
+          <span key={index} className={className}>
             {part}
           </span>
         );
       })}
     </>
+  );
+}
+
+function SerialCategoryBlock({
+  title,
+  qty,
+  serials,
+  tone,
+}: {
+  title: string;
+  qty: number;
+  serials: string[];
+  tone: "new" | "repeat" | "invalid";
+}) {
+  const styles =
+    tone === "new"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+      : tone === "repeat"
+        ? "border-red-200 bg-red-50 text-red-950"
+        : "border-amber-200 bg-amber-50 text-amber-950";
+  const listTone =
+    tone === "new"
+      ? "text-emerald-800"
+      : tone === "repeat"
+        ? "text-red-800"
+        : "text-amber-900";
+
+  return (
+    <div className={`rounded-md border p-3 text-sm ${styles}`}>
+      <p className="font-medium">
+        {title} ({qty})
+      </p>
+      {qty > 0 ? (
+        <p className={`mt-1 break-all ${listTone}`}>{serials.join(", ")}</p>
+      ) : (
+        <p className="mt-1 opacity-70">None</p>
+      )}
+    </div>
   );
 }
 
@@ -86,22 +139,29 @@ export function InwardForm({
     Number(lot.quantity) - Number(lot.receivedQuantity) - Number(lot.damagedQuantity);
   const submittingRef = useRef(false);
   const serialOverlayRef = useRef<HTMLDivElement>(null);
-  const validateWaareeFormat =
-    lot.product.serialTracking && isWaareeBrand(lot.product.brand.name);
   const lotStillEditable =
     lot.status === "INCOMING" &&
     Number(lot.receivedQuantity) === 0 &&
     Number(lot.damagedQuantity) === 0;
   const showEditLot = canEditLot && lotStillEditable && !pendingChange;
 
-  const [receivedQty, setReceivedQty] = useState("");
+  const [receivedQty, setReceivedQty] = useState(() => (pending > 0 ? String(pending) : ""));
   const [damagedQty, setDamagedQty] = useState("0");
   const [serialInput, setSerialInput] = useState("");
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [classification, setClassification] = useState<InwardSerialClassification | null>(
+    null,
+  );
+  const [checkingSerials, setCheckingSerials] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const serialInputRef = useRef(serialInput);
   serialInputRef.current = serialInput;
+
+  /** Expected good units for this receipt. Damaged units do not need serials. */
+  const expectedSerialQty = Math.max(0, Number(receivedQty) || 0);
+  const damageOnlyReceipt =
+    expectedSerialQty === 0 && (Number(damagedQty) || 0) > 0;
 
   useEffect(() => {
     setLot(initialLot);
@@ -112,22 +172,109 @@ export function InwardForm({
   }, [initialPendingChange]);
 
   const parsedSerials = lot.product.serialTracking ? parseSerialInput(serialInput) : [];
-  const uniqueSerials = Array.from(
-    new Map(parsedSerials.map((serial) => [normalizeSerialNumber(serial), serial])).values(),
-  );
-  const duplicateKeys = findDuplicateSerialKeys(parsedSerials);
-  const invalidWaareeSerials = validateWaareeFormat
-    ? uniqueSerials.filter((serial) => !isWaareePanelSerial(serial))
-    : [];
+  const brandName = lot.product.brand.name;
+  const highlightSets: SerialHighlightSets | null = classification
+    ? {
+        newKeys: new Set(classification.newSerials),
+        repeatKeys: new Set(classification.repeatSerials),
+        invalidKeys: new Set(classification.invalidSerials),
+      }
+    : null;
+
+  const newSerialCount = classification?.newSerials.length ?? 0;
+  const newMatchesExpected =
+    Boolean(classification) &&
+    newSerialCount > 0 &&
+    newSerialCount === expectedSerialQty;
+  const canConfirmSerialReceipt =
+    !lot.product.serialTracking ||
+    damageOnlyReceipt ||
+    (newMatchesExpected && !checkingSerials);
 
   function handleSerialChange(nextValue: string) {
     setSerialInput(nextValue);
-    if (!lot.product.serialTracking) return;
-
-    const serials = parseSerialInput(nextValue);
-    const uniqueCount = new Set(serials.map(normalizeSerialNumber)).size;
-    setReceivedQty(uniqueCount > 0 ? String(uniqueCount) : "");
+    setClassification(null);
   }
+
+  const addSerialNumbers = useCallback(async () => {
+    if (!lot.product.serialTracking || pendingChange) return;
+
+    const serials = parseSerialInput(serialInputRef.current);
+    if (serials.length === 0) {
+      setError("Enter at least one serial number.");
+      setClassification(null);
+      setReceivedQty("");
+      return;
+    }
+
+    setCheckingSerials(true);
+    setError("");
+
+    try {
+      const uniqueForLookup = Array.from(
+        new Set(serials.map(normalizeSerialNumber).filter(Boolean)),
+      );
+      if (uniqueForLookup.length === 0) {
+        setError("Enter at least one valid serial number.");
+        setClassification(null);
+        setCheckingSerials(false);
+        return;
+      }
+
+      const response = await fetch("/api/inventory/serials/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ serialNumbers: uniqueForLookup }),
+      });
+
+      let data: { message?: string; existingSerialNumbers?: string[] } = {};
+      try {
+        data = await response.json();
+      } catch {
+        setError(
+          response.ok
+            ? "Failed to check serial numbers."
+            : `Serial check failed (${response.status}). Refresh the page and try again.`,
+        );
+        setClassification(null);
+        return;
+      }
+
+      if (!response.ok) {
+        setError(data.message ?? `Failed to check serial numbers (${response.status}).`);
+        setClassification(null);
+        return;
+      }
+
+      const existingKeys = data.existingSerialNumbers ?? [];
+      const next = classifyInwardSerials({
+        serials,
+        existingKeys,
+        brandName,
+      });
+      setClassification(next);
+
+      if (next.newSerials.length === 0 && expectedSerialQty > 0) {
+        setError("No new serial numbers found. Resolve repeats or invalid formats.");
+      } else if (next.newSerials.length !== expectedSerialQty) {
+        setError(
+          `New serial qty (${next.newSerials.length}) must match expected qty (${expectedSerialQty}) to confirm receipt.`,
+        );
+      } else {
+        setError("");
+      }
+    } catch {
+      setError("Failed to check serial numbers. Check your connection and try again.");
+      setClassification(null);
+    } finally {
+      setCheckingSerials(false);
+    }
+  }, [
+    brandName,
+    expectedSerialQty,
+    lot.product.serialTracking,
+    pendingChange,
+  ]);
 
   const handleScannedSerials = useCallback(async (scanned: string[]): Promise<SerialScanResult> => {
     const existingKeys = new Set(
@@ -162,10 +309,7 @@ export function InwardForm({
     const withTrailingNewline = nextValue.endsWith("\n") ? nextValue : `${nextValue}\n`;
     setSerialInput(withTrailingNewline);
     serialInputRef.current = withTrailingNewline;
-
-    const serials = parseSerialInput(withTrailingNewline);
-    const uniqueCount = new Set(serials.map(normalizeSerialNumber)).size;
-    setReceivedQty(uniqueCount > 0 ? String(uniqueCount) : "");
+    setClassification(null);
 
     return {
       ok: true,
@@ -182,20 +326,29 @@ export function InwardForm({
       return;
     }
 
+    if (lot.product.serialTracking) {
+      if (damageOnlyReceipt) {
+        // Damaged-only: no serials required.
+      } else if (!classification) {
+        setError('Click "Add Serial Number" to validate serials before confirming.');
+        return;
+      } else if (classification.newSerials.length !== expectedSerialQty) {
+        setError(
+          `New serial qty (${classification.newSerials.length}) must match expected qty (${expectedSerialQty}) to confirm receipt.`,
+        );
+        return;
+      }
+    }
+
     submittingRef.current = true;
     setLoading(true);
     setError("");
 
-    if (lot.product.serialTracking && duplicateKeys.size > 0) {
-      setError("Remove duplicate serial numbers highlighted in red before confirming.");
-      submittingRef.current = false;
-      setLoading(false);
-      return;
-    }
-
-    const serialNumbers = lot.product.serialTracking
-      ? uniqueSerials.map(normalizeSerialNumber)
-      : undefined;
+    const serialNumbers =
+      lot.product.serialTracking && !damageOnlyReceipt
+        ? classification!.newSerials
+        : undefined;
+    const qtyToReceive = Number(receivedQty);
 
     try {
       const response = await fetch("/api/inventory/inward", {
@@ -203,7 +356,7 @@ export function InwardForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           lotId: lot.id,
-          receivedQty: Number(receivedQty),
+          receivedQty: qtyToReceive,
           damagedQty: Number(damagedQty),
           serialNumbers,
         }),
@@ -302,7 +455,7 @@ export function InwardForm({
           <form onSubmit={submit} className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="receivedQty">Received quantity</Label>
+                <Label htmlFor="receivedQty">Expected / received quantity</Label>
                 <Input
                   id="receivedQty"
                   type="number"
@@ -310,10 +463,19 @@ export function InwardForm({
                   step="any"
                   className="h-12 text-lg"
                   value={receivedQty}
-                  onChange={(e) => setReceivedQty(e.target.value)}
+                  onChange={(e) => {
+                    setReceivedQty(e.target.value);
+                    setClassification(null);
+                  }}
                   required
                   disabled={Boolean(pendingChange)}
                 />
+                {lot.product.serialTracking ? (
+                  <p className="text-xs text-slate-500">
+                    New serial qty must match this expected qty to confirm. Pending on lot:{" "}
+                    {pending}.
+                  </p>
+                ) : null}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="damagedQty">Damaged quantity</Label>
@@ -331,12 +493,12 @@ export function InwardForm({
             </div>
 
             {lot.product.serialTracking ? (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <Label htmlFor="serials">Serial numbers (one per line)</Label>
                 <ScanSerialsButton
                   className="h-12 w-full border-emerald-300 bg-emerald-50 text-base text-emerald-900 hover:bg-emerald-100"
                   onClick={() => setScannerOpen(true)}
-                  disabled={Boolean(pendingChange)}
+                  disabled={Boolean(pendingChange) || checkingSerials}
                 />
                 <div className="relative">
                   <div
@@ -344,15 +506,12 @@ export function InwardForm({
                     aria-hidden
                     className="pointer-events-none absolute inset-0 min-h-40 overflow-hidden whitespace-pre-wrap break-all rounded-md border border-transparent p-3 font-mono text-sm leading-5 text-slate-800"
                   >
-                    <SerialHighlightOverlay
-                      value={serialInput}
-                      duplicateKeys={duplicateKeys}
-                    />
+                    <SerialHighlightOverlay value={serialInput} highlights={highlightSets} />
                   </div>
                   <textarea
                     id="serials"
                     className="relative min-h-40 w-full resize-y rounded-md border border-slate-200 bg-transparent p-3 font-mono text-sm leading-5 text-transparent caret-slate-900 placeholder:text-slate-400 selection:bg-sky-200/60 disabled:opacity-60"
-                    placeholder="Enter one serial per line for received units"
+                    placeholder="Enter or paste serials, then click Add Serial Number"
                     value={serialInput}
                     onChange={(e) => handleSerialChange(e.target.value)}
                     onScroll={(e) => {
@@ -362,40 +521,56 @@ export function InwardForm({
                       overlay.scrollLeft = e.currentTarget.scrollLeft;
                     }}
                     spellCheck={false}
-                    disabled={Boolean(pendingChange)}
+                    disabled={Boolean(pendingChange) || checkingSerials}
                   />
                 </div>
-                <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
-                  <span>
-                    Parsed: {parsedSerials.length}
-                    {duplicateKeys.size > 0
-                      ? ` · Unique: ${uniqueSerials.length}`
-                      : ""}
-                  </span>
-                  <span>
-                    Serial count must match received quantity. Damaged units do not need serials.
-                  </span>
-                </div>
-                {duplicateKeys.size > 0 ? (
-                  <p className="text-sm text-red-600">
-                    Duplicate serials are highlighted in red. Remove repeats before confirming.
-                  </p>
-                ) : null}
-                {invalidWaareeSerials.length > 0 ? (
-                  <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                    <p className="font-medium">
-                      Warning: {invalidWaareeSerials.length} serial
-                      {invalidWaareeSerials.length === 1 ? "" : "s"} do not match the Waaree panel
-                      format (e.g. WS07269074147109).
-                    </p>
-                    <ul className="mt-2 max-h-28 list-disc space-y-0.5 overflow-y-auto pl-5 text-amber-800">
-                      {invalidWaareeSerials.slice(0, 20).map((serial) => (
-                        <li key={serial}>{serial}</li>
-                      ))}
-                      {invalidWaareeSerials.length > 20 ? (
-                        <li>…and {invalidWaareeSerials.length - 20} more</li>
-                      ) : null}
-                    </ul>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-12 w-full text-base"
+                  disabled={
+                    Boolean(pendingChange) || checkingSerials || parsedSerials.length === 0
+                  }
+                  onClick={() => void addSerialNumbers()}
+                >
+                  {checkingSerials ? "Checking…" : "Add Serial Number"}
+                </Button>
+                <p className="text-xs text-slate-500">
+                  Checks each serial against the system. Confirm receipt only when new serial qty
+                  matches expected qty ({expectedSerialQty}). Damaged units do not need serials.
+                </p>
+
+                {classification ? (
+                  <div className="space-y-2">
+                    <SerialCategoryBlock
+                      title="New Serial Number"
+                      qty={classification.newSerials.length}
+                      serials={classification.newSerials}
+                      tone="new"
+                    />
+                    <SerialCategoryBlock
+                      title="Repeat Serial Number"
+                      qty={classification.repeatSerials.length}
+                      serials={classification.repeatSerials}
+                      tone="repeat"
+                    />
+                    <SerialCategoryBlock
+                      title="Invalid Format"
+                      qty={classification.invalidSerials.length}
+                      serials={classification.invalidSerials}
+                      tone="invalid"
+                    />
+                    {newMatchesExpected ? (
+                      <p className="text-sm text-emerald-700">
+                        New serial qty matches expected qty ({expectedSerialQty}). Ready to
+                        confirm.
+                      </p>
+                    ) : (
+                      <p className="text-sm text-red-600">
+                        New serial qty ({newSerialCount}) must equal expected qty (
+                        {expectedSerialQty}) before confirming.
+                      </p>
+                    )}
                   </div>
                 ) : null}
               </div>
@@ -406,7 +581,7 @@ export function InwardForm({
             <Button
               type="submit"
               className="h-12 w-full text-base"
-              disabled={loading || Boolean(pendingChange)}
+              disabled={loading || Boolean(pendingChange) || !canConfirmSerialReceipt}
             >
               {loading ? "Saving..." : "Confirm receipt"}
             </Button>

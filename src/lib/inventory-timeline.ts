@@ -1,6 +1,7 @@
 import {
   DispatchStatus,
   InventoryEventStatus,
+  InventoryTransactionType,
   LotStatus,
   SerialStatus,
   type PrismaClient,
@@ -27,9 +28,13 @@ export const INVENTORY_TIMELINE_DAYS = 15;
 export type InventoryTimelineDay = {
   date: string;
   opening: number;
+  /** Remaining expected inbound (not yet received). */
   incoming: number;
+  /** Actual qty received today from incoming lots. */
+  received: number;
+  /** Remaining planned outbound (not yet dispatched). */
   outgoing: number;
-  /** Units actually dispatched this day (informational; already in physical). */
+  /** Actual qty dispatched this day (moved from outgoing when completed). */
   dispatched: number;
   closing: number;
   events: InventoryEvent[];
@@ -289,6 +294,59 @@ export function sumDispatchedQuantityForDay(
   return total;
 }
 
+/** ACTUAL_DISPATCH qty included in a projection day's outgoing total. */
+export function sumActualDispatchInDayEvents(
+  dayEvents: readonly InventoryEvent[],
+): number {
+  let total = 0;
+  for (const event of dayEvents) {
+    if (event.eventType !== "ACTUAL_DISPATCH") continue;
+    total += event.quantity;
+  }
+  return total;
+}
+
+/**
+ * Day roll-forward with Incoming↔Received and Outgoing↔Dispatched pairs.
+ *
+ * Opening + Incoming + Received − Outgoing − Dispatched = Closing
+ *
+ * When `physicalBaseline` is true (today), physical stock already includes
+ * Received and already excludes Dispatched, so Opening is adjusted back to
+ * start-of-day before applying the full formula.
+ *
+ * ACTUAL_DISPATCH already counted in projection outgoing is stripped so it
+ * appears only under Dispatched (not double-counted).
+ */
+export function buildInventoryTimelineDayBreakdown(input: {
+  projectionOpening: number;
+  incoming: number;
+  projectionOutgoing: number;
+  actualDispatchInOutgoing: number;
+  received: number;
+  dispatched: number;
+  physicalBaseline: boolean;
+}): Omit<InventoryTimelineDay, "date" | "events"> {
+  const outgoing = Math.max(
+    0,
+    input.projectionOutgoing - input.actualDispatchInOutgoing,
+  );
+  const opening = input.physicalBaseline
+    ? input.projectionOpening - input.received + input.dispatched
+    : input.projectionOpening;
+  const closing =
+    opening + input.incoming + input.received - outgoing - input.dispatched;
+
+  return {
+    opening,
+    incoming: input.incoming,
+    received: input.received,
+    outgoing,
+    dispatched: input.dispatched,
+    closing,
+  };
+}
+
 export async function loadInventoryTimeline(
   input: TimelineQuery,
   client: PrismaClient = prisma,
@@ -324,7 +382,7 @@ export async function loadInventoryTimeline(
     isActive: true,
     ...(input.productId ? { id: input.productId } : {}),
   };
-  const [products, lots, serialGroups, eventRows, safetyRows] =
+  const [products, lots, serialGroups, eventRows, safetyRows, inwardRows] =
     await Promise.all([
       client.product.findMany({
         where: productWhere,
@@ -392,12 +450,42 @@ export async function loadInventoryTimeline(
         },
         orderBy: { effectiveFrom: "desc" },
       }),
+      client.inventoryTransaction.findMany({
+        where: {
+          companyId: { in: input.companyIds },
+          transactionType: InventoryTransactionType.INWARD,
+          toWarehouseId: { in: warehouseIds },
+          ...(input.productId ? { productId: input.productId } : {}),
+          createdAt: {
+            gte: new Date(`${input.startDate}T00:00:00.000Z`),
+            lt: new Date(`${addCalendarDays(input.endDate, 1)}T00:00:00.000Z`),
+          },
+        },
+        select: {
+          companyId: true,
+          productId: true,
+          toWarehouseId: true,
+          qty: true,
+          createdAt: true,
+        },
+      }),
     ]);
 
   const productById = new Map(products.map((product) => [product.id, product]));
   const warehouseById = new Map(
     warehouses.map((warehouse) => [warehouse.id, warehouse]),
   );
+  /** `${companyId}:${warehouseId}:${productId}:${date}` → received qty */
+  const receivedByScopeDate = new Map<string, number>();
+  for (const row of inwardRows) {
+    if (!row.toWarehouseId) continue;
+    const day = dateOnly(row.createdAt);
+    const key = `${scopeKey(row.companyId, row.toWarehouseId, row.productId)}:${day}`;
+    receivedByScopeDate.set(
+      key,
+      (receivedByScopeDate.get(key) ?? 0) + Number(row.qty),
+    );
+  }
   const lotsById = new Map(
     lots.map((lot) => [
       lot.id,
@@ -642,6 +730,15 @@ export async function loadInventoryTimeline(
       ...new Set(scopes.map((scope) => scope.warehouseId)),
     ];
 
+    function receivedForDay(dayDate: string): number {
+      let total = 0;
+      for (const scope of scopes) {
+        const key = `${scopeKey(scope.companyId, scope.warehouseId, scope.productId)}:${dayDate}`;
+        total += receivedByScopeDate.get(key) ?? 0;
+      }
+      return total;
+    }
+
     items.push({
       key,
       productId: product.id,
@@ -664,26 +761,35 @@ export async function loadInventoryTimeline(
       safety,
       netAvailableToday:
         projection[0]?.projectedAvailableQuantity ?? physical - reserved - safety,
-      days: projection.map((day) => ({
-        date: day.date,
-        opening: day.openingQuantity,
-        incoming: day.incomingQuantity,
-        outgoing: day.outgoingQuantity,
-        dispatched: sumDispatchedQuantityForDay(
+      days: projection.map((day) => {
+        const dispatched = sumDispatchedQuantityForDay(
           events,
           superseded,
           day.date,
-        ),
-        closing: day.projectedAvailableQuantity,
-        events: enrichTimelineDayEvents(
-          day.events,
-          events,
-          superseded,
-          day.date,
-          input.startDate,
-          dispatchTodayByPiId,
-        ),
-      })),
+        );
+        const received = receivedForDay(day.date);
+        const breakdown = buildInventoryTimelineDayBreakdown({
+          projectionOpening: day.openingQuantity,
+          incoming: day.incomingQuantity,
+          projectionOutgoing: day.outgoingQuantity,
+          actualDispatchInOutgoing: sumActualDispatchInDayEvents(day.events),
+          received,
+          dispatched,
+          physicalBaseline: day.date === input.startDate,
+        });
+        return {
+          date: day.date,
+          ...breakdown,
+          events: enrichTimelineDayEvents(
+            day.events,
+            events,
+            superseded,
+            day.date,
+            input.startDate,
+            dispatchTodayByPiId,
+          ),
+        };
+      }),
       arrivalWindows: getArrivalWindowDisplayData(
         events,
         input.startDate,

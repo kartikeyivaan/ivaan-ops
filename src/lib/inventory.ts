@@ -156,6 +156,72 @@ export function findDuplicateSerialKeys(serials: string[]): Set<string> {
   return duplicates;
 }
 
+export type InwardSerialCategory = "new" | "repeat" | "invalid";
+
+export type InwardSerialClassification = {
+  newSerials: string[];
+  repeatSerials: string[];
+  invalidSerials: string[];
+};
+
+/**
+ * Whether a serial matches the expected format for the product brand.
+ * Waaree panels must be WS + 14 digits; other brands accept any non-empty token.
+ */
+export function isValidInwardSerialFormat(
+  serial: string,
+  brandName?: string | null,
+): boolean {
+  const key = normalizeSerialNumber(serial);
+  if (!key) return false;
+  if (brandName && isWaareeBrand(brandName)) {
+    return isWaareePanelSerial(key);
+  }
+  return true;
+}
+
+/**
+ * Classify pasted/scanned inward serials into new, repeat (in-list or already in DB),
+ * and invalid format. First occurrence of a valid serial is checked against `existingKeys`;
+ * later occurrences of the same value are always treated as repeats.
+ */
+export function classifyInwardSerials(input: {
+  serials: string[];
+  existingKeys?: Iterable<string>;
+  brandName?: string | null;
+}): InwardSerialClassification {
+  const existing = new Set(
+    Array.from(input.existingKeys ?? [], (value) => normalizeSerialNumber(value)).filter(
+      Boolean,
+    ),
+  );
+  const seen = new Set<string>();
+  const newSerials: string[] = [];
+  const repeatSerials: string[] = [];
+  const invalidSerials: string[] = [];
+
+  for (const serial of input.serials) {
+    const key = normalizeSerialNumber(serial);
+    if (!key) continue;
+
+    if (!isValidInwardSerialFormat(key, input.brandName)) {
+      if (!invalidSerials.includes(key)) invalidSerials.push(key);
+      continue;
+    }
+
+    if (seen.has(key) || existing.has(key)) {
+      if (!repeatSerials.includes(key)) repeatSerials.push(key);
+      seen.add(key);
+      continue;
+    }
+
+    seen.add(key);
+    newSerials.push(key);
+  }
+
+  return { newSerials, repeatSerials, invalidSerials };
+}
+
 export function pendingIncomingQuantity(input: {
   quantity: number;
   receivedQuantity: number;

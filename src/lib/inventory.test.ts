@@ -13,8 +13,10 @@ import {
 } from "@/lib/inventory-permissions";
 import {
   calculateTotalPurchaseCost,
+  classifyInwardSerials,
   findDuplicateSerialKeys,
   getFinancialYear,
+  isValidInwardSerialFormat,
   isWaareeBrand,
   isWaareePanelSerial,
   normalizePurchaseInvoiceNo,
@@ -59,6 +61,32 @@ describe("inventory helpers", () => {
         "WS07269074147109",
       ]),
     ).toEqual(new Set(["WS07269074147109"]));
+  });
+
+  it("validates inward serial format by brand", () => {
+    expect(isValidInwardSerialFormat("WS07269074147109", "Waaree")).toBe(true);
+    expect(isValidInwardSerialFormat("LN07269074147109", "Waaree")).toBe(false);
+    expect(isValidInwardSerialFormat("LN-001", "Longi")).toBe(true);
+  });
+
+  it("classifies inward serials into new, repeat, and invalid", () => {
+    expect(
+      classifyInwardSerials({
+        serials: [
+          "WS07269074147109",
+          "ws07269074147109",
+          "BAD",
+          "WS07269074147157",
+          "WS07269074147111",
+        ],
+        existingKeys: ["WS07269074147157"],
+        brandName: "Waaree",
+      }),
+    ).toEqual({
+      newSerials: ["WS07269074147109", "WS07269074147111"],
+      repeatSerials: ["WS07269074147109", "WS07269074147157"],
+      invalidSerials: ["BAD"],
+    });
   });
 
   it("calculates pending incoming after partial receipt", () => {

@@ -3,10 +3,12 @@ import { describe, expect, it } from "vitest";
 import { calculateInventoryProjection } from "@/lib/inventory-projection";
 import type { InventoryEvent } from "@/lib/inventory-events";
 import {
+  buildInventoryTimelineDayBreakdown,
   computeTimelineReservedQuantity,
   enrichTimelineDayEvents,
   getInventoryTimelineDateRange,
   selectTimelineProjectionEvents,
+  sumActualDispatchInDayEvents,
   sumDispatchedQuantityForDay,
   summarizeInventoryTimeline,
   type DispatchTodayPiInfo,
@@ -230,5 +232,115 @@ describe("dispatch today day breakdown", () => {
     ];
     expect(sumDispatchedQuantityForDay(events, new Set(), startDate)).toBe(5);
     expect(sumDispatchedQuantityForDay(events, new Set(), "2026-08-01")).toBe(3);
+  });
+});
+
+describe("inventory timeline day breakdown pairs", () => {
+  const startDate = "2026-07-30";
+
+  it("moves received out of opening on the physical baseline day", () => {
+    // Physical already includes 72 received; incoming event already reduced.
+    const day = buildInventoryTimelineDayBreakdown({
+      projectionOpening: 182,
+      incoming: 648,
+      projectionOutgoing: 36,
+      actualDispatchInOutgoing: 0,
+      received: 72,
+      dispatched: 0,
+      physicalBaseline: true,
+    });
+
+    expect(day).toEqual({
+      opening: 110,
+      incoming: 648,
+      received: 72,
+      outgoing: 36,
+      dispatched: 0,
+      closing: 794,
+    });
+    expect(
+      day.opening + day.incoming + day.received - day.outgoing - day.dispatched,
+    ).toBe(day.closing);
+  });
+
+  it("moves dispatched out of opening on the physical baseline day", () => {
+    const day = buildInventoryTimelineDayBreakdown({
+      projectionOpening: 182,
+      incoming: 0,
+      projectionOutgoing: 36,
+      actualDispatchInOutgoing: 0,
+      received: 0,
+      dispatched: 324,
+      physicalBaseline: true,
+    });
+
+    expect(day).toEqual({
+      opening: 506,
+      incoming: 0,
+      received: 0,
+      outgoing: 36,
+      dispatched: 324,
+      closing: 146,
+    });
+    expect(
+      day.opening + day.incoming + day.received - day.outgoing - day.dispatched,
+    ).toBe(day.closing);
+  });
+
+  it("keeps closing equal to sales-available when pairs transfer", () => {
+    // Receiving 50 reduces incoming by 50 and raises received by 50 — net 0.
+    const before = buildInventoryTimelineDayBreakdown({
+      projectionOpening: 100,
+      incoming: 80,
+      projectionOutgoing: 20,
+      actualDispatchInOutgoing: 0,
+      received: 0,
+      dispatched: 0,
+      physicalBaseline: true,
+    });
+    const after = buildInventoryTimelineDayBreakdown({
+      projectionOpening: 150, // physical gained the 50 received
+      incoming: 30,
+      projectionOutgoing: 20,
+      actualDispatchInOutgoing: 0,
+      received: 50,
+      dispatched: 0,
+      physicalBaseline: true,
+    });
+    expect(before.closing).toBe(160);
+    expect(after.closing).toBe(160);
+  });
+
+  it("strips actual dispatch from outgoing so it only counts under Dispatched", () => {
+    const day = buildInventoryTimelineDayBreakdown({
+      projectionOpening: 200,
+      incoming: 0,
+      projectionOutgoing: 40,
+      actualDispatchInOutgoing: 15,
+      received: 0,
+      dispatched: 15,
+      physicalBaseline: false,
+    });
+
+    expect(day.outgoing).toBe(25);
+    expect(day.dispatched).toBe(15);
+    expect(day.closing).toBe(160);
+  });
+
+  it("sums actual dispatch quantities inside day events", () => {
+    expect(
+      sumActualDispatchInDayEvents([
+        reservation("r1", 10, startDate, "pi-1"),
+        {
+          id: "d1",
+          eventType: "ACTUAL_DISPATCH",
+          status: "COMPLETED",
+          quantity: 7,
+          effectiveDate: startDate,
+          sourceType: "DISPATCH",
+          sourceId: "dc-1",
+        },
+      ]),
+    ).toBe(7);
   });
 });

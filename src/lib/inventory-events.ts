@@ -163,6 +163,40 @@ export function getSupersededInventoryEventIds(
 }
 
 /**
+ * Prepare inventory events for projection against a *live* physical baseline
+ * (available + booked already excludes dispatched stock).
+ *
+ * - Drops ACTUAL_DISPATCH: those units already left physical stock.
+ * - Drops BOOKING_RESERVATION once dispatched qty for that PI covers it
+ *   (dispatch confirm historically did not always emit BOOKING_RELEASE).
+ * - Still honors PLANNED_DISPATCH / BOOKING_RELEASE supersession links.
+ */
+export function filterEventsForLivePhysicalProjection(
+  events: readonly InventoryEvent[],
+  dispatchedQtyByPiId: ReadonlyMap<string, number> = new Map(),
+): InventoryEvent[] {
+  const superseded = getSupersededInventoryEventIds(events);
+
+  for (const event of events) {
+    if (!eventAffectsProjection(event.status)) continue;
+    if (superseded.has(event.id)) continue;
+    if (event.eventType !== "BOOKING_RESERVATION") continue;
+    if (event.sourceType !== "PROFORMA_INVOICE" || !event.sourceId) continue;
+    const dispatchedQty = dispatchedQtyByPiId.get(event.sourceId) ?? 0;
+    if (dispatchedQty + 1e-9 >= event.quantity) {
+      superseded.add(event.id);
+    }
+  }
+
+  return events.filter(
+    (event) =>
+      eventAffectsProjection(event.status) &&
+      !superseded.has(event.id) &&
+      event.eventType !== "ACTUAL_DISPATCH",
+  );
+}
+
+/**
  * PURCHASE_INCOMING events are created for the full lot quantity. After partial
  * inward, physical stock already includes received units, so projection must use
  * the lot's remaining pending quantity to avoid double-counting.

@@ -208,7 +208,7 @@ function TimelineCard({ item, today }: { item: InventoryTimelineItem; today: str
                   </span>
                 ) : null}
               </div>
-              <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
+              <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
                 <div>
                   <p className="text-slate-500">Opening</p>
                   <p className="font-semibold">{quantity(selectedDay.opening)}</p>
@@ -220,6 +220,12 @@ function TimelineCard({ item, today }: { item: InventoryTimelineItem; today: str
                   </p>
                 </div>
                 <div>
+                  <p className="text-slate-500">Received</p>
+                  <p className="font-semibold text-emerald-700">
+                    +{quantity(selectedDay.received)}
+                  </p>
+                </div>
+                <div>
                   <p className="text-slate-500">Outgoing</p>
                   <p className="font-semibold text-rose-600">
                     -{quantity(selectedDay.outgoing)}
@@ -227,8 +233,8 @@ function TimelineCard({ item, today }: { item: InventoryTimelineItem; today: str
                 </div>
                 <div>
                   <p className="text-slate-500">Dispatched</p>
-                  <p className="font-semibold text-slate-900">
-                    {quantity(selectedDay.dispatched)}
+                  <p className="font-semibold text-rose-600">
+                    -{quantity(selectedDay.dispatched)}
                   </p>
                 </div>
                 <div>

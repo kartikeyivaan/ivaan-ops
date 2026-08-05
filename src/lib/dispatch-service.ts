@@ -23,6 +23,7 @@ import {
 } from "@/lib/dispatches";
 import { decimalToNumber, normalizeSerialNumber } from "@/lib/inventory";
 import { toSignedInventoryQuantity } from "@/lib/inventory-events";
+import { createEvent } from "@/lib/inventory-event-service";
 import {
   componentRemainingQty,
   loadKitBomMap,
@@ -827,6 +828,94 @@ export async function createDispatch(
   });
 }
 
+/**
+ * Once dispatched qty for a PI product covers its booking reservation, release
+ * the reservation so live-physical projection does not keep deducting it.
+ */
+async function releaseFullyDispatchedBookingReservations(
+  tx: Prisma.TransactionClient,
+  input: {
+    companyId: string;
+    piId: string;
+    piNo: string;
+    productIds: string[];
+    performedById: string;
+  },
+) {
+  if (input.productIds.length === 0) return;
+
+  const reservations = await tx.inventoryEvent.findMany({
+    where: {
+      companyId: input.companyId,
+      sourceType: "PROFORMA_INVOICE",
+      sourceId: input.piId,
+      productId: { in: input.productIds },
+      eventType: InventoryEventType.BOOKING_RESERVATION,
+      status: { not: InventoryEventStatus.CANCELLED },
+    },
+  });
+  if (reservations.length === 0) return;
+
+  const dispatches = await tx.dispatch.findMany({
+    where: {
+      proformaInvoiceId: input.piId,
+      status: DispatchStatus.DISPATCHED,
+    },
+    select: { id: true },
+  });
+  const dispatchIds = dispatches.map((row) => row.id);
+  if (dispatchIds.length === 0) return;
+
+  const actuals = await tx.inventoryEvent.findMany({
+    where: {
+      companyId: input.companyId,
+      productId: { in: input.productIds },
+      eventType: InventoryEventType.ACTUAL_DISPATCH,
+      sourceType: "DISPATCH",
+      sourceId: { in: dispatchIds },
+      status: { not: InventoryEventStatus.CANCELLED },
+    },
+    select: { productId: true, quantity: true },
+  });
+  const dispatchedQtyByProduct = new Map<string, number>();
+  for (const actual of actuals) {
+    dispatchedQtyByProduct.set(
+      actual.productId,
+      (dispatchedQtyByProduct.get(actual.productId) ?? 0) +
+        decimalToNumber(actual.quantity),
+    );
+  }
+
+  for (const reservation of reservations) {
+    const dispatchedQty = dispatchedQtyByProduct.get(reservation.productId) ?? 0;
+    if (dispatchedQty + 1e-9 < decimalToNumber(reservation.quantity)) continue;
+
+    const existingRelease = await tx.inventoryEvent.findFirst({
+      where: {
+        replacesEventId: reservation.id,
+        eventType: InventoryEventType.BOOKING_RELEASE,
+        status: { not: InventoryEventStatus.CANCELLED },
+      },
+    });
+    if (existingRelease) continue;
+
+    await createEvent(tx, {
+      companyId: reservation.companyId,
+      warehouseId: reservation.warehouseId,
+      productId: reservation.productId,
+      eventType: InventoryEventType.BOOKING_RELEASE,
+      quantity: decimalToNumber(reservation.quantity),
+      effectiveDate: new Date(),
+      sourceType: reservation.sourceType,
+      sourceId: reservation.sourceId,
+      sourceNumber: reservation.sourceNumber,
+      replacesEventId: reservation.id,
+      notes: `Released booking after dispatch for ${input.piNo}`,
+      createdById: input.performedById,
+    });
+  }
+}
+
 async function confirmDispatchTx(
   tx: Prisma.TransactionClient,
   input: {
@@ -1004,6 +1093,14 @@ async function confirmDispatchTx(
       },
     });
   }
+
+  await releaseFullyDispatchedBookingReservations(tx, {
+    companyId: input.companyId,
+    piId: dispatch.proformaInvoiceId,
+    piNo: pi.piNo,
+    productIds: [...new Set(dispatch.lines.map((line) => line.productId))],
+    performedById: input.performedById,
+  });
 
   for (const [piItemId, qtyToAdd] of piItemKitQty) {
     const piItem = dispatch.lines.find(

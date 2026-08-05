@@ -370,18 +370,6 @@ export function ProformaInvoiceDetail({
     });
     const data = await response.json();
     setLoading(false);
-    if (response.status === 409 && data.code === "EARLY_DISPATCH_CONFIRMATION_REQUIRED") {
-      const days = data.details?.daysUntil ?? pi.daysUntilCommittedDispatch ?? "?";
-      setEarlyWarning(true);
-      setWarning(
-        `Committed delivery date is after ${days} day(s)` +
-          (data.details?.committedDate
-            ? ` (${formatDocumentDate(data.details.committedDate)})`
-            : "") +
-          ". Confirm to continue.",
-      );
-      return;
-    }
     if (response.status === 409 && data.code === "SHORTFALL_SOURCE_REQUIRED") {
       const checkRes = await fetch(`/api/proforma-invoices/${pi.id}/dispatch-today/stock-check`);
       const check = await checkRes.json();
@@ -396,13 +384,35 @@ export function ProformaInvoiceDetail({
             })),
         );
         setShortfallCandidates(check.candidateCompanies ?? []);
-        setCrossCompanyWarning(true);
         setWarning(
-          "PI company stock is short. Select a source company to transfer the shortfall, then confirm.",
+          "PI company stock is short. Select a source company to transfer the shortfall, then continue.",
         );
       } else {
         setError(data.message ?? "Stock shortfall requires a source company.");
       }
+      return;
+    }
+    if (response.status === 409 && data.code === "DISPATCH_TODAY_CONFIRMATION_REQUIRED") {
+      const details = data.details ?? {};
+      if (details.needsEarly) setEarlyWarning(true);
+      if (details.needsCrossCompany) setCrossCompanyWarning(true);
+      setWarning(
+        details.message ??
+          data.message ??
+          "Confirm early dispatch and/or stock transfer to continue.",
+      );
+      return;
+    }
+    if (response.status === 409 && data.code === "EARLY_DISPATCH_CONFIRMATION_REQUIRED") {
+      const days = data.details?.daysUntil ?? pi.daysUntilCommittedDispatch ?? "?";
+      setEarlyWarning(true);
+      setWarning(
+        `Committed delivery date is after ${days} day(s)` +
+          (data.details?.committedDate
+            ? ` (${formatDocumentDate(data.details.committedDate)})`
+            : "") +
+          ". Confirm to continue.",
+      );
       return;
     }
     if (response.status === 409 && data.code === "CROSS_COMPANY_CONFIRMATION_REQUIRED") {
@@ -1014,9 +1024,13 @@ export function ProformaInvoiceDetail({
             {dispatchToday?.pendingApproval ? (
               <p className="text-sm text-amber-700">
                 Dispatch today is pending sales manager / admin approval
-                {pi.crossCompanyTransfer
-                  ? ` (includes cross-company transfer from ${pi.crossCompanyTransfer.fromCompany.code})`
-                  : ""}
+                {pi.crossCompanyTransfer && dispatchToday?.needsEarlyApproval
+                  ? ` — includes early dispatch and stock transfer from ${pi.crossCompanyTransfer.fromCompany.code}`
+                  : pi.crossCompanyTransfer
+                    ? ` — includes stock transfer from ${pi.crossCompanyTransfer.fromCompany.code}`
+                    : dispatchToday?.needsEarlyApproval
+                      ? " — includes early dispatch approval"
+                      : ""}
                 .
               </p>
             ) : null}
@@ -1117,12 +1131,7 @@ export function ProformaInvoiceDetail({
                 <div className="flex flex-wrap gap-2">
                   <Button
                     disabled={loading || (shortfallCandidates.length > 0 && !fromCompanyId)}
-                    onClick={() =>
-                      submitDispatchToday(
-                        earlyWarning,
-                        crossCompanyWarning && Boolean(fromCompanyId),
-                      )
-                    }
+                    onClick={() => submitDispatchToday(earlyWarning, crossCompanyWarning)}
                   >
                     <Truck className="h-4 w-4" />
                     {dispatchToday?.active

@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   BOOKING_ADVANCE_PERCENT,
+  buildDispatchTodayApprovalCopy,
   calculateAdvanceRequired,
   calculateOutstanding,
   canRecordPaymentAgainstPi,
   canManageExistingPiPayment,
   canRequestBooking,
   daysUntilCommittedDispatch,
+  formatDispatchTodayApprovalMessage,
+  formatDispatchTodayConfirmationMessage,
   isDispatchTodayActive,
   isReadyForDispatch,
   maxPaymentAmountOnEdit,
@@ -93,6 +96,51 @@ describe("proforma invoice calculations", () => {
     expect(needsEarlyDispatchTodayApproval("2026-07-30", "2026-07-30")).toBe(false);
     expect(isDispatchTodayActive("2026-07-30", "2026-07-30")).toBe(true);
     expect(isDispatchTodayActive("2026-07-29", "2026-07-30")).toBe(false);
+  });
+
+  it("builds a single clear approval message for early and stock transfer", () => {
+    const both = buildDispatchTodayApprovalCopy({
+      daysUntil: 3,
+      needsEarly: true,
+      fromCompanyCode: "ISE",
+    });
+    expect(both.title).toBe("Early dispatch & stock transfer approval needed");
+    expect(both.remarks).toContain("Early dispatch approval (3 day(s) before committed delivery)");
+    expect(both.remarks).toContain("Stock transfer approval from ISE");
+    expect(both.remarks).toContain("; ");
+
+    expect(
+      formatDispatchTodayApprovalMessage("PCMV-PI-26-27-00045", {
+        daysUntil: 3,
+        needsEarly: true,
+        fromCompanyCode: "ISE",
+      }),
+    ).toContain("early dispatch and stock transfer");
+
+    expect(
+      formatDispatchTodayConfirmationMessage({
+        daysUntil: 3,
+        needsEarly: true,
+        fromCompanyCode: "ISE",
+        committedDate: "2026-08-08",
+      }),
+    ).toMatch(/committed delivery is after 3 day\(s\) \(2026-08-08\).*stock will be transferred from ISE/i);
+
+    const earlyOnly = buildDispatchTodayApprovalCopy({
+      daysUntil: 3,
+      needsEarly: true,
+      fromCompanyCode: null,
+    });
+    expect(earlyOnly.title).toBe("Early dispatch approval needed");
+    expect(earlyOnly.remarks).not.toContain("Stock transfer");
+
+    const stockOnly = buildDispatchTodayApprovalCopy({
+      daysUntil: 0,
+      needsEarly: false,
+      fromCompanyCode: "ISE",
+    });
+    expect(stockOnly.title).toBe("Stock transfer approval needed");
+    expect(stockOnly.remarks).toBe("Stock transfer approval from ISE");
   });
 
   it("uses PI terms before quotation and legacy defaults", () => {

@@ -147,6 +147,79 @@ export function needsEarlyDispatchTodayApproval(
   return days != null && days > 0;
 }
 
+export type DispatchTodayApprovalReasons = {
+  daysUntil: number | null;
+  needsEarly: boolean;
+  fromCompanyCode: string | null;
+};
+
+/** Single copy for approval remarks, notifications, and confirm prompts. */
+export function buildDispatchTodayApprovalCopy(
+  reasons: DispatchTodayApprovalReasons,
+): { remarks: string; title: string; summaryParts: string[] } {
+  const summaryParts: string[] = [];
+  if (reasons.needsEarly && reasons.daysUntil != null) {
+    summaryParts.push(
+      `Early dispatch approval (${reasons.daysUntil} day(s) before committed delivery)`,
+    );
+  }
+  if (reasons.fromCompanyCode) {
+    summaryParts.push(`Stock transfer approval from ${reasons.fromCompanyCode}`);
+  }
+
+  const remarks =
+    summaryParts.length > 0
+      ? summaryParts.join("; ")
+      : "Dispatch today approval requested";
+
+  let title = "Dispatch today approval needed";
+  if (reasons.needsEarly && reasons.fromCompanyCode) {
+    title = "Early dispatch & stock transfer approval needed";
+  } else if (reasons.needsEarly) {
+    title = "Early dispatch approval needed";
+  } else if (reasons.fromCompanyCode) {
+    title = "Stock transfer approval needed";
+  }
+
+  return { remarks, title, summaryParts };
+}
+
+export function formatDispatchTodayApprovalMessage(
+  piNo: string,
+  reasons: DispatchTodayApprovalReasons,
+): string {
+  const { summaryParts } = buildDispatchTodayApprovalCopy(reasons);
+  if (summaryParts.length === 0) {
+    return `${piNo} requested dispatch today and needs approval.`;
+  }
+  if (summaryParts.length === 1) {
+    return `${piNo}: ${summaryParts[0]}.`;
+  }
+  return `${piNo} requires approval for early dispatch and stock transfer — ${summaryParts.join("; ")}.`;
+}
+
+export function formatDispatchTodayConfirmationMessage(
+  reasons: DispatchTodayApprovalReasons & { committedDate?: string | null },
+): string {
+  const parts: string[] = [];
+  if (reasons.needsEarly && reasons.daysUntil != null) {
+    parts.push(
+      `committed delivery is after ${reasons.daysUntil} day(s)` +
+        (reasons.committedDate ? ` (${reasons.committedDate})` : ""),
+    );
+  }
+  if (reasons.fromCompanyCode) {
+    parts.push(`stock will be transferred from ${reasons.fromCompanyCode}`);
+  }
+  if (parts.length === 0) {
+    return "Confirm dispatch today to continue.";
+  }
+  if (parts.length === 1) {
+    return `${parts[0][0]!.toUpperCase()}${parts[0]!.slice(1)}. Confirm to request approval.`;
+  }
+  return `${parts[0][0]!.toUpperCase()}${parts[0]!.slice(1)}, and ${parts[1]}. Confirm to request a single approval covering both.`;
+}
+
 export async function generateProformaInvoiceNumber(
   prisma: PrismaClient | Prisma.TransactionClient,
   companyCode: string,

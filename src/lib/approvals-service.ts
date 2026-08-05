@@ -359,9 +359,29 @@ async function listPendingCrossCompanyTransferApprovals(
   });
   const planMap = new Map(plans.map((plan) => [plan.id, plan]));
 
+  // Hide standalone transfer rows when a DISPATCH_TODAY approval already
+  // covers the same PI (single combined message path).
+  const piIds = [...new Set(plans.map((plan) => plan.piId))];
+  const coveredByDispatchToday =
+    piIds.length === 0
+      ? new Set<string>()
+      : new Set(
+          (
+            await prisma.approvalRequest.findMany({
+              where: {
+                moduleType: ApprovalModuleType.DISPATCH_TODAY,
+                moduleId: { in: piIds },
+                status: ApprovalRequestStatus.PENDING,
+              },
+              select: { moduleId: true },
+            })
+          ).map((row) => row.moduleId),
+        );
+
   return approvals.flatMap((approval) => {
     const plan = planMap.get(approval.moduleId);
     if (!plan) return [];
+    if (coveredByDispatchToday.has(plan.piId)) return [];
     return [
       {
         id: `CROSS_COMPANY_TRANSFER:${plan.id}`,
@@ -708,7 +728,7 @@ async function listApprovalRequestHistory(
         moduleId: approval.moduleId,
         documentNo: info.documentNo,
         subjectName: info.subjectName,
-        reason: info.reason,
+        reason: approval.remarks?.trim() || info.reason,
         decision: approval.status === ApprovalRequestStatus.APPROVED ? "APPROVED" : "REJECTED",
         requestedByName: approval.requestedBy.name,
         decidedByName: approval.approvedBy?.name ?? null,
@@ -913,7 +933,7 @@ async function loadModuleMeta(
           moduleType === ApprovalModuleType.BOOKING
             ? "Stock booking"
             : moduleType === ApprovalModuleType.DISPATCH_TODAY
-              ? "Early dispatch today"
+              ? "Dispatch today approval"
               : "PI cancellation",
         href: `/sales/proforma-invoices/${row.id}`,
       });

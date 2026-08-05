@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import {
-  canApproveDispatchToday,
-  canMarkDispatchToday,
-} from "@/lib/pi-permissions";
+import { canMarkDispatchToday } from "@/lib/pi-permissions";
 import { markDispatchToday } from "@/lib/pi-service";
 import { prisma } from "@/lib/prisma";
 import { markDispatchTodaySchema } from "@/lib/validations";
@@ -45,7 +42,6 @@ export async function POST(request: Request, context: RouteContext) {
       companyId,
       piId: id,
       markedById: session.user.id,
-      canApproveEarly: canApproveDispatchToday(session.user.roles),
       confirmEarly: parsed.data.confirmEarly,
       confirmCrossCompany: parsed.data.confirmCrossCompany,
       fromCompanyId: parsed.data.fromCompanyId,
@@ -103,6 +99,29 @@ export async function POST(request: Request, context: RouteContext) {
           "CROSS_COMPANY_CONFIRMATION_REQUIRED",
           "Confirm cross-company shortfall transfer to continue.",
           409,
+        );
+      }
+      if (error.message.startsWith("DISPATCH_TODAY_CONFIRMATION_REQUIRED|")) {
+        const payload = error.message.slice("DISPATCH_TODAY_CONFIRMATION_REQUIRED|".length);
+        let details: {
+          needsEarly?: boolean;
+          daysUntil?: number;
+          committedDate?: string | null;
+          needsCrossCompany?: boolean;
+          fromCompanyCode?: string | null;
+          message?: string;
+        } = {};
+        try {
+          details = JSON.parse(payload) as typeof details;
+        } catch {
+          details = {};
+        }
+        return errorResponse(
+          "DISPATCH_TODAY_CONFIRMATION_REQUIRED",
+          details.message ??
+            "Confirm early dispatch and/or stock transfer to continue.",
+          409,
+          details,
         );
       }
       if (error.message.startsWith("EARLY_DISPATCH_CONFIRMATION_REQUIRED|")) {

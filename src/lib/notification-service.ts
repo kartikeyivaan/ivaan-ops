@@ -108,7 +108,15 @@ export async function notifyWarehouseDispatchToday(
 
 export async function notifyDispatchTodayApprovalNeeded(
   client: NotificationClient,
-  input: { companyId: string; piNo: string; daysUntil: number },
+  input: {
+    companyId: string;
+    piNo: string;
+    daysUntil?: number;
+    needsEarly?: boolean;
+    fromCompanyCode?: string | null;
+    title?: string;
+    message?: string;
+  },
 ) {
   const users = await client.user.findMany({
     where: {
@@ -123,11 +131,33 @@ export async function notifyDispatchTodayApprovalNeeded(
     select: { id: true },
   });
   if (!users.length) return { count: 0 };
+
+  const needsEarly = input.needsEarly ?? (input.daysUntil != null && input.daysUntil > 0);
+  const fromCompanyCode = input.fromCompanyCode ?? null;
+  const title =
+    input.title ??
+    (needsEarly && fromCompanyCode
+      ? "Early dispatch & stock transfer approval needed"
+      : needsEarly
+        ? "Early dispatch approval needed"
+        : fromCompanyCode
+          ? "Stock transfer approval needed"
+          : "Dispatch today approval needed");
+  const message =
+    input.message ??
+    (needsEarly && fromCompanyCode
+      ? `${input.piNo} requires approval for early dispatch (${input.daysUntil ?? 0} day(s) before committed delivery) and stock transfer from ${fromCompanyCode}.`
+      : needsEarly
+        ? `${input.piNo} requested dispatch today (${input.daysUntil ?? 0} day(s) before committed delivery).`
+        : fromCompanyCode
+          ? `${input.piNo} needs approval to transfer shortfall stock from ${fromCompanyCode}.`
+          : `${input.piNo} requested dispatch today and needs approval.`);
+
   return client.notification.createMany({
     data: users.map(({ id }) => ({
       userId: id,
-      title: "Early dispatch approval needed",
-      message: `${input.piNo} requested dispatch today (${input.daysUntil} day(s) before committed delivery).`,
+      title,
+      message,
       module: "dispatch",
     })),
   });

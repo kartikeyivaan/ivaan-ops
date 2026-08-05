@@ -18,7 +18,6 @@ import {
   createOrReplaceCrossCompanyPlan,
   getCompanyAvailableQty,
   prepareDispatchTodayCrossCompany,
-  requestCrossCompanyPlanApproval,
   type SerializedPlan,
 } from "@/lib/cross-company-transfer-service";
 import { decimalToNumber } from "@/lib/inventory";
@@ -38,10 +37,13 @@ import {
   notifyWarehouseDispatchToday,
 } from "@/lib/notification-service";
 import {
+  buildDispatchTodayApprovalCopy,
   calculateAdvanceRequired,
   calculateOutstanding,
   canRequestBooking,
   daysUntilCommittedDispatch,
+  formatDispatchTodayApprovalMessage,
+  formatDispatchTodayConfirmationMessage,
   generateProformaInvoiceNumber,
   isDispatchTodayActive,
   isReadyForDispatch,
@@ -1795,8 +1797,10 @@ async function activateDispatchToday(
 
 /**
  * Sales marks PI for dispatch today. If committed min date is still in the
- * future and/or PI-company stock is short, creates pending approval(s)
- * instead of activating immediately.
+ * future and/or PI-company stock is short, always creates a single pending
+ * DISPATCH_TODAY approval (covering early dispatch and/or stock transfer)
+ * — including for managers/admins. Dispatch panel only after approval.
+ * When neither gate applies, activates immediately.
  */
 export async function markDispatchToday(
   prisma: PrismaClient,
@@ -1804,7 +1808,6 @@ export async function markDispatchToday(
     companyId: string;
     piId: string;
     markedById: string;
-    canApproveEarly: boolean;
     confirmEarly?: boolean;
     confirmCrossCompany?: boolean;
     fromCompanyId?: string;
@@ -1851,20 +1854,41 @@ export async function markDispatchToday(
   );
   const needsCrossCompanyApproval = prepared.needsPlan;
   const needsApproval = needsEarlyApproval || needsCrossCompanyApproval;
+  const committedDate = pi.requiredDispatchMinDate?.toISOString().slice(0, 10) ?? null;
 
-  if (needsEarlyApproval && !input.confirmEarly) {
+  const fromCompany = needsCrossCompanyApproval
+    ? await prisma.company.findUniqueOrThrow({
+        where: { id: prepared.fromCompanyId! },
+        select: { code: true },
+      })
+    : null;
+
+  const approvalReasons = {
+    daysUntil,
+    needsEarly: needsEarlyApproval,
+    fromCompanyCode: fromCompany?.code ?? null,
+    committedDate,
+  };
+
+  const missingEarlyConfirm = needsEarlyApproval && !input.confirmEarly;
+  const missingCrossCompanyConfirm =
+    needsCrossCompanyApproval && !input.confirmCrossCompany;
+
+  if (missingEarlyConfirm || missingCrossCompanyConfirm) {
+    const confirmMessage = formatDispatchTodayConfirmationMessage(approvalReasons);
     throw new Error(
-      `EARLY_DISPATCH_CONFIRMATION_REQUIRED|${daysUntil ?? 0}|${
-        pi.requiredDispatchMinDate?.toISOString().slice(0, 10) ?? ""
-      }`,
+      `DISPATCH_TODAY_CONFIRMATION_REQUIRED|${JSON.stringify({
+        needsEarly: needsEarlyApproval,
+        daysUntil: daysUntil ?? 0,
+        committedDate,
+        needsCrossCompany: needsCrossCompanyApproval,
+        fromCompanyCode: fromCompany?.code ?? null,
+        message: confirmMessage,
+      })}`,
     );
   }
 
-  if (needsCrossCompanyApproval && !input.confirmCrossCompany) {
-    throw new Error("CROSS_COMPANY_CONFIRMATION_REQUIRED");
-  }
-
-  if (needsApproval && !input.canApproveEarly) {
+  if (needsApproval) {
     const existing = await prisma.approvalRequest.findFirst({
       where: {
         moduleType: ApprovalModuleType.DISPATCH_TODAY,
@@ -1874,12 +1898,7 @@ export async function markDispatchToday(
     });
     if (existing) throw new Error("DISPATCH_TODAY_ALREADY_REQUESTED");
 
-    const fromCompany = needsCrossCompanyApproval
-      ? await prisma.company.findUniqueOrThrow({
-          where: { id: prepared.fromCompanyId! },
-          select: { code: true },
-        })
-      : null;
+    const copy = buildDispatchTodayApprovalCopy(approvalReasons);
 
     return prisma.$transaction(async (tx) => {
       if (input.draft) {
@@ -1891,6 +1910,8 @@ export async function markDispatchToday(
 
       let planSerialized: SerializedPlan | null = null;
       if (needsCrossCompanyApproval) {
+        // Keep plan PENDING under the single DISPATCH_TODAY approval —
+        // do not create a separate CROSS_COMPANY_TRANSFER approval row.
         const plan = await createOrReplaceCrossCompanyPlan(tx, {
           piId: pi.id,
           toCompanyId: input.companyId,
@@ -1898,13 +1919,6 @@ export async function markDispatchToday(
           shortfallLines: prepared.shortfallLines,
           requestedById: input.markedById,
           status: PiCrossCompanyTransferPlanStatus.PENDING,
-        });
-        await requestCrossCompanyPlanApproval(tx, {
-          planId: plan.id,
-          piNo: pi.piNo,
-          companyId: input.companyId,
-          requestedById: input.markedById,
-          fromCompanyCode: fromCompany!.code,
         });
         planSerialized = {
           id: plan.id,
@@ -1926,21 +1940,13 @@ export async function markDispatchToday(
         };
       }
 
-      const remarkParts: string[] = [];
-      if (needsEarlyApproval && daysUntil != null) {
-        remarkParts.push(`Committed delivery is after ${daysUntil} day(s)`);
-      }
-      if (needsCrossCompanyApproval && fromCompany) {
-        remarkParts.push(`Cross-company shortfall transfer from ${fromCompany.code}`);
-      }
-
       await tx.approvalRequest.create({
         data: {
           moduleType: ApprovalModuleType.DISPATCH_TODAY,
           moduleId: pi.id,
           requestedById: input.markedById,
           status: ApprovalRequestStatus.PENDING,
-          remarks: remarkParts.join("; ") || "Dispatch today requested",
+          remarks: copy.remarks,
         },
       });
 
@@ -1952,6 +1958,7 @@ export async function markDispatchToday(
           dispatchTodayPendingApproval: true,
           daysUntil,
           crossCompanyFrom: fromCompany?.code ?? null,
+          approvalRemarks: copy.remarks,
         },
         performedBy: input.markedById,
         companyId: input.companyId,
@@ -1962,6 +1969,10 @@ export async function markDispatchToday(
         companyId: input.companyId,
         piNo: pi.piNo,
         daysUntil: daysUntil ?? 0,
+        needsEarly: needsEarlyApproval,
+        fromCompanyCode: fromCompany?.code ?? null,
+        title: copy.title,
+        message: formatDispatchTodayApprovalMessage(pi.piNo, approvalReasons),
       });
 
       const refreshed = await tx.proformaInvoice.findFirstOrThrow({
@@ -1975,38 +1986,8 @@ export async function markDispatchToday(
     });
   }
 
+  // No early/cross-company gate — activate immediately for any role that can mark.
   return prisma.$transaction(async (tx) => {
-    let planSerialized: SerializedPlan | null = null;
-    if (needsCrossCompanyApproval) {
-      const plan = await createOrReplaceCrossCompanyPlan(tx, {
-        piId: pi.id,
-        toCompanyId: input.companyId,
-        fromCompanyId: prepared.fromCompanyId!,
-        shortfallLines: prepared.shortfallLines,
-        requestedById: input.markedById,
-        status: PiCrossCompanyTransferPlanStatus.APPROVED,
-        approvedById: input.markedById,
-      });
-      planSerialized = {
-        id: plan.id,
-        status: plan.status,
-        fromCompany: plan.fromCompany,
-        toCompany: plan.toCompany,
-        lines: plan.lines.map((line) => ({
-          productId: line.productId,
-          displayName: line.product.displayName,
-          qty: decimalToNumber(line.qty),
-          actualQty: decimalToNumber(line.actualQty),
-          unitPurchaseCost: decimalToNumber(line.unitPurchaseCost),
-          serials: [],
-        })),
-        approvedBy: { id: input.markedById, name: "" },
-        approvedAt: new Date().toISOString(),
-        inventoryTransferId: null,
-        dispatchId: null,
-      };
-    }
-
     const updated = await activateDispatchToday(tx, {
       companyId: input.companyId,
       piId: pi.id,
@@ -2016,7 +1997,7 @@ export async function markDispatchToday(
     });
     return serializePi(updated, {
       pendingDispatchTodayApproval: false,
-      crossCompanyTransfer: planSerialized,
+      crossCompanyTransfer: null,
     });
   });
 }

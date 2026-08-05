@@ -314,6 +314,90 @@ export const adjustStockSchema = z.object({
   notes: z.string().optional(),
 });
 
+const manualStockReasonSchema = z.enum([
+  "FOUND_STOCK",
+  "WRITE_OFF",
+  "CORRECTION",
+  "SAMPLE_DEMO",
+  "INTER_BRANCH_PAPER",
+  "CUSTOMER_RETURN_NO_SALES_DOC",
+  "OTHER",
+]);
+
+const manualStockNotesSchema = z
+  .string()
+  .trim()
+  .max(1000)
+  .optional()
+  .nullable();
+
+function refineManualStockReasonNotes(
+  data: { reason: z.infer<typeof manualStockReasonSchema>; notes?: string | null },
+  ctx: z.RefinementCtx,
+) {
+  if (data.reason === "OTHER" && !data.notes?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Notes are required when reason is Other.",
+      path: ["notes"],
+    });
+  }
+}
+
+export const manualStockSerialInSchema = z
+  .object({
+    action: z.literal("IN"),
+    productId: z.string().uuid(),
+    warehouseId: z.string().uuid(),
+    serialNumbers: z.array(z.string().trim().min(1)).min(1).max(500),
+    condition: z.enum(["GOOD", "DAMAGED"]),
+    reason: manualStockReasonSchema,
+    notes: manualStockNotesSchema,
+  })
+  .superRefine(refineManualStockReasonNotes);
+
+export const manualStockSerialOutSchema = z
+  .object({
+    action: z.literal("OUT"),
+    productId: z.string().uuid(),
+    warehouseId: z.string().uuid(),
+    serialNumbers: z.array(z.string().trim().min(1)).min(1).max(500),
+    reason: manualStockReasonSchema,
+    notes: manualStockNotesSchema,
+  })
+  .superRefine(refineManualStockReasonNotes);
+
+export const manualStockChangeConditionSchema = z
+  .object({
+    action: z.literal("CHANGE_CONDITION"),
+    productId: z.string().uuid(),
+    warehouseId: z.string().uuid(),
+    serialNumbers: z.array(z.string().trim().min(1)).min(1).max(500),
+    condition: z.enum(["GOOD", "DAMAGED"]),
+    reason: manualStockReasonSchema,
+    notes: manualStockNotesSchema,
+  })
+  .superRefine(refineManualStockReasonNotes);
+
+export const manualStockQtyAdjustSchema = z
+  .object({
+    action: z.enum(["IN", "OUT"]),
+    productId: z.string().uuid(),
+    warehouseId: z.string().uuid(),
+    qty: z.coerce.number().positive(),
+    reason: manualStockReasonSchema,
+    notes: manualStockNotesSchema,
+    mode: z.literal("QTY"),
+  })
+  .superRefine(refineManualStockReasonNotes);
+
+export const manualStockEntrySchema = z.union([
+  manualStockSerialInSchema,
+  manualStockSerialOutSchema,
+  manualStockChangeConditionSchema,
+  manualStockQtyAdjustSchema,
+]);
+
 export const createOpeningAuditSchema = z.object({
   warehouseId: z.string().uuid(),
 });

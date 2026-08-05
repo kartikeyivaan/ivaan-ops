@@ -52,8 +52,8 @@ describe("inventory projection service", () => {
       endDate: "2026-08-01",
     });
 
-    expect(projection[0]?.openingQuantity).toBe(50);
-    expect(projection[0]?.projectedAvailableQuantity).toBe(80);
+    expect(projection[0]?.openingQuantity).toBe(150);
+    expect(projection[0]?.projectedAvailableQuantity).toBe(180);
     expect(stockLoader).toHaveBeenCalledWith(
       client,
       "company-1",

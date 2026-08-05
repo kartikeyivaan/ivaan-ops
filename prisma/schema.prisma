@@ -112,6 +112,28 @@ enum SerialStatus {
   DAMAGED
   DISPATCHED
   DAMAGE_PENDING
+  REMOVED
+}
+
+enum ManualStockEntryAction {
+  IN
+  OUT
+  CHANGE_CONDITION
+}
+
+enum ManualStockReason {
+  FOUND_STOCK
+  WRITE_OFF
+  CORRECTION
+  SAMPLE_DEMO
+  INTER_BRANCH_PAPER
+  CUSTOMER_RETURN_NO_SALES_DOC
+  OTHER
+}
+
+enum ManualStockCondition {
+  GOOD
+  DAMAGED
 }
 
 enum InventoryTransactionType {
@@ -439,6 +461,7 @@ model Company {
   dailyAudits           InventoryDailyAudit[]
   damageReports         InventoryDamageReport[]
   purchaseRequests      PurchaseRequest[]
+  manualStockEntries    ManualStockEntry[]
 
   @@map("companies")
 }
@@ -520,6 +543,7 @@ model User {
   damageReportsDecided              InventoryDamageReport[]        @relation("DamageReportDecidedBy")
   purchaseRequestsRequested         PurchaseRequest[]              @relation("PurchaseRequestRequestedBy")
   purchaseRequestsUpdated           PurchaseRequest[]              @relation("PurchaseRequestUpdatedBy")
+  manualStockEntriesCreated         ManualStockEntry[]             @relation("ManualStockEntryCreatedBy")
 
   @@map("users")
 }
@@ -594,6 +618,7 @@ model Warehouse {
   dailyAudits          InventoryDailyAudit[]
   damageReports        InventoryDamageReport[]
   purchaseRequests     PurchaseRequest[]
+  manualStockEntries   ManualStockEntry[]
 
   @@unique([companyId, name])
   @@map("warehouses")
@@ -770,6 +795,7 @@ model Product {
   openingAuditLines        InventoryOpeningAuditLine[]
   dailyAuditLines          InventoryDailyAuditLine[]
   purchaseRequestLines     PurchaseRequestLine[]
+  manualStockEntries       ManualStockEntry[]
 
   @@index([displayName])
   @@index([categoryId])
@@ -873,10 +899,53 @@ model InventorySerial {
   dispatchLineSerials    DispatchLineSerial[]
   damageReports          InventoryDamageReport[]
   crossCompanyPlanSerials PiCrossCompanyTransferPlanSerial[]
+  manualStockEntryLines  ManualStockEntryLine[]
 
   @@index([productId, status])
   @@index([currentWarehouseId])
   @@map("inventory_serials")
+}
+
+model ManualStockEntry {
+  id          String                 @id @default(uuid()) @db.Uuid
+  entryNumber String                 @unique @map("entry_number")
+  companyId   String                 @map("company_id") @db.Uuid
+  warehouseId String                 @map("warehouse_id") @db.Uuid
+  productId   String                 @map("product_id") @db.Uuid
+  action      ManualStockEntryAction
+  reason      ManualStockReason
+  notes       String?
+  condition   ManualStockCondition?
+  quantity    Decimal                @db.Decimal(12, 3)
+  createdById String                 @map("created_by") @db.Uuid
+  createdAt   DateTime               @default(now()) @map("created_at")
+
+  company   Company               @relation(fields: [companyId], references: [id])
+  warehouse Warehouse             @relation(fields: [warehouseId], references: [id])
+  product   Product               @relation(fields: [productId], references: [id])
+  createdBy User                  @relation("ManualStockEntryCreatedBy", fields: [createdById], references: [id])
+  lines     ManualStockEntryLine[]
+
+  @@index([companyId, createdAt])
+  @@index([productId])
+  @@index([warehouseId])
+  @@map("manual_stock_entries")
+}
+
+model ManualStockEntryLine {
+  id           String         @id @default(uuid()) @db.Uuid
+  entryId      String         @map("entry_id") @db.Uuid
+  serialId     String?        @map("serial_id") @db.Uuid
+  serialNumber String?        @map("serial_number")
+  fromStatus   SerialStatus?  @map("from_status")
+  toStatus     SerialStatus?  @map("to_status")
+
+  entry  ManualStockEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  serial InventorySerial? @relation(fields: [serialId], references: [id])
+
+  @@index([entryId])
+  @@index([serialId])
+  @@map("manual_stock_entry_lines")
 }
 
 model InventoryDamageReport {

@@ -1,4 +1,4 @@
-export const DEFAULT_SAFETY_STOCK = 100;
+export const DEFAULT_SAFETY_STOCK = 0;
 
 export function resolveSafetyQty(override: number | null | undefined): number {
   if (override == null) {

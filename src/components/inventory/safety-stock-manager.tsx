@@ -15,7 +15,7 @@ export function SafetyStockManager({ rows, warehouses, products }: {
   const router = useRouter();
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? "");
   const [productId, setProductId] = useState(products[0]?.id ?? "");
-  const [safetyQty, setSafetyQty] = useState("100");
+  const [safetyQty, setSafetyQty] = useState("0");
   const [effectiveFrom, setEffectiveFrom] = useState(new Date().toISOString().slice(0, 10));
   const [error, setError] = useState("");
   async function save() {

@@ -144,6 +144,9 @@ export async function lookupDamageableSerial(
   if (serial.status === SerialStatus.DISPATCHED) {
     throw new Error("SERIAL_DISPATCHED");
   }
+  if (serial.status === SerialStatus.REMOVED) {
+    throw new Error("SERIAL_REMOVED");
+  }
   if (serial.status !== SerialStatus.AVAILABLE) {
     throw new Error("SERIAL_NOT_AVAILABLE");
   }

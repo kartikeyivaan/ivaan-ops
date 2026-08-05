@@ -6,10 +6,10 @@ import {
 } from "@/lib/safety-stock";
 
 describe("safety stock", () => {
-  it("uses 100 when no override exists", () => {
-    expect(DEFAULT_SAFETY_STOCK).toBe(100);
-    expect(resolveSafetyQty(null)).toBe(100);
-    expect(resolveSafetyQty(undefined)).toBe(100);
+  it("uses 0 when no override exists", () => {
+    expect(DEFAULT_SAFETY_STOCK).toBe(0);
+    expect(resolveSafetyQty(null)).toBe(0);
+    expect(resolveSafetyQty(undefined)).toBe(0);
   });
 
   it("preserves an explicit override including zero", () => {

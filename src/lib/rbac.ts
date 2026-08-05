@@ -95,6 +95,11 @@ export const NAV_ITEMS: NavItem[] = [
     ],
   },
   {
+    label: "Manual Stock Entry",
+    href: "/inventory/manual-stock",
+    roles: [ROLES.SUPER_ADMIN],
+  },
+  {
     label: "Inventory Audit",
     href: "/inventory/audits",
     roles: [
@@ -102,6 +107,23 @@ export const NAV_ITEMS: NavItem[] = [
       ROLES.WAREHOUSE,
       ROLES.PURCHASE,
       ROLES.SALES_MANAGER,
+    ],
+  },
+  {
+    label: "QR History",
+    href: "/inventory/qr-history",
+    roles: [ROLES.SUPER_ADMIN, ROLES.WAREHOUSE, ROLES.PURCHASE],
+  },
+  {
+    label: "Product In / Out",
+    href: "/inventory/product-movements",
+    roles: [
+      ROLES.SUPER_ADMIN,
+      ROLES.SALES_MANAGER,
+      ROLES.SALES_EXECUTIVE,
+      ROLES.WAREHOUSE,
+      ROLES.PURCHASE,
+      ROLES.ACCOUNTS,
     ],
   },
   {

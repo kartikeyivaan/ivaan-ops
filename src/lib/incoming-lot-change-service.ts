@@ -2,6 +2,7 @@ import {
   ApprovalModuleType,
   ApprovalRequestStatus,
   IncomingLotChangeStatus,
+  type Prisma,
   type PrismaClient,
 } from "@prisma/client";
 import { writeAuditLogTx } from "@/lib/audit";
@@ -30,9 +31,11 @@ const changeRequestInclude = {
   decidedBy: { select: { id: true, name: true } },
 } as const;
 
-function serializeChangeRequest(
-  row: Awaited<ReturnType<typeof loadChangeRequest>>,
-) {
+type ChangeRequestRow = Prisma.IncomingLotChangeRequestGetPayload<{
+  include: typeof changeRequestInclude;
+}>;
+
+function serializeChangeRequest(row: ChangeRequestRow | null) {
   if (!row) return null;
   return {
     id: row.id,
@@ -56,17 +59,6 @@ function serializeChangeRequest(
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
-}
-
-async function loadChangeRequest(
-  prisma: PrismaClient,
-  id: string,
-  companyId: string,
-) {
-  return prisma.incomingLotChangeRequest.findFirst({
-    where: { id, companyId },
-    include: changeRequestInclude,
-  });
 }
 
 export type SerializedIncomingLotChangeRequest = NonNullable<

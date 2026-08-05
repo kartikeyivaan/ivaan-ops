@@ -21,7 +21,11 @@ import {
   canRecordPayments,
   canViewProformaInvoices,
 } from "@/lib/pi-permissions";
-import { resolveBookingStockDecision } from "@/lib/pi-service";
+import {
+  bookingShortageQty,
+  resolveBookingStockDecision,
+  resolveCoverageProjectionEndDate,
+} from "@/lib/pi-service";
 import { ROLES } from "@/lib/rbac";
 
 describe("proforma invoice calculations", () => {
@@ -211,5 +215,26 @@ describe("cross-company booking stock decision", () => {
         allowCrossCompanyShortfall: true,
       }),
     ).toBe("UNAVAILABLE");
+  });
+});
+
+describe("booking coverage projection window", () => {
+  it("extends the coverage end date through pending incoming max dates", () => {
+    expect(
+      resolveCoverageProjectionEndDate("2026-08-05", [
+        "2026-08-08",
+        null,
+        "2026-08-06",
+      ]),
+    ).toBe("2026-08-08");
+    expect(resolveCoverageProjectionEndDate("2026-08-05", [])).toBe(
+      "2026-08-05",
+    );
+  });
+
+  it("does not inflate shortage when projected stock is already negative", () => {
+    expect(bookingShortageQty(54, -708)).toBe(54);
+    expect(bookingShortageQty(54, 10)).toBe(44);
+    expect(bookingShortageQty(54, 100)).toBe(0);
   });
 });

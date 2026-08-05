@@ -6,6 +6,7 @@ import {
   InventoryEventType,
   InventoryTransactionType,
   ItemApprovalStatus,
+  LotStatus,
   PiCrossCompanyTransferPlanStatus,
   Prisma,
   ProformaInvoiceStatus,
@@ -372,6 +373,77 @@ export function resolveBookingStockDecision(input: {
   return "NEED_APPROVAL";
 }
 
+/**
+ * Booking coverage must look through pending purchase incoming dates, not only
+ * the commercial dispatch window (READY_STOCK is often "today" and would ignore
+ * lots arriving a few days out).
+ */
+export function resolveCoverageProjectionEndDate(
+  dispatchMaxDate: string,
+  pendingIncomingMaxDates: readonly (string | null | undefined)[],
+): string {
+  let end = dispatchMaxDate;
+  for (const date of pendingIncomingMaxDates) {
+    if (date && date > end) end = date;
+  }
+  return end;
+}
+
+/** Units still needed locally after counting only non-negative projected availability. */
+export function bookingShortageQty(
+  requiredQty: number,
+  bestProjectedAvailable: number,
+): number {
+  return roundMoney(Math.max(0, requiredQty - Math.max(0, bestProjectedAvailable)));
+}
+
+async function loadPendingIncomingMaxByProduct(
+  prisma: PrismaClient,
+  input: {
+    companyId: string;
+    warehouseId: string;
+    productIds: string[];
+    onOrAfterDate: string;
+  },
+): Promise<Map<string, string>> {
+  if (input.productIds.length === 0) return new Map();
+
+  const lots = await prisma.inventoryLot.findMany({
+    where: {
+      companyId: input.companyId,
+      warehouseId: input.warehouseId,
+      productId: { in: input.productIds },
+      status: LotStatus.INCOMING,
+      expectedMaxDate: {
+        gte: new Date(`${input.onOrAfterDate}T00:00:00.000Z`),
+      },
+    },
+    select: {
+      productId: true,
+      expectedMaxDate: true,
+      quantity: true,
+      receivedQuantity: true,
+      damagedQuantity: true,
+    },
+  });
+
+  const latestByProduct = new Map<string, string>();
+  for (const lot of lots) {
+    if (!lot.expectedMaxDate) continue;
+    const pending =
+      Number(lot.quantity) -
+      Number(lot.receivedQuantity) -
+      Number(lot.damagedQuantity);
+    if (pending <= 1e-9) continue;
+    const date = lot.expectedMaxDate.toISOString().slice(0, 10);
+    const existing = latestByProduct.get(lot.productId);
+    if (!existing || date > existing) {
+      latestByProduct.set(lot.productId, date);
+    }
+  }
+  return latestByProduct;
+}
+
 async function assessBookingStockCoverage(
   prisma: PrismaClient,
   input: {
@@ -387,14 +459,24 @@ async function assessBookingStockCoverage(
 ): Promise<BookingStockCoverage> {
   const shortages: BookingStockShortage[] = [];
   const reservationStartByProduct = new Map<string, string>();
+  const incomingMaxByProduct = await loadPendingIncomingMaxByProduct(prisma, {
+    companyId: input.companyId,
+    warehouseId: input.warehouseId,
+    productIds: [...input.quantitiesByProduct.keys()],
+    onOrAfterDate: input.dispatchMinString,
+  });
 
   for (const [productId, entry] of input.quantitiesByProduct) {
+    const projectionEnd = resolveCoverageProjectionEndDate(
+      input.dispatchMaxString,
+      [incomingMaxByProduct.get(productId)],
+    );
     const projection = await getInventoryProjection({
       companyId: input.companyId,
       warehouseId: input.warehouseId,
       productId,
       startDate: input.dispatchMinString,
-      endDate: input.dispatchMaxString,
+      endDate: projectionEnd,
     });
     const reservationStart = findFeasibleReservationStartDate(
       projection,
@@ -413,7 +495,7 @@ async function assessBookingStockCoverage(
       displayName: entry.displayName,
       requiredQty: entry.qty,
       localProjectedAvailable: bestProjected,
-      shortageQty: roundMoney(entry.qty - bestProjected),
+      shortageQty: bookingShortageQty(entry.qty, bestProjected),
     });
   }
 
@@ -1060,9 +1142,6 @@ async function completePiStockBooking(
       addCalendarDays(bookingDateString, maxDays),
     ),
   ]);
-  const requiredDispatchMinDate = new Date(`${dispatchMinString}T00:00:00.000Z`);
-  const requiredDispatchMaxDate = new Date(`${dispatchMaxString}T00:00:00.000Z`);
-
   const fulfillmentLines = await explodeItemsForFulfillment(
     prisma,
     pi.items.map((item) => ({
@@ -1102,6 +1181,23 @@ async function completePiStockBooking(
 
   const usingCrossCompanyShortfall = coverage.shortages.length > 0;
 
+  // When coverage waits on incoming lots past the commercial max, stretch the
+  // committed reservation window so expectedMin/Max stay ordered.
+  const reservationStarts = [...coverage.reservationStartByProduct.values()];
+  const effectiveDispatchMinString = reservationStarts.length
+    ? reservationStarts.reduce((a, b) => (a < b ? a : b))
+    : dispatchMinString;
+  const effectiveDispatchMaxString = resolveCoverageProjectionEndDate(
+    dispatchMaxString,
+    reservationStarts,
+  );
+  const effectiveDispatchMinDate = new Date(
+    `${effectiveDispatchMinString}T00:00:00.000Z`,
+  );
+  const effectiveDispatchMaxDate = new Date(
+    `${effectiveDispatchMaxString}T00:00:00.000Z`,
+  );
+
   return prisma.$transaction(async (tx) => {
     await bookInventoryForPi(tx, {
       companyId: input.companyId,
@@ -1120,6 +1216,10 @@ async function completePiStockBooking(
     for (const [productId, entry] of quantitiesByProduct) {
       const reservationStart =
         coverage.reservationStartByProduct.get(productId) ?? dispatchMinString;
+      const reservationEnd =
+        reservationStart > dispatchMaxString
+          ? reservationStart
+          : dispatchMaxString;
       await createEvent(tx, {
         companyId: input.companyId,
         warehouseId,
@@ -1128,7 +1228,7 @@ async function completePiStockBooking(
         quantity: entry.qty,
         effectiveDate: bookingDate,
         expectedMinDate: new Date(`${reservationStart}T00:00:00.000Z`),
-        expectedMaxDate: requiredDispatchMaxDate,
+        expectedMaxDate: new Date(`${reservationEnd}T00:00:00.000Z`),
         sourceType: "PROFORMA_INVOICE",
         sourceId: pi.id,
         sourceNumber: pi.piNo,
@@ -1147,8 +1247,8 @@ async function completePiStockBooking(
         bookedAt: bookingDate,
         bookedById: input.performedById,
         requiredPaymentPercent: input.requiredPaymentPercent,
-        requiredDispatchMinDate,
-        requiredDispatchMaxDate,
+        requiredDispatchMinDate: effectiveDispatchMinDate,
+        requiredDispatchMaxDate: effectiveDispatchMaxDate,
       },
       include: piInclude,
     });

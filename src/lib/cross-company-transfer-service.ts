@@ -5,6 +5,7 @@ import {
   LotStatus,
   PiCrossCompanyTransferPlanStatus,
   Prisma,
+  SerialStatus,
   TransferOrigin,
   TransferStatus,
   type PrismaClient,
@@ -559,6 +560,62 @@ export async function getApprovedPlanForPi(prisma: DbClient, piId: string) {
   });
 }
 
+/**
+ * Sister-company serials (e.g. ISE panels on a PCMV PI) are interchangeable when
+ * the PI company still has enough of its own AVAILABLE units of that product.
+ * In that case no shortfall transfer approval is required — ownership of matching
+ * local serials is swapped on confirm so PI-company stock qty still drops.
+ */
+export async function foreignSerialsCoveredByLocalStock(
+  prisma: DbClient,
+  input: {
+    piCompanyId: string;
+    serialIds: string[];
+    /** Serials already reserved on this DC stay out of the local pool. */
+    excludeSerialIds?: string[];
+  },
+): Promise<boolean> {
+  if (input.serialIds.length === 0) return true;
+
+  const serials = await prisma.inventorySerial.findMany({
+    where: { id: { in: input.serialIds } },
+    include: {
+      lot: { select: { companyId: true } },
+    },
+  });
+  if (serials.length !== input.serialIds.length) {
+    throw new Error("INVALID_SERIAL_SELECTION");
+  }
+
+  const foreignByProduct = new Map<string, number>();
+  for (const serial of serials) {
+    if (serial.lot.companyId === input.piCompanyId) continue;
+    foreignByProduct.set(
+      serial.productId,
+      (foreignByProduct.get(serial.productId) ?? 0) + 1,
+    );
+  }
+  if (foreignByProduct.size === 0) return true;
+
+  const excludeIds = [
+    ...new Set([...(input.excludeSerialIds ?? []), ...input.serialIds]),
+  ];
+
+  for (const [productId, foreignQty] of foreignByProduct) {
+    const localAvailable = await prisma.inventorySerial.count({
+      where: {
+        productId,
+        status: SerialStatus.AVAILABLE,
+        lot: { companyId: input.piCompanyId },
+        ...(excludeIds.length ? { id: { notIn: excludeIds } } : {}),
+      },
+    });
+    if (localAvailable < foreignQty) return false;
+  }
+
+  return true;
+}
+
 export async function assertSerialsMatchApprovedPlan(
   prisma: DbClient,
   input: {
@@ -589,6 +646,16 @@ export async function assertSerialsMatchApprovedPlan(
   }
 
   if (foreignByCompany.size === 0) return;
+
+  // Interchangeable panels/serials: PI company has enough own stock → no approval.
+  if (
+    await foreignSerialsCoveredByLocalStock(prisma, {
+      piCompanyId: input.piCompanyId,
+      serialIds: input.serialIds,
+    })
+  ) {
+    return;
+  }
 
   const plan = await getApprovedPlanForPi(prisma, input.piId);
   if (!plan) {
@@ -994,6 +1061,190 @@ export async function completeCrossCompanyTransferOnDispatch(
   });
 
   return transfer;
+}
+
+/**
+ * When foreign-company serials are dispatched against a PI that still has enough
+ * local stock (interchangeable), move matching local AVAILABLE serials onto the
+ * foreign company so PI-company available qty drops and the sister company stays
+ * net-flat (foreign serial dispatched, local serial transferred in).
+ *
+ * Runs after shortfall auto-transfer so plan-covered serials (already moved onto
+ * the PI company) are ignored.
+ */
+export async function completeInterchangeableSerialSwapOnDispatch(
+  tx: Prisma.TransactionClient,
+  input: {
+    companyId: string;
+    piNo: string;
+    dispatchId: string;
+    dcNo: string;
+    performedById: string;
+    lines: Array<{
+      productId: string;
+      serialTracking: boolean;
+      serialIds: string[];
+    }>;
+  },
+) {
+  const allSerialIds = input.lines.flatMap((line) =>
+    line.serialTracking ? line.serialIds : [],
+  );
+  if (allSerialIds.length === 0) return null;
+
+  const serials = await tx.inventorySerial.findMany({
+    where: { id: { in: allSerialIds } },
+    include: {
+      lot: {
+        select: {
+          companyId: true,
+          warehouseId: true,
+          unitPurchaseRate: true,
+          totalPurchaseCost: true,
+          quantity: true,
+        },
+      },
+    },
+  });
+
+  type SwapGroup = {
+    fromCompanyId: string;
+    productId: string;
+    destWarehouseId: string;
+    foreignCount: number;
+  };
+  const groups = new Map<string, SwapGroup>();
+
+  for (const serial of serials) {
+    if (serial.lot.companyId === input.companyId) continue;
+    const key = `${serial.lot.companyId}:${serial.productId}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.foreignCount += 1;
+    } else {
+      groups.set(key, {
+        fromCompanyId: serial.lot.companyId,
+        productId: serial.productId,
+        destWarehouseId: serial.currentWarehouseId,
+        foreignCount: 1,
+      });
+    }
+  }
+
+  if (groups.size === 0) return null;
+
+  const systemUserId = await resolveSystemUserId(tx);
+  const swappedSerialIds: string[] = [];
+
+  for (const group of groups.values()) {
+    const localSerials = await tx.inventorySerial.findMany({
+      where: {
+        productId: group.productId,
+        status: SerialStatus.AVAILABLE,
+        lot: { companyId: input.companyId },
+        id: { notIn: allSerialIds },
+      },
+      include: {
+        lot: {
+          select: {
+            unitPurchaseRate: true,
+            totalPurchaseCost: true,
+            quantity: true,
+            warehouseId: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "asc" },
+      take: group.foreignCount,
+    });
+
+    if (localSerials.length < group.foreignCount) {
+      throw new Error("INTERCHANGEABLE_SWAP_STOCK_INSUFFICIENT");
+    }
+
+    const unitCosts = localSerials.map((row) => unitCostFromLot(row.lot));
+    const avgCost =
+      unitCosts.length > 0
+        ? unitCosts.reduce((a, b) => a + b, 0) / unitCosts.length
+        : 0;
+    const destLotNumber = await generateLotNumber(tx);
+    const destLot = await tx.inventoryLot.create({
+      data: {
+        lotNumber: destLotNumber,
+        companyId: group.fromCompanyId,
+        warehouseId: group.destWarehouseId,
+        purchaseInvoiceNo: systemPurchaseInvoiceNo(destLotNumber),
+        purchaseDate: new Date(),
+        productId: group.productId,
+        quantity: group.foreignCount,
+        receivedQuantity: group.foreignCount,
+        unitPurchaseRate: avgCost,
+        totalPurchaseCost: avgCost * group.foreignCount,
+        status: LotStatus.CLOSED,
+        createdById: systemUserId,
+        remarks: `Interchangeable serial swap for ${input.piNo} / ${input.dcNo}`,
+      },
+    });
+
+    const localIds = localSerials.map((row) => row.id);
+    await tx.inventorySerial.updateMany({
+      where: { id: { in: localIds } },
+      data: {
+        lotId: destLot.id,
+        currentWarehouseId: group.destWarehouseId,
+      },
+    });
+    swappedSerialIds.push(...localIds);
+
+    const fromWarehouseId = localSerials[0]!.currentWarehouseId;
+
+    await tx.inventoryTransaction.create({
+      data: {
+        transactionType: InventoryTransactionType.TRANSFER,
+        companyId: input.companyId,
+        productId: group.productId,
+        qty: group.foreignCount,
+        fromWarehouseId,
+        toWarehouseId: group.destWarehouseId,
+        referenceType: "DISPATCH",
+        referenceId: input.dispatchId,
+        notes: `Interchangeable serial ownership swap out for ${input.dcNo}`,
+        createdById: systemUserId,
+      },
+    });
+
+    await tx.inventoryTransaction.create({
+      data: {
+        transactionType: InventoryTransactionType.TRANSFER,
+        companyId: group.fromCompanyId,
+        productId: group.productId,
+        qty: group.foreignCount,
+        fromWarehouseId,
+        toWarehouseId: group.destWarehouseId,
+        referenceType: "DISPATCH",
+        referenceId: input.dispatchId,
+        notes: `Interchangeable serial ownership swap in for ${input.dcNo}`,
+        createdById: systemUserId,
+      },
+    });
+  }
+
+  await writeAuditLogTx(tx, {
+    tableName: "inventory_serials",
+    recordId: input.dispatchId,
+    action: "UPDATE",
+    newValue: {
+      interchangeableSerialSwap: true,
+      swappedSerialIds,
+      dcNo: input.dcNo,
+      piNo: input.piNo,
+    },
+    performedBy: input.performedById,
+    companyId: input.companyId,
+    reference: input.dcNo,
+  });
+
+  return { swappedSerialIds };
 }
 
 export async function prepareDispatchTodayCrossCompany(

@@ -132,7 +132,7 @@ export async function POST(request: Request) {
         ],
         CROSS_COMPANY_PLAN_REQUIRED: [
           "CROSS_COMPANY_PLAN_REQUIRED",
-          "Serials from another company require an approved cross-company transfer plan. Request approval from Dispatch Today.",
+          "Serials from another company exceed local interchangeable stock. Mark Dispatch Today with a source company for shortfall approval, or use local serials.",
           400,
         ],
         CROSS_COMPANY_REAPPROVAL_REQUIRED: [
@@ -143,6 +143,11 @@ export async function POST(request: Request) {
         CROSS_COMPANY_QTY_EXCEEDED: [
           "CROSS_COMPANY_QTY_EXCEEDED",
           "Cross-company serial quantity exceeds the approved shortfall plan.",
+          400,
+        ],
+        INTERCHANGEABLE_SWAP_STOCK_INSUFFICIENT: [
+          "INTERCHANGEABLE_SWAP_STOCK_INSUFFICIENT",
+          "Local stock is no longer sufficient to cover sister-company serials. Refresh and try again, or request shortfall approval.",
           400,
         ],
       };

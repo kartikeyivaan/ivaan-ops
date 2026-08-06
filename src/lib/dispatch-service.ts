@@ -15,6 +15,7 @@ import { writeAuditLogTx } from "@/lib/audit";
 import {
   assertSerialsMatchApprovedPlan,
   completeCrossCompanyTransferOnDispatch,
+  completeInterchangeableSerialSwapOnDispatch,
 } from "@/lib/cross-company-transfer-service";
 import {
   generateDispatchNumber,
@@ -1004,6 +1005,19 @@ async function confirmDispatchTx(
     lines: dispatch.lines.map((line) => ({
       productId: line.productId,
       qty: decimalToNumber(line.qty),
+      serialTracking: line.product.serialTracking,
+      serialIds: line.serials.map((entry) => entry.serialId),
+    })),
+  });
+
+  await completeInterchangeableSerialSwapOnDispatch(tx, {
+    companyId: input.companyId,
+    piNo: pi.piNo,
+    dispatchId: dispatch.id,
+    dcNo: dispatch.dcNo,
+    performedById: input.performedById,
+    lines: dispatch.lines.map((line) => ({
+      productId: line.productId,
       serialTracking: line.product.serialTracking,
       serialIds: line.serials.map((entry) => entry.serialId),
     })),

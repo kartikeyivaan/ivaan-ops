@@ -164,16 +164,23 @@ export type InwardSerialClassification = {
   invalidSerials: string[];
 };
 
+function isInverterCategory(categoryName?: string | null): boolean {
+  return Boolean(categoryName && categoryName.trim().toLowerCase() === "inverters");
+}
+
 /**
- * Whether a serial matches the expected format for the product brand.
- * Waaree panels must be WS + 14 digits; other brands accept any non-empty token.
+ * Whether a serial matches the expected format for the product brand/category.
+ * Waaree modules must be WS + 14 digits. Inverters have no format constraints.
+ * Other brands/categories accept any non-empty token.
  */
 export function isValidInwardSerialFormat(
   serial: string,
   brandName?: string | null,
+  categoryName?: string | null,
 ): boolean {
   const key = normalizeSerialNumber(serial);
   if (!key) return false;
+  if (isInverterCategory(categoryName)) return true;
   if (brandName && isWaareeBrand(brandName)) {
     return isWaareePanelSerial(key);
   }
@@ -189,6 +196,7 @@ export function classifyInwardSerials(input: {
   serials: string[];
   existingKeys?: Iterable<string>;
   brandName?: string | null;
+  categoryName?: string | null;
 }): InwardSerialClassification {
   const existing = new Set(
     Array.from(input.existingKeys ?? [], (value) => normalizeSerialNumber(value)).filter(
@@ -204,7 +212,7 @@ export function classifyInwardSerials(input: {
     const key = normalizeSerialNumber(serial);
     if (!key) continue;
 
-    if (!isValidInwardSerialFormat(key, input.brandName)) {
+    if (!isValidInwardSerialFormat(key, input.brandName, input.categoryName)) {
       if (!invalidSerials.includes(key)) invalidSerials.push(key);
       continue;
     }

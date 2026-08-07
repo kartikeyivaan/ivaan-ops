@@ -173,6 +173,7 @@ export function InwardForm({
 
   const parsedSerials = lot.product.serialTracking ? parseSerialInput(serialInput) : [];
   const brandName = lot.product.brand.name;
+  const categoryName = lot.product.category.name;
   const highlightSets: SerialHighlightSets | null = classification
     ? {
         newKeys: new Set(classification.newSerials),
@@ -251,6 +252,7 @@ export function InwardForm({
         serials,
         existingKeys,
         brandName,
+        categoryName,
       });
       setClassification(next);
 
@@ -271,6 +273,7 @@ export function InwardForm({
     }
   }, [
     brandName,
+    categoryName,
     expectedSerialQty,
     lot.product.serialTracking,
     pendingChange,

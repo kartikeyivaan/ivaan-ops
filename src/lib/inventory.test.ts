@@ -69,6 +69,16 @@ describe("inventory helpers", () => {
     expect(isValidInwardSerialFormat("LN-001", "Longi")).toBe(true);
   });
 
+  it("skips serial format constraints for inverters", () => {
+    expect(
+      isValidInwardSerialFormat("WPS033260710898", "Waaree", "Inverters"),
+    ).toBe(true);
+    expect(isValidInwardSerialFormat("BAD", "Waaree", "Inverters")).toBe(true);
+    expect(
+      isValidInwardSerialFormat("WPS033260710898", "Waaree", "Modules"),
+    ).toBe(false);
+  });
+
   it("classifies inward serials into new, repeat, and invalid", () => {
     expect(
       classifyInwardSerials({
@@ -81,11 +91,26 @@ describe("inventory helpers", () => {
         ],
         existingKeys: ["WS07269074147157"],
         brandName: "Waaree",
+        categoryName: "Modules",
       }),
     ).toEqual({
       newSerials: ["WS07269074147109", "WS07269074147111"],
       repeatSerials: ["WS07269074147109", "WS07269074147157"],
       invalidSerials: ["BAD"],
+    });
+  });
+
+  it("classifies Waaree inverter serials without format rejection", () => {
+    expect(
+      classifyInwardSerials({
+        serials: ["WPS033260710898", "WPS033260710903", "WPS033260710898"],
+        brandName: "Waaree",
+        categoryName: "Inverters",
+      }),
+    ).toEqual({
+      newSerials: ["WPS033260710898", "WPS033260710903"],
+      repeatSerials: ["WPS033260710898"],
+      invalidSerials: [],
     });
   });
 

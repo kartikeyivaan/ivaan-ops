@@ -727,8 +727,9 @@ export async function completeCrossCompanyTransferOnDispatch(
       if (shortfall <= 0) continue;
 
       const planLine = plan.lines.find((row) => row.productId === line.productId);
+      // Shortfall without a covering plan line — skip auto-transfer; do not block confirm.
       if (!planLine || decimalToNumber(planLine.qty) < shortfall) {
-        throw new Error("CROSS_COMPANY_QTY_EXCEEDED");
+        continue;
       }
 
       const lots = await tx.inventoryLot.findMany({

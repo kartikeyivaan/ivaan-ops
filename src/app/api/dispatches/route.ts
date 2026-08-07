@@ -98,7 +98,12 @@ export async function POST(request: Request) {
         INVALID_PI_STATUS: ["INVALID_STATUS", "PI is not ready for dispatch.", 400],
         PAYMENT_INCOMPLETE: [
           "PAYMENT_INCOMPLETE",
-          "Full payment is required before dispatch.",
+          "Outstanding must be under ₹50 before dispatch (or have approved credit).",
+          400,
+        ],
+        CUSTOMER_CREDIT_OVERDUE: [
+          "CUSTOMER_CREDIT_OVERDUE",
+          "This firm has overdue credit. Clear outstanding dues before dispatch.",
           400,
         ],
         NOT_MARKED_DISPATCH_TODAY: [
@@ -132,22 +137,22 @@ export async function POST(request: Request) {
         ],
         CROSS_COMPANY_PLAN_REQUIRED: [
           "CROSS_COMPANY_PLAN_REQUIRED",
-          "Serials from another company exceed local interchangeable stock. Mark Dispatch Today with a source company for shortfall approval, or use local serials.",
+          "Unable to create dispatch with these serials. Please retry.",
           400,
         ],
         CROSS_COMPANY_REAPPROVAL_REQUIRED: [
           "CROSS_COMPANY_REAPPROVAL_REQUIRED",
-          "Serials are from a different company than approved. Request re-approval with the correct source company.",
+          "Unable to create dispatch with these serials. Please retry.",
           400,
         ],
         CROSS_COMPANY_QTY_EXCEEDED: [
           "CROSS_COMPANY_QTY_EXCEEDED",
-          "Cross-company serial quantity exceeds the approved shortfall plan.",
+          "Unable to create dispatch with these serials. Please retry.",
           400,
         ],
         INTERCHANGEABLE_SWAP_STOCK_INSUFFICIENT: [
           "INTERCHANGEABLE_SWAP_STOCK_INSUFFICIENT",
-          "Local stock is no longer sufficient to cover sister-company serials. Refresh and try again, or request shortfall approval.",
+          "Unable to create dispatch with these serials. Please retry.",
           400,
         ],
       };

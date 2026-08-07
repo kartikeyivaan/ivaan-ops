@@ -616,58 +616,20 @@ export async function foreignSerialsCoveredByLocalStock(
   return true;
 }
 
+/**
+ * Sister-company serials are interchangeable (e.g. ISE panels on a PCMV PI).
+ * Intentionally does not block dispatch — ownership is reconciled on confirm
+ * via interchangeable serial swap (and shortfall auto-transfer when a plan exists).
+ */
 export async function assertSerialsMatchApprovedPlan(
-  prisma: DbClient,
-  input: {
+  _prisma: DbClient,
+  _input: {
     piId: string;
     piCompanyId: string;
     serialIds: string[];
   },
 ) {
-  if (input.serialIds.length === 0) return;
-
-  const serials = await prisma.inventorySerial.findMany({
-    where: { id: { in: input.serialIds } },
-    include: {
-      lot: { select: { companyId: true } },
-      product: { select: { id: true, displayName: true } },
-    },
-  });
-  if (serials.length !== input.serialIds.length) {
-    throw new Error("INVALID_SERIAL_SELECTION");
-  }
-
-  const foreignByCompany = new Map<string, typeof serials>();
-  for (const serial of serials) {
-    if (serial.lot.companyId === input.piCompanyId) continue;
-    const list = foreignByCompany.get(serial.lot.companyId) ?? [];
-    list.push(serial);
-    foreignByCompany.set(serial.lot.companyId, list);
-  }
-
-  if (foreignByCompany.size === 0) return;
-
-  // Sister-company serials are interchangeable (e.g. ISE panels on a PCMV PI).
-  // Never require a cross-company transfer approval — ownership is reconciled on confirm.
-  // If an approved shortfall plan exists, still enforce its source company / qty caps.
-  const plan = await getApprovedPlanForPi(prisma, input.piId);
-  if (!plan) return;
-
-  if (foreignByCompany.size > 1 || !foreignByCompany.has(plan.fromCompanyId)) {
-    throw new Error("CROSS_COMPANY_REAPPROVAL_REQUIRED");
-  }
-
-  const byProduct = new Map<string, number>();
-  for (const serial of foreignByCompany.get(plan.fromCompanyId)!) {
-    byProduct.set(serial.productId, (byProduct.get(serial.productId) ?? 0) + 1);
-  }
-
-  for (const [productId, qty] of byProduct) {
-    const line = plan.lines.find((row) => row.productId === productId);
-    if (!line || decimalToNumber(line.qty) < qty) {
-      throw new Error("CROSS_COMPANY_QTY_EXCEEDED");
-    }
-  }
+  return;
 }
 
 function unitCostFromLot(lot: {
@@ -740,11 +702,18 @@ export async function completeCrossCompanyTransferOnDispatch(
       if (foreign.length === 0) continue;
 
       const planLine = plan.lines.find((row) => row.productId === line.productId);
-      if (!planLine) throw new Error("CROSS_COMPANY_QTY_EXCEEDED");
+      // No matching plan line — leave these serials for interchangeable swap; do not block.
+      if (!planLine) continue;
 
-      planLineActual.set(planLine.id, (planLineActual.get(planLine.id) ?? 0) + foreign.length);
+      const planQty = decimalToNumber(planLine.qty);
+      const already = planLineActual.get(planLine.id) ?? 0;
+      const remainingPlanQty = Math.max(0, planQty - already);
+      const take = foreign.slice(0, remainingPlanQty);
+      if (take.length === 0) continue;
 
-      for (const serial of foreign) {
+      planLineActual.set(planLine.id, already + take.length);
+
+      for (const serial of take) {
         foreignSerialIds.push(serial.id);
         serialCostRows.push({
           planLineId: planLine.id,

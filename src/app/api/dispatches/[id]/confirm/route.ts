@@ -57,28 +57,28 @@ export async function POST(_request: Request, context: RouteContext) {
       if (error.message === "CROSS_COMPANY_PLAN_REQUIRED") {
         return errorResponse(
           "CROSS_COMPANY_PLAN_REQUIRED",
-          "Serials from another company exceed local interchangeable stock. Mark Dispatch Today with a source company for shortfall approval, or use local serials.",
+          "Unable to confirm dispatch with these serials. Please retry.",
           400,
         );
       }
       if (error.message === "CROSS_COMPANY_REAPPROVAL_REQUIRED") {
         return errorResponse(
           "CROSS_COMPANY_REAPPROVAL_REQUIRED",
-          "Serials are from a different company than approved. Request re-approval with the correct source company.",
+          "Unable to confirm dispatch with these serials. Please retry.",
           400,
         );
       }
       if (error.message === "CROSS_COMPANY_QTY_EXCEEDED") {
         return errorResponse(
           "CROSS_COMPANY_QTY_EXCEEDED",
-          "Cross-company quantity exceeds the approved shortfall plan.",
+          "Unable to confirm dispatch with these serials. Please retry.",
           400,
         );
       }
       if (error.message === "INTERCHANGEABLE_SWAP_STOCK_INSUFFICIENT") {
         return errorResponse(
           "INTERCHANGEABLE_SWAP_STOCK_INSUFFICIENT",
-          "Local stock is no longer sufficient to cover sister-company serials. Refresh and try again, or request shortfall approval.",
+          "Unable to confirm dispatch with these serials. Please retry.",
           400,
         );
       }

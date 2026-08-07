@@ -30,9 +30,6 @@ function mapManualStockError(error: unknown) {
   if (message === "PRODUCT_NOT_FOUND") {
     return errorResponse("PRODUCT_NOT_FOUND", "Product not found or inactive.", 400);
   }
-  if (message === "KIT_NOT_STOCKED") {
-    return errorResponse("KIT_NOT_STOCKED", "Kit products are not stocked.", 400);
-  }
   if (message === "SERIAL_TRACKING_REQUIRED") {
     return errorResponse(
       "SERIAL_TRACKING_REQUIRED",

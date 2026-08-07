@@ -21,7 +21,6 @@ import {
 } from "@/lib/inventory";
 import { getWarehouseStockForProduct } from "@/lib/inventory-service";
 import { MANUAL_STOCK_SOURCE } from "@/lib/manual-stock-constants";
-import { isKitCategory } from "@/lib/products";
 
 type Tx = Prisma.TransactionClient;
 
@@ -93,12 +92,8 @@ async function assertWarehouse(
 }
 
 async function loadProduct(tx: Tx, productId: string) {
-  const product = await tx.product.findUnique({
-    where: { id: productId },
-    include: { category: { select: { name: true } } },
-  });
+  const product = await tx.product.findUnique({ where: { id: productId } });
   if (!product || !product.isActive) throw new Error("PRODUCT_NOT_FOUND");
-  if (isKitCategory(product.category.name)) throw new Error("KIT_NOT_STOCKED");
   return product;
 }
 

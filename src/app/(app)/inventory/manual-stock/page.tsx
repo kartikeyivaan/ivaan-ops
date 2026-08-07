@@ -5,7 +5,6 @@ import {
   listManualStockEntries,
   serializeManualStockEntry,
 } from "@/lib/manual-stock-service";
-import { KIT_CATEGORY_NAME } from "@/lib/products";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
 import { ManualStockEntryWorkbench } from "@/components/inventory/manual-stock-entry-workbench";
@@ -22,7 +21,6 @@ export default async function ManualStockEntryPage() {
     prisma.product.findMany({
       where: {
         isActive: true,
-        category: { name: { not: KIT_CATEGORY_NAME } },
       },
       select: {
         id: true,

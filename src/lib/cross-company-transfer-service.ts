@@ -647,20 +647,11 @@ export async function assertSerialsMatchApprovedPlan(
 
   if (foreignByCompany.size === 0) return;
 
-  // Interchangeable panels/serials: PI company has enough own stock → no approval.
-  if (
-    await foreignSerialsCoveredByLocalStock(prisma, {
-      piCompanyId: input.piCompanyId,
-      serialIds: input.serialIds,
-    })
-  ) {
-    return;
-  }
-
+  // Sister-company serials are interchangeable (e.g. ISE panels on a PCMV PI).
+  // Never require a cross-company transfer approval — ownership is reconciled on confirm.
+  // If an approved shortfall plan exists, still enforce its source company / qty caps.
   const plan = await getApprovedPlanForPi(prisma, input.piId);
-  if (!plan) {
-    throw new Error("CROSS_COMPANY_PLAN_REQUIRED");
-  }
+  if (!plan) return;
 
   if (foreignByCompany.size > 1 || !foreignByCompany.has(plan.fromCompanyId)) {
     throw new Error("CROSS_COMPANY_REAPPROVAL_REQUIRED");
@@ -1158,10 +1149,11 @@ export async function completeInterchangeableSerialSwapOnDispatch(
       take: group.foreignCount,
     });
 
-    if (localSerials.length < group.foreignCount) {
-      throw new Error("INTERCHANGEABLE_SWAP_STOCK_INSUFFICIENT");
-    }
+    // Swap as many local units as available so PI-company qty drops. Remaining
+    // foreign serials stay on the sister company and are dispatched from there.
+    if (localSerials.length === 0) continue;
 
+    const swapQty = localSerials.length;
     const unitCosts = localSerials.map((row) => unitCostFromLot(row.lot));
     const avgCost =
       unitCosts.length > 0
@@ -1176,10 +1168,10 @@ export async function completeInterchangeableSerialSwapOnDispatch(
         purchaseInvoiceNo: systemPurchaseInvoiceNo(destLotNumber),
         purchaseDate: new Date(),
         productId: group.productId,
-        quantity: group.foreignCount,
-        receivedQuantity: group.foreignCount,
+        quantity: swapQty,
+        receivedQuantity: swapQty,
         unitPurchaseRate: avgCost,
-        totalPurchaseCost: avgCost * group.foreignCount,
+        totalPurchaseCost: avgCost * swapQty,
         status: LotStatus.CLOSED,
         createdById: systemUserId,
         remarks: `Interchangeable serial swap for ${input.piNo} / ${input.dcNo}`,
@@ -1203,7 +1195,7 @@ export async function completeInterchangeableSerialSwapOnDispatch(
         transactionType: InventoryTransactionType.TRANSFER,
         companyId: input.companyId,
         productId: group.productId,
-        qty: group.foreignCount,
+        qty: swapQty,
         fromWarehouseId,
         toWarehouseId: group.destWarehouseId,
         referenceType: "DISPATCH",
@@ -1218,7 +1210,7 @@ export async function completeInterchangeableSerialSwapOnDispatch(
         transactionType: InventoryTransactionType.TRANSFER,
         companyId: group.fromCompanyId,
         productId: group.productId,
-        qty: group.foreignCount,
+        qty: swapQty,
         fromWarehouseId,
         toWarehouseId: group.destWarehouseId,
         referenceType: "DISPATCH",
@@ -1228,6 +1220,8 @@ export async function completeInterchangeableSerialSwapOnDispatch(
       },
     });
   }
+
+  if (swappedSerialIds.length === 0) return null;
 
   await writeAuditLogTx(tx, {
     tableName: "inventory_serials",

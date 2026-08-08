@@ -303,20 +303,41 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
         })),
     };
 
-    const response = await fetch("/api/dispatches", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const data = await response.json();
-    setLoading(false);
+    try {
+      const response = await fetch("/api/dispatches", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-    if (!response.ok) {
-      setError(data.message ?? "Unable to create dispatch.");
-      return;
+      let data: { id?: string; message?: string } = {};
+      try {
+        data = (await response.json()) as { id?: string; message?: string };
+      } catch {
+        setError(
+          response.ok
+            ? "Dispatch may have been created, but the response was invalid. Refresh and check the dispatch list."
+            : "Unable to create dispatch. The server timed out or returned an invalid response. Please retry.",
+        );
+        return;
+      }
+
+      if (!response.ok) {
+        setError(data.message ?? "Unable to create dispatch.");
+        return;
+      }
+
+      if (!data.id) {
+        setError("Dispatch response was missing an id. Refresh and check the dispatch list.");
+        return;
+      }
+
+      router.push(`/inventory/dispatches/${data.id}`);
+    } catch {
+      setError("Unable to create dispatch. Check your connection and retry.");
+    } finally {
+      setLoading(false);
     }
-
-    router.push(`/inventory/dispatches/${data.id}`);
   }
 
   const selectedPi = bookablePis.find((row) => row.id === piId);

@@ -125,7 +125,10 @@ function serializePlan(
   };
 }
 
-export async function resolveSystemUserId(prisma: DbClient): Promise<string> {
+export async function resolveSystemUserId(
+  prisma: DbClient,
+  fallbackUserId?: string,
+): Promise<string> {
   const admin = await prisma.user.findFirst({
     where: {
       status: "ACTIVE",
@@ -134,8 +137,11 @@ export async function resolveSystemUserId(prisma: DbClient): Promise<string> {
     orderBy: { createdAt: "asc" },
     select: { id: true },
   });
-  if (!admin) throw new Error("SYSTEM_USER_NOT_FOUND");
-  return admin.id;
+  if (admin) return admin.id;
+  // Auto transfers/swaps on dispatch confirm must not hard-fail when no Super Admin
+  // account exists — attribute system lots/transfers to the acting user instead.
+  if (fallbackUserId) return fallbackUserId;
+  throw new Error("SYSTEM_USER_NOT_FOUND");
 }
 
 async function remainingFulfillmentLines(
@@ -826,7 +832,7 @@ export async function completeCrossCompanyTransferOnDispatch(
     transferGroups.set(row.fromWarehouseId, group);
   }
 
-  const systemUserId = await resolveSystemUserId(tx);
+  const systemUserId = await resolveSystemUserId(tx, input.performedById);
   const primaryGroup = [...transferGroups.values()][0]!;
   const transferNumber = await generateTransferNumber(tx, plan.fromCompanyId);
 
@@ -987,6 +993,7 @@ export async function completeCrossCompanyTransferOnDispatch(
         serialId: row.serialId,
         unitPurchaseCost: row.unitPurchaseCost,
       })),
+      skipDuplicates: true,
     });
   }
 
@@ -1094,7 +1101,7 @@ export async function completeInterchangeableSerialSwapOnDispatch(
 
   if (groups.size === 0) return null;
 
-  const systemUserId = await resolveSystemUserId(tx);
+  const systemUserId = await resolveSystemUserId(tx, input.performedById);
   const swappedSerialIds: string[] = [];
 
   for (const group of groups.values()) {

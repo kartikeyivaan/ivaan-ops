@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { canManageDispatches } from "@/lib/dispatch-permissions";
 import { confirmDispatch } from "@/lib/dispatch-service";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
+
+/** Cross-company / interchangeable serial confirm can exceed the default 10s. */
+export const maxDuration = 60;
 
 function errorResponse(code: string, message: string, status: number) {
   return NextResponse.json({ code, message }, { status });
@@ -87,6 +91,30 @@ export async function POST(_request: Request, context: RouteContext) {
           "SOURCE_INSUFFICIENT_STOCK",
           "Source company no longer has enough available stock for the shortfall.",
           400,
+        );
+      }
+      if (error.message === "SYSTEM_USER_NOT_FOUND") {
+        return errorResponse(
+          "SYSTEM_USER_NOT_FOUND",
+          "System user is required to complete cross-company stock transfer.",
+          500,
+        );
+      }
+      if (error.message === "NEGATIVE_STOCK_BLOCKED") {
+        return errorResponse(
+          "NEGATIVE_STOCK_BLOCKED",
+          "Insufficient available stock to complete this dispatch.",
+          400,
+        );
+      }
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2028"
+      ) {
+        return errorResponse(
+          "TRANSACTION_TIMEOUT",
+          "Dispatch took too long to confirm (often with cross-company serials). Please retry.",
+          504,
         );
       }
     }

@@ -731,102 +731,107 @@ export async function createDispatch(
     dispatchDate,
   );
 
-  return prisma.$transaction(async (tx) => {
-    const serialIds = input.lines.flatMap((line) => line.serialIds ?? []);
-    if (serialIds.length > 0) {
-      const uniqueIds = [...new Set(serialIds)];
-      if (uniqueIds.length !== serialIds.length) throw new Error("INVALID_SERIAL_SELECTION");
+  // Create + confirm can include cross-company transfer / interchangeable serial
+  // swap work (common for Waaree modules). Default interactive timeout (5s) is too low.
+  return prisma.$transaction(
+    async (tx) => {
+      const serialIds = input.lines.flatMap((line) => line.serialIds ?? []);
+      if (serialIds.length > 0) {
+        const uniqueIds = [...new Set(serialIds)];
+        if (uniqueIds.length !== serialIds.length) throw new Error("INVALID_SERIAL_SELECTION");
 
-      const selectable = await tx.inventorySerial.findMany({
-        where: {
-          id: { in: uniqueIds },
-          OR: [
-            { status: SerialStatus.AVAILABLE },
-            {
-              status: SerialStatus.BOOKED,
-              proformaInvoiceSerials: { some: { piId: pi.id } },
-            },
-          ],
-        },
-      });
-      if (selectable.length !== uniqueIds.length) throw new Error("INVALID_SERIAL_SELECTION");
+        const selectable = await tx.inventorySerial.findMany({
+          where: {
+            id: { in: uniqueIds },
+            OR: [
+              { status: SerialStatus.AVAILABLE },
+              {
+                status: SerialStatus.BOOKED,
+                proformaInvoiceSerials: { some: { piId: pi.id } },
+              },
+            ],
+          },
+        });
+        if (selectable.length !== uniqueIds.length) throw new Error("INVALID_SERIAL_SELECTION");
 
-      for (const line of input.lines) {
-        if (!line.serialIds?.length) continue;
-        const wrongProduct = selectable.some(
-          (serial) => line.serialIds!.includes(serial.id) && serial.productId !== line.productId,
-        );
-        if (wrongProduct) throw new Error("INVALID_SERIAL_SELECTION");
+        for (const line of input.lines) {
+          if (!line.serialIds?.length) continue;
+          const wrongProduct = selectable.some(
+            (serial) => line.serialIds!.includes(serial.id) && serial.productId !== line.productId,
+          );
+          if (wrongProduct) throw new Error("INVALID_SERIAL_SELECTION");
+        }
       }
-    }
 
-    const dispatch = await tx.dispatch.create({
-      data: {
-        dcNo,
-        companyId: input.companyId,
-        customerId: pi.customerId,
-        proformaInvoiceId: pi.id,
-        warehouseId: pi.warehouseId!,
-        status: DispatchStatus.DRAFT,
-        dispatchDate,
-        vehicleNo: input.vehicleNo,
-        driverName: input.driverName,
-        receiverName: input.receiverName,
-        receiverMobile: input.receiverMobile,
-        signatureUrl: input.signatureUrl,
-        notes: input.notes,
-        createdById: input.createdById,
-        lines: {
-          create: input.lines.map((line) => ({
-            proformaInvoiceItemId: line.proformaInvoiceItemId,
-            productId: line.productId,
-            qty: line.qty,
-            serials: line.serialIds?.length
-              ? {
-                  create: line.serialIds.map((serialId) => ({ serialId })),
-                }
-              : undefined,
-          })),
+      const dispatch = await tx.dispatch.create({
+        data: {
+          dcNo,
+          companyId: input.companyId,
+          customerId: pi.customerId,
+          proformaInvoiceId: pi.id,
+          warehouseId: pi.warehouseId!,
+          status: DispatchStatus.DRAFT,
+          dispatchDate,
+          vehicleNo: input.vehicleNo,
+          driverName: input.driverName,
+          receiverName: input.receiverName,
+          receiverMobile: input.receiverMobile,
+          signatureUrl: input.signatureUrl,
+          notes: input.notes,
+          createdById: input.createdById,
+          lines: {
+            create: input.lines.map((line) => ({
+              proformaInvoiceItemId: line.proformaInvoiceItemId,
+              productId: line.productId,
+              qty: line.qty,
+              serials: line.serialIds?.length
+                ? {
+                    create: line.serialIds.map((serialId) => ({ serialId })),
+                  }
+                : undefined,
+            })),
+          },
         },
-      },
-      include: dispatchInclude,
-    });
-
-    // Assign selected serials to this PI when they are recorded on the DC.
-    if (serialIds.length > 0) {
-      await tx.proformaInvoiceSerial.createMany({
-        data: serialIds.map((serialId) => ({
-          piId: pi.id,
-          serialId,
-        })),
-        skipDuplicates: true,
+        include: dispatchInclude,
       });
-      await tx.inventorySerial.updateMany({
-        where: { id: { in: serialIds }, status: SerialStatus.AVAILABLE },
-        data: { status: SerialStatus.BOOKED },
-      });
-    }
 
-    await writeAuditLogTx(tx, {
-      tableName: "dispatches",
-      recordId: dispatch.id,
-      action: "CREATE",
-      newValue: { dcNo: dispatch.dcNo, status: dispatch.status },
-      performedBy: input.createdById,
-      companyId: input.companyId,
-      reference: dispatch.dcNo,
-    });
+      // Assign selected serials to this PI when they are recorded on the DC.
+      if (serialIds.length > 0) {
+        await tx.proformaInvoiceSerial.createMany({
+          data: serialIds.map((serialId) => ({
+            piId: pi.id,
+            serialId,
+          })),
+          skipDuplicates: true,
+        });
+        await tx.inventorySerial.updateMany({
+          where: { id: { in: serialIds }, status: SerialStatus.AVAILABLE },
+          data: { status: SerialStatus.BOOKED },
+        });
+      }
 
-    if (input.confirm) {
-      return confirmDispatchTx(tx, {
+      await writeAuditLogTx(tx, {
+        tableName: "dispatches",
+        recordId: dispatch.id,
+        action: "CREATE",
+        newValue: { dcNo: dispatch.dcNo, status: dispatch.status },
+        performedBy: input.createdById,
         companyId: input.companyId,
-        dispatchId: dispatch.id,
-        performedById: input.createdById,
+        reference: dispatch.dcNo,
       });
-    }
 
-    return serializeDispatch(dispatch);
-  });
+      if (input.confirm) {
+        return confirmDispatchTx(tx, {
+          companyId: input.companyId,
+          dispatchId: dispatch.id,
+          performedById: input.createdById,
+        });
+      }
+
+      return serializeDispatch(dispatch);
+    },
+    { maxWait: 10_000, timeout: 60_000 },
+  );
 }
 
 /**
@@ -1184,7 +1189,10 @@ export async function confirmDispatch(
     performedById: string;
   },
 ) {
-  return prisma.$transaction((tx) => confirmDispatchTx(tx, input));
+  return prisma.$transaction((tx) => confirmDispatchTx(tx, input), {
+    maxWait: 10_000,
+    timeout: 60_000,
+  });
 }
 
 export async function requestDispatchCancel(

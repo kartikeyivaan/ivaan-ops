@@ -40,4 +40,9 @@ describe("transfer numbering", () => {
     expect(fy).toBe("25-26");
     expect(`TRF-${fy}-00001`).toMatch(/^TRF-\d{2}-\d{2}-\d{5}$/);
   });
+
+  it("pads sequence to 5 digits like existing transfers", () => {
+    const fy = getFinancialYear(new Date("2026-08-08"));
+    expect(`TRF-${fy}-${String(18).padStart(5, "0")}`).toBe("TRF-26-27-00018");
+  });
 });

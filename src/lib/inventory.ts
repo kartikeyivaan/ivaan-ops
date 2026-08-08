@@ -59,6 +59,7 @@ export async function generateTransferNumber(
 ): Promise<string> {
   const fy = getFinancialYear(date);
   const docType = "TRANSFER";
+  const prefix = `TRF-${fy}-`;
 
   const existing = await prisma.documentSequence.findUnique({
     where: {
@@ -70,7 +71,19 @@ export async function generateTransferNumber(
     },
   });
 
-  const nextSeq = (existing?.lastSequence ?? 0) + 1;
+  // transfer_number is globally unique, but sequences are per-company. Without
+  // syncing to the highest existing TRF for this FY, the first PCMV transfer
+  // would collide with ISE's TRF-26-27-00001 (and vice versa).
+  const latest = await prisma.inventoryTransfer.findFirst({
+    where: { transferNumber: { startsWith: prefix } },
+    orderBy: { transferNumber: "desc" },
+    select: { transferNumber: true },
+  });
+  const latestSeq = latest
+    ? Number.parseInt(latest.transferNumber.slice(prefix.length), 10) || 0
+    : 0;
+
+  const nextSeq = Math.max(existing?.lastSequence ?? 0, latestSeq) + 1;
 
   await prisma.documentSequence.upsert({
     where: {
@@ -89,7 +102,7 @@ export async function generateTransferNumber(
     update: { lastSequence: nextSeq },
   });
 
-  return `TRF-${fy}-${String(nextSeq).padStart(5, "0")}`;
+  return `${prefix}${String(nextSeq).padStart(5, "0")}`;
 }
 
 export function decimalToNumber(value: { toNumber(): number } | number | string): number {

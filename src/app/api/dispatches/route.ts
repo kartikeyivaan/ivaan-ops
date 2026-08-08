@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import {
   canManageDispatches,
@@ -9,6 +10,9 @@ import { createDispatch, listDispatches } from "@/lib/dispatch-service";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
 import { createDispatchSchema, dispatchSearchSchema } from "@/lib/validations";
+
+/** Cross-company / interchangeable serial confirm can exceed the default 10s. */
+export const maxDuration = 60;
 
 function errorResponse(code: string, message: string, status: number, details?: unknown) {
   return NextResponse.json({ code, message, details }, { status });
@@ -155,10 +159,48 @@ export async function POST(request: Request) {
           "Unable to create dispatch with these serials. Please retry.",
           400,
         ],
+        SOURCE_INSUFFICIENT_STOCK: [
+          "SOURCE_INSUFFICIENT_STOCK",
+          "Source company no longer has enough available stock for the shortfall.",
+          400,
+        ],
+        SYSTEM_USER_NOT_FOUND: [
+          "SYSTEM_USER_NOT_FOUND",
+          "System user is required to complete cross-company stock transfer.",
+          500,
+        ],
+        NEGATIVE_STOCK_BLOCKED: [
+          "NEGATIVE_STOCK_BLOCKED",
+          "Insufficient available stock to complete this dispatch.",
+          400,
+        ],
       };
       const mapped = map[error.message];
       if (mapped) {
         return errorResponse(mapped[0], mapped[1], mapped[2]);
+      }
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2028"
+      ) {
+        return errorResponse(
+          "TRANSACTION_TIMEOUT",
+          "Dispatch took too long to confirm (often with cross-company serials). Please retry.",
+          504,
+        );
+      }
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002"
+      ) {
+        const target = Array.isArray(error.meta?.target)
+          ? error.meta.target.join(", ")
+          : String(error.meta?.target ?? "record");
+        return errorResponse(
+          "CONFLICT",
+          `Unable to create dispatch due to a duplicate ${target}. Please retry.`,
+          409,
+        );
       }
     }
     throw error;

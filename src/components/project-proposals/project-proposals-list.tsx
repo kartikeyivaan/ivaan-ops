@@ -511,7 +511,6 @@ export function ProjectProposalsList({
                 setCustomerMobile(normalizeMobileNumber(event.target.value))
               }
               inputMode="numeric"
-              placeholder="10-digit mobile"
               placeholder="Search mobile"
             />
           </div>

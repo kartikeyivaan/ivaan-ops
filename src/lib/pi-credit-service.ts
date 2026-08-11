@@ -37,7 +37,6 @@ function creditInclude() {
       select: {
         id: true,
         customerName: true,
-        firmName: true,
       },
     },
     salesUser: { select: { id: true, name: true } },
@@ -314,7 +313,6 @@ export async function approvePiCreditSm(
       data: {
         status: ApprovalRequestStatus.APPROVED,
         approvedById: input.approvedById,
-        approvedAt: new Date(),
         remarks: input.remarks?.trim() || pending.remarks,
       },
     });
@@ -401,7 +399,6 @@ export async function approvePiCreditAccounts(
       data: {
         status: ApprovalRequestStatus.APPROVED,
         approvedById: input.approvedById,
-        approvedAt: now,
         remarks: input.remarks?.trim() || pending.remarks,
       },
     });
@@ -483,7 +480,6 @@ export async function rejectPiCredit(
       data: {
         status: ApprovalRequestStatus.REJECTED,
         approvedById: input.rejectedById,
-        approvedAt: new Date(),
         remarks: input.reason.trim(),
       },
     });

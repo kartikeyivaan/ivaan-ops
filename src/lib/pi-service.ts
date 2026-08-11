@@ -35,7 +35,14 @@ import {
   notifyPiCancelApprovalNeeded,
   notifyPiCancelled,
   notifyWarehouseDispatchToday,
+  notifyWarehouseDispatchTodayRecalled,
 } from "@/lib/notification-service";
+import {
+  assertCustomerCreditClear,
+  clearPiCreditIfPaid,
+  serializePiCredit,
+} from "@/lib/pi-credit-service";
+import { hasApprovedPiCredit } from "@/lib/pi-credit";
 import {
   buildDispatchTodayApprovalCopy,
   calculateAdvanceRequired,
@@ -104,6 +111,9 @@ export const piInclude = {
   warehouse: { select: { id: true, name: true, code: true } },
   bookedBy: { select: { id: true, name: true } },
   dispatchTodayMarkedBy: { select: { id: true, name: true } },
+  creditRequestedBy: { select: { id: true, name: true } },
+  creditSmApprovedBy: { select: { id: true, name: true } },
+  creditAccountsApprovedBy: { select: { id: true, name: true } },
   items: {
     include: {
       product: {
@@ -186,8 +196,12 @@ function serializePi(
     requiredDispatchMinDate,
     todayString,
   );
-  const readyForDispatch = isReadyForDispatch(pi.status, outstanding);
+  const creditApproved = hasApprovedPiCredit(pi.creditStatus);
+  const readyForDispatch = isReadyForDispatch(pi.status, outstanding, {
+    hasApprovedCredit: creditApproved,
+  });
   const dispatchTodayActive = isDispatchTodayActive(dispatchTodayDate, todayString);
+  const credit = serializePiCredit(pi, outstanding);
 
   return {
     id: pi.id,
@@ -259,6 +273,7 @@ function serializePi(
       notes: payment.notes,
       recordedBy: payment.recordedBy,
     })),
+    credit,
     paymentSummary: {
       totalPaid,
       outstanding,
@@ -271,6 +286,7 @@ function serializePi(
       bookingBlockedReason: requirement.reason ?? null,
       readyForDispatch,
       canMarkDispatchToday: readyForDispatch && !dispatchTodayActive,
+      hasApprovedCredit: creditApproved,
     },
   };
 }
@@ -899,6 +915,12 @@ export async function recordPayment(
       reference: pi.piNo,
     });
 
+    await clearPiCreditIfPaid(tx, {
+      companyId: input.companyId,
+      piId: pi.id,
+      performedById: input.recordedById,
+    });
+
     const updated = await tx.proformaInvoice.findUniqueOrThrow({
       where: { id: pi.id },
       include: piInclude,
@@ -1005,6 +1027,12 @@ export async function updatePayment(
       performedBy: input.performedById,
       companyId: input.companyId,
       reference: pi.piNo,
+    });
+
+    await clearPiCreditIfPaid(tx, {
+      companyId: input.companyId,
+      piId: pi.id,
+      performedById: input.performedById,
     });
 
     const updated = await tx.proformaInvoice.findUniqueOrThrow({
@@ -1372,6 +1400,11 @@ export async function requestBooking(
   if (!pi) throw new Error("NOT_FOUND");
   if (pi.status !== ProformaInvoiceStatus.ISSUED) throw new Error("INVALID_STATUS");
 
+  await assertCustomerCreditClear(prisma, {
+    companyId: input.companyId,
+    customerId: pi.customerId,
+  });
+
   const totalPaid = pi.payments.reduce(
     (sum, payment) => sum + decimalToNumber(payment.amount),
     0,
@@ -1736,6 +1769,77 @@ async function pullBookingReservationToToday(
   });
 }
 
+async function restoreBookingReservationDates(
+  tx: Prisma.TransactionClient,
+  input: {
+    companyId: string;
+    piId: string;
+    minDate: Date | null;
+    maxDate: Date | null;
+    updatedById: string;
+  },
+) {
+  if (!input.minDate || !input.maxDate) return;
+  await tx.inventoryEvent.updateMany({
+    where: {
+      companyId: input.companyId,
+      sourceType: "PROFORMA_INVOICE",
+      sourceId: input.piId,
+      eventType: InventoryEventType.BOOKING_RESERVATION,
+      status: InventoryEventStatus.ACTIVE,
+    },
+    data: {
+      expectedMinDate: input.minDate,
+      expectedMaxDate: input.maxDate,
+      updatedById: input.updatedById,
+    },
+  });
+}
+
+async function cancelOpenCrossCompanyPlansForPi(
+  tx: Prisma.TransactionClient,
+  input: {
+    piId: string;
+    performedById: string;
+    reason: string;
+  },
+) {
+  const openPlans = await tx.piCrossCompanyTransferPlan.findMany({
+    where: {
+      piId: input.piId,
+      status: {
+        in: [
+          PiCrossCompanyTransferPlanStatus.PENDING,
+          PiCrossCompanyTransferPlanStatus.APPROVED,
+        ],
+      },
+    },
+    select: { id: true },
+  });
+
+  if (!openPlans.length) return;
+
+  await tx.piCrossCompanyTransferPlan.updateMany({
+    where: { id: { in: openPlans.map((row) => row.id) } },
+    data: {
+      status: PiCrossCompanyTransferPlanStatus.REJECTED,
+      rejectionReason: input.reason,
+    },
+  });
+  await tx.approvalRequest.updateMany({
+    where: {
+      moduleType: ApprovalModuleType.CROSS_COMPANY_TRANSFER,
+      moduleId: { in: openPlans.map((row) => row.id) },
+      status: ApprovalRequestStatus.PENDING,
+    },
+    data: {
+      status: ApprovalRequestStatus.REJECTED,
+      approvedById: input.performedById,
+      remarks: input.reason,
+    },
+  });
+}
+
 async function activateDispatchToday(
   tx: Prisma.TransactionClient,
   input: {
@@ -1822,12 +1926,21 @@ export async function markDispatchToday(
   });
   if (!pi) throw new Error("NOT_FOUND");
 
+  await assertCustomerCreditClear(prisma, {
+    companyId: input.companyId,
+    customerId: pi.customerId,
+  });
+
   const totalPaid = pi.payments.reduce(
     (sum, payment) => sum + decimalToNumber(payment.amount),
     0,
   );
   const outstanding = calculateOutstanding(decimalToNumber(pi.totalValue), totalPaid);
-  if (!isReadyForDispatch(pi.status, outstanding)) {
+  if (
+    !isReadyForDispatch(pi.status, outstanding, {
+      hasApprovedCredit: hasApprovedPiCredit(pi.creditStatus),
+    })
+  ) {
     throw new Error("NOT_READY_FOR_DISPATCH");
   }
 
@@ -2033,7 +2146,11 @@ export async function approveDispatchToday(
     0,
   );
   const outstanding = calculateOutstanding(decimalToNumber(pi.totalValue), totalPaid);
-  if (!isReadyForDispatch(pi.status, outstanding)) {
+  if (
+    !isReadyForDispatch(pi.status, outstanding, {
+      hasApprovedCredit: hasApprovedPiCredit(pi.creditStatus),
+    })
+  ) {
     throw new Error("NOT_READY_FOR_DISPATCH");
   }
 
@@ -2221,6 +2338,133 @@ export async function rejectDispatchToday(
       companyId: input.companyId,
       reference: pi.piNo,
     });
+
+    return serializePi(updated, { pendingDispatchTodayApproval: false });
+  });
+}
+
+/**
+ * Sales withdraws a pending dispatch-today approval or clears an active
+ * dispatch-today mark (before warehouse has started / completed a DC).
+ */
+export async function recallDispatchToday(
+  prisma: PrismaClient,
+  input: {
+    companyId: string;
+    piId: string;
+    recalledById: string;
+    reason?: string;
+  },
+) {
+  await clearExpiredDispatchTodayFlags(prisma, input.companyId, input.piId);
+
+  const pi = await prisma.proformaInvoice.findFirst({
+    where: { id: input.piId, companyId: input.companyId },
+  });
+  if (!pi) throw new Error("NOT_FOUND");
+
+  const todayString = toDateOnly(new Date()).toISOString().slice(0, 10);
+  const active = isDispatchTodayActive(pi.dispatchTodayDate, todayString);
+
+  const pending = await prisma.approvalRequest.findFirst({
+    where: {
+      moduleType: ApprovalModuleType.DISPATCH_TODAY,
+      moduleId: pi.id,
+      status: ApprovalRequestStatus.PENDING,
+    },
+  });
+
+  if (!active && !pending) {
+    throw new Error("NOTHING_TO_RECALL");
+  }
+
+  const blockingDispatch = await prisma.dispatch.findFirst({
+    where: {
+      proformaInvoiceId: pi.id,
+      status: {
+        in: [DispatchStatus.DRAFT, DispatchStatus.CANCEL_PENDING],
+      },
+    },
+    select: { id: true, status: true },
+  });
+  if (blockingDispatch) throw new Error("HAS_ACTIVE_DISPATCH");
+
+  const completedPlan = await prisma.piCrossCompanyTransferPlan.findFirst({
+    where: {
+      piId: pi.id,
+      status: PiCrossCompanyTransferPlanStatus.COMPLETED,
+    },
+    select: { id: true },
+  });
+  if (completedPlan) throw new Error("TRANSFER_ALREADY_COMPLETED");
+
+  const reason = input.reason?.trim() || "Dispatch today recalled by sales";
+
+  return prisma.$transaction(async (tx) => {
+    if (pending) {
+      await tx.approvalRequest.update({
+        where: { id: pending.id },
+        data: {
+          status: ApprovalRequestStatus.REJECTED,
+          approvedById: input.recalledById,
+          remarks: reason,
+        },
+      });
+    }
+
+    await cancelOpenCrossCompanyPlansForPi(tx, {
+      piId: pi.id,
+      performedById: input.recalledById,
+      reason,
+    });
+
+    if (active) {
+      await restoreBookingReservationDates(tx, {
+        companyId: input.companyId,
+        piId: pi.id,
+        minDate: pi.requiredDispatchMinDate,
+        maxDate: pi.requiredDispatchMaxDate,
+        updatedById: input.recalledById,
+      });
+    }
+
+    const updated = await tx.proformaInvoice.update({
+      where: { id: pi.id },
+      data: {
+        dispatchTodayDate: null,
+        dispatchTodayMarkedAt: null,
+        dispatchTodayMarkedById: null,
+        dispatchDraftVehicleNo: null,
+        dispatchDraftDriverName: null,
+        dispatchDraftReceiverName: null,
+        dispatchDraftReceiverMobile: null,
+        dispatchDraftNotes: null,
+      },
+      include: piInclude,
+    });
+
+    await writeAuditLogTx(tx, {
+      tableName: "proforma_invoices",
+      recordId: pi.id,
+      action: "UPDATE",
+      newValue: {
+        decision: "RECALLED",
+        module: "DISPATCH_TODAY",
+        reason,
+        wasActive: active,
+        hadPendingApproval: Boolean(pending),
+      },
+      performedBy: input.recalledById,
+      companyId: input.companyId,
+      reference: pi.piNo,
+    });
+
+    if (active) {
+      await notifyWarehouseDispatchTodayRecalled(tx, {
+        companyId: input.companyId,
+        piNo: pi.piNo,
+      });
+    }
 
     return serializePi(updated, { pendingDispatchTodayApproval: false });
   });

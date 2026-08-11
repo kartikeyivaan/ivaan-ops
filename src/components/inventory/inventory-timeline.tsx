@@ -7,6 +7,7 @@ import {
   ChevronRight,
   PackageSearch,
 } from "lucide-react";
+import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +23,13 @@ import type {
   InventoryTimelineResponse,
 } from "@/lib/inventory-timeline";
 import { cn } from "@/lib/utils";
+
+function reservedQtyHref(productId?: string, warehouseId?: string) {
+  const params = new URLSearchParams({ report: "reserved-qty" });
+  if (productId) params.set("productId", productId);
+  if (warehouseId) params.set("warehouseId", warehouseId);
+  return `/reports?${params.toString()}`;
+}
 
 type CompanyOption = { id: string; name: string; code: string };
 type WarehouseOption = { id: string; name: string; companyId: string };
@@ -48,7 +56,15 @@ function dayName(date: string) {
   }).format(new Date(`${date}T00:00:00Z`));
 }
 
-function TimelineCard({ item, today }: { item: InventoryTimelineItem; today: string }) {
+function TimelineCard({
+  item,
+  today,
+  warehouseId,
+}: {
+  item: InventoryTimelineItem;
+  today: string;
+  warehouseId: string;
+}) {
   const [expanded, setExpanded] = useState(false);
   const [selectedDate, setSelectedDate] = useState(today);
   const selectedDay =
@@ -109,17 +125,39 @@ function TimelineCard({ item, today }: { item: InventoryTimelineItem; today: str
               ["Incoming", item.incoming],
               ["Safety", item.safety],
               ["Net available", item.netAvailableToday],
-            ].map(([label, value]) => (
-              <div
-                key={label}
-                className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
-              >
-                <p className="text-xs text-slate-500">{label}</p>
-                <p className="font-semibold text-slate-900">
-                  {quantity(value as number)}
-                </p>
-              </div>
-            ))}
+            ].map(([label, value]) => {
+              const content = (
+                <>
+                  <p className="text-xs text-slate-500">{label}</p>
+                  <p className="font-semibold text-slate-900">
+                    {quantity(value as number)}
+                  </p>
+                </>
+              );
+              if (label === "Reserved") {
+                return (
+                  <Link
+                    key={label}
+                    href={reservedQtyHref(item.productId, warehouseId || undefined)}
+                    className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 transition hover:border-emerald-400 hover:bg-emerald-100"
+                    title="View reserved qty bookings for this product"
+                  >
+                    {content}
+                    <p className="mt-1 text-[10px] font-medium uppercase tracking-wide text-emerald-700">
+                      View list
+                    </p>
+                  </Link>
+                );
+              }
+              return (
+                <div
+                  key={label}
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                >
+                  {content}
+                </div>
+              );
+            })}
           </div>
 
           <div className="overflow-x-auto rounded-xl border border-slate-200">
@@ -461,8 +499,8 @@ export function InventoryTimeline({
       ) : null}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
-        {metrics.map(([label, value]) => (
-          <Card key={label}>
+        {metrics.map(([label, value]) => {
+          const content = (
             <CardContent className="p-4">
               <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                 {label}
@@ -470,9 +508,27 @@ export function InventoryTimeline({
               <p className="mt-1 text-2xl font-bold text-slate-900">
                 {quantity(value as number)}
               </p>
+              {label === "Reserved" ? (
+                <p className="mt-1 text-[10px] font-medium uppercase tracking-wide text-emerald-700">
+                  View list
+                </p>
+              ) : null}
             </CardContent>
-          </Card>
-        ))}
+          );
+          if (label === "Reserved") {
+            return (
+              <Link
+                key={label}
+                href={reservedQtyHref(productId || undefined, warehouseId || undefined)}
+                className="rounded-xl transition hover:ring-2 hover:ring-emerald-300"
+                title="View reserved qty bookings"
+              >
+                <Card className="h-full border-emerald-200 bg-emerald-50/60">{content}</Card>
+              </Link>
+            );
+          }
+          return <Card key={label}>{content}</Card>;
+        })}
       </div>
 
       <div className="space-y-3">
@@ -484,7 +540,12 @@ export function InventoryTimeline({
           </Card>
         ) : data?.items.length ? (
           data.items.map((item) => (
-            <TimelineCard key={item.key} item={item} today={data.startDate} />
+            <TimelineCard
+              key={item.key}
+              item={item}
+              today={data.startDate}
+              warehouseId={warehouseId}
+            />
           ))
         ) : (
           <Card>

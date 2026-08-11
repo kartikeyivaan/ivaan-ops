@@ -143,10 +143,13 @@ describe("service delay", () => {
 
 describe("service mobile validation", () => {
   it("normalizes and validates indian mobile numbers", () => {
-    expect(normalizeMobileNumber("+91 98765 43210")).toBe("919876543210");
+    expect(normalizeMobileNumber("+91 98765 43210")).toBe("9876543210");
+    expect(normalizeMobileNumber("91 9876543210")).toBe("9876543210");
+    expect(normalizeMobileNumber("09876543210")).toBe("9876543210");
     expect(normalizeMobileNumber("98765-43210")).toBe("9876543210");
     expect(isValidIndianMobile("9876543210")).toBe(true);
     expect(isValidIndianMobile("98765 43210")).toBe(true);
+    expect(isValidIndianMobile("+91 98765 43210")).toBe(true);
     expect(isValidIndianMobile("1234567890")).toBe(false);
     expect(isValidIndianMobile("98765")).toBe(false);
   });

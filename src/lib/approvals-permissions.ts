@@ -8,6 +8,7 @@ import {
   canApproveBooking,
   canApproveDispatchToday,
   canApprovePiCancel,
+  canApprovePiCredit,
 } from "@/lib/pi-permissions";
 import { canApproveProjectProposals } from "@/lib/project-proposal-permissions";
 import { canApproveQuotationPricing } from "@/lib/quotation-permissions";
@@ -19,6 +20,7 @@ export const APPROVALS_INBOX_ROLES: RoleName[] = [
   ROLES.SALES_MANAGER,
   ROLES.PROJECTS_MANAGER,
   ROLES.PURCHASE,
+  ROLES.ACCOUNTS,
 ];
 
 export function canAccessApprovalsInbox(userRoles: string[]): boolean {
@@ -28,6 +30,7 @@ export function canAccessApprovalsInbox(userRoles: string[]): boolean {
     canApproveDispatchToday(userRoles) ||
     canApproveDispatchCancel(userRoles) ||
     canApprovePiCancel(userRoles) ||
+    canApprovePiCredit(userRoles) ||
     canApproveProjectProposals(userRoles) ||
     canApproveOpeningStock(userRoles) ||
     canApprovePanelDamage(userRoles) ||

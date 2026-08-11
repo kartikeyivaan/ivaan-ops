@@ -70,6 +70,13 @@ export async function POST(request: Request, context: RouteContext) {
       if (error.message === "WAREHOUSE_NOT_FOUND") {
         return errorResponse("NOT_FOUND", "Warehouse not found.", 404);
       }
+      if (error.message === "CUSTOMER_CREDIT_OVERDUE") {
+        return errorResponse(
+          "CUSTOMER_CREDIT_OVERDUE",
+          "This firm has overdue credit. Clear outstanding dues before booking.",
+          400,
+        );
+      }
       if (error.message === "INSUFFICIENT_STOCK") {
         return errorResponse("INSUFFICIENT_STOCK", "Insufficient stock to book order.", 400);
       }

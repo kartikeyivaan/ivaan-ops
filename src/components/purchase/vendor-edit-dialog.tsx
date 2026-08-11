@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Modal, ModalBody, ModalFooter, ModalForm, ModalHeader } from "@/components/ui/modal";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { normalizeMobileNumber } from "@/lib/phone";
 
 export type EditableVendor = {
   id: string;
@@ -106,7 +107,13 @@ export function VendorEditDialog({
           </div>
           <div className="space-y-2">
             <Label htmlFor="edit-mobile">Mobile</Label>
-            <Input id="edit-mobile" value={mobile} onChange={(e) => setMobile(e.target.value)} />
+            <Input
+              id="edit-mobile"
+              value={mobile}
+              onChange={(e) => setMobile(normalizeMobileNumber(e.target.value))}
+              inputMode="numeric"
+              placeholder="10-digit mobile"
+            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="edit-email">Email</Label>

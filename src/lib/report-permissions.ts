@@ -27,6 +27,14 @@ const BOOKED_AVAILABLE_ROLES = [
   ROLES.WAREHOUSE,
 ] as const;
 
+const RESERVED_QTY_ROLES = [
+  ROLES.SUPER_ADMIN,
+  ROLES.SALES_MANAGER,
+  ROLES.SALES_EXECUTIVE,
+  ROLES.WAREHOUSE,
+  ROLES.PURCHASE,
+] as const;
+
 const DISPATCH_REPORT_ROLES = [
   ROLES.SUPER_ADMIN,
   ROLES.SALES_MANAGER,
@@ -51,6 +59,10 @@ export function canViewBookedAvailableReport(userRoles: string[]): boolean {
   return hasRole(userRoles, [...BOOKED_AVAILABLE_ROLES]);
 }
 
+export function canViewReservedQtyReport(userRoles: string[]): boolean {
+  return hasRole(userRoles, [...RESERVED_QTY_ROLES]);
+}
+
 export function canViewDispatchReport(userRoles: string[]): boolean {
   return hasRole(userRoles, [...DISPATCH_REPORT_ROLES]);
 }
@@ -61,6 +73,7 @@ export function canViewAnyReport(userRoles: string[]): boolean {
     canViewPaymentFollowupReport(userRoles) ||
     canViewProductMovementReport(userRoles) ||
     canViewBookedAvailableReport(userRoles) ||
+    canViewReservedQtyReport(userRoles) ||
     canViewDispatchReport(userRoles)
   );
 }

@@ -18,7 +18,7 @@ import {
   canApproveIncomingLotEdit,
   canApprovePanelDamage,
 } from "@/lib/inventory-permissions";
-import { canApproveBooking, canApproveDispatchToday, canApprovePiCancel } from "@/lib/pi-permissions";
+import { canApproveBooking, canApproveDispatchToday, canApprovePiCancel, canApprovePiCreditAccounts, canApprovePiCreditSm } from "@/lib/pi-permissions";
 import { canApproveProjectProposals } from "@/lib/project-proposal-permissions";
 import { canApproveQuotationPricing } from "@/lib/quotation-permissions";
 
@@ -28,6 +28,8 @@ export type ApprovalType =
   | "DISPATCH_TODAY"
   | "DC_CANCEL"
   | "PI_CANCEL"
+  | "PI_CREDIT"
+  | "PI_CREDIT_ACCOUNTS"
   | "PROJECT_PROPOSAL"
   | "OPENING_STOCK"
   | "PANEL_DAMAGE"
@@ -68,6 +70,8 @@ const TYPE_LABELS: Record<ApprovalType, string> = {
   DISPATCH_TODAY: "Dispatch today",
   DC_CANCEL: "DC cancel",
   PI_CANCEL: "PI cancel",
+  PI_CREDIT: "PI credit (Sales Manager)",
+  PI_CREDIT_ACCOUNTS: "PI credit (Accounts)",
   PROJECT_PROPOSAL: "Project proposal",
   OPENING_STOCK: "Opening stock",
   PANEL_DAMAGE: "Panel damage",
@@ -119,6 +123,12 @@ export async function listPendingApprovals(
   if (canApprovePiCancel(userRoles)) {
     buckets.push(listPendingPiCancelApprovals(prisma, companyId));
   }
+  if (canApprovePiCreditSm(userRoles)) {
+    buckets.push(listPendingPiCreditSmApprovals(prisma, companyId));
+  }
+  if (canApprovePiCreditAccounts(userRoles)) {
+    buckets.push(listPendingPiCreditAccountsApprovals(prisma, companyId));
+  }
   if (canApproveProjectProposals(userRoles)) {
     buckets.push(listPendingProposalApprovals(prisma, companyId));
   }
@@ -159,6 +169,9 @@ export async function listApprovalHistory(
   }
   if (canApprovePiCancel(userRoles)) {
     buckets.push(listPiCancelApprovalHistory(prisma, companyId));
+  }
+  if (canApprovePiCreditSm(userRoles) || canApprovePiCreditAccounts(userRoles)) {
+    buckets.push(listPiCreditApprovalHistory(prisma, companyId));
   }
   if (canApproveProjectProposals(userRoles)) {
     buckets.push(listProposalApprovalHistory(prisma, companyId));
@@ -495,6 +508,79 @@ async function listPendingPiCancelApprovals(
   });
 }
 
+async function listPendingPiCreditSmApprovals(
+  prisma: PrismaClient,
+  companyId: string,
+): Promise<PendingApprovalItem[]> {
+  return listPendingPiCreditApprovals(prisma, companyId, {
+    moduleType: ApprovalModuleType.PI_CREDIT,
+    type: "PI_CREDIT",
+    reasonFallback: "Credit dispatch — Sales Manager approval",
+  });
+}
+
+async function listPendingPiCreditAccountsApprovals(
+  prisma: PrismaClient,
+  companyId: string,
+): Promise<PendingApprovalItem[]> {
+  return listPendingPiCreditApprovals(prisma, companyId, {
+    moduleType: ApprovalModuleType.PI_CREDIT_ACCOUNTS,
+    type: "PI_CREDIT_ACCOUNTS",
+    reasonFallback: "Credit dispatch — Accounts approval",
+  });
+}
+
+async function listPendingPiCreditApprovals(
+  prisma: PrismaClient,
+  companyId: string,
+  options: {
+    moduleType: typeof ApprovalModuleType.PI_CREDIT | typeof ApprovalModuleType.PI_CREDIT_ACCOUNTS;
+    type: "PI_CREDIT" | "PI_CREDIT_ACCOUNTS";
+    reasonFallback: string;
+  },
+): Promise<PendingApprovalItem[]> {
+  const approvals = await prisma.approvalRequest.findMany({
+    where: {
+      moduleType: options.moduleType,
+      status: ApprovalRequestStatus.PENDING,
+    },
+    include: { requestedBy: { select: { name: true } } },
+    orderBy: { createdAt: "desc" },
+  });
+  if (approvals.length === 0) return [];
+
+  const rows = await prisma.proformaInvoice.findMany({
+    where: {
+      companyId,
+      id: { in: approvals.map((row) => row.moduleId) },
+    },
+    include: {
+      customer: { select: { customerName: true } },
+      salesUser: { select: { name: true } },
+    },
+  });
+  const piMap = new Map(rows.map((row) => [row.id, row]));
+
+  return approvals.flatMap((approval) => {
+    const row = piMap.get(approval.moduleId);
+    if (!row) return [];
+    return [
+      {
+        id: `${options.type}:${row.id}`,
+        type: options.type,
+        moduleId: row.id,
+        documentNo: row.piNo,
+        subjectName: row.customer.customerName,
+        reason: approval.remarks?.trim() || options.reasonFallback,
+        requestedByName: approval.requestedBy.name,
+        requestedAt: toIso(approval.createdAt),
+        href: `/sales/proforma-invoices/${row.id}`,
+        canReject: true,
+      },
+    ];
+  });
+}
+
 async function listPendingProposalApprovals(
   prisma: PrismaClient,
   companyId: string,
@@ -693,6 +779,22 @@ async function listPiCancelApprovalHistory(
   companyId: string,
 ): Promise<ApprovalHistoryItem[]> {
   return listApprovalRequestHistory(prisma, companyId, ApprovalModuleType.PI_CANCEL, "PI_CANCEL");
+}
+
+async function listPiCreditApprovalHistory(
+  prisma: PrismaClient,
+  companyId: string,
+): Promise<ApprovalHistoryItem[]> {
+  const [sm, accounts] = await Promise.all([
+    listApprovalRequestHistory(prisma, companyId, ApprovalModuleType.PI_CREDIT, "PI_CREDIT"),
+    listApprovalRequestHistory(
+      prisma,
+      companyId,
+      ApprovalModuleType.PI_CREDIT_ACCOUNTS,
+      "PI_CREDIT_ACCOUNTS",
+    ),
+  ]);
+  return [...sm, ...accounts];
 }
 
 async function listApprovalRequestHistory(
@@ -919,7 +1021,9 @@ async function loadModuleMeta(
   } else if (
     moduleType === ApprovalModuleType.BOOKING ||
     moduleType === ApprovalModuleType.DISPATCH_TODAY ||
-    moduleType === ApprovalModuleType.PI_CANCEL
+    moduleType === ApprovalModuleType.PI_CANCEL ||
+    moduleType === ApprovalModuleType.PI_CREDIT ||
+    moduleType === ApprovalModuleType.PI_CREDIT_ACCOUNTS
   ) {
     const rows = await prisma.proformaInvoice.findMany({
       where: { companyId, id: { in: moduleIds } },
@@ -934,7 +1038,11 @@ async function loadModuleMeta(
             ? "Stock booking"
             : moduleType === ApprovalModuleType.DISPATCH_TODAY
               ? "Dispatch today approval"
-              : "PI cancellation",
+              : moduleType === ApprovalModuleType.PI_CREDIT
+                ? "PI credit (Sales Manager)"
+                : moduleType === ApprovalModuleType.PI_CREDIT_ACCOUNTS
+                  ? "PI credit (Accounts)"
+                  : "PI cancellation",
         href: `/sales/proforma-invoices/${row.id}`,
       });
     }

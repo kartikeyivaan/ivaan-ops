@@ -39,6 +39,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DISCOUNT_APPROVAL_THRESHOLD } from "@/lib/project-proposal-pricing";
+import { normalizeMobileNumber } from "@/lib/phone";
 import {
   canShareProjectProposal,
   formatRevisionProposalLabel,
@@ -506,7 +507,11 @@ export function ProjectProposalsList({
             <Input
               id="customerMobile"
               value={customerMobile}
-              onChange={(event) => setCustomerMobile(event.target.value)}
+              onChange={(event) =>
+                setCustomerMobile(normalizeMobileNumber(event.target.value))
+              }
+              inputMode="numeric"
+              placeholder="10-digit mobile"
               placeholder="Search mobile"
             />
           </div>

@@ -412,9 +412,8 @@ export async function listDispatchableProformaInvoices(
     }
   }
 
-  return result.filter(
-    (pi) => pi.outstanding <= 0 && pi.items.some((item) => item.remainingQty > 0),
-  );
+  // SE already gated payment/credit when marking Dispatch Today — do not re-block on outstanding.
+  return result.filter((pi) => pi.items.some((item) => item.remainingQty > 0));
 }
 
 export async function listBookedSerialsForPi(
@@ -566,7 +565,6 @@ async function validateDispatchLines(
     where: { id: input.piId, companyId: input.companyId },
     include: {
       items: { include: { product: { include: { category: true } } } },
-      payments: true,
     },
   });
   if (!pi) throw new Error("NOT_FOUND");
@@ -577,13 +575,8 @@ async function validateDispatchLines(
     throw new Error("INVALID_PI_STATUS");
   }
 
-  const totalPaid = pi.payments.reduce(
-    (sum, payment) => sum + decimalToNumber(payment.amount),
-    0,
-  );
-  const outstanding = calculateOutstanding(decimalToNumber(pi.totalValue), totalPaid);
-  if (outstanding > 0) throw new Error("PAYMENT_INCOMPLETE");
-
+  // SE already gated payment/credit (incl. ₹10 tolerance / approved credit) when marking
+  // Dispatch Today — warehouse DC creation must not re-block on outstanding.
   const today = toDateOnly(new Date());
   if (
     !pi.dispatchTodayDate ||

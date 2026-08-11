@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { normalizeMobileNumber } from "@/lib/phone";
 
 export function VendorForm() {
   const router = useRouter();
@@ -84,7 +85,13 @@ export function VendorForm() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="mobile">Mobile</Label>
-            <Input id="mobile" value={mobile} onChange={(e) => setMobile(e.target.value)} />
+            <Input
+              id="mobile"
+              value={mobile}
+              onChange={(e) => setMobile(normalizeMobileNumber(e.target.value))}
+              inputMode="numeric"
+              placeholder="10-digit mobile"
+            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>

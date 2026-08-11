@@ -620,6 +620,14 @@ export const approveDispatchTodaySchema = z.object({
   remarks: z.string().optional(),
 });
 
+export const requestPiCreditSchema = z.object({
+  notes: z.string().trim().max(500).optional(),
+});
+
+export const approvePiCreditSchema = z.object({
+  remarks: z.string().optional(),
+});
+
 export const requestPiCancelSchema = z.object({
   remarks: z.string().optional(),
 });

@@ -102,7 +102,7 @@ export async function POST(request: Request) {
         INVALID_PI_STATUS: ["INVALID_STATUS", "PI is not ready for dispatch.", 400],
         PAYMENT_INCOMPLETE: [
           "PAYMENT_INCOMPLETE",
-          "Outstanding must be under ₹50 before dispatch (or have approved credit).",
+          "Outstanding must be under ₹10 before dispatch (or have approved credit / Dispatch Today).",
           400,
         ],
         CUSTOMER_CREDIT_OVERDUE: [

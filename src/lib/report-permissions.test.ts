@@ -4,6 +4,7 @@ import {
   canViewDispatchReport,
   canViewPaymentFollowupReport,
   canViewProductMovementReport,
+  canViewReservedQtyReport,
   canViewSalesExecutiveReport,
   restrictSalesUserId,
 } from "@/lib/report-permissions";
@@ -24,6 +25,13 @@ describe("report-permissions", () => {
     expect(canViewProductMovementReport([ROLES.WAREHOUSE])).toBe(true);
     expect(canViewProductMovementReport([ROLES.PURCHASE])).toBe(true);
     expect(canViewProductMovementReport([ROLES.ACCOUNTS])).toBe(false);
+  });
+
+  it("allows reserved qty report for sales, warehouse, and purchase", () => {
+    expect(canViewReservedQtyReport([ROLES.SALES_EXECUTIVE])).toBe(true);
+    expect(canViewReservedQtyReport([ROLES.WAREHOUSE])).toBe(true);
+    expect(canViewReservedQtyReport([ROLES.PURCHASE])).toBe(true);
+    expect(canViewReservedQtyReport([ROLES.ACCOUNTS])).toBe(false);
   });
 
   it("allows dispatch report for sales and warehouse", () => {

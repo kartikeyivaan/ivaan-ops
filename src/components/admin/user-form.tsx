@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { normalizeMobileNumber } from "@/lib/phone";
 
 type Role = { id: string; name: string };
 type Company = { id: string; name: string; code: string };
@@ -107,8 +108,9 @@ export function UserForm({
             <Input
               id="officialContactNumber"
               value={officialContactNumber}
-              onChange={(e) => setOfficialContactNumber(e.target.value)}
-              placeholder="Work / office number"
+              onChange={(e) => setOfficialContactNumber(normalizeMobileNumber(e.target.value))}
+              inputMode="numeric"
+              placeholder="10-digit mobile"
             />
           </div>
           <div className="space-y-2">
@@ -116,8 +118,9 @@ export function UserForm({
             <Input
               id="personalContactNumber"
               value={personalContactNumber}
-              onChange={(e) => setPersonalContactNumber(e.target.value)}
-              placeholder="Personal mobile number"
+              onChange={(e) => setPersonalContactNumber(normalizeMobileNumber(e.target.value))}
+              inputMode="numeric"
+              placeholder="10-digit mobile"
             />
           </div>
           <div className="space-y-2 md:col-span-2">

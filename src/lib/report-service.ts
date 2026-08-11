@@ -8,7 +8,11 @@ import {
 } from "@prisma/client";
 import { decimalToNumber } from "@/lib/inventory";
 import { getWarehouseStockForProduct } from "@/lib/inventory-service";
-import { roundMoney } from "@/lib/quotations";
+import {
+  calculateAdvanceRequired,
+  resolveBookingRequirement,
+} from "@/lib/proforma-invoices";
+import { calculateLineAmounts, roundMoney } from "@/lib/quotations";
 import {
   calculateAgeingDays,
   calculateFreeQty,
@@ -43,6 +47,12 @@ export type ProductMovementFilters = ReportDateFilters & {
 };
 
 export type BookedAvailableFilters = {
+  warehouseId?: string;
+  q?: string;
+};
+
+export type ReservedQtyFilters = {
+  productId?: string;
   warehouseId?: string;
   q?: string;
 };
@@ -310,6 +320,7 @@ export async function getPaymentFollowupReport(
           ProformaInvoiceStatus.PENDING_BOOKING,
           ProformaInvoiceStatus.BOOKED,
           ProformaInvoiceStatus.PARTIALLY_DISPATCHED,
+          ProformaInvoiceStatus.FULLY_DISPATCHED,
         ],
       },
       ...(filters.salesUserId ? { salesUserId: filters.salesUserId } : {}),
@@ -331,6 +342,9 @@ export async function getPaymentFollowupReport(
       );
       const outstanding = calculateOutstanding(piValue, paid);
       const ageingDays = calculateAgeingDays(pi.piDate);
+      const creditDueDate = pi.creditDueDate
+        ? pi.creditDueDate.toISOString().slice(0, 10)
+        : null;
 
       return {
         customerId: pi.customer.id,
@@ -345,6 +359,8 @@ export async function getPaymentFollowupReport(
         ageingBucket: getAgeingBucket(ageingDays),
         salesExecutive: pi.salesUser.name,
         salesUserId: pi.salesUser.id,
+        creditStatus: pi.creditStatus,
+        creditDueDate,
       };
     })
     .filter((row) => row.outstanding > 0)
@@ -549,6 +565,167 @@ export async function getBookedAvailableReport(
         freeQty,
       });
     }
+  }
+
+  return rows;
+}
+
+export async function getReservedQtyReport(
+  prisma: PrismaClient,
+  companyId: string,
+  filters: ReservedQtyFilters,
+) {
+  const search = filters.q?.trim();
+  const items = await prisma.proformaInvoiceItem.findMany({
+    where: {
+      ...(filters.productId ? { productId: filters.productId } : {}),
+      ...(search
+        ? {
+            OR: [
+              {
+                product: {
+                  displayName: { contains: search, mode: "insensitive" },
+                },
+              },
+              {
+                product: {
+                  brand: { name: { contains: search, mode: "insensitive" } },
+                },
+              },
+              {
+                proformaInvoice: {
+                  customer: {
+                    customerName: { contains: search, mode: "insensitive" },
+                  },
+                },
+              },
+              {
+                proformaInvoice: {
+                  piNo: { contains: search, mode: "insensitive" },
+                },
+              },
+            ],
+          }
+        : {}),
+      proformaInvoice: {
+        companyId,
+        status: {
+          in: [
+            ProformaInvoiceStatus.BOOKED,
+            ProformaInvoiceStatus.PARTIALLY_DISPATCHED,
+          ],
+        },
+        ...(filters.warehouseId ? { warehouseId: filters.warehouseId } : {}),
+      },
+    },
+    include: {
+      product: {
+        select: {
+          id: true,
+          displayName: true,
+          capacity: true,
+          pricingType: true,
+          gstRate: true,
+        },
+      },
+      proformaInvoice: {
+        select: {
+          id: true,
+          piNo: true,
+          totalValue: true,
+          bookedAt: true,
+          requiredDispatchMinDate: true,
+          requiredPaymentPercent: true,
+          deliveryTermMode: true,
+          bookingAllowed: true,
+          customer: { select: { customerName: true } },
+          quotation: {
+            select: {
+              deliveryTermMode: true,
+              bookingAllowed: true,
+              requiredPaymentPercent: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: [
+      { product: { displayName: "asc" } },
+      { proformaInvoice: { requiredDispatchMinDate: "asc" } },
+      { proformaInvoice: { bookedAt: "asc" } },
+    ],
+  });
+
+  const rows: Array<{
+    committedDate: string;
+    customerName: string;
+    productName: string;
+    piNo: string;
+    totalQty: number;
+    totalAmount: number;
+    ratePerWp: number;
+    bookingAmount: number;
+    piId: string;
+    productId: string;
+  }> = [];
+
+  for (const item of items) {
+    const qty = decimalToNumber(item.qty);
+    const dispatchedQty = decimalToNumber(item.dispatchedQty);
+    const totalQty = Math.max(0, qty - dispatchedQty);
+    if (totalQty <= 0) continue;
+
+    const rate = decimalToNumber(item.rate);
+    const capacity = decimalToNumber(item.product.capacity);
+    const gstRate = decimalToNumber(item.product.gstRate);
+    const amounts = calculateLineAmounts({
+      pricingType: item.product.pricingType,
+      capacity,
+      qty: totalQty,
+      rate,
+      gstRate,
+    });
+
+    const pi = item.proformaInvoice;
+    const requirement = resolveBookingRequirement(
+      {
+        deliveryTermMode: pi.deliveryTermMode,
+        bookingAllowed: pi.bookingAllowed,
+        requiredPaymentPercent:
+          pi.requiredPaymentPercent == null
+            ? null
+            : decimalToNumber(pi.requiredPaymentPercent),
+      },
+      pi.quotation
+        ? {
+            deliveryTermMode: pi.quotation.deliveryTermMode,
+            bookingAllowed: pi.quotation.bookingAllowed,
+            requiredPaymentPercent:
+              pi.quotation.requiredPaymentPercent == null
+                ? null
+                : decimalToNumber(pi.quotation.requiredPaymentPercent),
+          }
+        : null,
+    );
+
+    const committed =
+      pi.requiredDispatchMinDate ?? pi.bookedAt ?? null;
+
+    rows.push({
+      committedDate: committed ? committed.toISOString().slice(0, 10) : "—",
+      customerName: pi.customer.customerName,
+      productName: item.product.displayName,
+      piNo: pi.piNo,
+      totalQty,
+      totalAmount: amounts.lineTotal,
+      ratePerWp: rate,
+      bookingAmount: calculateAdvanceRequired(
+        decimalToNumber(pi.totalValue),
+        requirement.requiredPaymentPercent,
+      ),
+      piId: pi.id,
+      productId: item.product.id,
+    });
   }
 
   return rows;

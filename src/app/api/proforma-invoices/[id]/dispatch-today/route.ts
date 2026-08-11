@@ -62,7 +62,14 @@ export async function POST(request: Request, context: RouteContext) {
       if (error.message === "NOT_READY_FOR_DISPATCH") {
         return errorResponse(
           "NOT_READY_FOR_DISPATCH",
-          "PI must be booked and fully paid before dispatch today.",
+          "PI must be booked and fully paid (or have approved credit) before dispatch today.",
+          400,
+        );
+      }
+      if (error.message === "CUSTOMER_CREDIT_OVERDUE") {
+        return errorResponse(
+          "CUSTOMER_CREDIT_OVERDUE",
+          "This firm has overdue credit. Clear outstanding dues before dispatch.",
           400,
         );
       }

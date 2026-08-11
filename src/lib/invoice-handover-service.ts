@@ -1,4 +1,9 @@
-import { DocumentationStatus, InvoiceHandoverStatus, type PrismaClient } from "@prisma/client";
+import {
+  DocumentationStatus,
+  InvoiceHandoverStatus,
+  PricingType,
+  type PrismaClient,
+} from "@prisma/client";
 import { decimalToNumber } from "@/lib/inventory";
 import { roundMoney } from "@/lib/quotations";
 
@@ -14,6 +19,7 @@ const include = {
       dcNo: true,
       dispatchDate: true,
       vehicleNo: true,
+      notes: true,
       proformaInvoice: { select: { piNo: true } },
     },
   },
@@ -34,11 +40,19 @@ const detailInclude = {
       driverName: true,
       receiverName: true,
       receiverMobile: true,
+      notes: true,
       lines: {
         select: {
           id: true,
           qty: true,
-          product: { select: { id: true, displayName: true } },
+          product: {
+            select: {
+              id: true,
+              displayName: true,
+              pricingType: true,
+              capacity: true,
+            },
+          },
           proformaInvoiceItem: { select: { rate: true } },
           serials: {
             select: { serial: { select: { id: true, serialNumber: true } } },
@@ -50,6 +64,8 @@ const detailInclude = {
           id: true,
           piNo: true,
           totalValue: true,
+          creditStatus: true,
+          creditDueDate: true,
           salesUser: { select: { id: true, name: true } },
           payments: {
             select: {
@@ -106,12 +122,22 @@ export async function getInvoiceHandoverDetail(
   const lines = handover.dispatch.lines.map((line) => {
     const qty = decimalToNumber(line.qty);
     const rate = decimalToNumber(line.proformaInvoiceItem.rate);
+    const capacity = decimalToNumber(line.product.capacity);
+    const amount =
+      line.product.pricingType === PricingType.WP
+        ? roundMoney(qty * capacity * rate)
+        : roundMoney(qty * rate);
     return {
       id: line.id,
       qty,
       rate,
-      amount: roundMoney(qty * rate),
-      product: line.product,
+      amount,
+      product: {
+        id: line.product.id,
+        displayName: line.product.displayName,
+        pricingType: line.product.pricingType,
+        capacity,
+      },
       serials: line.serials.map((entry) => ({
         id: entry.serial.id,
         serialNumber: entry.serial.serialNumber,
@@ -131,6 +157,8 @@ export async function getInvoiceHandoverDetail(
     recordedBy: payment.recordedBy,
   }));
   const totalPaid = roundMoney(payments.reduce((sum, payment) => sum + payment.amount, 0));
+  const totalValue = decimalToNumber(handover.dispatch.proformaInvoice.totalValue);
+  const outstanding = roundMoney(Math.max(0, totalValue - totalPaid));
 
   return {
     id: handover.id,
@@ -148,16 +176,22 @@ export async function getInvoiceHandoverDetail(
       driverName: handover.dispatch.driverName,
       receiverName: handover.dispatch.receiverName,
       receiverMobile: handover.dispatch.receiverMobile,
+      notes: handover.dispatch.notes,
       totalAmount: dispatchTotal,
       lines,
     },
     proformaInvoice: {
       id: handover.dispatch.proformaInvoice.id,
       piNo: handover.dispatch.proformaInvoice.piNo,
-      totalValue: decimalToNumber(handover.dispatch.proformaInvoice.totalValue),
+      totalValue,
       salesUser: handover.dispatch.proformaInvoice.salesUser,
       payments,
       totalPaid,
+      outstanding,
+      creditStatus: handover.dispatch.proformaInvoice.creditStatus,
+      creditDueDate: handover.dispatch.proformaInvoice.creditDueDate
+        ? handover.dispatch.proformaInvoice.creditDueDate.toISOString().slice(0, 10)
+        : null,
     },
   };
 }

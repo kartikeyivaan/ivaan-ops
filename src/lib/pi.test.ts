@@ -11,9 +11,11 @@ import {
   formatDispatchTodayApprovalMessage,
   formatDispatchTodayConfirmationMessage,
   isDispatchTodayActive,
+  isOutstandingWithinTolerance,
   isReadyForDispatch,
   maxPaymentAmountOnEdit,
   needsEarlyDispatchTodayApproval,
+  PAYMENT_OUTSTANDING_TOLERANCE_INR,
   resolveBookingRequirement,
 } from "@/lib/proforma-invoices";
 import {
@@ -21,6 +23,7 @@ import {
   canApproveDispatchToday,
   canManageProformaInvoices,
   canMarkDispatchToday,
+  canRecallDispatchToday,
   canRecordPayments,
   canViewProformaInvoices,
 } from "@/lib/pi-permissions";
@@ -60,11 +63,30 @@ describe("proforma invoice calculations", () => {
     ).toBe(false);
   });
 
+  it("allows booking when outstanding is under the ₹10 tolerance", () => {
+    expect(PAYMENT_OUTSTANDING_TOLERANCE_INR).toBe(10);
+    expect(isOutstandingWithinTolerance(9.99)).toBe(true);
+    expect(isOutstandingWithinTolerance(10)).toBe(false);
+    expect(canRequestBooking(100000, 99991)).toBe(true);
+    expect(
+      canRequestBooking(100000, 99991, {
+        allowed: true,
+        requiredPaymentPercent: 100,
+      }),
+    ).toBe(true);
+    expect(
+      canRequestBooking(100000, 99990, {
+        allowed: true,
+        requiredPaymentPercent: 100,
+      }),
+    ).toBe(false);
+  });
+
   it("allows remaining payments after booking while outstanding", () => {
     expect(canRecordPaymentAgainstPi("BOOKED", 50000)).toBe(true);
     expect(canRecordPaymentAgainstPi("PARTIALLY_DISPATCHED", 1000)).toBe(true);
     expect(canRecordPaymentAgainstPi("BOOKED", 0)).toBe(false);
-    expect(canRecordPaymentAgainstPi("FULLY_DISPATCHED", 100)).toBe(false);
+    expect(canRecordPaymentAgainstPi("FULLY_DISPATCHED", 100)).toBe(true);
   });
 
   it("allows editing existing payments except on draft or cancelled PIs", () => {
@@ -81,11 +103,19 @@ describe("proforma invoice calculations", () => {
     expect(maxPaymentAmountOnEdit(100000, 100000, 25000)).toBe(25000);
   });
 
-  it("marks booked PIs ready for dispatch only when fully paid", () => {
+  it("marks booked PIs ready for dispatch when outstanding is under ₹10", () => {
     expect(isReadyForDispatch("BOOKED", 0)).toBe(true);
-    expect(isReadyForDispatch("BOOKED", 1)).toBe(false);
+    expect(isReadyForDispatch("BOOKED", 9.99)).toBe(true);
+    expect(isReadyForDispatch("BOOKED", 10)).toBe(false);
     expect(isReadyForDispatch("PARTIALLY_DISPATCHED", 0)).toBe(true);
+    expect(isReadyForDispatch("PARTIALLY_DISPATCHED", 5)).toBe(true);
     expect(isReadyForDispatch("ISSUED", 0)).toBe(false);
+  });
+
+  it("allows dispatch with approved credit when outstanding remains", () => {
+    expect(isReadyForDispatch("BOOKED", 50000, { hasApprovedCredit: true })).toBe(true);
+    expect(isReadyForDispatch("BOOKED", 50000, { hasApprovedCredit: false })).toBe(false);
+    expect(isReadyForDispatch("ISSUED", 50000, { hasApprovedCredit: true })).toBe(false);
   });
 
   it("computes days until committed dispatch and early-approval need", () => {
@@ -160,14 +190,15 @@ describe("proforma invoice calculations", () => {
     expect(resolveBookingRequirement({}).requiredPaymentPercent).toBe(50);
   });
 
-  it("requires full payment for ready stock", () => {
+  it("requires full payment for ready stock within ₹10 tolerance", () => {
     const requirement = resolveBookingRequirement({
       deliveryTermMode: "READY_STOCK",
       bookingAllowed: true,
       requiredPaymentPercent: 50,
     });
     expect(requirement.requiredPaymentPercent).toBe(100);
-    expect(canRequestBooking(100000, 99999, requirement)).toBe(false);
+    expect(canRequestBooking(100000, 99991, requirement)).toBe(true);
+    expect(canRequestBooking(100000, 99990, requirement)).toBe(false);
   });
 
   it("blocks subject-to-availability and unapproved legacy terms", () => {
@@ -211,6 +242,12 @@ describe("proforma invoice permissions", () => {
     expect(canMarkDispatchToday([ROLES.WAREHOUSE])).toBe(false);
     expect(canApproveDispatchToday([ROLES.SALES_MANAGER])).toBe(true);
     expect(canApproveDispatchToday([ROLES.SALES_EXECUTIVE])).toBe(false);
+  });
+
+  it("allows sales to recall dispatch today", () => {
+    expect(canRecallDispatchToday([ROLES.SALES_EXECUTIVE])).toBe(true);
+    expect(canRecallDispatchToday([ROLES.SALES_MANAGER])).toBe(true);
+    expect(canRecallDispatchToday([ROLES.WAREHOUSE])).toBe(false);
   });
 });
 

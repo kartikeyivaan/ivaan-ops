@@ -197,15 +197,7 @@ export function suggestTargetCompletionDate(
 // Mobile / consumer number handling (PRD §8.5, §8.6)
 // ---------------------------------------------------------------------------
 
-/** Strip spaces and formatting, keep digits only. */
-export function normalizeMobileNumber(value: string): string {
-  return value.replace(/\D/g, "");
-}
-
-/** Accept 10-digit Indian mobile numbers (leading 6-9). */
-export function isValidIndianMobile(value: string): boolean {
-  return /^[6-9]\d{9}$/.test(normalizeMobileNumber(value));
-}
+export { normalizeMobileNumber, isValidIndianMobile } from "@/lib/phone";
 
 export function normalizeConsumerNumber(value: string): string {
   return value.trim();

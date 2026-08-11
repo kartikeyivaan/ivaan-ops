@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatApiErrorMessage, parseApiJson, type ApiErrorPayload } from "@/lib/api-response";
 import { CUSTOMER_TYPES } from "@/lib/customers";
+import { normalizeMobileNumber } from "@/lib/phone";
 
 type SalesExecutive = { id: string; name: string; email: string };
 
@@ -252,7 +253,13 @@ export function CustomerForm({
           </div>
           <div className="space-y-2">
             <Label htmlFor="mobile">Mobile</Label>
-            <Input id="mobile" value={mobile} onChange={(e) => setMobile(e.target.value)} />
+            <Input
+              id="mobile"
+              value={mobile}
+              onChange={(e) => setMobile(normalizeMobileNumber(e.target.value))}
+              inputMode="numeric"
+              placeholder="10-digit mobile"
+            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
@@ -336,7 +343,10 @@ export function CustomerForm({
                   <Input
                     placeholder="Mobile"
                     value={contact.mobile}
-                    onChange={(e) => updateContact(index, "mobile", e.target.value)}
+                    onChange={(e) =>
+                      updateContact(index, "mobile", normalizeMobileNumber(e.target.value))
+                    }
+                    inputMode="numeric"
                   />
                   <Input
                     placeholder="Email"

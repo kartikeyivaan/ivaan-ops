@@ -5,6 +5,9 @@ import { roundMoney } from "@/lib/quotations";
 
 export const BOOKING_ADVANCE_PERCENT = 50;
 
+/** Residual outstanding below this amount (INR) still qualifies for booking and dispatch. */
+export const PAYMENT_OUTSTANDING_TOLERANCE_INR = 10;
+
 export type BookingTermsInput = {
   deliveryTermMode?: string | null;
   bookingAllowed?: boolean | null;
@@ -57,6 +60,11 @@ export function calculateOutstanding(totalValue: number, totalPaid: number): num
   return roundMoney(Math.max(0, totalValue - totalPaid));
 }
 
+/** True when remaining balance is under the ₹10 fulfillment tolerance. */
+export function isOutstandingWithinTolerance(outstanding: number): boolean {
+  return outstanding < PAYMENT_OUTSTANDING_TOLERANCE_INR;
+}
+
 export function canRequestBooking(
   totalValue: number,
   totalPaid: number,
@@ -65,8 +73,11 @@ export function canRequestBooking(
     requiredPaymentPercent: BOOKING_ADVANCE_PERCENT,
   },
 ): boolean {
+  if (!requirement.allowed) return false;
+  if (isOutstandingWithinTolerance(calculateOutstanding(totalValue, totalPaid))) {
+    return true;
+  }
   return (
-    requirement.allowed &&
     totalPaid >= calculateAdvanceRequired(totalValue, requirement.requiredPaymentPercent)
   );
 }
@@ -77,6 +88,7 @@ export const PAYMENT_RECORDABLE_STATUSES = [
   "PENDING_BOOKING",
   "BOOKED",
   "PARTIALLY_DISPATCHED",
+  "FULLY_DISPATCHED",
 ] as const;
 
 export function canRecordPaymentAgainstPi(status: string, outstanding: number): boolean {
@@ -99,11 +111,18 @@ export function maxPaymentAmountOnEdit(
   return roundMoney(calculateOutstanding(totalValue, totalPaid) + existingPaymentAmount);
 }
 
-/** Booked (or partially dispatched) PIs become dispatch-ready only once fully paid. */
-export function isReadyForDispatch(status: string, outstanding: number): boolean {
-  return (
-    (status === "BOOKED" || status === "PARTIALLY_DISPATCHED") && outstanding <= 0
-  );
+/**
+ * Booked (or partially dispatched) PIs become dispatch-ready once outstanding
+ * is under the ₹10 tolerance (including fully paid), or when trade credit is approved.
+ */
+export function isReadyForDispatch(
+  status: string,
+  outstanding: number,
+  options?: { hasApprovedCredit?: boolean },
+): boolean {
+  if (status !== "BOOKED" && status !== "PARTIALLY_DISPATCHED") return false;
+  if (isOutstandingWithinTolerance(outstanding)) return true;
+  return Boolean(options?.hasApprovedCredit);
 }
 
 /** Calendar-day difference between two YYYY-MM-DD (or Date) values: committed − today. */

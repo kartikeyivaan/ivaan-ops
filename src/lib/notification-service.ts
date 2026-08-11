@@ -106,6 +106,31 @@ export async function notifyWarehouseDispatchToday(
   });
 }
 
+export async function notifyWarehouseDispatchTodayRecalled(
+  client: NotificationClient,
+  input: { companyId: string; piNo: string },
+) {
+  const users = await client.user.findMany({
+    where: {
+      status: "ACTIVE",
+      companies: { some: { companyId: input.companyId } },
+      roles: {
+        some: { role: { name: { in: [ROLES.WAREHOUSE, ROLES.SUPER_ADMIN] } } },
+      },
+    },
+    select: { id: true },
+  });
+  if (!users.length) return { count: 0 };
+  return client.notification.createMany({
+    data: users.map(({ id }) => ({
+      userId: id,
+      title: "Dispatch today recalled",
+      message: `${input.piNo} is no longer marked for dispatch today.`,
+      module: "dispatch",
+    })),
+  });
+}
+
 export async function notifyDispatchTodayApprovalNeeded(
   client: NotificationClient,
   input: {
@@ -311,6 +336,154 @@ export async function notifyAccountsStockTransfer(
       title: "Stock transfer recorded",
       message: `${input.transferNumber} linked to ${input.piNo} / ${input.dcNo} is ready for accounts review.`,
       module: "accounts",
+    })),
+  });
+}
+
+export async function notifyPiCreditSmApprovalNeeded(
+  client: NotificationClient,
+  input: { companyId: string; piNo: string; outstanding: number },
+) {
+  const users = await client.user.findMany({
+    where: {
+      status: "ACTIVE",
+      companies: { some: { companyId: input.companyId } },
+      roles: {
+        some: {
+          role: { name: { in: [ROLES.SALES_MANAGER, ROLES.SUPER_ADMIN] } },
+        },
+      },
+    },
+    select: { id: true },
+  });
+  if (!users.length) return { count: 0 };
+  return client.notification.createMany({
+    data: users.map(({ id }) => ({
+      userId: id,
+      title: "PI credit approval needed",
+      message: `${input.piNo} needs Sales Manager approval to dispatch on credit (outstanding ₹${Math.round(input.outstanding).toLocaleString("en-IN")}).`,
+      module: "credit",
+    })),
+  });
+}
+
+export async function notifyPiCreditAccountsApprovalNeeded(
+  client: NotificationClient,
+  input: { companyId: string; piNo: string; outstanding: number },
+) {
+  const users = await client.user.findMany({
+    where: {
+      status: "ACTIVE",
+      companies: { some: { companyId: input.companyId } },
+      roles: {
+        some: { role: { name: { in: [ROLES.ACCOUNTS, ROLES.SUPER_ADMIN] } } },
+      },
+    },
+    select: { id: true },
+  });
+  if (!users.length) return { count: 0 };
+  return client.notification.createMany({
+    data: users.map(({ id }) => ({
+      userId: id,
+      title: "PI credit accounts approval needed",
+      message: `${input.piNo} needs Accounts approval to dispatch on credit (outstanding ₹${Math.round(input.outstanding).toLocaleString("en-IN")}).`,
+      module: "credit",
+    })),
+  });
+}
+
+export async function notifyPiCreditApproved(
+  client: NotificationClient,
+  input: {
+    salesUserId: string;
+    piNo: string;
+    dueDate: string;
+    outstanding: number;
+  },
+) {
+  return createNotification(
+    {
+      userId: input.salesUserId,
+      title: "PI credit approved",
+      message: `${input.piNo} credit approved. Clear outstanding ₹${Math.round(input.outstanding).toLocaleString("en-IN")} by ${input.dueDate}.`,
+      module: "credit",
+    },
+    client,
+  );
+}
+
+export async function notifyPiCreditCleared(
+  client: NotificationClient,
+  input: { salesUserId: string; piNo: string },
+) {
+  return createNotification(
+    {
+      userId: input.salesUserId,
+      title: "PI credit cleared",
+      message: `Outstanding on ${input.piNo} has been cleared.`,
+      module: "credit",
+    },
+    client,
+  );
+}
+
+export async function notifyPiCreditReminder(
+  client: NotificationClient,
+  input: {
+    salesUserId: string;
+    piNo: string;
+    outstanding: number;
+    dueDate: string | null;
+    overdue: boolean;
+  },
+) {
+  const amount = `₹${Math.round(input.outstanding).toLocaleString("en-IN")}`;
+  const duePart = input.dueDate ? ` Due ${input.dueDate}.` : "";
+  return createNotification(
+    {
+      userId: input.salesUserId,
+      title: input.overdue ? "PI credit overdue" : "PI credit collection reminder",
+      message: input.overdue
+        ? `${input.piNo} credit is overdue. Clear outstanding ${amount}.${duePart}`
+        : `${input.piNo}: collect outstanding ${amount}.${duePart}`,
+      module: "credit",
+    },
+    client,
+  );
+}
+
+export async function notifyPiCreditOverdueEscalation(
+  client: NotificationClient,
+  input: {
+    companyId: string;
+    piNo: string;
+    outstanding: number;
+    dueDate: string | null;
+    salesExecutiveName?: string;
+  },
+) {
+  const users = await client.user.findMany({
+    where: {
+      status: "ACTIVE",
+      companies: { some: { companyId: input.companyId } },
+      roles: {
+        some: {
+          role: { name: { in: [ROLES.SALES_MANAGER, ROLES.SUPER_ADMIN] } },
+        },
+      },
+    },
+    select: { id: true },
+  });
+  if (!users.length) return { count: 0 };
+  const amount = `₹${Math.round(input.outstanding).toLocaleString("en-IN")}`;
+  const duePart = input.dueDate ? ` (due ${input.dueDate})` : "";
+  const sePart = input.salesExecutiveName ? ` SE: ${input.salesExecutiveName}.` : "";
+  return client.notification.createMany({
+    data: users.map(({ id }) => ({
+      userId: id,
+      title: "PI credit overdue escalation",
+      message: `${input.piNo} credit overdue — outstanding ${amount}${duePart}.${sePart}`,
+      module: "credit",
     })),
   });
 }

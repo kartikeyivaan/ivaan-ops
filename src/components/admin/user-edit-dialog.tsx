@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Modal, ModalBody, ModalFooter, ModalForm, ModalHeader } from "@/components/ui/modal";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { normalizeMobileNumber } from "@/lib/phone";
 
 type Role = { id: string; name: string };
 type Company = { id: string; name: string; code: string };
@@ -136,7 +137,9 @@ export function UserEditDialog({
               <Input
                 id="edit-officialContactNumber"
                 value={officialContactNumber}
-                onChange={(e) => setOfficialContactNumber(e.target.value)}
+                onChange={(e) => setOfficialContactNumber(normalizeMobileNumber(e.target.value))}
+                inputMode="numeric"
+                placeholder="10-digit mobile"
               />
             </div>
             <div className="space-y-2">
@@ -144,7 +147,9 @@ export function UserEditDialog({
               <Input
                 id="edit-personalContactNumber"
                 value={personalContactNumber}
-                onChange={(e) => setPersonalContactNumber(e.target.value)}
+                onChange={(e) => setPersonalContactNumber(normalizeMobileNumber(e.target.value))}
+                inputMode="numeric"
+                placeholder="10-digit mobile"
               />
             </div>
             <div className="space-y-2 md:col-span-2">

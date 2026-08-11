@@ -230,6 +230,17 @@ enum ApprovalModuleType {
   PANEL_DAMAGE
   CROSS_COMPANY_TRANSFER
   INCOMING_LOT_EDIT
+  PI_CREDIT
+  PI_CREDIT_ACCOUNTS
+}
+
+enum PiCreditStatus {
+  NONE
+  PENDING_SM
+  PENDING_ACCOUNTS
+  APPROVED
+  REJECTED
+  CLEARED
 }
 
 enum TransferOrigin {
@@ -512,6 +523,9 @@ model User {
   salesProformaInvoices             ProformaInvoice[]              @relation("ProformaSalesUser")
   bookedProformaInvoices            ProformaInvoice[]              @relation("ProformaBookedBy")
   dispatchTodayMarkedPis            ProformaInvoice[]              @relation("ProformaDispatchTodayMarkedBy")
+  creditRequestedProformaInvoices   ProformaInvoice[]              @relation("ProformaCreditRequestedBy")
+  creditSmApprovedProformaInvoices  ProformaInvoice[]              @relation("ProformaCreditSmApprovedBy")
+  creditAccountsApprovedProformaInvoices ProformaInvoice[]         @relation("ProformaCreditAccountsApprovedBy")
   recordedPayments                  Payment[]                      @relation("PaymentRecordedBy")
   createdDispatches                 Dispatch[]                     @relation("DispatchCreatedBy")
   dispatchedOrders                  Dispatch[]                     @relation("DispatchDispatchedBy")
@@ -1341,6 +1355,18 @@ model ProformaInvoice {
   dispatchDraftReceiverName String?            @map("dispatch_draft_receiver_name")
   dispatchDraftReceiverMobile String?          @map("dispatch_draft_receiver_mobile")
   dispatchDraftNotes      String?              @map("dispatch_draft_notes")
+  creditStatus            PiCreditStatus       @default(NONE) @map("credit_status")
+  creditNotes             String?              @map("credit_notes")
+  creditRequestedAt       DateTime?            @map("credit_requested_at")
+  creditRequestedById     String?              @map("credit_requested_by") @db.Uuid
+  creditSmApprovedAt      DateTime?            @map("credit_sm_approved_at")
+  creditSmApprovedById    String?              @map("credit_sm_approved_by") @db.Uuid
+  creditAccountsApprovedAt DateTime?           @map("credit_accounts_approved_at")
+  creditAccountsApprovedById String?           @map("credit_accounts_approved_by") @db.Uuid
+  creditDueDate           DateTime?            @map("credit_due_date") @db.Date
+  creditClearedAt         DateTime?            @map("credit_cleared_at")
+  creditRejectionReason   String?              @map("credit_rejection_reason")
+  creditLastReminderOn    DateTime?            @map("credit_last_reminder_on") @db.Date
   createdAt              DateTime              @default(now()) @map("created_at")
   updatedAt              DateTime              @updatedAt @map("updated_at")
 
@@ -1351,6 +1377,9 @@ model ProformaInvoice {
   warehouse  Warehouse?              @relation(fields: [warehouseId], references: [id])
   bookedBy   User?                   @relation("ProformaBookedBy", fields: [bookedById], references: [id])
   dispatchTodayMarkedBy User?        @relation("ProformaDispatchTodayMarkedBy", fields: [dispatchTodayMarkedById], references: [id])
+  creditRequestedBy User?            @relation("ProformaCreditRequestedBy", fields: [creditRequestedById], references: [id])
+  creditSmApprovedBy User?           @relation("ProformaCreditSmApprovedBy", fields: [creditSmApprovedById], references: [id])
+  creditAccountsApprovedBy User?     @relation("ProformaCreditAccountsApprovedBy", fields: [creditAccountsApprovedById], references: [id])
   items                 ProformaInvoiceItem[]
   payments              Payment[]
   serials               ProformaInvoiceSerial[]
@@ -1361,6 +1390,8 @@ model ProformaInvoice {
   @@index([companyId, status])
   @@index([customerId])
   @@index([companyId, dispatchTodayDate])
+  @@index([companyId, creditStatus])
+  @@index([customerId, creditStatus])
   @@map("proforma_invoices")
 }
 

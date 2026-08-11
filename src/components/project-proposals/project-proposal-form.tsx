@@ -15,6 +15,7 @@ import {
 import { formatRevisionProposalLabel } from "@/lib/project-proposals";
 import { isNdcrCompletePackage } from "@/lib/project-proposal-packages";
 import { formatDocumentDate } from "@/lib/utils";
+import { normalizeMobileNumber } from "@/lib/phone";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -609,7 +610,10 @@ export function ProjectProposalForm({
                 <Input
                   id="customerMobile"
                   value={customerMobile}
-                  onChange={(event) => setCustomerMobile(event.target.value)}
+                  onChange={(event) =>
+                    setCustomerMobile(normalizeMobileNumber(event.target.value))
+                  }
+                  inputMode="numeric"
                   placeholder="10-digit mobile number"
                 />
               </div>

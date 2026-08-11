@@ -14,6 +14,7 @@ import {
   SERVICE_PRIORITY_LABELS,
   SERVICE_SYSTEM_STATUS_LABELS,
   formatServiceStatus,
+  normalizeMobileNumber,
 } from "@/lib/service";
 import {
   buildCreateServiceRequestPayload,
@@ -144,7 +145,7 @@ export function NewServiceRequestForm({
   const lookupKey = `${values.mobileNumber}|${values.consumerNumber}`;
   const abortRef = useRef<AbortController | null>(null);
   useEffect(() => {
-    const mobile = values.mobileNumber.replace(/\D/g, "");
+    const mobile = normalizeMobileNumber(values.mobileNumber);
     const consumer = values.consumerNumber.trim();
     if (mobile.length < 10 && !consumer) {
       setDuplicates([]);
@@ -290,7 +291,7 @@ export function NewServiceRequestForm({
               inputMode="numeric"
               value={values.mobileNumber}
               onChange={(e) =>
-                setField("mobileNumber", e.target.value.replace(/\D/g, "").slice(0, 10))
+                setField("mobileNumber", normalizeMobileNumber(e.target.value))
               }
               placeholder="10-digit mobile"
             />
@@ -397,7 +398,7 @@ export function NewServiceRequestForm({
             inputMode="numeric"
             value={values.alternateMobileNumber}
             onChange={(e) =>
-              setField("alternateMobileNumber", e.target.value.replace(/\D/g, "").slice(0, 10))
+              setField("alternateMobileNumber", normalizeMobileNumber(e.target.value))
             }
           />
         </Field>

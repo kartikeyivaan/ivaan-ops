@@ -14,7 +14,12 @@ type QueueRow = {
   id: string;
   status: string;
   invoiceNumber: string | null;
-  dispatch: { dcNo: string; dispatchDate: string; proformaInvoice: { piNo: string } };
+  dispatch: {
+    dcNo: string;
+    dispatchDate: string;
+    notes: string | null;
+    proformaInvoice: { piNo: string };
+  };
   customer: { customerName: string };
 };
 
@@ -75,6 +80,12 @@ export function InvoiceQueue({ rows }: { rows: QueueRow[] }) {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-slate-600">PI {row.dispatch.proformaInvoice.piNo} · Dispatched {new Date(row.dispatch.dispatchDate).toLocaleDateString("en-IN")}</p>
+              {row.dispatch.notes ? (
+                <p className="mt-2 whitespace-pre-wrap rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                  <span className="font-medium">Dispatch notes: </span>
+                  {row.dispatch.notes}
+                </p>
+              ) : null}
               {row.status === "PENDING_INVOICE" || row.status === "CORRECTION_REQUIRED" ? (
                 editing === row.id ? (
                   <div className="mt-4 grid gap-3 sm:grid-cols-3">

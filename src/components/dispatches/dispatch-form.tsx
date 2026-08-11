@@ -15,6 +15,7 @@ import {
   type SerialScanResult,
 } from "@/components/inventory/serial-scanner";
 import { normalizeSerialNumber, parseSerialInput } from "@/lib/inventory";
+import { normalizeMobileNumber } from "@/lib/phone";
 import { cn } from "@/lib/utils";
 
 type BookablePi = {
@@ -419,7 +420,9 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
               type="tel"
               className="h-12 text-base"
               value={receiverMobile}
-              onChange={(e) => setReceiverMobile(e.target.value)}
+              onChange={(e) => setReceiverMobile(normalizeMobileNumber(e.target.value))}
+              inputMode="numeric"
+              placeholder="10-digit mobile"
             />
           </div>
           <div className="space-y-2 md:col-span-2">

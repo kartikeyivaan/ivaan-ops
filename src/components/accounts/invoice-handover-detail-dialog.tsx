@@ -33,13 +33,19 @@ export type InvoiceHandoverDetail = {
     driverName: string | null;
     receiverName: string | null;
     receiverMobile: string | null;
+    notes: string | null;
     totalAmount: number;
     lines: Array<{
       id: string;
       qty: number;
       rate: number;
       amount: number;
-      product: { id: string; displayName: string };
+      product: {
+        id: string;
+        displayName: string;
+        pricingType: "WP" | "UNIT";
+        capacity: number;
+      };
       serials: Array<{ id: string; serialNumber: string }>;
     }>;
   };
@@ -49,6 +55,9 @@ export type InvoiceHandoverDetail = {
     totalValue: number;
     salesUser: { id: string; name: string };
     totalPaid: number;
+    outstanding?: number;
+    creditStatus?: string;
+    creditDueDate?: string | null;
     payments: Array<{
       id: string;
       amount: number;
@@ -128,6 +137,13 @@ export function InvoiceHandoverDetailDialog({
                 label="Dispatch total"
                 value={formatCurrency(detail.dispatch.totalAmount)}
               />
+              {detail.dispatch.notes ? (
+                <DetailField
+                  label="Dispatch notes"
+                  value={detail.dispatch.notes}
+                  className="sm:col-span-2 lg:col-span-3"
+                />
+              ) : null}
             </section>
 
             <section className="space-y-2">
@@ -161,7 +177,11 @@ export function InvoiceHandoverDetailDialog({
                         {line.product.displayName}
                       </TableCell>
                       <TableCell className="text-right">{line.qty}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(line.rate)}</TableCell>
+                      <TableCell className="text-right">
+                        {line.product.pricingType === "WP"
+                          ? `${formatCurrency(line.rate)} × ${line.product.capacity} Wp`
+                          : formatCurrency(line.rate)}
+                      </TableCell>
                       <TableCell className="text-right">{formatCurrency(line.amount)}</TableCell>
                       <TableCell className="max-w-xs text-sm text-slate-600">
                         {line.serials.length
@@ -181,8 +201,20 @@ export function InvoiceHandoverDetailDialog({
                 </h4>
                 <p className="text-sm text-slate-600">
                   Total paid {formatCurrency(detail.proformaInvoice.totalPaid)}
+                  {detail.proformaInvoice.outstanding != null
+                    ? ` · Outstanding ${formatCurrency(detail.proformaInvoice.outstanding)}`
+                    : ""}
                 </p>
               </div>
+              {detail.proformaInvoice.creditStatus &&
+              detail.proformaInvoice.creditStatus !== "NONE" ? (
+                <p className="text-sm text-amber-800">
+                  Credit: {detail.proformaInvoice.creditStatus.replaceAll("_", " ").toLowerCase()}
+                  {detail.proformaInvoice.creditDueDate
+                    ? ` · Due ${formatDocumentDate(detail.proformaInvoice.creditDueDate)}`
+                    : ""}
+                </p>
+              ) : null}
               {detail.proformaInvoice.payments.length ? (
                 <Table>
                   <TableHeader>
@@ -230,11 +262,19 @@ export function InvoiceHandoverDetailDialog({
   );
 }
 
-function DetailField({ label, value }: { label: string; value: string }) {
+function DetailField({
+  label,
+  value,
+  className,
+}: {
+  label: string;
+  value: string;
+  className?: string;
+}) {
   return (
-    <div className="rounded-lg border border-slate-200 px-3 py-2">
+    <div className={`rounded-lg border border-slate-200 px-3 py-2 ${className ?? ""}`}>
       <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-0.5 text-sm font-medium text-slate-900">{value}</p>
+      <p className="mt-0.5 whitespace-pre-wrap text-sm font-medium text-slate-900">{value}</p>
     </div>
   );
 }

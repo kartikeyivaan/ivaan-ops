@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Download, FileSpreadsheet, FileText } from "lucide-react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,6 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { TypeaheadSelect } from "@/components/ui/typeahead-select";
 import { defaultReportDateRange } from "@/lib/reports";
 import { formatCurrency } from "@/lib/quotations";
 
@@ -24,6 +26,7 @@ type ReportKey =
   | "payment-followup"
   | "product-movement"
   | "booked-available"
+  | "reserved-qty"
   | "dispatch";
 
 type ReportDefinition = {
@@ -35,6 +38,7 @@ type ReportDefinition = {
 
 type WarehouseOption = { id: string; name: string };
 type SalesExecutiveOption = { id: string; name: string };
+type ProductOption = { id: string; displayName: string };
 
 const REPORTS: ReportDefinition[] = [
   {
@@ -62,6 +66,13 @@ const REPORTS: ReportDefinition[] = [
     description: "Sales commitment versus sellable stock with free quantity.",
   },
   {
+    key: "reserved-qty",
+    label: "Reserved Qty",
+    endpoint: "/api/reports/reserved-qty",
+    description:
+      "Active reserved quantity by product with committed date, customer, rate, and booking amount.",
+  },
+  {
     key: "dispatch",
     label: "Dispatch",
     endpoint: "/api/reports/dispatch",
@@ -69,46 +80,88 @@ const REPORTS: ReportDefinition[] = [
   },
 ];
 
+const RESERVED_QTY_COLUMNS = [
+  "committedDate",
+  "customerName",
+  "productName",
+  "piNo",
+  "totalQty",
+  "totalAmount",
+  "ratePerWp",
+  "bookingAmount",
+] as const;
+
 function isMoneyColumn(key: string): boolean {
-  return /value|paid|outstanding|amount/i.test(key);
+  return /value|paid|outstanding|amount|ratePerWp/i.test(key);
+}
+
+function formatHeader(key: string) {
+  if (key === "ratePerWp") return "Rate (per Wp)";
+  if (key === "piNo") return "PI No";
+  if (key === "committedDate") return "Committed Date";
+  if (key === "customerName") return "Customer Name";
+  if (key === "totalQty") return "Total Qty";
+  if (key === "totalAmount") return "Total Amount";
+  if (key === "bookingAmount") return "Booking Amount";
+  if (key === "productName") return "Product";
+  return key
+    .replace(/([A-Z])/g, " $1")
+    .replace(/^./, (char) => char.toUpperCase());
 }
 
 export function ReportsHub({
   allowedReports,
   warehouses,
+  products,
   salesExecutives,
   canFilterByExecutive,
   reportShortcuts,
 }: {
   allowedReports: ReportKey[];
   warehouses: WarehouseOption[];
+  products: ProductOption[];
   salesExecutives: SalesExecutiveOption[];
   canFilterByExecutive: boolean;
   reportShortcuts: Array<{ label: string; description: string; href: string }>;
 }) {
+  const searchParams = useSearchParams();
   const defaults = defaultReportDateRange();
   const visibleReports = REPORTS.filter((report) => allowedReports.includes(report.key));
-  const [activeReport, setActiveReport] = useState<ReportKey>(
-    visibleReports[0]?.key ?? "sales-executive",
-  );
+
+  const initialReport = (() => {
+    const requested = searchParams.get("report") as ReportKey | null;
+    if (requested && visibleReports.some((report) => report.key === requested)) {
+      return requested;
+    }
+    return visibleReports[0]?.key ?? "sales-executive";
+  })();
+
+  const [activeReport, setActiveReport] = useState<ReportKey>(initialReport);
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(false);
   const [fromDate, setFromDate] = useState(defaults.fromDate);
   const [toDate, setToDate] = useState(defaults.toDate);
   const [salesUserId, setSalesUserId] = useState("");
-  const [warehouseId, setWarehouseId] = useState("");
+  const [warehouseId, setWarehouseId] = useState(
+    searchParams.get("warehouseId") ?? "",
+  );
+  const [productId, setProductId] = useState(searchParams.get("productId") ?? "");
   const [customerType, setCustomerType] = useState("");
   const [ageingBucket, setAgeingBucket] = useState("");
   const [q, setQ] = useState("");
+  const [didAutoRun, setDidAutoRun] = useState(false);
 
   const currentReport = visibleReports.find((report) => report.key === activeReport)!;
 
   const columns = useMemo(() => {
+    if (activeReport === "reserved-qty" && rows.length > 0) {
+      return [...RESERVED_QTY_COLUMNS];
+    }
     if (rows.length === 0) return [];
     return Object.keys(rows[0]!).filter(
       (key) => !key.endsWith("Id") && key !== "piId" && key !== "productId",
     );
-  }, [rows]);
+  }, [activeReport, rows]);
 
   function buildParams(format: "json" | "xlsx" | "pdf") {
     const params = new URLSearchParams();
@@ -117,6 +170,7 @@ export function ReportsHub({
     if (toDate) params.set("toDate", toDate);
     if (salesUserId) params.set("salesUserId", salesUserId);
     if (warehouseId) params.set("warehouseId", warehouseId);
+    if (productId) params.set("productId", productId);
     if (customerType) params.set("customerType", customerType);
     if (ageingBucket) params.set("ageingBucket", ageingBucket);
     if (q) params.set("q", q);
@@ -132,6 +186,16 @@ export function ReportsHub({
     if (response.ok) setRows(data);
   }
 
+  useEffect(() => {
+    if (didAutoRun) return;
+    if (searchParams.get("report") !== "reserved-qty") return;
+    if (activeReport !== "reserved-qty") return;
+    setDidAutoRun(true);
+    void runReport();
+    // Deep-link from Stock Timeline: run once on open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeReport, didAutoRun, searchParams]);
+
   function exportReport(format: "xlsx" | "pdf") {
     const params = buildParams(format);
     window.open(`${currentReport.endpoint}?${params.toString()}`, "_blank");
@@ -142,12 +206,6 @@ export function ReportsHub({
       return formatCurrency(value);
     }
     return String(value ?? "—");
-  }
-
-  function formatHeader(key: string) {
-    return key
-      .replace(/([A-Z])/g, " $1")
-      .replace(/^./, (char) => char.toUpperCase());
   }
 
   return (
@@ -196,7 +254,9 @@ export function ReportsHub({
         <CardContent className="space-y-4 pt-6">
           <p className="text-sm text-slate-600">{currentReport.description}</p>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {activeReport !== "booked-available" && activeReport !== "payment-followup" ? (
+            {activeReport !== "booked-available" &&
+            activeReport !== "payment-followup" &&
+            activeReport !== "reserved-qty" ? (
               <>
                 <div className="space-y-2">
                   <Label htmlFor="fromDate">From Date</Label>
@@ -277,6 +337,7 @@ export function ReportsHub({
 
             {activeReport === "product-movement" ||
             activeReport === "booked-available" ||
+            activeReport === "reserved-qty" ||
             activeReport === "dispatch" ? (
               <div className="space-y-2">
                 <Label htmlFor="warehouseId">Warehouse</Label>
@@ -296,14 +357,40 @@ export function ReportsHub({
               </div>
             ) : null}
 
-            {activeReport === "product-movement" || activeReport === "booked-available" ? (
+            {activeReport === "reserved-qty" ? (
+              <TypeaheadSelect
+                id="report-product"
+                label="Product"
+                value={productId}
+                onChange={setProductId}
+                options={products.map((product) => ({
+                  value: product.id,
+                  label: product.displayName,
+                }))}
+                allowEmpty
+                emptyLabel="All products"
+                placeholder="Search product..."
+              />
+            ) : null}
+
+            {activeReport === "product-movement" ||
+            activeReport === "booked-available" ||
+            activeReport === "reserved-qty" ? (
               <div className="space-y-2">
-                <Label htmlFor="q">Product Search</Label>
+                <Label htmlFor="q">
+                  {activeReport === "reserved-qty"
+                    ? "Search"
+                    : "Product Search"}
+                </Label>
                 <Input
                   id="q"
                   value={q}
                   onChange={(event) => setQ(event.target.value)}
-                  placeholder="Product or brand"
+                  placeholder={
+                    activeReport === "reserved-qty"
+                      ? "Product, customer, or PI"
+                      : "Product or brand"
+                  }
                 />
               </div>
             ) : null}
@@ -349,7 +436,9 @@ export function ReportsHub({
 
           {rows.length === 0 ? (
             <p className="text-sm text-slate-500">
-              Run a report to see results. Export works even before previewing.
+              {loading
+                ? "Loading results…"
+                : "Run a report to see results. Export works even before previewing."}
             </p>
           ) : (
             <div className="overflow-x-auto">

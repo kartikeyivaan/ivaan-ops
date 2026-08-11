@@ -29,7 +29,11 @@ import {
   formatPaymentMode,
   formatProformaStatus,
   formatReceivedInAccount,
+  isReadyForDispatch,
+  PAYMENT_OUTSTANDING_TOLERANCE_INR,
 } from "@/lib/proforma-invoices";
+import { formatPiCreditStatus } from "@/lib/pi-credit";
+import { normalizeMobileNumber } from "@/lib/phone";
 import { formatCurrency } from "@/lib/quotations";
 import { formatDocumentDate, formatPaymentDate } from "@/lib/utils";
 import { formatPricingType } from "@/lib/products";
@@ -116,6 +120,22 @@ type ProformaInvoiceDetailData = {
     canRequestBooking: boolean;
     readyForDispatch?: boolean;
     canMarkDispatchToday?: boolean;
+    hasApprovedCredit?: boolean;
+  };
+  credit?: {
+    status: string;
+    notes: string | null;
+    requestedAt: string | null;
+    requestedBy: { id: string; name: string } | null;
+    smApprovedAt: string | null;
+    smApprovedBy: { id: string; name: string } | null;
+    accountsApprovedAt: string | null;
+    accountsApprovedBy: { id: string; name: string } | null;
+    dueDate: string | null;
+    clearedAt: string | null;
+    rejectionReason: string | null;
+    overdue: boolean;
+    canRequest: boolean;
   };
 };
 
@@ -138,6 +158,9 @@ export function ProformaInvoiceDetail({
   canApproveDispatchToday,
   canRequestCancel,
   canApproveCancel,
+  canRequestCredit,
+  canApproveCreditSm,
+  canApproveCreditAccounts,
 }: {
   pi: ProformaInvoiceDetailData;
   warehouses: Warehouse[];
@@ -150,6 +173,9 @@ export function ProformaInvoiceDetail({
   canApproveDispatchToday: boolean;
   canRequestCancel: boolean;
   canApproveCancel: boolean;
+  canRequestCredit: boolean;
+  canApproveCreditSm: boolean;
+  canApproveCreditAccounts: boolean;
 }) {
   const router = useRouter();
   const [error, setError] = useState("");
@@ -186,8 +212,9 @@ export function ProformaInvoiceDetail({
   const showPaymentForm = showRecordPayment || editingPaymentId !== null;
   const readyForDispatch =
     pi.paymentSummary.readyForDispatch ??
-    ((pi.status === "BOOKED" || pi.status === "PARTIALLY_DISPATCHED") &&
-      pi.paymentSummary.outstanding <= 0);
+    isReadyForDispatch(pi.status, pi.paymentSummary.outstanding, {
+      hasApprovedCredit: pi.paymentSummary.hasApprovedCredit || pi.credit?.status === "APPROVED",
+    });
   const dispatchToday = pi.dispatchToday;
   const showDispatchTodayCard =
     readyForDispatch &&
@@ -474,6 +501,112 @@ export function ProformaInvoiceDetail({
     router.refresh();
   }
 
+  async function handleRecallDispatchToday() {
+    const confirmed = window.confirm(
+      "Recall Dispatch Today? This will cancel the requested Dispatch Today.",
+    );
+    if (!confirmed) return;
+    setLoading(true);
+    setError("");
+    const response = await fetch(`/api/proforma-invoices/${pi.id}/recall-dispatch-today`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const data = await response.json();
+    setLoading(false);
+    if (!response.ok) {
+      setError(data.message ?? "Unable to recall dispatch today.");
+      return;
+    }
+    setVehicleNo("");
+    setDriverName("");
+    setReceiverName("");
+    setReceiverMobile("");
+    setDispatchNotes("");
+    setWarning("");
+    setEarlyWarning(false);
+    setCrossCompanyWarning(false);
+    setShortfallCandidates([]);
+    setShortfallLines([]);
+    setFromCompanyId("");
+    router.refresh();
+  }
+
+  async function handleRequestCredit() {
+    const notes = window.prompt("Optional notes for credit request:") ?? undefined;
+    setLoading(true);
+    setError("");
+    const response = await fetch(`/api/proforma-invoices/${pi.id}/request-credit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ notes: notes?.trim() || undefined }),
+    });
+    const data = await response.json();
+    setLoading(false);
+    if (!response.ok) {
+      setError(data.message ?? "Unable to request credit.");
+      return;
+    }
+    router.refresh();
+  }
+
+  async function handleApproveCreditSm() {
+    setLoading(true);
+    setError("");
+    const response = await fetch(`/api/proforma-invoices/${pi.id}/approve-credit-sm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const data = await response.json();
+    setLoading(false);
+    if (!response.ok) {
+      setError(data.message ?? "Unable to approve credit.");
+      return;
+    }
+    router.refresh();
+  }
+
+  async function handleApproveCreditAccounts() {
+    setLoading(true);
+    setError("");
+    const response = await fetch(`/api/proforma-invoices/${pi.id}/approve-credit-accounts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const data = await response.json();
+    setLoading(false);
+    if (!response.ok) {
+      setError(data.message ?? "Unable to approve credit.");
+      return;
+    }
+    router.refresh();
+  }
+
+  async function handleRejectCredit() {
+    const reason = window.prompt("Rejection reason (min 3 characters):");
+    if (!reason || reason.trim().length < 3) {
+      setError("Rejection reason is required (min 3 characters).");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    const response = await fetch(`/api/proforma-invoices/${pi.id}/reject-credit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: reason.trim() }),
+    });
+    const data = await response.json();
+    setLoading(false);
+    if (!response.ok) {
+      setError(data.message ?? "Unable to reject credit.");
+      return;
+    }
+    router.refresh();
+  }
+
   async function handleRequestCancel() {
     setLoading(true);
     setError("");
@@ -634,6 +767,37 @@ export function ProformaInvoiceDetail({
               </Button>
             </>
           ) : null}
+          {canMarkDispatchToday &&
+          (dispatchToday?.pendingApproval || dispatchToday?.active) ? (
+            <Button variant="outline" disabled={loading} onClick={handleRecallDispatchToday}>
+              <XCircle className="h-4 w-4" />
+              Recall Dispatch Today
+            </Button>
+          ) : null}
+          {canApproveCreditSm && pi.credit?.status === "PENDING_SM" ? (
+            <>
+              <Button variant="secondary" disabled={loading} onClick={handleApproveCreditSm}>
+                <ShieldCheck className="h-4 w-4" />
+                Approve Credit (SM)
+              </Button>
+              <Button variant="outline" disabled={loading} onClick={handleRejectCredit}>
+                <XCircle className="h-4 w-4" />
+                Reject Credit
+              </Button>
+            </>
+          ) : null}
+          {canApproveCreditAccounts && pi.credit?.status === "PENDING_ACCOUNTS" ? (
+            <>
+              <Button variant="secondary" disabled={loading} onClick={handleApproveCreditAccounts}>
+                <ShieldCheck className="h-4 w-4" />
+                Approve Credit (Accounts)
+              </Button>
+              <Button variant="outline" disabled={loading} onClick={handleRejectCredit}>
+                <XCircle className="h-4 w-4" />
+                Reject Credit
+              </Button>
+            </>
+          ) : null}
           {canRequestCancel &&
           ["DRAFT", "ISSUED", "PENDING_BOOKING", "BOOKED"].includes(pi.status) ? (
             <Button variant="secondary" disabled={loading} onClick={handleRequestCancel}>
@@ -668,6 +832,14 @@ export function ProformaInvoiceDetail({
               <Badge variant={statusVariant(pi.status)}>{formatProformaStatus(pi.status)}</Badge>
               {readyForDispatch ? (
                 <Badge variant="success">Ready for Dispatch</Badge>
+              ) : null}
+              {pi.paymentSummary.hasApprovedCredit || pi.credit?.status === "APPROVED" ? (
+                <Badge variant={pi.credit?.overdue ? "danger" : "warning"}>
+                  {pi.credit?.overdue ? "Credit Overdue" : "On Credit"}
+                </Badge>
+              ) : null}
+              {pi.credit?.status === "PENDING_SM" || pi.credit?.status === "PENDING_ACCOUNTS" ? (
+                <Badge variant="warning">Credit Pending</Badge>
               ) : null}
               {dispatchToday?.active ? <Badge variant="success">Dispatch Today</Badge> : null}
               {dispatchToday?.pendingApproval ? (
@@ -723,6 +895,59 @@ export function ProformaInvoiceDetail({
           </div>
         </CardContent>
       </Card>
+
+      {pi.credit && pi.credit.status !== "NONE" ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Trade Credit</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3 text-sm md:grid-cols-3">
+            <div>
+              <p className="text-slate-500">Status</p>
+              <p className="font-semibold">{formatPiCreditStatus(pi.credit.status)}</p>
+            </div>
+            <div>
+              <p className="text-slate-500">Due Date</p>
+              <p className="font-semibold">
+                {pi.credit.dueDate ? formatDocumentDate(pi.credit.dueDate) : "—"}
+              </p>
+            </div>
+            <div>
+              <p className="text-slate-500">Requested by</p>
+              <p className="font-semibold">{pi.credit.requestedBy?.name ?? "—"}</p>
+            </div>
+            {pi.credit.rejectionReason ? (
+              <div className="md:col-span-3">
+                <p className="text-slate-500">Rejection reason</p>
+                <p className="font-semibold text-red-700">{pi.credit.rejectionReason}</p>
+              </div>
+            ) : null}
+            {pi.credit.notes ? (
+              <div className="md:col-span-3">
+                <p className="text-slate-500">Notes</p>
+                <p>{pi.credit.notes}</p>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {canRequestCredit && pi.credit?.canRequest ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Request Credit Dispatch</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-slate-600">
+            <p>
+              Allow dispatch with unpaid outstanding. Requires Sales Manager approval, then
+              Accounts. Due date starts on full approval (7 days).
+            </p>
+            <Button disabled={loading} onClick={handleRequestCredit}>
+              Request Credit
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {pi.deliveryTermNoteSnapshot ? (
         <Card>
@@ -996,7 +1221,9 @@ export function ProformaInvoiceDetail({
             ) : null}
             {readyForDispatch ? (
               <p className="font-medium text-emerald-700">
-                Full payment received — ready for dispatch.
+                {pi.paymentSummary.outstanding > 0
+                  ? `Outstanding of ${formatCurrency(pi.paymentSummary.outstanding)} is under ₹${PAYMENT_OUTSTANDING_TOLERANCE_INR} — ready for dispatch.`
+                  : "Full payment received — ready for dispatch."}
               </p>
             ) : (
               <p className="font-medium text-amber-700">
@@ -1117,7 +1344,9 @@ export function ProformaInvoiceDetail({
                     <Label>Receiver Mobile</Label>
                     <Input
                       value={receiverMobile}
-                      onChange={(e) => setReceiverMobile(e.target.value)}
+                      onChange={(e) => setReceiverMobile(normalizeMobileNumber(e.target.value))}
+                      inputMode="numeric"
+                      placeholder="10-digit mobile"
                     />
                   </div>
                   <div className="space-y-2 md:col-span-2">

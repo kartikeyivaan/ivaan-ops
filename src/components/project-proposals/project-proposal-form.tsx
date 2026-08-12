@@ -121,12 +121,14 @@ export function ProjectProposalForm({
   proposalId,
   proposalNo,
   nextRevisionNo,
+  enquiryId,
   initialValues,
 }: {
   mode: "create" | "edit" | "revise";
   proposalId?: string;
   proposalNo?: string;
   nextRevisionNo?: number;
+  enquiryId?: string;
   initialValues?: Partial<ProjectProposalFormValues>;
 }) {
   const router = useRouter();
@@ -508,6 +510,7 @@ export function ProjectProposalForm({
       discountAmount: Number(discountAmount) || 0,
       additionalCostAmount: Number(additionalCostAmount) || 0,
       notes: notes.trim() || undefined,
+      enquiryId: mode === "create" ? enquiryId : undefined,
     };
   }
 

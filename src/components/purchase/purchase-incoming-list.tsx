@@ -2,6 +2,7 @@
 
 import { parseApiJson } from "@/lib/api-response";
 import { useState } from "react";
+import { Download } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -105,12 +106,13 @@ export function PurchaseIncomingList({
                 <TableHead>Total Cost</TableHead>
                 <TableHead>Received</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead className="text-right">Serials</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {lots.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center text-slate-500">
+                  <TableCell colSpan={10} className="text-center text-slate-500">
                     No incoming lots recorded yet.
                   </TableCell>
                 </TableRow>
@@ -142,6 +144,30 @@ export function PurchaseIncomingList({
                       <Badge variant={lot.status === "INCOMING" ? "warning" : "success"}>
                         {lot.status}
                       </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {lot.product.serialTracking ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          asChild={lot.serials.length > 0}
+                          disabled={lot.serials.length === 0}
+                        >
+                          {lot.serials.length > 0 ? (
+                            <a href={`/api/inventory/incoming/${lot.id}/serials/export`} download>
+                              <Download className="mr-2 h-4 w-4" />
+                              Download
+                            </a>
+                          ) : (
+                            <span>
+                              <Download className="mr-2 h-4 w-4" />
+                              Download
+                            </span>
+                          )}
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-slate-400">N/A</span>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))

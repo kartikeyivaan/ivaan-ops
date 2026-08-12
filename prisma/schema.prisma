@@ -308,6 +308,13 @@ enum ProjectProposalApprovalStatus {
   REJECTED
 }
 
+enum ProjectEnquiryStatus {
+  OPEN
+  PROPOSAL_SENT
+  WON
+  LOST
+}
+
 enum ProposalConnectionPhase {
   SINGLE_PHASE
   THREE_PHASE
@@ -474,6 +481,7 @@ model Company {
   invoiceHandovers      InvoiceHandover[]
   documentationRecords  DocumentationRecord[]
   projectProposals      ProjectProposal[]
+  projectEnquiries      ProjectEnquiry[]
   serviceRequests       ServiceRequest[]
   openingAudits         InventoryOpeningAudit[]
   dailyAudits           InventoryDailyAudit[]
@@ -540,6 +548,10 @@ model User {
   projectProposalStatusChanges      ProjectProposalStatusHistory[] @relation("ProjectProposalStatusChangedBy")
   projectProposalApprovalsRequested ProjectProposalApproval[]      @relation("ProjectProposalApprovalRequestedBy")
   projectProposalApprovalsDecided   ProjectProposalApproval[]      @relation("ProjectProposalApprovalDecidedBy")
+  salesProjectEnquiries             ProjectEnquiry[]               @relation("ProjectEnquirySalesUser")
+  createdProjectEnquiries           ProjectEnquiry[]               @relation("ProjectEnquiryCreatedBy")
+  updatedProjectEnquiries           ProjectEnquiry[]               @relation("ProjectEnquiryUpdatedBy")
+  projectEnquiryFollowups           ProjectEnquiryFollowup[]       @relation("ProjectEnquiryFollowupCreatedBy")
   assignedServiceRequests           ServiceRequest[]               @relation("ServiceAssignedTo")
   createdServiceRequests            ServiceRequest[]               @relation("ServiceCreatedBy")
   serviceUpdatesAssigned            ServiceUpdate[]                @relation("ServiceUpdateAssignedExecutive")
@@ -1591,10 +1603,59 @@ model ProjectProposal {
   revisions     ProjectProposalRevision[]
   statusHistory ProjectProposalStatusHistory[]
   approvals     ProjectProposalApproval[]
+  enquiry       ProjectEnquiry?
 
   @@index([companyId, status])
   @@index([salesUserId])
   @@map("project_proposals")
+}
+
+model ProjectEnquiry {
+  id             String              @id @default(uuid()) @db.Uuid
+  enquiryNo      String              @unique @map("enquiry_no")
+  companyId      String              @map("company_id") @db.Uuid
+  salesUserId    String              @map("sales_user_id") @db.Uuid
+  customerName   String              @map("customer_name")
+  customerMobile String              @map("customer_mobile")
+  status         ProjectEnquiryStatus @default(OPEN)
+  nextFollowupAt DateTime            @map("next_followup_at") @db.Date
+  lastFollowupAt DateTime?           @map("last_followup_at") @db.Date
+  lostReason     String?             @map("lost_reason")
+  proposalId     String?             @unique @map("proposal_id") @db.Uuid
+  createdById    String              @map("created_by") @db.Uuid
+  updatedById    String              @map("updated_by") @db.Uuid
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+
+  company    Company                 @relation(fields: [companyId], references: [id])
+  salesUser  User                    @relation("ProjectEnquirySalesUser", fields: [salesUserId], references: [id])
+  proposal   ProjectProposal?        @relation(fields: [proposalId], references: [id])
+  createdBy  User                    @relation("ProjectEnquiryCreatedBy", fields: [createdById], references: [id])
+  updatedBy  User                    @relation("ProjectEnquiryUpdatedBy", fields: [updatedById], references: [id])
+  followups  ProjectEnquiryFollowup[]
+
+  @@index([companyId, status, nextFollowupAt])
+  @@index([salesUserId])
+  @@index([customerMobile])
+  @@index([customerName])
+  @@map("project_enquiries")
+}
+
+model ProjectEnquiryFollowup {
+  id             String   @id @default(uuid()) @db.Uuid
+  enquiryId      String   @map("enquiry_id") @db.Uuid
+  note           String
+  outcome        String?
+  followupDate   DateTime @map("followup_date") @db.Date
+  nextFollowupAt DateTime @map("next_followup_at") @db.Date
+  createdById    String   @map("created_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  enquiry   ProjectEnquiry @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+  createdBy User           @relation("ProjectEnquiryFollowupCreatedBy", fields: [createdById], references: [id])
+
+  @@index([enquiryId, followupDate])
+  @@map("project_enquiry_followups")
 }
 
 model ProjectProposalRevision {

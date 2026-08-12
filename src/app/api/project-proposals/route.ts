@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { assertCompanyAccess } from "@/lib/customer-permissions";
+import { attachProposalToEnquiry } from "@/lib/project-enquiry-service";
 import { mapProjectProposalError, projectProposalErrorResponse } from "@/lib/project-proposal-api";
 import {
   canManageProjectProposals,
@@ -8,10 +9,7 @@ import {
   restrictProjectProposalSalesUserId,
 } from "@/lib/project-proposal-permissions";
 import { buildProjectProposalSharePayload } from "@/lib/project-proposal-share";
-import {
-  createProjectProposal,
-  listProjectProposals,
-} from "@/lib/project-proposal-service";
+import { createProjectProposal, listProjectProposals } from "@/lib/project-proposal-service";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
 import {
@@ -148,6 +146,15 @@ export async function POST(request: Request) {
         inverterCapacityKw: parsed.data.inverterCapacityKw,
       },
     });
+
+    if (parsed.data.enquiryId) {
+      await attachProposalToEnquiry(prisma, {
+        enquiryId: parsed.data.enquiryId,
+        companyId,
+        proposalId: result.proposal.id,
+        userId: session.user.id,
+      });
+    }
 
     const share = buildProjectProposalSharePayload(result.proposal);
 

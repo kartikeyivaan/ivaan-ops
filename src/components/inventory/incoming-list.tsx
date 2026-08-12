@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Download, History } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -19,18 +18,20 @@ import type { SerializedInventoryLot } from "@/lib/inventory-service";
 export function IncomingReceiptList({
   initialLots,
   canInward,
+  showHistory,
+  canExportSerials,
 }: {
   initialLots: SerializedInventoryLot[];
   canInward: boolean;
+  showHistory: boolean;
+  canExportSerials: boolean;
 }) {
-  const [lots, setLots] = useState(
-    initialLots.filter((lot) => lot.status === "INCOMING"),
-  );
-
-  async function refreshLots() {
-    const response = await fetch("/api/inventory/incoming?status=INCOMING");
-    if (response.ok) setLots(await response.json());
-  }
+  const lots = initialLots
+    .filter((lot) => (showHistory ? Number(lot.receivedQuantity) > 0 : lot.status === "INCOMING"))
+    .sort((a, b) => {
+      if (!showHistory) return 0;
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    });
 
   return (
     <div className="space-y-6">
@@ -47,11 +48,12 @@ export function IncomingReceiptList({
             Record physical receipt of purchase lots created by the Purchase team.
           </p>
         </div>
-        {canInward ? (
-          <Button variant="outline" onClick={() => refreshLots()}>
-            Refresh
-          </Button>
-        ) : null}
+        <Button variant="outline" asChild>
+          <Link href={showHistory ? "/inventory/incoming" : "/inventory/incoming?view=history"}>
+            <History className="h-4 w-4" />
+            {showHistory ? "Back to Pending" : "History"}
+          </Link>
+        </Button>
       </div>
 
       <Card>
@@ -65,14 +67,17 @@ export function IncomingReceiptList({
                 <TableHead>Expected</TableHead>
                 <TableHead>Received</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Serials</TableHead>
                 <TableHead />
               </TableRow>
             </TableHeader>
             <TableBody>
               {lots.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-slate-500">
-                    No pending incoming lots to receive.
+                  <TableCell colSpan={8} className="text-center text-slate-500">
+                    {showHistory
+                      ? "No received incoming lots in history."
+                      : "No pending incoming lots to receive."}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -87,6 +92,30 @@ export function IncomingReceiptList({
                       <Badge variant={lot.status === "INCOMING" ? "warning" : "success"}>
                         {lot.status}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {lot.product.serialTracking ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          asChild={canExportSerials && lot.serials.length > 0}
+                          disabled={!canExportSerials || lot.serials.length === 0}
+                        >
+                          {canExportSerials && lot.serials.length > 0 ? (
+                            <a href={`/api/inventory/incoming/${lot.id}/serials/export`} download>
+                              <Download className="mr-2 h-4 w-4" />
+                              Download
+                            </a>
+                          ) : (
+                            <span>
+                              <Download className="mr-2 h-4 w-4" />
+                              Download
+                            </span>
+                          )}
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-slate-400">N/A</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       {canInward && lot.status === "INCOMING" ? (

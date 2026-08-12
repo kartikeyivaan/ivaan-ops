@@ -768,6 +768,7 @@ export const createProjectProposalSchema = withStructureProvisionRule(
     customerMobile: z.string().min(10),
     shortAddress: z.string().optional(),
     salesUserId: z.string().uuid().optional(),
+    enquiryId: z.string().uuid().optional(),
     proposalDate: z.string().optional(),
     notes: z.string().optional(),
   }),
@@ -810,6 +811,43 @@ export const approveProjectProposalSchema = z.object({
 export const rejectProjectProposalSchema = rejectApprovalSchema;
 
 export const reviseProjectProposalSchema = updateProjectProposalSchema;
+
+export const createProjectEnquirySchema = z.object({
+  customerName: z.string().trim().min(2, "Customer name is required"),
+  customerMobile: z.string().trim().min(10, "Mobile number is required"),
+  salesUserId: z.string().uuid().optional(),
+  nextFollowupAt: z.string(),
+});
+
+export const updateProjectEnquirySchema = z.object({
+  customerName: z.string().trim().min(2, "Customer name is required"),
+  customerMobile: z.string().trim().min(10, "Mobile number is required"),
+  nextFollowupAt: z.string(),
+});
+
+export const projectEnquirySearchSchema = z.object({
+  q: z.string().optional(),
+  status: z.enum(["OPEN", "PROPOSAL_SENT", "WON", "LOST"]).optional(),
+  salesUserId: z.string().uuid().optional(),
+  customerMobile: z.string().optional(),
+  fromDate: z.string().optional(),
+  toDate: z.string().optional(),
+});
+
+export const createProjectEnquiryFollowupSchema = z.object({
+  note: z.string().trim().min(1, "Follow-up note is required"),
+  outcome: z.string().trim().optional(),
+  followupDate: z.string(),
+  nextFollowupAt: z.string(),
+});
+
+export const markProjectEnquiryLostSchema = z.object({
+  lostReason: z.string().trim().min(2, "Lost reason is required"),
+});
+
+export const reassignProjectEnquirySchema = z.object({
+  salesUserId: z.string().uuid(),
+});
 
 export type LoginInput = z.infer<typeof loginSchema>;
 export type CompanyInput = z.infer<typeof companySchema>;

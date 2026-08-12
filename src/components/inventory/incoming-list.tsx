@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, Download, History } from "lucide-react";
+import { ArrowLeft, History } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { SerializedInventoryLot } from "@/lib/inventory-service";
+import { IncomingSerialExportButton } from "@/components/inventory/incoming-serial-export-button";
 
 export function IncomingReceiptList({
   initialLots,
@@ -57,7 +58,7 @@ export function IncomingReceiptList({
       </div>
 
       <Card>
-        <CardContent className="p-0">
+        <CardContent className="overflow-x-auto p-0">
           <Table>
             <TableHeader>
               <TableRow>
@@ -67,14 +68,13 @@ export function IncomingReceiptList({
                 <TableHead>Expected</TableHead>
                 <TableHead>Received</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Serials</TableHead>
-                <TableHead />
+                <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {lots.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-slate-500">
+                  <TableCell colSpan={7} className="text-center text-slate-500">
                     {showHistory
                       ? "No received incoming lots in history."
                       : "No pending incoming lots to receive."}
@@ -94,35 +94,19 @@ export function IncomingReceiptList({
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      {lot.product.serialTracking ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          asChild={canExportSerials && lot.serials.length > 0}
-                          disabled={!canExportSerials || lot.serials.length === 0}
-                        >
-                          {canExportSerials && lot.serials.length > 0 ? (
-                            <a href={`/api/inventory/incoming/${lot.id}/serials/export`} download>
-                              <Download className="mr-2 h-4 w-4" />
-                              Download
-                            </a>
-                          ) : (
-                            <span>
-                              <Download className="mr-2 h-4 w-4" />
-                              Download
-                            </span>
-                          )}
-                        </Button>
-                      ) : (
-                        <span className="text-xs text-slate-400">N/A</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {canInward && lot.status === "INCOMING" ? (
-                        <Button size="sm" variant="outline" asChild>
-                          <Link href={`/inventory/incoming/${lot.id}`}>Receive</Link>
-                        </Button>
-                      ) : null}
+                      <div className="flex flex-wrap items-center gap-2">
+                        {canInward && lot.status === "INCOMING" ? (
+                          <Button size="sm" variant="outline" asChild>
+                            <Link href={`/inventory/incoming/${lot.id}`}>Receive</Link>
+                          </Button>
+                        ) : null}
+                        <IncomingSerialExportButton
+                          lotId={lot.id}
+                          serialTracking={lot.product.serialTracking}
+                          receivedQuantity={Number(lot.receivedQuantity)}
+                          canExport={canExportSerials}
+                        />
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))

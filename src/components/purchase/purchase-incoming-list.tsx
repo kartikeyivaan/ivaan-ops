@@ -2,7 +2,6 @@
 
 import { parseApiJson } from "@/lib/api-response";
 import { useState } from "react";
-import { Download } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -20,6 +19,7 @@ import {
   IncomingLotEditDialog,
   isEditableIncomingLot,
 } from "@/components/purchase/incoming-lot-edit-dialog";
+import { IncomingSerialExportButton } from "@/components/inventory/incoming-serial-export-button";
 
 type Company = { id: string; name: string; code: string };
 type Product = { id: string; displayName: string; gstRate: number };
@@ -42,6 +42,7 @@ export function PurchaseIncomingList({
   vendors,
   defaultCompanyId,
   canCreate,
+  canExportSerials,
   createDefaults,
 }: {
   initialLots: SerializedInventoryLot[];
@@ -51,6 +52,7 @@ export function PurchaseIncomingList({
   vendors: Vendor[];
   defaultCompanyId: string;
   canCreate: boolean;
+  canExportSerials: boolean;
   createDefaults?: {
     companyId?: string;
     warehouseId?: string;
@@ -93,7 +95,7 @@ export function PurchaseIncomingList({
       ) : null}
 
       <Card>
-        <CardContent className="p-0">
+        <CardContent className="overflow-x-auto p-0">
           <Table>
             <TableHeader>
               <TableRow>
@@ -106,7 +108,7 @@ export function PurchaseIncomingList({
                 <TableHead>Total Cost</TableHead>
                 <TableHead>Received</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="text-right">Serials</TableHead>
+                <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -145,29 +147,13 @@ export function PurchaseIncomingList({
                         {lot.status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right">
-                      {lot.product.serialTracking ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          asChild={lot.serials.length > 0}
-                          disabled={lot.serials.length === 0}
-                        >
-                          {lot.serials.length > 0 ? (
-                            <a href={`/api/inventory/incoming/${lot.id}/serials/export`} download>
-                              <Download className="mr-2 h-4 w-4" />
-                              Download
-                            </a>
-                          ) : (
-                            <span>
-                              <Download className="mr-2 h-4 w-4" />
-                              Download
-                            </span>
-                          )}
-                        </Button>
-                      ) : (
-                        <span className="text-xs text-slate-400">N/A</span>
-                      )}
+                    <TableCell>
+                      <IncomingSerialExportButton
+                        lotId={lot.id}
+                        serialTracking={lot.product.serialTracking}
+                        receivedQuantity={Number(lot.receivedQuantity)}
+                        canExport={canExportSerials}
+                      />
                     </TableCell>
                   </TableRow>
                 ))

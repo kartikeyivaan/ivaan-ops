@@ -69,6 +69,7 @@ export default async function PurchaseIncomingPage({ searchParams }: PageProps) 
       vendors={vendors}
       defaultCompanyId={companyId}
       canCreate={canCreateIncoming(session.user.roles)}
+      canExportSerials={includeSerials}
       createDefaults={{
         purchaseRequestLineId: params.prLineId,
         purchaseRequestId: params.requestId,

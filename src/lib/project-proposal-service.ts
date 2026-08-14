@@ -21,6 +21,7 @@ import {
 import { getNextProjectProposalRevisionNo } from "@/lib/project-proposal-revision";
 import { canAccessProjectProposal, canEditProjectProposal } from "@/lib/project-proposal-permissions";
 import { isNdcrCompletePackage } from "@/lib/project-proposal-packages";
+import { createProjectFromProposal, serializeProject } from "@/lib/project-service";
 import { toDateOnly } from "@/lib/quotations";
 
 export type ResolveProjectProposalPricingInput = {
@@ -65,6 +66,9 @@ export const projectProposalInclude = {
   revisions: {
     include: projectProposalRevisionInclude,
     orderBy: { revisionNo: "asc" as const },
+  },
+  executionProject: {
+    select: { id: true, projectNo: true, status: true },
   },
 } satisfies Prisma.ProjectProposalInclude;
 
@@ -145,6 +149,7 @@ export function serializeProjectProposal(proposal: ProjectProposalRecord) {
     updatedAt: proposal.updatedAt.toISOString(),
     revisions: proposal.revisions.map(serializeRevision),
     currentRevision: currentRevision ? serializeRevision(currentRevision) : null,
+    executionProject: proposal.executionProject ?? null,
   };
 }
 
@@ -1163,6 +1168,14 @@ export async function convertProjectProposalToProject(
 
   return prisma.$transaction(async (tx) => {
     const revision = getCurrentRevisionRecord(proposal);
+    const executionProject = await createProjectFromProposal(tx, {
+      companyId: input.companyId,
+      companyCode: proposal.company.code,
+      proposal,
+      revision,
+      performedById: input.performedById,
+    });
+
     const updated = await tx.projectProposal.update({
       where: { id: proposal.id },
       data: {
@@ -1189,10 +1202,13 @@ export async function convertProjectProposalToProject(
       action: "UPDATE",
       performedBy: input.performedById,
       companyId: input.companyId,
-      newValue: { status: ProjectProposalStatus.CONVERTED },
+      newValue: { status: ProjectProposalStatus.CONVERTED, projectId: executionProject.id },
       reference: proposal.proposalNo,
     });
 
-    return serializeProjectProposal(updated);
+    return {
+      ...serializeProjectProposal(updated),
+      project: serializeProject(executionProject),
+    };
   });
 }

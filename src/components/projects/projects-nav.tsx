@@ -4,7 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
-const PROJECT_LINKS = [{ label: "Proposals", href: "/projects/proposals" }];
+const PROJECT_LINKS = [
+  { label: "Proposals", href: "/projects/proposals" },
+  { label: "Projects", href: "/projects/execution" },
+  { label: "Enquiries", href: "/projects/enquiries" },
+];
 
 export function ProjectsNav() {
   const pathname = usePathname();

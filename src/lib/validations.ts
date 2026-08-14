@@ -1,5 +1,13 @@
 import { z } from "zod";
+import { MAX_SERIALS_PER_ENTRY } from "@/lib/inventory";
 import { isStrongPassword, STRONG_PASSWORD_HINT } from "@/lib/password-policy";
+
+const serialNumbersPerEntrySchema = z
+  .array(z.string().trim().min(1))
+  .min(1)
+  .max(MAX_SERIALS_PER_ENTRY, {
+    message: `A single entry can include at most ${MAX_SERIALS_PER_ENTRY} serial numbers.`,
+  });
 
 const strongPasswordField = z
   .string()
@@ -237,7 +245,12 @@ export const inwardSchema = z.object({
   lotId: z.string().uuid(),
   receivedQty: z.coerce.number().min(0),
   damagedQty: z.coerce.number().min(0).default(0),
-  serialNumbers: z.array(z.string().min(1)).optional(),
+  serialNumbers: z
+    .array(z.string().min(1))
+    .max(MAX_SERIALS_PER_ENTRY, {
+      message: `A single entry can include at most ${MAX_SERIALS_PER_ENTRY} serial numbers.`,
+    })
+    .optional(),
 });
 
 export const damageSchema = z.object({
@@ -355,7 +368,7 @@ export const manualStockSerialInSchema = z
     action: z.literal("IN"),
     productId: z.string().uuid(),
     warehouseId: z.string().uuid(),
-    serialNumbers: z.array(z.string().trim().min(1)).min(1).max(500),
+    serialNumbers: serialNumbersPerEntrySchema,
     condition: z.enum(["GOOD", "DAMAGED"]),
     reason: manualStockReasonSchema,
     notes: manualStockNotesSchema,
@@ -367,7 +380,7 @@ export const manualStockSerialOutSchema = z
     action: z.literal("OUT"),
     productId: z.string().uuid(),
     warehouseId: z.string().uuid(),
-    serialNumbers: z.array(z.string().trim().min(1)).min(1).max(500),
+    serialNumbers: serialNumbersPerEntrySchema,
     reason: manualStockReasonSchema,
     notes: manualStockNotesSchema,
   })
@@ -378,7 +391,7 @@ export const manualStockChangeConditionSchema = z
     action: z.literal("CHANGE_CONDITION"),
     productId: z.string().uuid(),
     warehouseId: z.string().uuid(),
-    serialNumbers: z.array(z.string().trim().min(1)).min(1).max(500),
+    serialNumbers: serialNumbersPerEntrySchema,
     condition: z.enum(["GOOD", "DAMAGED"]),
     reason: manualStockReasonSchema,
     notes: manualStockNotesSchema,
@@ -657,7 +670,7 @@ export const dispatchLineSchema = z.object({
   proformaInvoiceItemId: z.string().uuid(),
   productId: z.string().uuid(),
   qty: z.coerce.number().positive(),
-  serialIds: z.array(z.string().uuid()).optional(),
+  serialIds: z.array(z.string().uuid()).max(MAX_SERIALS_PER_ENTRY).optional(),
 });
 
 export const createDispatchSchema = z.object({
@@ -692,14 +705,65 @@ export const dispatchSearchSchema = z.object({
   toDate: z.string().optional(),
 });
 
+export const projectDispatchLineSchema = z.object({
+  materialLineId: z.string().uuid(),
+  productId: z.string().uuid(),
+  qty: z.coerce.number().positive(),
+  serialIds: z.array(z.string().uuid()).max(MAX_SERIALS_PER_ENTRY).optional(),
+  kitProductId: z.string().uuid().optional(),
+  kitProductName: z.string().optional(),
+  kitBomQty: z.coerce.number().optional(),
+});
+
+export const createProjectDispatchSchema = z.object({
+  projectId: z.string().uuid(),
+  vehicleNo: z.string().trim().optional(),
+  receiverName: z.string().trim().optional(),
+  receiverMobile: z.string().trim().optional(),
+  signatureData: z
+    .string()
+    .max(200_000)
+    .refine(
+      (value) =>
+        value === "" ||
+        !value ||
+        value.startsWith("data:image/png;base64,") ||
+        value.startsWith("data:image/jpeg;base64,") ||
+        value.startsWith("data:image/webp;base64,"),
+      "Signature must be a PNG, JPEG, or WebP image.",
+    )
+    .optional(),
+  remarks: z.string().optional(),
+  confirm: z.boolean().default(true),
+  lines: z.array(projectDispatchLineSchema).min(1),
+});
+
+export const projectDispatchSearchSchema = z.object({
+  q: z.string().optional(),
+  projectId: z.string().uuid().optional(),
+  status: z.enum(["DRAFT", "DISPATCHED", "CANCEL_PENDING", "CANCELLED"]).optional(),
+});
+
+export const lookupProjectDispatchSerialsSchema = z.object({
+  projectId: z.string().uuid(),
+  productId: z.string().uuid(),
+  serialNumbers: serialNumbersPerEntrySchema,
+});
+
+export const returnProjectStockSchema = z.object({
+  lineId: z.string().uuid(),
+  qty: z.coerce.number().positive(),
+  remarks: z.string().optional(),
+});
+
 export const lookupDispatchSerialsSchema = z.object({
   piId: z.string().uuid(),
   productId: z.string().uuid(),
-  serialNumbers: z.array(z.string().trim().min(1)).min(1).max(500),
+  serialNumbers: serialNumbersPerEntrySchema,
 });
 
 export const checkInventorySerialsSchema = z.object({
-  serialNumbers: z.array(z.string().trim().min(1)).min(1).max(500),
+  serialNumbers: serialNumbersPerEntrySchema,
 });
 
 export const reportSearchSchema = z.object({
@@ -811,6 +875,33 @@ export const approveProjectProposalSchema = z.object({
 export const rejectProjectProposalSchema = rejectApprovalSchema;
 
 export const reviseProjectProposalSchema = updateProjectProposalSchema;
+
+export const projectSearchSchema = z.object({
+  q: z.string().optional(),
+  status: z
+    .enum([
+      "OPEN",
+      "MATERIAL_DRAFT",
+      "MATERIAL_PENDING_APPROVAL",
+      "MATERIAL_ASSIGNED",
+      "READY_FOR_DISPATCH",
+      "PARTIALLY_DISPATCHED",
+      "FULLY_DISPATCHED",
+      "CLOSED",
+    ])
+    .optional(),
+});
+
+export const addProjectMaterialLineSchema = z.object({
+  productId: z.string().uuid(),
+  requiredQty: z.coerce.number().positive(),
+  remarks: z.string().optional(),
+});
+
+export const updateProjectMaterialLineSchema = z.object({
+  requiredQty: z.coerce.number().positive(),
+  remarks: z.string().nullable().optional(),
+});
 
 export const createProjectEnquirySchema = z.object({
   customerName: z.string().trim().min(2, "Customer name is required"),

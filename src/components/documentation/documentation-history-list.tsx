@@ -21,7 +21,7 @@ type Row = {
   ageingDays: number;
   dispatch: { dcNo: string; dispatchDate: string };
   invoiceHandover: { invoiceNumber: string | null; invoiceDate: string | null };
-  customer: { customerName: string };
+  customer: { customerName: string; gstNumber: string };
   completedBy: { name: string } | null;
 };
 
@@ -50,6 +50,7 @@ export function DocumentationHistoryList({ rows }: { rows: Row[] }) {
               <TableHeader>
                 <TableRow>
                   <TableHead>Customer</TableHead>
+                  <TableHead>GST</TableHead>
                   <TableHead>DC No</TableHead>
                   <TableHead>Invoice</TableHead>
                   <TableHead>Invoice date</TableHead>
@@ -67,6 +68,7 @@ export function DocumentationHistoryList({ rows }: { rows: Row[] }) {
                         {row.customer.customerName}
                       </Link>
                     </TableCell>
+                    <TableCell>{row.customer.gstNumber}</TableCell>
                     <TableCell>
                       <Link href={`/documentation/${row.id}`} className="text-slate-700 hover:underline">
                         {row.dispatch.dcNo}

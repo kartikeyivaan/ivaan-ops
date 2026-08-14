@@ -8,6 +8,8 @@ import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
 import { inwardSchema } from "@/lib/validations";
 
+export const maxDuration = 60;
+
 function errorResponse(code: string, message: string, status: number, details?: unknown) {
   return NextResponse.json({ code, message, details }, { status });
 }

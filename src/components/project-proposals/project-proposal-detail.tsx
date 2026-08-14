@@ -68,7 +68,9 @@ type ProposalDetail = {
   proposalNo: string;
   currentRevisionNo: number;
   status: string;
+  convertedAt?: string | null;
   salesUser: { name: string };
+  executionProject?: { id: string; projectNo: string; status: string } | null;
   revisions?: RevisionSummary[];
   currentRevision: {
     proposalDate: string;
@@ -123,10 +125,12 @@ export function ProjectProposalDetail({
   proposal,
   canManage,
   canApprove,
+  canConvert,
 }: {
   proposal: ProposalDetail;
   canManage: boolean;
   canApprove: boolean;
+  canConvert: boolean;
 }) {
   const router = useRouter();
   const revision = proposal.currentRevision;
@@ -197,6 +201,11 @@ export function ProjectProposalDetail({
     if (!response.ok) {
       const data = await response.json();
       setError(data.message ?? "Unable to convert proposal.");
+      return;
+    }
+    const data = await response.json();
+    if (data.project?.id) {
+      router.push(`/projects/execution/${data.project.id}`);
       return;
     }
     router.refresh();
@@ -325,6 +334,40 @@ export function ProjectProposalDetail({
         </div>
       ) : null}
 
+      {(proposal.status === "APPROVED" || proposal.status === "CONVERTED") && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Project Handoff</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {proposal.executionProject ? (
+              <>
+                <p className="text-slate-600">
+                  This proposal was converted to project{" "}
+                  <Link
+                    href={`/projects/execution/${proposal.executionProject.id}`}
+                    className="font-medium text-emerald-700 hover:underline"
+                  >
+                    {proposal.executionProject.projectNo}
+                  </Link>
+                  .
+                </p>
+                {proposal.convertedAt ? (
+                  <p className="text-slate-500">
+                    Converted on {formatDateTime(proposal.convertedAt)}.
+                  </p>
+                ) : null}
+              </>
+            ) : canConvert && proposal.status === "APPROVED" ? (
+              <p className="text-slate-600">
+                Start material assignment by converting this proposal to a project execution
+                record.
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
+      )}
+
       {error ? (
         <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
@@ -412,7 +455,7 @@ export function ProjectProposalDetail({
             </Button>
           </>
         ) : null}
-        {canManage && proposal.status === "APPROVED" ? (
+        {canConvert && proposal.status === "APPROVED" ? (
           <Button
             onClick={() => void convertProposal()}
             disabled={loading}

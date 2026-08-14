@@ -26,7 +26,7 @@ type RecordData = {
     }>;
   };
   invoiceHandover: { invoiceNumber: string | null; invoiceDate: string | null };
-  customer: { customerName: string; mobile: string | null };
+  customer: { customerName: string; gstNumber: string; mobile: string | null };
   statusHistory: Array<{ id: string; toStatus: string; remarks: string | null; changedAt: string; changedBy: { name: string } }>;
 };
 
@@ -61,6 +61,7 @@ export function DocumentationRecordView({ record, canManage }: {
         <Button variant="outline" asChild><Link href="/documentation">Back</Link></Button>
       </div>
       <Card><CardContent className="grid gap-3 pt-5 text-sm sm:grid-cols-2">
+        <p><span className="text-slate-500">GST:</span> {record.customer.gstNumber}</p>
         <p><span className="text-slate-500">Invoice number:</span> {record.invoiceHandover.invoiceNumber ?? "—"}</p>
         <p><span className="text-slate-500">Invoice date:</span> {record.invoiceHandover.invoiceDate ? formatDocumentDate(record.invoiceHandover.invoiceDate) : "—"}</p>
         <p><span className="text-slate-500">Status:</span> {record.status.replaceAll("_", " ")}</p>

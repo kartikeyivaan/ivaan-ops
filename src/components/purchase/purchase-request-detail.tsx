@@ -101,6 +101,25 @@ export function PurchaseRequestDetail({
         </div>
       </div>
 
+      {request.projectLink ? (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          Created from project material —{" "}
+          <Link
+            href={`/projects/execution/${request.projectLink.projectId}`}
+            className="font-medium underline"
+          >
+            {request.projectLink.projectNo}
+          </Link>
+          {" · "}
+          <Link
+            href={`/projects/proposals/${request.projectLink.proposalId}`}
+            className="font-medium underline"
+          >
+            Proposal {request.projectLink.proposalNo}
+          </Link>
+        </div>
+      ) : null}
+
       <Card>
         <CardContent className="grid gap-3 p-4 text-sm md:grid-cols-3">
           <div>

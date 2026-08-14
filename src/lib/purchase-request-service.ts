@@ -20,6 +20,13 @@ import { ROLES } from "@/lib/rbac";
 const requestInclude = {
   company: { select: { id: true, name: true, code: true } },
   warehouse: { select: { id: true, name: true } },
+  project: {
+    select: {
+      id: true,
+      projectNo: true,
+      proposal: { select: { id: true, proposalNo: true } },
+    },
+  },
   requestedBy: { select: { id: true, name: true } },
   updatedBy: { select: { id: true, name: true } },
   lines: {
@@ -34,6 +41,22 @@ const requestInclude = {
           gstRate: true,
           category: { select: { id: true, name: true } },
           brand: { select: { id: true, name: true } },
+        },
+      },
+      projectMaterialLine: {
+        select: {
+          id: true,
+          assignment: {
+            select: {
+              project: {
+                select: {
+                  id: true,
+                  projectNo: true,
+                  proposal: { select: { id: true, proposalNo: true } },
+                },
+              },
+            },
+          },
         },
       },
       lots: {
@@ -99,9 +122,21 @@ export type SerializedPurchaseRequest = {
   updatedAt: string;
   lineCount: number;
   lines: SerializedPurchaseRequestLine[];
+  projectLink: {
+    projectId: string;
+    projectNo: string;
+    proposalId: string;
+    proposalNo: string;
+  } | null;
 };
 
 export function serializePurchaseRequest(row: RequestRecord): SerializedPurchaseRequest {
+  const linkedLine = row.lines.find((line) => line.projectMaterialLine?.assignment.project);
+  const linkedProject =
+    row.project ??
+    linkedLine?.projectMaterialLine?.assignment.project ??
+    null;
+
   return {
     id: row.id,
     requestNumber: row.requestNumber,
@@ -122,6 +157,14 @@ export function serializePurchaseRequest(row: RequestRecord): SerializedPurchase
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     lineCount: row.lines.length,
+    projectLink: linkedProject
+      ? {
+          projectId: linkedProject.id,
+          projectNo: linkedProject.projectNo,
+          proposalId: linkedProject.proposal.id,
+          proposalNo: linkedProject.proposal.proposalNo,
+        }
+      : null,
     lines: row.lines.map((line) => {
       const requestedQty = decimalToNumber(line.requestedQty);
       const fulfilledQty = decimalToNumber(line.fulfilledQty);
@@ -581,4 +624,144 @@ export async function applyIncomingFulfillment(
       updatedById: input.updatedById,
     },
   });
+}
+
+export async function upsertProjectMaterialPurchaseRequest(
+  prisma: PrismaClient,
+  input: {
+    companyId: string;
+    companyCode: string;
+    projectId: string;
+    projectNo: string;
+    proposalNo: string;
+    materialLineId: string;
+    productId: string;
+    requestedQty: number;
+    warehouseId: string;
+    requestedById: string;
+    requestedByName: string;
+  },
+): Promise<string> {
+  if (input.requestedQty <= 0) {
+    throw new Error("INVALID_QUANTITY");
+  }
+
+  const product = await prisma.product.findUnique({
+    where: { id: input.productId },
+    include: {
+      category: { select: { name: true } },
+      brand: { select: { name: true } },
+    },
+  });
+  if (!product || !product.isActive) throw new Error("PRODUCT_NOT_FOUND");
+
+  const lineRemarks = `Project ${input.projectNo} / Proposal ${input.proposalNo} / Line ${input.materialLineId}`;
+
+  const existingLine = await prisma.purchaseRequestLine.findFirst({
+    where: { projectMaterialLineId: input.materialLineId },
+    include: { purchaseRequest: true },
+  });
+
+  if (
+    existingLine &&
+    existingLine.purchaseRequest.status === PurchaseRequestStatus.OPEN
+  ) {
+    await prisma.purchaseRequestLine.update({
+      where: { id: existingLine.id },
+      data: {
+        requestedQty: input.requestedQty,
+        priority: PurchaseRequestPriority.HIGH,
+        remarks: lineRemarks,
+      },
+    });
+    return existingLine.id;
+  }
+
+  const request = await prisma.purchaseRequest.findFirst({
+    where: {
+      companyId: input.companyId,
+      projectId: input.projectId,
+      status: PurchaseRequestStatus.OPEN,
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (!request) {
+    const created = await prisma.$transaction(async (tx) => {
+      const requestNumber = await generatePurchaseRequestNumber(
+        tx,
+        input.companyId,
+        input.companyCode,
+      );
+      return tx.purchaseRequest.create({
+        data: {
+          requestNumber,
+          companyId: input.companyId,
+          warehouseId: input.warehouseId,
+          projectId: input.projectId,
+          status: PurchaseRequestStatus.OPEN,
+          priority: PurchaseRequestPriority.HIGH,
+          remarks: `Auto-created for project ${input.projectNo}`,
+          requestedById: input.requestedById,
+          updatedById: input.requestedById,
+          lines: {
+            create: {
+              productId: product.id,
+              categoryName: product.category.name,
+              brandName: product.brand.name,
+              requestedQty: input.requestedQty,
+              priority: PurchaseRequestPriority.HIGH,
+              remarks: lineRemarks,
+              projectId: input.projectId,
+              projectMaterialLineId: input.materialLineId,
+              sortOrder: 0,
+            },
+          },
+        },
+      });
+    });
+
+    await notifyPurchaseTeam(prisma, {
+      companyId: input.companyId,
+      requestNumber: created.requestNumber,
+      requestedByName: input.requestedByName,
+    });
+
+    const prLine = await prisma.purchaseRequestLine.findFirstOrThrow({
+      where: { purchaseRequestId: created.id, projectMaterialLineId: input.materialLineId },
+      select: { id: true },
+    });
+    return prLine.id;
+  }
+
+  const maxSort = await prisma.purchaseRequestLine.aggregate({
+    where: { purchaseRequestId: request.id },
+    _max: { sortOrder: true },
+  });
+
+  const prLine = await prisma.purchaseRequestLine.create({
+    data: {
+      purchaseRequestId: request.id,
+      productId: product.id,
+      categoryName: product.category.name,
+      brandName: product.brand.name,
+      requestedQty: input.requestedQty,
+      priority: PurchaseRequestPriority.HIGH,
+      remarks: lineRemarks,
+      projectId: input.projectId,
+      projectMaterialLineId: input.materialLineId,
+      sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
+    },
+    select: { id: true },
+  });
+
+  await prisma.purchaseRequest.update({
+    where: { id: request.id },
+    data: {
+      priority: PurchaseRequestPriority.HIGH,
+      updatedById: input.requestedById,
+    },
+  });
+
+  return prLine.id;
 }

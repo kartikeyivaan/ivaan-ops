@@ -36,6 +36,10 @@ const SERVICE_ERRORS: Record<string, { message: string; status: number }> = {
   APPROVAL_NOT_PENDING: { message: "No pending approval request found.", status: 400 },
   NOT_APPROVED: { message: "Only approved proposals can be converted to a project.", status: 400 },
   ALREADY_CONVERTED: { message: "Proposal has already been converted.", status: 400 },
+  PROJECTS_WAREHOUSE_NOT_FOUND: {
+    message: "Jalgaon Projects warehouse is not configured for this company.",
+    status: 500,
+  },
   DRAFT_CANNOT_REVISE: { message: "Revise a sent or approved proposal, not a draft.", status: 400 },
   REJECT_REASON_REQUIRED: { message: "A rejection reason is required.", status: 400 },
   PROPOSAL_NOT_SHAREABLE: {

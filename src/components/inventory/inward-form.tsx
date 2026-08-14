@@ -16,8 +16,10 @@ import {
 import { IncomingLotReceiveEditDialog } from "@/components/inventory/incoming-lot-receive-edit-dialog";
 import {
   classifyInwardSerials,
+  MAX_SERIALS_PER_ENTRY,
   normalizeSerialNumber,
   parseSerialInput,
+  serialsPerEntryLimitMessage,
   type InwardSerialClassification,
 } from "@/lib/inventory";
 import type { SerializedIncomingLotChangeRequest } from "@/lib/incoming-lot-change-service";
@@ -217,6 +219,12 @@ export function InwardForm({
       );
       if (uniqueForLookup.length === 0) {
         setError("Enter at least one valid serial number.");
+        setClassification(null);
+        setCheckingSerials(false);
+        return;
+      }
+      if (uniqueForLookup.length > MAX_SERIALS_PER_ENTRY) {
+        setError(serialsPerEntryLimitMessage(uniqueForLookup.length));
         setClassification(null);
         setCheckingSerials(false);
         return;

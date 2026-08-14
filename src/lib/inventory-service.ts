@@ -22,6 +22,7 @@ import {
 import { writeAuditLogTx } from "@/lib/audit";
 import { toSignedInventoryQuantity } from "@/lib/inventory-events";
 import { applyIncomingFulfillment } from "@/lib/purchase-request-service";
+import { fulfillProjectMaterialFromIncoming } from "@/lib/project-service";
 
 const lotInclude = {
   company: true,
@@ -260,6 +261,96 @@ export async function getLotById(prisma: PrismaClient, lotId: string, companyId:
     where: { id: lotId, companyId },
     include: lotInclude,
   });
+}
+
+export type IncomingLotRecordedSerial = {
+  serialNumber: string;
+  createdAt: Date;
+  status: SerialStatus;
+  currentLotNumber: string;
+  stillOnLot: boolean;
+};
+
+/**
+ * Serials originally inwarded on a lot, including units later moved to another
+ * lot by inter-company transfer (those keep their original createdAt).
+ */
+export async function getIncomingLotRecordedSerials(
+  prisma: PrismaClient,
+  lot: {
+    id: string;
+    lotNumber: string;
+    productId: string;
+    warehouseId: string;
+    serials: Array<{
+      serialNumber: string;
+      createdAt: Date;
+      status: SerialStatus;
+    }>;
+  },
+): Promise<IncomingLotRecordedSerial[]> {
+  const current: IncomingLotRecordedSerial[] = lot.serials.map((serial) => ({
+    serialNumber: serial.serialNumber,
+    createdAt: serial.createdAt,
+    status: serial.status,
+    currentLotNumber: lot.lotNumber,
+    stillOnLot: true,
+  }));
+
+  const inwardTimes = await prisma.inventoryTransaction.findMany({
+    where: { lotId: lot.id, transactionType: InventoryTransactionType.INWARD },
+    select: { createdAt: true },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const windowTimes = [
+    ...lot.serials.map((serial) => serial.createdAt.getTime()),
+    ...inwardTimes.map((row) => row.createdAt.getTime()),
+  ];
+  if (windowTimes.length === 0) return current;
+
+  const from = new Date(Math.min(...windowTimes) - 2_000);
+  const to = new Date(Math.max(...windowTimes) + 2_000);
+  const currentNumbers = new Set(current.map((row) => row.serialNumber));
+
+  const moved = await prisma.inventorySerial.findMany({
+    where: {
+      productId: lot.productId,
+      lotId: { not: lot.id },
+      ...(currentNumbers.size > 0
+        ? { serialNumber: { notIn: [...currentNumbers] } }
+        : {}),
+      createdAt: { gte: from, lte: to },
+      transferLineSerials: {
+        some: {
+          line: {
+            transfer: { fromWarehouseId: lot.warehouseId },
+          },
+        },
+      },
+    },
+    select: {
+      serialNumber: true,
+      createdAt: true,
+      status: true,
+      lot: { select: { lotNumber: true } },
+    },
+  });
+
+  for (const serial of moved) {
+    if (currentNumbers.has(serial.serialNumber)) continue;
+    currentNumbers.add(serial.serialNumber);
+    current.push({
+      serialNumber: serial.serialNumber,
+      createdAt: serial.createdAt,
+      status: serial.status,
+      currentLotNumber: serial.lot.lotNumber,
+      stillOnLot: false,
+    });
+  }
+
+  current.sort((a, b) => a.serialNumber.localeCompare(b.serialNumber));
+  return current;
 }
 
 export type SimilarIncomingLotMatch = {
@@ -963,7 +1054,7 @@ export async function receiveMaterial(
 
         // Insert serials before lot qty / ledger writes so a unique violation
         // cannot leave stock counts ahead of serial rows.
-        await tx.inventorySerial.createMany({
+        const inserted = await tx.inventorySerial.createMany({
           data: normalizedSerials.map((serialNumber) => ({
             lotId: lot.id,
             productId: lot.productId,
@@ -972,6 +1063,9 @@ export async function receiveMaterial(
             currentWarehouseId: lot.warehouseId,
           })),
         });
+        if (inserted.count !== normalizedSerials.length) {
+          throw new Error("SERIAL_COUNT_MISMATCH");
+        }
       }
 
       const nextReceived = receivedQuantity + input.receivedQty;
@@ -1070,8 +1164,18 @@ export async function receiveMaterial(
         },
       });
 
+      if (input.receivedQty > 0 && lot.purchaseRequestLineId) {
+        await fulfillProjectMaterialFromIncoming(tx, {
+          purchaseRequestLineId: lot.purchaseRequestLineId,
+          receivedQty: input.receivedQty,
+          fromWarehouseId: lot.warehouseId,
+          companyId: input.companyId,
+          performedById: input.createdById,
+        });
+      }
+
       return updatedLot;
-    });
+    }, { timeout: 20_000, maxWait: 10_000 });
   } catch (error) {
     if (isDuplicateSerialUniqueViolation(error)) {
       throw new Error("DUPLICATE_SERIAL");

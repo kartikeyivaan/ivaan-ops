@@ -14,7 +14,12 @@ import {
   SerialScanner,
   type SerialScanResult,
 } from "@/components/inventory/serial-scanner";
-import { normalizeSerialNumber, parseSerialInput } from "@/lib/inventory";
+import {
+  MAX_SERIALS_PER_ENTRY,
+  normalizeSerialNumber,
+  parseSerialInput,
+  serialsPerEntryLimitMessage,
+} from "@/lib/inventory";
 import { normalizeMobileNumber } from "@/lib/phone";
 import { cn } from "@/lib/utils";
 
@@ -178,6 +183,14 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
     const currentPiId = piIdRef.current;
     if (!line || !currentPiId) {
       return { ok: false, reason: "Select a booked PI first." };
+    }
+    if (serialNumbers.length > MAX_SERIALS_PER_ENTRY) {
+      const reason = serialsPerEntryLimitMessage(serialNumbers.length);
+      updateLine(lineIndex, {
+        lookingUp: false,
+        invalidSerials: [{ serialNumber: "", reason }],
+      });
+      return { ok: false, reason };
     }
 
     updateLine(lineIndex, { lookingUp: true, invalidSerials: [] });

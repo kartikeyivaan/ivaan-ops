@@ -57,6 +57,11 @@ function approveEndpoint(item: PendingApprovalItem): { url: string; body?: objec
       };
     case "PROJECT_PROPOSAL":
       return { url: `/api/project-proposals/${item.moduleId}/approve`, body: {} };
+    case "PROJECT_MATERIAL":
+      return {
+        url: `/api/projects/${item.moduleId}/material-assignment/approve`,
+        body: {},
+      };
     case "OPENING_STOCK":
       return {
         url: `/api/inventory/audits/opening/${item.moduleId}`,
@@ -100,6 +105,11 @@ function rejectEndpoint(
       return { url: `/api/proforma-invoices/${item.moduleId}/reject-credit`, body: { reason } };
     case "PROJECT_PROPOSAL":
       return { url: `/api/project-proposals/${item.moduleId}/reject`, body: { reason } };
+    case "PROJECT_MATERIAL":
+      return {
+        url: `/api/projects/${item.moduleId}/material-assignment/reject`,
+        body: { reason },
+      };
     case "OPENING_STOCK":
       return {
         url: `/api/inventory/audits/opening/${item.moduleId}`,

@@ -143,6 +143,13 @@ export function isWaareePanelSerial(serial: string): boolean {
   return WAAREE_PANEL_SERIAL_PATTERN.test(normalizeSerialNumber(serial));
 }
 
+/** Max serial numbers allowed in one inward, dispatch lookup, or manual-stock entry. */
+export const MAX_SERIALS_PER_ENTRY = 1000;
+
+export function serialsPerEntryLimitMessage(count: number) {
+  return `A single entry can include at most ${MAX_SERIALS_PER_ENTRY} serial numbers (you entered ${count}).`;
+}
+
 /**
  * Split pasted serial text on newlines/commas/semicolons/tabs.
  * Strips `[QR]` scanner noise and empty tokens.

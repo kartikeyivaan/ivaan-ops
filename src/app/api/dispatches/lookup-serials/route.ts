@@ -6,6 +6,8 @@ import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
 import { lookupDispatchSerialsSchema } from "@/lib/validations";
 
+export const maxDuration = 60;
+
 function errorResponse(code: string, message: string, status: number, details?: unknown) {
   return NextResponse.json({ code, message, details }, { status });
 }
@@ -26,7 +28,12 @@ export async function POST(request: Request) {
   const body = await request.json();
   const parsed = lookupDispatchSerialsSchema.safeParse(body);
   if (!parsed.success) {
-    return errorResponse("VALIDATION_ERROR", "Invalid serial lookup payload.", 400, parsed.error.flatten());
+    return errorResponse(
+      "VALIDATION_ERROR",
+      parsed.error.issues[0]?.message ?? "Invalid serial lookup payload.",
+      400,
+      parsed.error.flatten(),
+    );
   }
 
   try {

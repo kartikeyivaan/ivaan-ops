@@ -7,6 +7,7 @@ import {
   canManageProjectProposals,
   canApproveProjectProposals,
 } from "@/lib/project-proposal-permissions";
+import { canConvertProjectProposal } from "@/lib/project-permissions";
 import {
   assertProjectProposalAccess,
   getProjectProposalById,
@@ -55,6 +56,7 @@ export default async function ProjectProposalDetailPage({ params }: PageProps) {
         proposal={JSON.parse(JSON.stringify(proposal))}
         canManage={canManageProjectProposals(session.user.roles)}
         canApprove={canApproveProjectProposals(session.user.roles)}
+        canConvert={canConvertProjectProposal(session.user.roles)}
       />
     </div>
   );

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { mapProjectProposalError, projectProposalErrorResponse } from "@/lib/project-proposal-api";
-import { canManageProjectProposals } from "@/lib/project-proposal-permissions";
+import { canConvertProjectProposal } from "@/lib/project-permissions";
 import { convertProjectProposalToProject } from "@/lib/project-proposal-service";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
@@ -10,7 +10,7 @@ type RouteContext = { params: Promise<{ id: string }> };
 
 export async function POST(_request: Request, context: RouteContext) {
   const session = await auth();
-  if (!session?.user || !canManageProjectProposals(session.user.roles)) {
+  if (!session?.user || !canConvertProjectProposal(session.user.roles)) {
     return projectProposalErrorResponse(
       "FORBIDDEN",
       "You do not have permission for this action.",

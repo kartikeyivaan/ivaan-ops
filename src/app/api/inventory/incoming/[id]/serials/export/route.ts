@@ -5,7 +5,7 @@ import {
   canViewInventory,
   canViewSerialNumbers,
 } from "@/lib/inventory-permissions";
-import { getLotById } from "@/lib/inventory-service";
+import { getIncomingLotRecordedSerials, getLotById } from "@/lib/inventory-service";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
 
@@ -50,11 +50,13 @@ export async function GET(_request: Request, context: RouteContext) {
 
   const pendingQty =
     Number(lot.quantity) - Number(lot.receivedQuantity) - Number(lot.damagedQuantity);
-  const serialRows = lot.serials.map((serial, index) => [
+  const recordedSerials = await getIncomingLotRecordedSerials(prisma, lot);
+  const serialRows = recordedSerials.map((serial, index) => [
     index + 1,
     serial.serialNumber,
     formatDate(serial.createdAt),
     serial.status,
+    serial.stillOnLot ? lot.lotNumber : serial.currentLotNumber,
   ]);
 
   const detailRows: (string | number)[][] = [
@@ -72,21 +74,29 @@ export async function GET(_request: Request, context: RouteContext) {
     ["Received Qty", Number(lot.receivedQuantity)],
     ["Damaged Qty", Number(lot.damagedQuantity)],
     ["Pending Qty", pendingQty],
+    ["Serials in this file", recordedSerials.length],
     ["Status", lot.status],
     [],
     ["Recorded Serial Numbers", ""],
-    ["#", "Serial Number", "Recorded Date", "Serial Status"],
+    ["#", "Serial Number", "Recorded Date", "Serial Status", "Current Lot"],
   ];
+
+  const listSheet = XLSX.utils.aoa_to_sheet([
+    ["#", "Serial Number", "Recorded Date", "Serial Status", "Current Lot"],
+    ...(serialRows.length > 0 ? serialRows : [["", "No serial numbers recorded yet.", "", "", ""]]),
+  ]);
+  listSheet["!cols"] = [{ wch: 8 }, { wch: 34 }, { wch: 20 }, { wch: 18 }, { wch: 22 }];
 
   const worksheet = XLSX.utils.aoa_to_sheet([
     ...detailRows,
-    ...(serialRows.length > 0 ? serialRows : [["", "No serial numbers recorded yet.", "", ""]]),
+    ...(serialRows.length > 0 ? serialRows : [["", "No serial numbers recorded yet.", "", "", ""]]),
   ]);
 
-  worksheet["!cols"] = [{ wch: 8 }, { wch: 34 }, { wch: 20 }, { wch: 18 }];
+  worksheet["!cols"] = [{ wch: 8 }, { wch: 34 }, { wch: 20 }, { wch: 18 }, { wch: 22 }];
 
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Serials");
+  XLSX.utils.book_append_sheet(workbook, listSheet, "Serial list");
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Lot details");
 
   const buffer = Buffer.from(XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }));
   const filename = `incoming-serials-${toSafeFilenamePart(lot.lotNumber)}-${new Date()

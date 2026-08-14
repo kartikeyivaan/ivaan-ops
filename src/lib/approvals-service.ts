@@ -20,6 +20,7 @@ import {
 } from "@/lib/inventory-permissions";
 import { canApproveBooking, canApproveDispatchToday, canApprovePiCancel, canApprovePiCreditAccounts, canApprovePiCreditSm } from "@/lib/pi-permissions";
 import { canApproveProjectProposals } from "@/lib/project-proposal-permissions";
+import { canEditProjectMaterial } from "@/lib/project-permissions";
 import { canApproveQuotationPricing } from "@/lib/quotation-permissions";
 
 export type ApprovalType =
@@ -31,6 +32,7 @@ export type ApprovalType =
   | "PI_CREDIT"
   | "PI_CREDIT_ACCOUNTS"
   | "PROJECT_PROPOSAL"
+  | "PROJECT_MATERIAL"
   | "OPENING_STOCK"
   | "PANEL_DAMAGE"
   | "CROSS_COMPANY_TRANSFER"
@@ -73,6 +75,7 @@ const TYPE_LABELS: Record<ApprovalType, string> = {
   PI_CREDIT: "PI credit (Sales Manager)",
   PI_CREDIT_ACCOUNTS: "PI credit (Accounts)",
   PROJECT_PROPOSAL: "Project proposal",
+  PROJECT_MATERIAL: "Project material approval",
   OPENING_STOCK: "Opening stock",
   PANEL_DAMAGE: "Panel damage",
   CROSS_COMPANY_TRANSFER: "Cross-company transfer",
@@ -132,6 +135,9 @@ export async function listPendingApprovals(
   if (canApproveProjectProposals(userRoles)) {
     buckets.push(listPendingProposalApprovals(prisma, companyId));
   }
+  if (canEditProjectMaterial(userRoles)) {
+    buckets.push(listPendingProjectMaterialApprovals(prisma, companyId));
+  }
   if (canApproveOpeningStock(userRoles)) {
     buckets.push(listPendingOpeningStockApprovals(prisma, companyId));
   }
@@ -175,6 +181,9 @@ export async function listApprovalHistory(
   }
   if (canApproveProjectProposals(userRoles)) {
     buckets.push(listProposalApprovalHistory(prisma, companyId));
+  }
+  if (canEditProjectMaterial(userRoles)) {
+    buckets.push(listProjectMaterialApprovalHistory(prisma, companyId));
   }
   if (canApproveOpeningStock(userRoles)) {
     buckets.push(listOpeningStockApprovalHistory(prisma, companyId));
@@ -627,6 +636,57 @@ async function listPendingProposalApprovals(
   });
 }
 
+async function listPendingProjectMaterialApprovals(
+  prisma: PrismaClient,
+  companyId: string,
+): Promise<PendingApprovalItem[]> {
+  const approvals = await prisma.approvalRequest.findMany({
+    where: {
+      moduleType: ApprovalModuleType.PROJECT_MATERIAL,
+      status: ApprovalRequestStatus.PENDING,
+    },
+    include: { requestedBy: { select: { name: true } } },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (approvals.length === 0) return [];
+
+  const projectIds = approvals.map((row) => row.moduleId);
+  const projects = await prisma.project.findMany({
+    where: { companyId, id: { in: projectIds } },
+    include: { proposal: { select: { proposalNo: true } } },
+  });
+  const projectMap = new Map(projects.map((row) => [row.id, row]));
+
+  return approvals.flatMap((approval) => {
+    const project = projectMap.get(approval.moduleId);
+    if (!project) return [];
+
+    let lineCount = 0;
+    try {
+      const payload = JSON.parse(approval.remarks ?? "{}") as { lineIds?: string[] };
+      lineCount = payload.lineIds?.length ?? 0;
+    } catch {
+      lineCount = 0;
+    }
+
+    return [
+      {
+        id: `PROJECT_MATERIAL:${approval.id}`,
+        type: "PROJECT_MATERIAL" as const,
+        moduleId: project.id,
+        documentNo: project.projectNo,
+        subjectName: `${project.customerName} · ${project.proposal.proposalNo}`,
+        reason: `${lineCount} line(s) changed or added for material assignment`,
+        requestedByName: approval.requestedBy.name,
+        requestedAt: toIso(approval.createdAt),
+        href: `/projects/execution/${project.id}`,
+        canReject: true,
+      },
+    ];
+  });
+}
+
 async function listPendingOpeningStockApprovals(
   prisma: PrismaClient,
   companyId: string,
@@ -879,6 +939,18 @@ async function listProposalApprovalHistory(
   }));
 }
 
+async function listProjectMaterialApprovalHistory(
+  prisma: PrismaClient,
+  companyId: string,
+): Promise<ApprovalHistoryItem[]> {
+  return listApprovalRequestHistory(
+    prisma,
+    companyId,
+    ApprovalModuleType.PROJECT_MATERIAL,
+    "PROJECT_MATERIAL",
+  );
+}
+
 async function listOpeningStockApprovalHistory(
   prisma: PrismaClient,
   companyId: string,
@@ -1105,6 +1177,19 @@ async function loadModuleMeta(
         subjectName: `${row.proposedProduct.displayName} · ${row.lot.warehouse.name}`,
         reason: "Receive-time lot edit",
         href: `/inventory/incoming/${row.lotId}`,
+      });
+    }
+  } else if (moduleType === ApprovalModuleType.PROJECT_MATERIAL) {
+    const rows = await prisma.project.findMany({
+      where: { companyId, id: { in: moduleIds } },
+      include: { proposal: { select: { proposalNo: true } } },
+    });
+    for (const row of rows) {
+      map.set(row.id, {
+        documentNo: row.projectNo,
+        subjectName: `${row.customerName} · ${row.proposal.proposalNo}`,
+        reason: "Project material assignment",
+        href: `/projects/execution/${row.id}`,
       });
     }
   }

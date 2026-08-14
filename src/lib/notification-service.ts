@@ -487,3 +487,36 @@ export async function notifyPiCreditOverdueEscalation(
     })),
   });
 }
+
+export async function notifyProjectMaterialStockReceived(
+  client: NotificationClient,
+  input: {
+    companyId: string;
+    projectNo: string;
+    productName: string;
+    qty: number;
+  },
+) {
+  const users = await client.user.findMany({
+    where: {
+      status: "ACTIVE",
+      companies: { some: { companyId: input.companyId } },
+      roles: {
+        some: {
+          role: { name: { in: [ROLES.PROJECTS_MANAGER, ROLES.SUPER_ADMIN] } },
+        },
+      },
+    },
+    select: { id: true },
+  });
+  if (!users.length) return { count: 0 };
+
+  return client.notification.createMany({
+    data: users.map(({ id }) => ({
+      userId: id,
+      title: "Project material received",
+      message: `${input.qty} × ${input.productName} transferred to Jalgaon Projects for ${input.projectNo}.`,
+      module: "project_material",
+    })),
+  });
+}

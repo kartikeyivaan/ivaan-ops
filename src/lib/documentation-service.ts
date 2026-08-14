@@ -42,7 +42,7 @@ const include = {
     },
   },
   invoiceHandover: { select: { invoiceNumber: true, invoiceDate: true } },
-  customer: { select: { id: true, customerName: true, mobile: true } },
+  customer: { select: { id: true, customerName: true, gstNumber: true, mobile: true } },
   assignedTo: { select: { id: true, name: true, email: true } },
   completedBy: { select: { id: true, name: true } },
   statusHistory: {

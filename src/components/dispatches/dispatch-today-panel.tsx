@@ -20,9 +20,11 @@ export type DispatchTodayTile = {
 export function DispatchTodayPanel({
   tiles,
   canManage,
+  embedded = false,
 }: {
   tiles: DispatchTodayTile[];
   canManage: boolean;
+  embedded?: boolean;
 }) {
   const router = useRouter();
   const [q, setQ] = useState("");
@@ -50,20 +52,29 @@ export function DispatchTodayPanel({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {!embedded ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">Dispatch</h1>
+            <p className="text-sm text-slate-500">
+              Planned dispatches for today. Open a tile to create the delivery challan.
+            </p>
+          </div>
+          <Button variant="outline" asChild className="h-12">
+            <Link href="/inventory/dispatches/challans">
+              <FileText className="h-4 w-4" />
+              Delivery Challans
+            </Link>
+          </Button>
+        </div>
+      ) : (
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Dispatch</h1>
+          <h2 className="text-lg font-semibold text-slate-900">Retail Dispatch</h2>
           <p className="text-sm text-slate-500">
             Planned dispatches for today. Open a tile to create the delivery challan.
           </p>
         </div>
-        <Button variant="outline" asChild className="h-12">
-          <Link href="/inventory/dispatches/challans">
-            <FileText className="h-4 w-4" />
-            Delivery Challans
-          </Link>
-        </Button>
-      </div>
+      )}
 
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />

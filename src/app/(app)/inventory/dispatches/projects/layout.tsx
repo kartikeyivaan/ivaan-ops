@@ -1,19 +1,17 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { getActiveSessionCompany, isProjectsCompany } from "@/lib/company-scope";
-import { ProjectsNav } from "@/components/projects/projects-nav";
 
-export default async function ProjectsLayout({ children }: { children: React.ReactNode }) {
+export default async function ProjectDispatchesLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const session = await auth();
   const activeCompany = getActiveSessionCompany(session);
   if (!activeCompany || !isProjectsCompany(activeCompany)) {
-    redirect("/dashboard");
+    redirect("/inventory/dispatches");
   }
 
-  return (
-    <div className="space-y-6">
-      <ProjectsNav />
-      {children}
-    </div>
-  );
+  return children;
 }

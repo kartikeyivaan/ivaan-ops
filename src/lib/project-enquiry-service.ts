@@ -1,4 +1,5 @@
 import { ProjectEnquiryStatus, type Prisma, type PrismaClient } from "@prisma/client";
+import { assertProjectsCompany } from "@/lib/company-scope";
 import { writeAuditLogTx } from "@/lib/audit";
 import { generateEnquiryNumber } from "@/lib/project-enquiries";
 import { canAccessProjectEnquiry, canEditProjectEnquiry } from "@/lib/project-enquiry-permissions";
@@ -162,9 +163,10 @@ export async function createProjectEnquiry(
 ) {
   const company = await prisma.company.findUnique({
     where: { id: input.companyId },
-    select: { id: true, code: true },
+    select: { id: true, code: true, isPractice: true },
   });
   if (!company) throw new Error("COMPANY_NOT_FOUND");
+  assertProjectsCompany(company);
 
   const enquiryNo = await generateEnquiryNumber(prisma, company.code, input.companyId);
 

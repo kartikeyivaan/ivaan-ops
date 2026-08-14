@@ -20,6 +20,10 @@ const PRICING_ERRORS: Record<string, string> = {
 
 const SERVICE_ERRORS: Record<string, { message: string; status: number }> = {
   COMPANY_NOT_FOUND: { message: "Company not found.", status: 404 },
+  PROJECTS_ISE_ONLY: {
+    message: "Project proposals, projects and project dispatches are available only for Ivaan Solar Energy.",
+    status: 403,
+  },
   PROPOSAL_NOT_FOUND: { message: "Project proposal not found.", status: 404 },
   REVISION_NOT_FOUND: { message: "Proposal revision not found.", status: 404 },
   FORBIDDEN: { message: "You do not have access to this proposal.", status: 403 },
@@ -31,6 +35,14 @@ const SERVICE_ERRORS: Record<string, { message: string; status: number }> = {
   },
   APPROVAL_NOT_REQUIRED: {
     message: "Manager approval is only required when discount exceeds ₹5,000.",
+    status: 400,
+  },
+  POST_CONVERSION_APPROVAL_REQUIRED: {
+    message: "Changes to a converted proposal must be approved by the Projects Manager.",
+    status: 400,
+  },
+  PROJECT_CLOSED: {
+    message: "This project is closed. The linked proposal cannot be revised.",
     status: 400,
   },
   APPROVAL_NOT_PENDING: { message: "No pending approval request found.", status: 400 },

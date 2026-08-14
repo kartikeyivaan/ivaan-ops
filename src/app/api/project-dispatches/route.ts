@@ -11,8 +11,8 @@ import {
   listProjectDispatches,
 } from "@/lib/project-dispatch-service";
 import { mapProjectDispatchError, projectDispatchErrorResponse } from "@/lib/project-dispatch-api";
+import { mapProjectsCompanySessionError, requireProjectsCompany } from "@/lib/company-scope";
 import { prisma } from "@/lib/prisma";
-import { requireActiveCompany } from "@/lib/session";
 import {
   createProjectDispatchSchema,
   projectDispatchSearchSchema,
@@ -28,9 +28,13 @@ export async function GET(request: Request) {
 
   let companyId: string;
   try {
-    companyId = requireActiveCompany(session);
-  } catch {
-    return projectDispatchErrorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
+    companyId = requireProjectsCompany(session);
+  } catch (error) {
+    const mapped = mapProjectsCompanySessionError(error);
+    if (mapped) {
+      return projectDispatchErrorResponse(mapped.code, mapped.message, mapped.status);
+    }
+    throw error;
   }
 
   const { searchParams } = new URL(request.url);
@@ -56,9 +60,13 @@ export async function POST(request: Request) {
 
   let companyId: string;
   try {
-    companyId = requireActiveCompany(session);
-  } catch {
-    return projectDispatchErrorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
+    companyId = requireProjectsCompany(session);
+  } catch (error) {
+    const mapped = mapProjectsCompanySessionError(error);
+    if (mapped) {
+      return projectDispatchErrorResponse(mapped.code, mapped.message, mapped.status);
+    }
+    throw error;
   }
 
   const body = await request.json();

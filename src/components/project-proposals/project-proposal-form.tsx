@@ -9,7 +9,6 @@ import {
   calculateStructureCapacity,
   calculateTotalSystemKw,
   formatDcrPanelLabel,
-  formatNdcrPanelLabel,
   resolveInverterKw,
 } from "@/lib/proposal-bom";
 import { formatRevisionProposalLabel } from "@/lib/project-proposals";
@@ -123,6 +122,7 @@ export function ProjectProposalForm({
   nextRevisionNo,
   enquiryId,
   initialValues,
+  postConversion = false,
 }: {
   mode: "create" | "edit" | "revise";
   proposalId?: string;
@@ -130,6 +130,7 @@ export function ProjectProposalForm({
   nextRevisionNo?: number;
   enquiryId?: string;
   initialValues?: Partial<ProjectProposalFormValues>;
+  postConversion?: boolean;
 }) {
   const router = useRouter();
   const [packages, setPackages] = useState<PackageMaster[]>([]);
@@ -167,10 +168,6 @@ export function ProjectProposalForm({
   const [dcrAdditionalPanels, setDcrAdditionalPanels] = useState(
     initialValues?.dcrAdditionalPanels ?? "0",
   );
-  const [ndcrAdditionalPanels, setNdcrAdditionalPanels] = useState(
-    initialValues?.ndcrAdditionalPanels ?? "0",
-  );
-  const [ndcrPanelWp, setNdcrPanelWp] = useState(initialValues?.ndcrPanelWp ?? "580");
   const [moduleProductId, setModuleProductId] = useState(initialValues?.moduleProductId ?? "");
   const [moduleQty, setModuleQty] = useState(initialValues?.moduleQty ?? "");
   const [inverterCapacityKw, setInverterCapacityKw] = useState(
@@ -195,15 +192,12 @@ export function ProjectProposalForm({
 
   const selectedPackage = packages.find((pkg) => pkg.id === packageId) ?? null;
   const isNdcrComplete = isNdcrCompletePackage(selectedPackage?.code);
-  const ndcrApplicable = !isNdcrComplete && (selectedPackage?.panelWp ?? 0) >= 570;
   const dcrApplicable = !isNdcrComplete && (selectedPackage?.panelWp ?? 0) >= 530;
   const dcrPanelCharge = selectedPackage ? getDcrPanelCharge(selectedPackage.panelWp) : 0;
 
   const minStructureProvision = useMemo(() => {
-    const dcr = dcrApplicable ? Number(dcrAdditionalPanels) || 0 : 0;
-    const ndcr = ndcrApplicable ? Number(ndcrAdditionalPanels) || 0 : 0;
-    return dcr + ndcr;
-  }, [dcrApplicable, dcrAdditionalPanels, ndcrApplicable, ndcrAdditionalPanels]);
+    return dcrApplicable ? Number(dcrAdditionalPanels) || 0 : 0;
+  }, [dcrApplicable, dcrAdditionalPanels]);
 
   const structureProvisionValue = Number(futureStructurePanels) || 0;
   const structureProvisionInvalid =
@@ -258,8 +252,6 @@ export function ProjectProposalForm({
     }
 
     const dcrAdditional = dcrApplicable ? Number(dcrAdditionalPanels) || 0 : 0;
-    const ndcrQty = ndcrApplicable ? Number(ndcrAdditionalPanels) || 0 : 0;
-    const ndcrWp = ndcrApplicable ? Number(ndcrPanelWp) || 580 : 580;
     const futurePanels = Number(futureStructurePanels) || 0;
     const dcrQty = selectedPackage.panelCount + dcrAdditional;
 
@@ -267,8 +259,8 @@ export function ProjectProposalForm({
       panelWp: selectedPackage.panelWp,
       panelCount: selectedPackage.panelCount,
       dcrAdditionalPanels: dcrAdditional,
-      ndcrPanelWp: ndcrWp,
-      ndcrAdditionalPanels: ndcrQty,
+      ndcrPanelWp: 580,
+      ndcrAdditionalPanels: 0,
     });
 
     const inverterKw = resolveInverterKw(
@@ -279,8 +271,8 @@ export function ProjectProposalForm({
       totalSystemKw,
       dcrPanelLabel: formatDcrPanelLabel(selectedPackage.panelWp),
       dcrQty,
-      ndcrPanelLabel: formatNdcrPanelLabel(ndcrWp),
-      ndcrQty,
+      ndcrPanelLabel: "",
+      ndcrQty: 0,
       inverterLabel: inverterBrandNames.length > 0 ? inverterBrandNames.join(" / ") : "—",
       inverterCapacity: `${inverterKw} kW`,
       structureCapacity: calculateStructureCapacity(selectedPackage.panelCount, futurePanels),
@@ -293,9 +285,6 @@ export function ProjectProposalForm({
     inverterCapacityKw,
     dcrApplicable,
     dcrAdditionalPanels,
-    ndcrApplicable,
-    ndcrAdditionalPanels,
-    ndcrPanelWp,
     futureStructurePanels,
     brands,
     inverterBrandCodes,
@@ -376,12 +365,8 @@ export function ProjectProposalForm({
             : dcrApplicable
               ? Number(dcrAdditionalPanels) || 0
               : 0,
-          ndcrAdditionalPanels: isNdcrComplete
-            ? 0
-            : ndcrApplicable
-              ? Number(ndcrAdditionalPanels) || 0
-              : 0,
-          ndcrPanelWp: ndcrApplicable ? Number(ndcrPanelWp) || 580 : 580,
+          ndcrAdditionalPanels: 0,
+          ndcrPanelWp: 580,
           moduleProductId: isNdcrComplete ? moduleProductId || null : null,
           moduleQty: isNdcrComplete ? Number(moduleQty) || 0 : null,
           inverterCapacityKw: isNdcrComplete ? Number(inverterCapacityKw) || 0 : null,
@@ -422,11 +407,8 @@ export function ProjectProposalForm({
     extraFloors,
     futureStructurePanels,
     dcrAdditionalPanels,
-    ndcrAdditionalPanels,
-    ndcrPanelWp,
     discountAmount,
     additionalCostAmount,
-    ndcrApplicable,
     dcrApplicable,
     selectedPackage,
     isNdcrComplete,
@@ -437,38 +419,34 @@ export function ProjectProposalForm({
   ]);
 
   useEffect(() => {
-    if (!isNdcrComplete) return;
+    if (mastersLoading || !selectedPackage || !isNdcrComplete) return;
     setInverterUpgradeId("");
     setFutureStructurePanels("0");
     setDcrAdditionalPanels("0");
-    setNdcrAdditionalPanels("0");
-  }, [isNdcrComplete, packageId]);
+  }, [isNdcrComplete, packageId, mastersLoading, selectedPackage]);
 
   useEffect(() => {
+    if (mastersLoading) return;
+    if (!inverterUpgradeId) return;
     if (!applicableUpgrades.some((upgrade) => upgrade.id === inverterUpgradeId)) {
       setInverterUpgradeId("");
     }
-  }, [applicableUpgrades, inverterUpgradeId]);
+  }, [applicableUpgrades, inverterUpgradeId, mastersLoading]);
 
   useEffect(() => {
-    if (!ndcrApplicable) {
-      setNdcrAdditionalPanels("0");
-    }
-  }, [ndcrApplicable]);
-
-  useEffect(() => {
+    if (mastersLoading || !selectedPackage) return;
     if (!dcrApplicable) {
       setDcrAdditionalPanels("0");
     }
-  }, [dcrApplicable]);
+  }, [dcrApplicable, mastersLoading, selectedPackage]);
 
   useEffect(() => {
-    if (isNdcrComplete) return;
+    if (mastersLoading || !selectedPackage || isNdcrComplete) return;
     const current = Number(futureStructurePanels) || 0;
     if (current < minStructureProvision) {
       setFutureStructurePanels(String(minStructureProvision));
     }
-  }, [minStructureProvision, futureStructurePanels, isNdcrComplete]);
+  }, [minStructureProvision, futureStructurePanels, isNdcrComplete, mastersLoading, selectedPackage]);
 
   function toggleBrand(code: string, enabled: boolean) {
     setInverterBrandCodes((current) => {
@@ -498,12 +476,8 @@ export function ProjectProposalForm({
         : dcrApplicable
           ? Number(dcrAdditionalPanels) || 0
           : 0,
-      ndcrAdditionalPanels: isNdcrComplete
-        ? 0
-        : ndcrApplicable
-          ? Number(ndcrAdditionalPanels) || 0
-          : 0,
-      ndcrPanelWp: ndcrApplicable ? Number(ndcrPanelWp) || 580 : 580,
+      ndcrAdditionalPanels: 0,
+      ndcrPanelWp: 580,
       moduleProductId: isNdcrComplete ? moduleProductId || null : null,
       moduleQty: isNdcrComplete ? Number(moduleQty) || 0 : null,
       inverterCapacityKw: isNdcrComplete ? Number(inverterCapacityKw) || 0 : null,
@@ -568,7 +542,9 @@ export function ProjectProposalForm({
           </h1>
           <p className="text-sm text-slate-500">
             {mode === "revise" && nextRevisionNo !== undefined
-              ? `${proposalNo ?? "Proposal"} will become ${formatRevisionProposalLabel(nextRevisionNo)} and return to draft.`
+              ? postConversion
+                ? `${proposalNo ?? "Proposal"} will become ${formatRevisionProposalLabel(nextRevisionNo)}. Projects Manager approval is required before the linked project is updated.`
+                : `${proposalNo ?? "Proposal"} will become ${formatRevisionProposalLabel(nextRevisionNo)} and return to draft.`
               : "Package-based solar proposal with live pricing and 5-day validity."}
           </p>
         </div>
@@ -585,6 +561,13 @@ export function ProjectProposalForm({
           </Link>
         </Button>
       </div>
+
+      {postConversion && mode === "revise" ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Requirement and cost changes after conversion stay in draft until a Projects Manager
+          approves them. The linked project is updated only after that approval.
+        </div>
+      ) : null}
 
       {error ? (
         <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -941,12 +924,12 @@ export function ProjectProposalForm({
                   aria-invalid={structureProvisionInvalid}
                 />
                 <p className="text-xs text-slate-500">
-                  ₹3,000 per panel. Must be ≥ additional DCR + NDCR panel count
+                  ₹3,000 per panel. Must be ≥ additional DCR panel count
                   {minStructureProvision > 0 ? ` (minimum ${minStructureProvision})` : ""}.
                 </p>
                 {structureProvisionInvalid ? (
                   <p className="text-xs text-red-600">
-                    Must be at least {minStructureProvision} to cover additional DCR and NDCR panels.
+                    Must be at least {minStructureProvision} to cover additional DCR panels.
                   </p>
                 ) : null}
               </div>
@@ -978,36 +961,6 @@ export function ProjectProposalForm({
                   <p className="text-xs text-slate-500">
                     Auto-selected from base package ({selectedPackage.panelWp}+ Wp).
                   </p>
-                </div>
-              ) : null}
-              <div className="space-y-2">
-                <Label htmlFor="ndcrAdditionalPanels">Additional NDCR Panels</Label>
-                <Input
-                  id="ndcrAdditionalPanels"
-                  type="number"
-                  min={0}
-                  value={ndcrAdditionalPanels}
-                  onChange={(event) => setNdcrAdditionalPanels(event.target.value)}
-                  disabled={!ndcrApplicable}
-                />
-                <p className="text-xs text-slate-500">
-                  {ndcrApplicable
-                    ? "₹11,500 per additional NDCR panel for 570+Wp packages."
-                    : "Available only for 570+Wp packages."}
-                </p>
-              </div>
-              {ndcrApplicable && Number(ndcrAdditionalPanels) > 0 ? (
-                <div className="space-y-2">
-                  <Label htmlFor="ndcrPanelWp">NDCR Panel Rating (Wp)</Label>
-                  <Input
-                    id="ndcrPanelWp"
-                    type="number"
-                    min={570}
-                    max={650}
-                    value={ndcrPanelWp}
-                    onChange={(event) => setNdcrPanelWp(event.target.value)}
-                  />
-                  <p className="text-xs text-slate-500">Default 580+ Wp; shown separately from DCR panels on proposal PDF.</p>
                 </div>
               ) : null}
             </CardContent>

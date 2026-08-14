@@ -72,6 +72,7 @@ export default async function ReviseProjectProposalPage({ params }: PageProps) {
         proposalNo={proposal.proposalNo}
         nextRevisionNo={nextRevisionNo}
         initialValues={mapRevisionToFormValues(revision, brands)}
+        postConversion={Boolean(proposal.convertedAt)}
       />
     </div>
   );

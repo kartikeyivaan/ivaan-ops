@@ -3,8 +3,8 @@ import { auth } from "@/lib/auth";
 import { mapProjectProposalError, projectProposalErrorResponse } from "@/lib/project-proposal-api";
 import { canConvertProjectProposal } from "@/lib/project-permissions";
 import { convertProjectProposalToProject } from "@/lib/project-proposal-service";
+import { mapProjectsCompanySessionError, requireProjectsCompany } from "@/lib/company-scope";
 import { prisma } from "@/lib/prisma";
-import { requireActiveCompany } from "@/lib/session";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -20,9 +20,13 @@ export async function POST(_request: Request, context: RouteContext) {
 
   let companyId: string;
   try {
-    companyId = requireActiveCompany(session);
-  } catch {
-    return projectProposalErrorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
+    companyId = requireProjectsCompany(session);
+  } catch (error) {
+    const mapped = mapProjectsCompanySessionError(error);
+    if (mapped) {
+      return projectProposalErrorResponse(mapped.code, mapped.message, mapped.status);
+    }
+    throw error;
   }
 
   const { id } = await context.params;

@@ -8,8 +8,8 @@ import {
   restrictProjectEnquirySalesUserId,
 } from "@/lib/project-enquiry-permissions";
 import { createProjectEnquiry, listProjectEnquiries } from "@/lib/project-enquiry-service";
+import { mapProjectsCompanySessionError, requireProjectsCompany } from "@/lib/company-scope";
 import { prisma } from "@/lib/prisma";
-import { requireActiveCompany } from "@/lib/session";
 import { createProjectEnquirySchema, projectEnquirySearchSchema } from "@/lib/validations";
 
 export async function GET(request: Request) {
@@ -20,9 +20,13 @@ export async function GET(request: Request) {
 
   let companyId: string;
   try {
-    companyId = requireActiveCompany(session);
-  } catch {
-    return projectEnquiryErrorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
+    companyId = requireProjectsCompany(session);
+  } catch (error) {
+    const mapped = mapProjectsCompanySessionError(error);
+    if (mapped) {
+      return projectEnquiryErrorResponse(mapped.code, mapped.message, mapped.status);
+    }
+    throw error;
   }
 
   const { searchParams } = new URL(request.url);
@@ -59,9 +63,13 @@ export async function POST(request: Request) {
 
   let companyId: string;
   try {
-    companyId = requireActiveCompany(session);
-  } catch {
-    return projectEnquiryErrorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
+    companyId = requireProjectsCompany(session);
+  } catch (error) {
+    const mapped = mapProjectsCompanySessionError(error);
+    if (mapped) {
+      return projectEnquiryErrorResponse(mapped.code, mapped.message, mapped.status);
+    }
+    throw error;
   }
 
   const userCompanyIds = session.user.companies.map((company) => company.id);

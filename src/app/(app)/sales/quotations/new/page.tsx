@@ -1,10 +1,11 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { canManageQuotations } from "@/lib/quotation-permissions";
+import { isPcmCompany } from "@/lib/quotation-warnings";
 import { listCustomers } from "@/lib/customer-service";
 import { listProducts } from "@/lib/product-service";
 import { prisma } from "@/lib/prisma";
-import { ROLES } from "@/lib/rbac";
+import { ROLES, isSuperAdmin } from "@/lib/rbac";
 import { QuotationForm } from "@/components/quotations/quotation-form";
 
 type PageProps = {
@@ -20,7 +21,9 @@ export default async function NewQuotationPage({ searchParams }: PageProps) {
   }
 
   const params = await searchParams;
-  const userCompanies = session.user.companies;
+  const userCompanies = session.user.companies.filter(
+    (company) => isSuperAdmin(session.user.roles) || !isPcmCompany(company),
+  );
   const selectedCompany = params.companyId
     ? userCompanies.find((company) => company.id === params.companyId)
     : undefined;

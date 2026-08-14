@@ -4,8 +4,8 @@ import { auth } from "@/lib/auth";
 import { projectErrorResponse } from "@/lib/project-api";
 import { canViewExecutionProjects } from "@/lib/project-permissions";
 import { listProjects } from "@/lib/project-service";
+import { mapProjectsCompanySessionError, requireProjectsCompany } from "@/lib/company-scope";
 import { prisma } from "@/lib/prisma";
-import { requireActiveCompany } from "@/lib/session";
 import { projectSearchSchema } from "@/lib/validations";
 
 export async function GET(request: Request) {
@@ -16,9 +16,13 @@ export async function GET(request: Request) {
 
   let companyId: string;
   try {
-    companyId = requireActiveCompany(session);
-  } catch {
-    return projectErrorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
+    companyId = requireProjectsCompany(session);
+  } catch (error) {
+    const mapped = mapProjectsCompanySessionError(error);
+    if (mapped) {
+      return projectErrorResponse(mapped.code, mapped.message, mapped.status);
+    }
+    throw error;
   }
 
   const { searchParams } = new URL(request.url);

@@ -811,11 +811,18 @@ function withStructureProvisionRule<T extends z.ZodTypeAny>(schema: T) {
     if (data.moduleProductId) {
       return;
     }
-    const minStructureProvision = data.dcrAdditionalPanels + data.ndcrAdditionalPanels;
+    if (data.ndcrAdditionalPanels > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Additional NDCR panels cannot be added to a proposal.",
+        path: ["ndcrAdditionalPanels"],
+      });
+    }
+    const minStructureProvision = data.dcrAdditionalPanels;
     if (data.futureStructurePanels < minStructureProvision) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: `Additional structure provision must be at least ${minStructureProvision} (additional DCR + NDCR panels).`,
+        message: `Additional structure provision must be at least ${minStructureProvision} (additional DCR panels).`,
         path: ["futureStructurePanels"],
       });
     }

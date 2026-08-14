@@ -1,4 +1,5 @@
-import { ROLES, hasRole } from "@/lib/rbac";
+import { isPcmCompany, type WarningCompany } from "@/lib/quotation-warnings";
+import { ROLES, hasRole, isSuperAdmin } from "@/lib/rbac";
 
 const VIEW_ROLES = [
   ROLES.SUPER_ADMIN,
@@ -22,6 +23,16 @@ export function canViewQuotations(userRoles: string[]): boolean {
 
 export function canManageQuotations(userRoles: string[]): boolean {
   return hasRole(userRoles, [...MANAGE_ROLES]);
+}
+
+/** PCM quotations may only be created, revised or sent by Super Admin. */
+export function canManageQuotationsForCompany(
+  userRoles: string[],
+  company: WarningCompany,
+): boolean {
+  if (!canManageQuotations(userRoles)) return false;
+  if (isPcmCompany(company)) return isSuperAdmin(userRoles);
+  return true;
 }
 
 export function canApproveQuotationPricing(userRoles: string[]): boolean {

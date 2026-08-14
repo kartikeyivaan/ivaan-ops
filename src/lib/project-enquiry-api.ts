@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 
 const SERVICE_ERRORS: Record<string, { message: string; status: number }> = {
   COMPANY_NOT_FOUND: { message: "Company not found.", status: 404 },
+  PROJECTS_ISE_ONLY: {
+    message: "Project proposals, projects and project dispatches are available only for Ivaan Solar Energy.",
+    status: 403,
+  },
   ENQUIRY_NOT_FOUND: { message: "Project enquiry not found.", status: 404 },
   FORBIDDEN: { message: "You do not have access to this enquiry.", status: 403 },
   ENQUIRY_NOT_EDITABLE: {

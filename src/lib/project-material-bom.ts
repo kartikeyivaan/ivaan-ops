@@ -24,8 +24,7 @@ export type MaterialLineSeed = {
 type DbClient = PrismaClient | Prisma.TransactionClient;
 
 /**
- * Derive default material assignment lines from a confirmed proposal revision.
- * Maps module product and optional inverter product; additional BOM items are added manually.
+ * Maps module product and optional inverter product from a proposal revision.
  */
 export async function deriveMaterialLinesFromRevision(
   prisma: DbClient,

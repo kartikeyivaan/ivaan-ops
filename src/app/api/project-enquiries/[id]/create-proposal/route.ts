@@ -7,8 +7,8 @@ import { mapProjectProposalError, projectProposalErrorResponse } from "@/lib/pro
 import { canManageProjectProposals, restrictProjectProposalSalesUserId } from "@/lib/project-proposal-permissions";
 import { buildProjectProposalSharePayload } from "@/lib/project-proposal-share";
 import { createProjectProposal } from "@/lib/project-proposal-service";
+import { mapProjectsCompanySessionError, requireProjectsCompany } from "@/lib/company-scope";
 import { prisma } from "@/lib/prisma";
-import { requireActiveCompany } from "@/lib/session";
 import { createProjectProposalSchema } from "@/lib/validations";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -21,9 +21,13 @@ export async function POST(request: Request, context: RouteContext) {
 
   let companyId: string;
   try {
-    companyId = requireActiveCompany(session);
-  } catch {
-    return projectProposalErrorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
+    companyId = requireProjectsCompany(session);
+  } catch (error) {
+    const mapped = mapProjectsCompanySessionError(error);
+    if (mapped) {
+      return projectProposalErrorResponse(mapped.code, mapped.message, mapped.status);
+    }
+    throw error;
   }
 
   const userCompanyIds = session.user.companies.map((company) => company.id);

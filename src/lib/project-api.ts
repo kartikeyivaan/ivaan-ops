@@ -37,6 +37,10 @@ const SERVICE_ERRORS: Record<string, { message: string; status: number }> = {
     message: "Project material assignment is only supported for ISE projects.",
     status: 400,
   },
+  PROJECTS_ISE_ONLY: {
+    message: "Project proposals, projects and project dispatches are available only for Ivaan Solar Energy.",
+    status: 403,
+  },
   ALREADY_CLOSED: { message: "This project is already closed.", status: 400 },
   EXCEEDS_RETURN_BALANCE: {
     message: "Return quantity exceeds remaining balance in Projects warehouse.",

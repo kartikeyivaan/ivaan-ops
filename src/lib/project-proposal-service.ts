@@ -5,6 +5,7 @@ import {
   type PrismaClient,
 } from "@prisma/client";
 import { writeAuditLogTx } from "@/lib/audit";
+import { assertProjectsCompany } from "@/lib/company-scope";
 import { decimalToNumber } from "@/lib/inventory";
 import {
   DISCOUNT_APPROVAL_THRESHOLD,
@@ -18,10 +19,17 @@ import {
   generateProposalNumber,
   getProposalValidityDate,
 } from "@/lib/project-proposals";
-import { getNextProjectProposalRevisionNo } from "@/lib/project-proposal-revision";
+import {
+  getNextProjectProposalRevisionNo,
+  isPostConversionProposal,
+} from "@/lib/project-proposal-revision";
 import { canAccessProjectProposal, canEditProjectProposal } from "@/lib/project-proposal-permissions";
 import { isNdcrCompletePackage } from "@/lib/project-proposal-packages";
-import { createProjectFromProposal, serializeProject } from "@/lib/project-service";
+import {
+  applyApprovedProposalRevisionToProject,
+  createProjectFromProposal,
+  serializeProject,
+} from "@/lib/project-service";
 import { toDateOnly } from "@/lib/quotations";
 
 export type ResolveProjectProposalPricingInput = {
@@ -600,11 +608,12 @@ export async function createProjectProposal(
 ) {
   const company = await prisma.company.findUnique({
     where: { id: input.companyId },
-    select: { id: true, code: true },
+    select: { id: true, code: true, isPractice: true },
   });
   if (!company) {
     throw new Error("COMPANY_NOT_FOUND");
   }
+  assertProjectsCompany(company);
 
   const breakdown = await resolveProjectProposalPricing(prisma, input.pricing);
   const snapshot = toRevisionPricingSnapshot(breakdown);
@@ -807,6 +816,9 @@ export async function sendProjectProposal(
 
   const revision = getCurrentRevisionRecord(proposal);
   const discountAmount = decimalToNumber(revision.discountAmount);
+  if (isPostConversionProposal(proposal.convertedAt)) {
+    throw new Error("POST_CONVERSION_APPROVAL_REQUIRED");
+  }
   if (discountAmount > DISCOUNT_APPROVAL_THRESHOLD) {
     throw new Error("DISCOUNT_APPROVAL_REQUIRED");
   }
@@ -871,7 +883,8 @@ export async function submitProjectProposalForApproval(
 
   const revision = getCurrentRevisionRecord(proposal);
   const discountAmount = decimalToNumber(revision.discountAmount);
-  if (discountAmount <= DISCOUNT_APPROVAL_THRESHOLD) {
+  const postConversion = isPostConversionProposal(proposal.convertedAt);
+  if (!postConversion && discountAmount <= DISCOUNT_APPROVAL_THRESHOLD) {
     throw new Error("APPROVAL_NOT_REQUIRED");
   }
 
@@ -911,7 +924,9 @@ export async function submitProjectProposalForApproval(
       fromStatus: ProjectProposalStatus.DRAFT,
       toStatus: ProjectProposalStatus.PENDING_APPROVAL,
       changedById: input.performedById,
-      remarks: "Submitted for manager approval",
+      remarks: postConversion
+        ? "Submitted for manager approval of post-conversion requirement change"
+        : "Submitted for manager approval",
     });
 
     await writeAuditLogTx(tx, {
@@ -967,10 +982,24 @@ export async function approveProjectProposal(
       },
     });
 
+    const postConversion = isPostConversionProposal(proposal.convertedAt);
+    const nextStatus = postConversion
+      ? ProjectProposalStatus.CONVERTED
+      : ProjectProposalStatus.APPROVED;
+
+    if (postConversion) {
+      await applyApprovedProposalRevisionToProject(tx, {
+        proposalId: proposal.id,
+        companyId: input.companyId,
+        revision,
+        performedById: input.performedById,
+      });
+    }
+
     const updated = await tx.projectProposal.update({
       where: { id: proposal.id },
       data: {
-        status: ProjectProposalStatus.APPROVED,
+        status: nextStatus,
         updatedById: input.performedById,
       },
       include: projectProposalInclude,
@@ -980,9 +1009,11 @@ export async function approveProjectProposal(
       proposalId: proposal.id,
       revisionId: revision.id,
       fromStatus: ProjectProposalStatus.PENDING_APPROVAL,
-      toStatus: ProjectProposalStatus.APPROVED,
+      toStatus: nextStatus,
       changedById: input.performedById,
-      remarks: input.remarks ?? "Approved by manager",
+      remarks: input.remarks ?? (postConversion
+        ? "Approved post-conversion change and applied to project"
+        : "Approved by manager"),
     });
 
     await writeAuditLogTx(tx, {
@@ -991,7 +1022,7 @@ export async function approveProjectProposal(
       action: "APPROVE",
       performedBy: input.performedById,
       companyId: input.companyId,
-      newValue: { status: ProjectProposalStatus.APPROVED },
+      newValue: { status: nextStatus, postConversion },
       reference: proposal.proposalNo,
     });
 
@@ -1090,11 +1121,16 @@ export async function reviseProjectProposal(
   if (proposal.status === ProjectProposalStatus.DRAFT) {
     throw new Error("DRAFT_CANNOT_REVISE");
   }
-  if (proposal.status === ProjectProposalStatus.CONVERTED) {
-    throw new Error("ALREADY_CONVERTED");
-  }
   if (proposal.status === ProjectProposalStatus.PENDING_APPROVAL) {
     throw new Error("INVALID_STATUS");
+  }
+  if (
+    proposal.status === ProjectProposalStatus.CONVERTED ||
+    isPostConversionProposal(proposal.convertedAt)
+  ) {
+    if (proposal.executionProject?.status === "CLOSED") {
+      throw new Error("PROJECT_CLOSED");
+    }
   }
 
   const nextRevisionNo = getNextProjectProposalRevisionNo(proposal.currentRevisionNo);
@@ -1158,8 +1194,9 @@ export async function convertProjectProposalToProject(
 ) {
   const proposal = await loadProposalOrThrow(prisma, input.companyId, input.proposalId);
   assertProjectProposalAccess(input.userRoles, input.performedById, proposal);
+  assertProjectsCompany(proposal.company);
 
-  if (proposal.status === ProjectProposalStatus.CONVERTED) {
+  if (proposal.status === ProjectProposalStatus.CONVERTED || proposal.convertedAt) {
     throw new Error("ALREADY_CONVERTED");
   }
   if (proposal.status !== ProjectProposalStatus.APPROVED) {

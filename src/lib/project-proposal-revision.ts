@@ -33,6 +33,7 @@ const REVISABLE_STATUSES = new Set<ProjectProposalStatus>([
   ProjectProposalStatus.APPROVED,
   ProjectProposalStatus.REJECTED,
   ProjectProposalStatus.EXPIRED,
+  ProjectProposalStatus.CONVERTED,
 ]);
 
 export function getNextProjectProposalRevisionNo(currentRevisionNo: number): number {
@@ -43,12 +44,36 @@ export function canReviseProjectProposal(status: ProjectProposalStatus | string)
   return REVISABLE_STATUSES.has(status as ProjectProposalStatus);
 }
 
+export function isPostConversionProposal(
+  convertedAt: string | Date | null | undefined,
+): boolean {
+  return convertedAt != null && convertedAt !== "";
+}
+
+export function requiresManagerApprovalForProposal(input: {
+  convertedAt?: string | Date | null;
+  discountAmount: number;
+  approvalThreshold: number;
+}): boolean {
+  if (isPostConversionProposal(input.convertedAt)) {
+    return true;
+  }
+  return input.discountAmount > input.approvalThreshold;
+}
+
 export function mapRevisionBrandNamesToCodes(
   brandNames: string[],
   brands: BrandRef[],
 ): string[] {
   return brandNames
-    .map((name) => brands.find((brand) => brand.name === name)?.code)
+    .map((value) => {
+      const normalized = value.trim().toLowerCase();
+      return brands.find(
+        (brand) =>
+          brand.name.toLowerCase() === normalized ||
+          brand.code.toLowerCase() === normalized,
+      )?.code;
+    })
     .filter((code): code is string => Boolean(code));
 }
 

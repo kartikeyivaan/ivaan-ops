@@ -152,7 +152,7 @@ export function ProjectMaterialForm({
   }
 
   async function removeLine(lineId: string) {
-    if (!window.confirm("Remove this added line?")) return;
+    if (!window.confirm("Remove this material line?")) return;
     setLoading(lineId);
     const response = await fetch(
       `/api/projects/${project.id}/material-assignment/lines/${lineId}`,
@@ -177,7 +177,7 @@ export function ProjectMaterialForm({
       <CardHeader>
         <CardTitle className="text-base">Material Assignment</CardTitle>
         <p className="text-sm text-slate-500">
-          Default lines from the approved proposal. Add rows for extra material as needed.
+          Select every material line manually. Nothing is pre-filled from the proposal.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -272,7 +272,7 @@ export function ProjectMaterialForm({
                     ) : null}
                     {!readOnly ? (
                       <TableCell>
-                        {line.source === "ADDED" && line.dispatchedQty === 0 ? (
+                        {line.dispatchedQty === 0 ? (
                           <Button
                             type="button"
                             variant="ghost"
@@ -485,7 +485,14 @@ export function ProjectDetailView({
         <div>
           <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">{project.projectNo}</h1>
           <p className="text-sm text-slate-500">
-            Proposal {project.proposalNo} · {project.customerName}
+            Proposal{" "}
+            <Link
+              href={`/projects/proposals/${project.proposalId}`}
+              className="font-medium text-emerald-700 hover:underline"
+            >
+              {project.proposalNo}
+            </Link>{" "}
+            · {project.customerName}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -511,7 +518,25 @@ export function ProjectDetailView({
               <span className="text-slate-500">Mobile:</span> {project.customerMobile}
             </p>
             <p>
-              <span className="text-slate-500">Site:</span> {project.siteAddress}
+              <span className="text-slate-500">Proposal:</span>{" "}
+              <Link
+                href={`/projects/proposals/${project.proposalId}`}
+                className="font-medium text-emerald-700 hover:underline"
+              >
+                {project.proposalNo}
+              </Link>
+              {project.status !== "CLOSED" ? (
+                <>
+                  {" "}
+                  ·{" "}
+                  <Link
+                    href={`/projects/proposals/${project.proposalId}/revise`}
+                    className="text-emerald-700 hover:underline"
+                  >
+                    Update after conversion
+                  </Link>
+                </>
+              ) : null}
             </p>
             <p>
               <span className="text-slate-500">Staging warehouse:</span> {project.warehouseName}

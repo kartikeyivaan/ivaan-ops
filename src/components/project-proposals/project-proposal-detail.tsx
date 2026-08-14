@@ -27,7 +27,7 @@ import {
   openProjectProposalPdf,
   projectProposalPdfUrl,
 } from "@/lib/project-proposals";
-import { canReviseProjectProposal } from "@/lib/project-proposal-revision";
+import { canReviseProjectProposal, isPostConversionProposal } from "@/lib/project-proposal-revision";
 import { formatDocumentDate } from "@/lib/utils";
 
 type UserRef = { id: string; name: string; email?: string };
@@ -135,7 +135,9 @@ export function ProjectProposalDetail({
   const router = useRouter();
   const revision = proposal.currentRevision;
   const discountAmount = revision?.discountAmount ?? 0;
-  const requiresApproval = discountAmount > DISCOUNT_APPROVAL_THRESHOLD;
+  const postConversion = isPostConversionProposal(proposal.convertedAt);
+  const requiresApproval =
+    postConversion || discountAmount > DISCOUNT_APPROVAL_THRESHOLD;
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -160,6 +162,8 @@ export function ProjectProposalDetail({
   const canSubmitForApproval = canManage && proposal.status === "DRAFT" && requiresApproval;
   const canDownloadOrShare = canShareProjectProposal(proposal.status);
   const canDownloadPdf = canManage || canDownloadOrShare;
+  const canConvertProposal =
+    canConvert && proposal.status === "APPROVED" && !postConversion;
 
   async function openProposalPdf(format: "card" | "full") {
     setLoading(true);
@@ -297,11 +301,18 @@ export function ProjectProposalDetail({
           <Clock className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
             <p className="font-medium">Pending manager approval</p>
-            <p>
-              Discount of {formatMoney(discountAmount)} exceeds the ₹
-              {DISCOUNT_APPROVAL_THRESHOLD.toLocaleString("en-IN")} limit. A manager must approve
-              before this proposal can be shared or converted.
-            </p>
+            {postConversion ? (
+              <p>
+                This proposal is already converted to a project. A Projects Manager must approve
+                the requirement and cost change before it is applied to the project.
+              </p>
+            ) : (
+              <p>
+                Discount of {formatMoney(discountAmount)} exceeds the ₹
+                {DISCOUNT_APPROVAL_THRESHOLD.toLocaleString("en-IN")} limit. A manager must approve
+                before this proposal can be shared or converted.
+              </p>
+            )}
             {pendingApproval ? (
               <p className="mt-1 text-amber-800">
                 Requested by {pendingApproval.requestedBy.name} on{" "}
@@ -334,7 +345,21 @@ export function ProjectProposalDetail({
         </div>
       ) : null}
 
-      {(proposal.status === "APPROVED" || proposal.status === "CONVERTED") && (
+      {proposal.status === "DRAFT" && postConversion ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          This proposal is already a project. Submit the revised terms for Projects Manager
+          approval. Auto-approve is not allowed after conversion.
+        </div>
+      ) : null}
+
+      {proposal.status === "CONVERTED" ? (
+        <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          If the customer changes requirements or cost, revise this proposal and send it for
+          Projects Manager approval. The approved revision will update the linked project.
+        </div>
+      ) : null}
+
+      {(proposal.status === "APPROVED" || proposal.executionProject) && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Project Handoff</CardTitle>
@@ -382,7 +407,11 @@ export function ProjectProposalDetail({
         ) : null}
         {canRevise ? (
           <Button asChild variant="outline" className="w-full sm:w-auto">
-            <Link href={`/projects/proposals/${proposal.id}/revise`}>Revise</Link>
+            <Link href={`/projects/proposals/${proposal.id}/revise`}>
+              {postConversion || proposal.status === "CONVERTED"
+                ? "Update after conversion"
+                : "Revise"}
+            </Link>
           </Button>
         ) : null}
         {canSendDraft ? (
@@ -401,7 +430,9 @@ export function ProjectProposalDetail({
             disabled={loading}
             className="w-full sm:w-auto"
           >
-            Submit for Manager Approval
+            {postConversion
+              ? "Submit change for Manager Approval"
+              : "Submit for Manager Approval"}
           </Button>
         ) : null}
         {canDownloadPdf ? (
@@ -455,7 +486,7 @@ export function ProjectProposalDetail({
             </Button>
           </>
         ) : null}
-        {canConvert && proposal.status === "APPROVED" ? (
+        {canConvertProposal ? (
           <Button
             onClick={() => void convertProposal()}
             disabled={loading}

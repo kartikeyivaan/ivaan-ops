@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 
 const SERVICE_ERRORS: Record<string, { message: string; status: number }> = {
   NOT_FOUND: { message: "Project or dispatch not found.", status: 404 },
+  PROJECTS_ISE_ONLY: {
+    message: "Project proposals, projects and project dispatches are available only for Ivaan Solar Energy.",
+    status: 403,
+  },
   PROJECT_CLOSED: { message: "This project is closed and cannot be dispatched.", status: 400 },
   FORBIDDEN: { message: "You do not have permission for this action.", status: 403 },
   LINES_REQUIRED: { message: "Add at least one line with quantity greater than zero.", status: 400 },

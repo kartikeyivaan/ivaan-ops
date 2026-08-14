@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { PCM_QUOTATION_SUPER_ADMIN_ONLY_MESSAGE } from "@/lib/company-scope";
 import { assertCompanyAccess } from "@/lib/customer-permissions";
 import {
   canManageQuotations,
+  canManageQuotationsForCompany,
   canViewQuotations,
 } from "@/lib/quotation-permissions";
 import {
@@ -74,6 +76,18 @@ export async function POST(request: Request) {
   const userCompanyIds = session.user.companies.map((company) => company.id);
   if (!assertCompanyAccess(session.user.roles, userCompanyIds, companyId)) {
     return errorResponse("FORBIDDEN", "You do not have access to this company.", 403);
+  }
+
+  const activeCompany = session.user.companies.find((company) => company.id === companyId);
+  if (
+    activeCompany &&
+    !canManageQuotationsForCompany(session.user.roles, activeCompany)
+  ) {
+    return errorResponse(
+      "PCM_QUOTATION_SUPER_ADMIN_ONLY",
+      PCM_QUOTATION_SUPER_ADMIN_ONLY_MESSAGE,
+      403,
+    );
   }
 
   const salesUserId = parsed.data.salesUserId ?? session.user.id;

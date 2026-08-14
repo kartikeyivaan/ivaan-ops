@@ -7,8 +7,8 @@ import {
   type PrismaClient,
 } from "@prisma/client";
 import { writeAuditLogTx } from "@/lib/audit";
+import { assertProjectsCompany } from "@/lib/company-scope";
 import { decimalToNumber } from "@/lib/inventory";
-import { deriveMaterialLinesFromRevision } from "@/lib/project-material-bom";
 import {
   mergeStockSourceLog,
   parseStockSourceLog,
@@ -18,10 +18,7 @@ import {
   type StockSourceLogEntry,
 } from "@/lib/project-stock-service";
 import { notifyProjectMaterialStockReceived } from "@/lib/notification-service";
-import {
-  projectProposalRevisionInclude,
-  type ProjectProposalRecord,
-} from "@/lib/project-proposal-service";
+import { type ProjectProposalRecord } from "@/lib/project-proposal-service";
 import { generateProjectNumber } from "@/lib/projects";
 import { isProjectReadOnly } from "@/lib/project-permissions";
 
@@ -182,6 +179,8 @@ export async function createProjectFromProposal(
     performedById: string;
   },
 ) {
+  assertProjectsCompany({ code: input.companyCode });
+
   const existing = await tx.project.findUnique({
     where: { proposalId: input.proposal.id },
   });
@@ -191,16 +190,6 @@ export async function createProjectFromProposal(
 
   const warehouse = await findJalgaonProjectsWarehouse(tx, input.companyId);
   const projectNo = await generateProjectNumber(tx, input.companyCode, input.companyId);
-
-  const revisionWithPackage = await tx.projectProposalRevision.findUniqueOrThrow({
-    where: { id: input.revision.id },
-    include: projectProposalRevisionInclude,
-  });
-
-  const materialSeeds = await deriveMaterialLinesFromRevision(tx, revisionWithPackage);
-
-  const initialStatus =
-    materialSeeds.length > 0 ? ProjectStatus.MATERIAL_DRAFT : ProjectStatus.OPEN;
 
   const project = await tx.project.create({
     data: {
@@ -212,21 +201,11 @@ export async function createProjectFromProposal(
       customerName: input.revision.customerName,
       customerMobile: input.revision.customerMobile,
       siteAddress: input.revision.shortAddress,
-      status: initialStatus,
+      status: ProjectStatus.OPEN,
       createdById: input.performedById,
       updatedById: input.performedById,
       assignment: {
-        create: {
-          lines: {
-            create: materialSeeds.map((seed) => ({
-              productId: seed.productId,
-              source: seed.source,
-              requiredQty: seed.requiredQty,
-              lineStatus: ProjectMaterialLineStatus.DRAFT,
-              sortOrder: seed.sortOrder,
-            })),
-          },
-        },
+        create: {},
       },
     },
     include: projectInclude,
@@ -240,6 +219,52 @@ export async function createProjectFromProposal(
     companyId: input.companyId,
     newValue: { projectNo, proposalId: input.proposal.id },
     reference: projectNo,
+  });
+
+  return project;
+}
+
+export async function applyApprovedProposalRevisionToProject(
+  tx: Prisma.TransactionClient,
+  input: {
+    proposalId: string;
+    companyId: string;
+    revision: ProjectProposalRecord["revisions"][number];
+    performedById: string;
+  },
+) {
+  const project = await tx.project.findUnique({
+    where: { proposalId: input.proposalId },
+  });
+  if (!project) {
+    return null;
+  }
+  if (isProjectReadOnly(project.status)) {
+    throw new Error("PROJECT_CLOSED");
+  }
+
+  await tx.project.update({
+    where: { id: project.id },
+    data: {
+      revisionId: input.revision.id,
+      customerName: input.revision.customerName,
+      customerMobile: input.revision.customerMobile,
+      siteAddress: input.revision.shortAddress,
+      updatedById: input.performedById,
+    },
+  });
+
+  await writeAuditLogTx(tx, {
+    tableName: "projects",
+    recordId: project.id,
+    action: "UPDATE",
+    performedBy: input.performedById,
+    companyId: input.companyId,
+    newValue: {
+      revisionId: input.revision.id,
+      customerName: input.revision.customerName,
+    },
+    reference: project.projectNo,
   });
 
   return project;

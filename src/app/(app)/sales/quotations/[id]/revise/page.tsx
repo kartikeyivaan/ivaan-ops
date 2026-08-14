@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { canManageQuotations } from "@/lib/quotation-permissions";
+import { canManageQuotations, canManageQuotationsForCompany } from "@/lib/quotation-permissions";
 import { listCustomers } from "@/lib/customer-service";
 import { listProducts } from "@/lib/product-service";
 import { getQuotationById } from "@/lib/quotation-service";
@@ -32,6 +32,10 @@ export default async function ReviseQuotationPage({ params }: PageProps) {
   const quotation = await getQuotationById(prisma, companyId, id);
   if (!quotation) {
     notFound();
+  }
+
+  if (!canManageQuotationsForCompany(session.user.roles, quotation.company)) {
+    redirect(`/sales/quotations/${id}`);
   }
 
   // Only sent (or expired) quotations can be revised. Drafts and converted

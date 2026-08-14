@@ -621,13 +621,16 @@ async function listPendingProposalApprovals(
       row.revisions[row.revisions.length - 1];
     const pending = row.approvals[0];
     const discount = Number(revision?.discountAmount ?? pending?.discountAmount ?? 0);
+    const postConversion = Boolean(row.convertedAt);
     return {
       id: `PROJECT_PROPOSAL:${row.id}`,
       type: "PROJECT_PROPOSAL" as const,
       moduleId: row.id,
       documentNo: row.proposalNo,
       subjectName: revision?.customerName ?? "—",
-      reason: `Discount ${formatInr(discount)} requires approval`,
+      reason: postConversion
+        ? `Post-conversion requirement change (discount ${formatInr(discount)})`
+        : `Discount ${formatInr(discount)} requires approval`,
       requestedByName: pending?.requestedBy.name ?? row.salesUser.name,
       requestedAt: toIso(pending?.createdAt ?? row.updatedAt),
       href: `/projects/proposals/${row.id}`,
@@ -916,7 +919,7 @@ async function listProposalApprovalHistory(
     include: {
       requestedBy: { select: { name: true } },
       decidedBy: { select: { name: true } },
-      proposal: { select: { id: true, proposalNo: true } },
+      proposal: { select: { id: true, proposalNo: true, convertedAt: true } },
       revision: { select: { customerName: true, discountAmount: true } },
     },
     orderBy: { updatedAt: "desc" },
@@ -929,7 +932,9 @@ async function listProposalApprovalHistory(
     moduleId: row.proposal.id,
     documentNo: row.proposal.proposalNo,
     subjectName: row.revision.customerName,
-    reason: `Discount ${formatInr(Number(row.discountAmount))}`,
+    reason: row.proposal.convertedAt
+      ? `Post-conversion change (${formatInr(Number(row.discountAmount))})`
+      : `Discount ${formatInr(Number(row.discountAmount))}`,
     decision: row.status === ProjectProposalApprovalStatus.APPROVED ? "APPROVED" : "REJECTED",
     requestedByName: row.requestedBy.name,
     decidedByName: row.decidedBy?.name ?? null,

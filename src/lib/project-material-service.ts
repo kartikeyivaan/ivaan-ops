@@ -168,9 +168,6 @@ export async function deleteMaterialLine(
   if (!line) {
     throw new Error("LINE_NOT_FOUND");
   }
-  if (line.source !== ProjectMaterialLineSource.ADDED) {
-    throw new Error("CANNOT_DELETE_PROPOSAL_LINE");
-  }
   if (Number(line.dispatchedQty) > 0) {
     throw new Error("LINE_ALREADY_DISPATCHED");
   }

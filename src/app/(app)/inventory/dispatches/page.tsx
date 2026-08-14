@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { getActiveSessionCompany, isProjectsCompany } from "@/lib/company-scope";
 import { canManageDispatches, canViewDispatches } from "@/lib/dispatch-permissions";
 import { listDispatchableProformaInvoices } from "@/lib/dispatch-service";
 import {
@@ -23,7 +24,8 @@ export default async function DispatchesPage({ searchParams }: PageProps) {
 
   const companyId = requireActiveCompany(session);
   const { tab } = await searchParams;
-  const canViewProjects = canViewProjectDispatches(session.user.roles);
+  const projectsCompany = isProjectsCompany(getActiveSessionCompany(session) ?? {});
+  const canViewProjects = projectsCompany && canViewProjectDispatches(session.user.roles);
 
   const [tiles, projectQueue] = await Promise.all([
     listDispatchableProformaInvoices(prisma, companyId),
@@ -35,7 +37,7 @@ export default async function DispatchesPage({ searchParams }: PageProps) {
       retailTiles={JSON.parse(JSON.stringify(tiles))}
       projectQueue={JSON.parse(JSON.stringify(projectQueue))}
       canManageRetail={canManageDispatches(session.user.roles)}
-      canManageProjects={canManageProjectDispatches(session.user.roles)}
+      canManageProjects={projectsCompany && canManageProjectDispatches(session.user.roles)}
       canViewProjects={canViewProjects}
       initialTab={tab === "projects" && canViewProjects ? "projects" : "retail"}
     />

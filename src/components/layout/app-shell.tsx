@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { LayoutDashboard, Menu, X } from "lucide-react";
+import { getActiveSessionCompany, isProjectsCompany } from "@/lib/company-scope";
 import { canAccessNav, NAV_ITEMS } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import { CompanySwitcher } from "@/components/layout/company-switcher";
@@ -83,7 +84,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { data: session } = useSession();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const roles = session?.user?.roles ?? [];
-  const navItems = NAV_ITEMS.filter((item) => canAccessNav(roles, item));
+  const activeCompany = getActiveSessionCompany(session ?? null);
+  const showProjectsNav = !activeCompany || isProjectsCompany(activeCompany);
+  const navItems = NAV_ITEMS.filter((item) => canAccessNav(roles, item)).filter((item) => {
+    if (showProjectsNav) return true;
+    return !item.href.startsWith("/projects");
+  });
   const showCompanySwitcher = !pathname.startsWith("/sales/quotations/new");
 
   return (

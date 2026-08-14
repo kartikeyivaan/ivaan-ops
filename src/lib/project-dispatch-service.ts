@@ -10,6 +10,7 @@ import {
   type PrismaClient,
 } from "@prisma/client";
 import { writeAuditLogTx } from "@/lib/audit";
+import { assertProjectsCompany } from "@/lib/company-scope";
 import { decimalToNumber, normalizeSerialNumber } from "@/lib/inventory";
 import { toSignedInventoryQuantity } from "@/lib/inventory-events";
 import { getRemainingQty } from "@/lib/dispatches";
@@ -598,6 +599,7 @@ export async function createProjectDispatch(
     include: { company: true },
   });
   if (!project) throw new Error("NOT_FOUND");
+  assertProjectsCompany(project.company);
   if (project.status === ProjectStatus.CLOSED) throw new Error("PROJECT_CLOSED");
 
   await validateProjectDispatchLines(prisma, {

@@ -47,7 +47,7 @@ import {
   openProjectProposalPdf,
   projectProposalPdfUrl,
 } from "@/lib/project-proposals";
-import { canReviseProjectProposal } from "@/lib/project-proposal-revision";
+import { canReviseProjectProposal, isPostConversionProposal } from "@/lib/project-proposal-revision";
 import { formatDocumentDate } from "@/lib/utils";
 
 type PackageOption = { id: string; code: string; name: string };
@@ -68,6 +68,7 @@ type ProposalListItem = {
   proposalNo: string;
   currentRevisionNo: number;
   status: string;
+  convertedAt?: string | null;
   salesUser: { id: string; name: string };
   currentRevision: ProposalRevision | null;
 };
@@ -304,12 +305,19 @@ export function ProjectProposalsList({
 
   function canSendRow(item: ProposalListItem) {
     const discount = item.currentRevision?.discountAmount ?? 0;
-    return canManage && item.status === "DRAFT" && discount <= DISCOUNT_APPROVAL_THRESHOLD;
+    return (
+      canManage &&
+      item.status === "DRAFT" &&
+      !isPostConversionProposal(item.convertedAt) &&
+      discount <= DISCOUNT_APPROVAL_THRESHOLD
+    );
   }
 
   function canSubmitApprovalRow(item: ProposalListItem) {
     const discount = item.currentRevision?.discountAmount ?? 0;
-    return canManage && item.status === "DRAFT" && discount > DISCOUNT_APPROVAL_THRESHOLD;
+    const needsApproval =
+      isPostConversionProposal(item.convertedAt) || discount > DISCOUNT_APPROVAL_THRESHOLD;
+    return canManage && item.status === "DRAFT" && needsApproval;
   }
 
   function canShareRow(item: ProposalListItem) {
@@ -321,7 +329,7 @@ export function ProjectProposalsList({
   }
 
   function canConvertRow(item: ProposalListItem) {
-    return canManage && item.status === "APPROVED";
+    return canManage && item.status === "APPROVED" && !isPostConversionProposal(item.convertedAt);
   }
 
   function renderProposalActions(proposal: ProposalListItem) {
@@ -356,7 +364,9 @@ export function ProjectProposalsList({
               onClick={() => router.push(`/projects/proposals/${proposal.id}/revise`)}
             >
               <RefreshCw className="mr-2 h-4 w-4" />
-              Revise
+              {isPostConversionProposal(proposal.convertedAt) || proposal.status === "CONVERTED"
+                ? "Update after conversion"
+                : "Revise"}
             </DropdownMenuItem>
           ) : null}
           {canSendRow(proposal) ? (

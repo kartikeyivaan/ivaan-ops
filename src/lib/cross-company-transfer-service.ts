@@ -950,7 +950,12 @@ export async function completeCrossCompanyTransferOnDispatch(
           toWarehouseId: input.toWarehouseId,
           referenceType: "TRANSFER",
           referenceId: transfer.id,
-          notes: `Auto dispatched ${transfer.transferNumber}`,
+          notes: [
+            `Auto dispatched ${transfer.transferNumber}`,
+            `${plan.fromCompany.name} → ${plan.toCompany.name}`,
+            input.dcNo,
+            input.piNo,
+          ].join(" - "),
           createdById: systemUserId,
         },
       });
@@ -965,7 +970,12 @@ export async function completeCrossCompanyTransferOnDispatch(
           toWarehouseId: input.toWarehouseId,
           referenceType: "TRANSFER",
           referenceId: transfer.id,
-          notes: `Auto received ${transfer.transferNumber}`,
+          notes: [
+            `Auto received ${transfer.transferNumber}`,
+            `${plan.fromCompany.name} → ${plan.toCompany.name}`,
+            input.dcNo,
+            input.piNo,
+          ].join(" - "),
           createdById: systemUserId,
         },
       });

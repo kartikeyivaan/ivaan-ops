@@ -926,7 +926,8 @@ async function confirmDispatchTx(
   const dispatch = await tx.dispatch.findFirst({
     where: { id: input.dispatchId, companyId: input.companyId },
     include: {
-      proformaInvoice: { select: { salesUserId: true } },
+      customer: { select: { customerName: true } },
+      proformaInvoice: { select: { salesUserId: true, piNo: true } },
       lines: {
         include: {
           product: true,
@@ -1058,7 +1059,11 @@ async function confirmDispatchTx(
         fromWarehouseId: dispatch.warehouseId,
         referenceType: "DISPATCH",
         referenceId: dispatch.id,
-        notes: `Dispatched on ${dispatch.dcNo}`,
+        notes: [
+          dispatch.customer.customerName,
+          dispatch.dcNo,
+          pi.piNo,
+        ].join(" - "),
         createdById: input.performedById,
       },
     });

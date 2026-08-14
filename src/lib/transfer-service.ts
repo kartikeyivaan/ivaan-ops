@@ -359,6 +359,10 @@ export async function dispatchTransfer(
   const transfer = await prisma.inventoryTransfer.findFirst({
     where: { id: input.transferId, fromCompanyId: input.companyId },
     include: {
+      fromCompany: { select: { name: true } },
+      toCompany: { select: { name: true } },
+      proformaInvoice: { select: { piNo: true } },
+      dispatch: { select: { dcNo: true } },
       lines: {
         include: {
           product: true,
@@ -411,7 +415,14 @@ export async function dispatchTransfer(
           toWarehouseId: transfer.toWarehouseId,
           referenceType: "TRANSFER",
           referenceId: transfer.id,
-          notes: `Dispatched ${transfer.transferNumber}`,
+          notes: [
+            `Dispatched ${transfer.transferNumber}`,
+            `${transfer.fromCompany.name} → ${transfer.toCompany.name}`,
+            transfer.dispatch?.dcNo,
+            transfer.proformaInvoice?.piNo,
+          ]
+            .filter((part) => part && String(part).trim().length > 0)
+            .join(" - "),
           createdById: input.dispatchedById,
         },
       });
@@ -457,6 +468,10 @@ export async function receiveTransfer(
       status: { in: [TransferStatus.DISPATCHED, TransferStatus.PARTIALLY_RECEIVED] },
     },
     include: {
+      fromCompany: { select: { name: true } },
+      toCompany: { select: { name: true } },
+      proformaInvoice: { select: { piNo: true } },
+      dispatch: { select: { dcNo: true } },
       lines: {
         include: {
           product: true,
@@ -552,7 +567,14 @@ export async function receiveTransfer(
           toWarehouseId: transfer.toWarehouseId,
           referenceType: "TRANSFER",
           referenceId: transfer.id,
-          notes: `Received ${transfer.transferNumber}`,
+          notes: [
+            `Received ${transfer.transferNumber}`,
+            `${transfer.fromCompany.name} → ${transfer.toCompany.name}`,
+            transfer.dispatch?.dcNo,
+            transfer.proformaInvoice?.piNo,
+          ]
+            .filter((part) => part && String(part).trim().length > 0)
+            .join(" - "),
           createdById: input.receivedById,
         },
       });

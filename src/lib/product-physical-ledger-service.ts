@@ -46,6 +46,24 @@ export type ProductPhysicalLedgerResult = {
   entries: ProductPhysicalLedgerEntry[];
 };
 
+function joinNoteParts(parts: Array<string | null | undefined>): string {
+  return parts
+    .map((part) => part?.trim())
+    .filter((part): part is string => Boolean(part))
+    .join(" - ");
+}
+
+function transferActionLabel(originalNotes: string | null): string {
+  const notes = (originalNotes ?? "").toLowerCase();
+  if (notes.startsWith("received") || notes.startsWith("auto received")) {
+    return "Received";
+  }
+  if (notes.startsWith("dispatched") || notes.startsWith("auto dispatched")) {
+    return "Dispatched";
+  }
+  return "Transfer";
+}
+
 function parseDayStart(date: string): Date {
   return new Date(`${date}T00:00:00.000Z`);
 }
@@ -234,6 +252,65 @@ export async function listProductPhysicalLedger(
       : [];
   const warehouseById = new Map(warehouses.map((w) => [w.id, w]));
 
+  const dispatchIds = [
+    ...new Set(
+      rows
+        .filter(
+          (row) =>
+            row.transactionType === InventoryTransactionType.DISPATCH &&
+            row.referenceType === "DISPATCH" &&
+            row.referenceId,
+        )
+        .map((row) => row.referenceId as string),
+    ),
+  ];
+  const dispatches =
+    dispatchIds.length > 0
+      ? await prisma.dispatch.findMany({
+          where: { id: { in: dispatchIds }, companyId },
+          select: {
+            id: true,
+            dcNo: true,
+            customer: { select: { customerName: true } },
+            proformaInvoice: { select: { piNo: true } },
+          },
+        })
+      : [];
+  const dispatchNoteById = new Map(
+    dispatches.map((d) => [
+      d.id,
+      joinNoteParts([d.customer.customerName, d.dcNo, d.proformaInvoice.piNo]),
+    ]),
+  );
+
+  const transferIds = [
+    ...new Set(
+      rows
+        .filter(
+          (row) =>
+            row.transactionType === InventoryTransactionType.TRANSFER &&
+            row.referenceType === "TRANSFER" &&
+            row.referenceId,
+        )
+        .map((row) => row.referenceId as string),
+    ),
+  ];
+  const transfers =
+    transferIds.length > 0
+      ? await prisma.inventoryTransfer.findMany({
+          where: { id: { in: transferIds } },
+          select: {
+            id: true,
+            transferNumber: true,
+            fromCompany: { select: { name: true } },
+            toCompany: { select: { name: true } },
+            proformaInvoice: { select: { piNo: true } },
+            dispatch: { select: { dcNo: true } },
+          },
+        })
+      : [];
+  const transferById = new Map(transfers.map((t) => [t.id, t]));
+
   let running = 0;
   let totalIn = 0;
   let totalOut = 0;
@@ -274,7 +351,22 @@ export async function listProductPhysicalLedger(
       lot: row.lot,
       referenceType: row.referenceType,
       referenceId: row.referenceId,
-      notes: row.notes,
+      notes: (() => {
+        if (row.referenceId) {
+          const dispatchNote = dispatchNoteById.get(row.referenceId);
+          if (dispatchNote) return dispatchNote;
+          const transfer = transferById.get(row.referenceId);
+          if (transfer) {
+            return joinNoteParts([
+              `${transferActionLabel(row.notes)} ${transfer.transferNumber}`,
+              `${transfer.fromCompany.name} → ${transfer.toCompany.name}`,
+              transfer.dispatch?.dcNo,
+              transfer.proformaInvoice?.piNo,
+            ]);
+          }
+        }
+        return row.notes;
+      })(),
       createdBy: row.createdBy,
     };
   });

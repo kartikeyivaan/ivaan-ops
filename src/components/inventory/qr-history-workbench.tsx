@@ -525,7 +525,7 @@ function ProductMovementsPanel({
                           {formatQty(entry.runningBalance)}
                         </TableCell>
                         <TableCell>{entry.createdBy.name}</TableCell>
-                        <TableCell className="max-w-[14rem] truncate text-slate-500">
+                        <TableCell className="min-w-[16rem] max-w-[24rem] whitespace-normal break-words align-top text-slate-500">
                           {entry.notes ?? entry.lot?.lotNumber ?? "—"}
                         </TableCell>
                       </TableRow>

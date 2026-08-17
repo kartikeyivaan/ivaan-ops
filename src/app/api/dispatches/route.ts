@@ -121,7 +121,11 @@ export async function POST(request: Request) {
         INVALID_QUANTITY: ["VALIDATION_ERROR", "Invalid quantity.", 400],
         INVALID_LINE: ["VALIDATION_ERROR", "Invalid dispatch line.", 400],
         EXCEEDS_REMAINING_QTY: ["VALIDATION_ERROR", "Quantity exceeds remaining booked qty.", 400],
-        SERIAL_REQUIRED: ["VALIDATION_ERROR", "Serial selection required.", 400],
+        SERIAL_REQUIRED: [
+          "VALIDATION_ERROR",
+          "Serial-tracked items need one serial per dispatched unit. Scan or add serials to match dispatch qty, or dispatch only the serials already accepted.",
+          400,
+        ],
         INVALID_SERIAL_SELECTION: ["VALIDATION_ERROR", "Invalid serial selection.", 400],
         KIT_BOM_EMPTY: ["VALIDATION_ERROR", "Kit has no components configured.", 400],
         KIT_COMPONENT_MISSING: [

@@ -62,7 +62,25 @@ export type PartialDispatchLineInput = {
   productName: string;
   remainingQty: number;
   qty: number | string;
+  serialTracking?: boolean;
+  serials?: Array<{ id: string }>;
 };
+
+/**
+ * Dispatch qty for a line. Serial-tracked products always follow accepted serials,
+ * so a partial scan cannot keep the leftover booked qty as the submitted quantity.
+ */
+export function effectiveDispatchQty(line: {
+  serialTracking?: boolean;
+  serials?: Array<{ id: string }>;
+  qty: number | string;
+}): number {
+  if (line.serialTracking) {
+    return line.serials?.length ?? 0;
+  }
+  const qty = Number(line.qty);
+  return Number.isFinite(qty) ? qty : 0;
+}
 
 export type PartialDispatchSummaryLine = {
   productName: string;
@@ -79,8 +97,7 @@ export function describePartialDispatchLines(
   const partial: PartialDispatchSummaryLine[] = [];
 
   for (const line of lines) {
-    const dispatchQty = Number(line.qty);
-    const safeDispatchQty = Number.isFinite(dispatchQty) ? dispatchQty : 0;
+    const safeDispatchQty = effectiveDispatchQty(line);
     if (line.remainingQty <= 0) continue;
 
     if (safeDispatchQty <= 0) {

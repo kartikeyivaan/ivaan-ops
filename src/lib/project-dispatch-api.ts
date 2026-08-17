@@ -11,7 +11,11 @@ const SERVICE_ERRORS: Record<string, { message: string; status: number }> = {
   LINES_REQUIRED: { message: "Add at least one line with quantity greater than zero.", status: 400 },
   INVALID_LINE: { message: "Invalid dispatch line.", status: 400 },
   EXCEEDS_REMAINING_QTY: { message: "Quantity exceeds remaining balance in Projects warehouse.", status: 400 },
-  SERIAL_REQUIRED: { message: "Serial selection is required for this product.", status: 400 },
+  SERIAL_REQUIRED: {
+    message:
+      "Serial-tracked items need one serial per dispatched unit. Scan or add serials to match dispatch qty, or dispatch only the serials already accepted.",
+    status: 400,
+  },
   INVALID_SERIAL_SELECTION: { message: "Invalid serial selection.", status: 400 },
   KIT_BOM_EMPTY: { message: "Kit has no components configured.", status: 400 },
   KIT_COMPONENT_MISSING: {

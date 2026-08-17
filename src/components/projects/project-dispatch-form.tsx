@@ -24,6 +24,7 @@ import { normalizeMobileNumber } from "@/lib/phone";
 import type { DispatchableProject } from "@/lib/project-dispatch-service";
 import {
   describePartialDispatchLines,
+  effectiveDispatchQty,
   formatPartialDispatchConfirmMessage,
   isPartialDispatch,
 } from "@/lib/dispatches";
@@ -68,6 +69,7 @@ export function ProjectDispatchForm({ defaultProjectId }: { defaultProjectId?: s
   linesRef.current = lines;
   const projectIdRef = useRef(projectId);
   projectIdRef.current = projectId;
+  const linesForProjectIdRef = useRef("");
 
   useEffect(() => {
     fetch("/api/project-dispatches/dispatchable")
@@ -75,18 +77,23 @@ export function ProjectDispatchForm({ defaultProjectId }: { defaultProjectId?: s
       .then((data) => {
         if (Array.isArray(data)) {
           setProjects(data);
-          if (!projectId && data[0]?.id) setProjectId(data[0].id);
+          setProjectId((current) => current || data[0]?.id || "");
         }
       });
-  }, [projectId]);
+  }, []);
 
   useEffect(() => {
     const project = projects.find((row) => row.id === projectId);
     if (!project) {
-      setLines([]);
+      if (linesForProjectIdRef.current) {
+        setLines([]);
+        linesForProjectIdRef.current = "";
+      }
       return;
     }
+    if (linesForProjectIdRef.current === project.id) return;
 
+    linesForProjectIdRef.current = project.id;
     setVehicleNo(project.draft?.vehicleNo ?? "");
     setReceiverName(project.draft?.receiverName ?? "");
     setReceiverMobile(project.draft?.receiverMobile ?? "");
@@ -229,7 +236,7 @@ export function ProjectDispatchForm({ defaultProjectId }: { defaultProjectId?: s
       return;
     }
 
-    const dispatchLines = lines.filter((line) => Number(line.qty) > 0);
+    const dispatchLines = lines.filter((line) => effectiveDispatchQty(line) > 0);
     if (dispatchLines.length === 0) {
       setError("Enter dispatch quantity for at least one line.");
       return;
@@ -257,7 +264,7 @@ export function ProjectDispatchForm({ defaultProjectId }: { defaultProjectId?: s
         .map((line) => ({
           materialLineId: line.materialLineId,
           productId: line.productId,
-          qty: Number(line.qty),
+          qty: effectiveDispatchQty(line),
           serialIds: line.serialTracking ? line.serials.map((serial) => serial.id) : undefined,
           kitProductId: line.kitProductId,
           kitProductName: line.kitProductName,

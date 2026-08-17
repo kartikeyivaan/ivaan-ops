@@ -24,6 +24,7 @@ import { normalizeMobileNumber } from "@/lib/phone";
 import { cn } from "@/lib/utils";
 import {
   describePartialDispatchLines,
+  effectiveDispatchQty,
   formatPartialDispatchConfirmMessage,
   isPartialDispatch,
 } from "@/lib/dispatches";
@@ -96,6 +97,7 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
   linesRef.current = lines;
   const piIdRef = useRef(piId);
   piIdRef.current = piId;
+  const linesForPiIdRef = useRef("");
 
   useEffect(() => {
     fetch("/api/dispatches/bookable-pis")
@@ -103,18 +105,23 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
       .then((data) => {
         if (Array.isArray(data)) {
           setBookablePis(data);
-          if (!piId && data[0]?.id) setPiId(data[0].id);
+          setPiId((current) => current || data[0]?.id || "");
         }
       });
-  }, [piId]);
+  }, []);
 
   useEffect(() => {
     const pi = bookablePis.find((row) => row.id === piId);
     if (!pi) {
-      setLines([]);
+      if (linesForPiIdRef.current) {
+        setLines([]);
+        linesForPiIdRef.current = "";
+      }
       return;
     }
+    if (linesForPiIdRef.current === pi.id) return;
 
+    linesForPiIdRef.current = pi.id;
     setVehicleNo(pi.draft?.vehicleNo ?? "");
     setDriverName(pi.draft?.driverName ?? "");
     setReceiverName(pi.draft?.receiverName ?? "");
@@ -130,7 +137,7 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
           productName: item.productName,
           serialTracking: item.serialTracking,
           remainingQty: item.remainingQty,
-          qty: String(item.remainingQty),
+          qty: item.serialTracking ? "0" : String(item.remainingQty),
           serials: [],
           pasteText: "",
           invalidSerials: [],
@@ -302,7 +309,7 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
   async function handleSubmit() {
     setError("");
 
-    const dispatchLines = lines.filter((line) => Number(line.qty) > 0);
+    const dispatchLines = lines.filter((line) => effectiveDispatchQty(line) > 0);
     if (dispatchLines.length === 0) {
       setError("Enter dispatch quantity for at least one line.");
       return;
@@ -329,7 +336,7 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
       lines: dispatchLines.map((line) => ({
           proformaInvoiceItemId: line.proformaInvoiceItemId,
           productId: line.productId,
-          qty: Number(line.qty),
+          qty: effectiveDispatchQty(line),
           serialIds: line.serialTracking ? line.serials.map((serial) => serial.id) : undefined,
         })),
     };
@@ -504,10 +511,21 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
                     max={line.remainingQty}
                     step="any"
                     className="h-12 text-base"
-                    value={line.qty}
+                    value={line.serialTracking ? String(line.serials.length) : line.qty}
                     onChange={(event) => updateLine(index, { qty: event.target.value })}
                     disabled={line.serialTracking}
                   />
+                  {line.serialTracking ? (
+                    <p className="text-xs text-slate-500">
+                      Qty follows accepted serials
+                      {line.serials.length > 0 && line.serials.length < line.remainingQty
+                        ? ` (${line.serials.length} of ${line.remainingQty}; remaining stay booked)`
+                        : line.serials.length === 0
+                          ? ` (scan to dispatch; ${line.remainingQty} remaining)`
+                          : ""}
+                      .
+                    </p>
+                  ) : null}
                 </div>
                 {line.serialTracking ? (
                   <div className="mt-3 space-y-3">

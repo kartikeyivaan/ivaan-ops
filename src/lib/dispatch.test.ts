@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   describePartialDispatchLines,
+  effectiveDispatchQty,
   formatPartialDispatchConfirmMessage,
   getRemainingQty,
   isPartialDispatch,
@@ -50,6 +51,27 @@ describe("dispatch helpers", () => {
 
     expect(isPartialDispatch(lines)).toBe(false);
     expect(describePartialDispatchLines(lines)).toEqual([]);
+  });
+
+  it("uses accepted serial count as qty for serial-tracked lines", () => {
+    const line = {
+      productName: "Modules - Waaree - TOPCon N-DCR - 615 Wp",
+      remainingQty: 36,
+      qty: 36,
+      serialTracking: true,
+      serials: Array.from({ length: 10 }, (_, index) => ({ id: `serial-${index}` })),
+    };
+
+    expect(effectiveDispatchQty(line)).toBe(10);
+    expect(isPartialDispatch([line])).toBe(true);
+    expect(describePartialDispatchLines([line])).toEqual([
+      {
+        productName: line.productName,
+        dispatchQty: 10,
+        remainingQty: 36,
+        omitted: false,
+      },
+    ]);
   });
 
   it("formats partial dispatch confirmation copy", () => {

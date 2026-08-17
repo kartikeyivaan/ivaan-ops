@@ -43,6 +43,7 @@ export function PurchaseIncomingList({
   defaultCompanyId,
   canCreate,
   canExportSerials,
+  canEditClosedLots = false,
   createDefaults,
 }: {
   initialLots: SerializedInventoryLot[];
@@ -53,6 +54,7 @@ export function PurchaseIncomingList({
   defaultCompanyId: string;
   canCreate: boolean;
   canExportSerials: boolean;
+  canEditClosedLots?: boolean;
   createDefaults?: {
     companyId?: string;
     warehouseId?: string;
@@ -122,7 +124,7 @@ export function PurchaseIncomingList({
                 lots.map((lot) => (
                   <TableRow key={lot.id}>
                     <TableCell className="font-medium">
-                      {isEditableIncomingLot(lot) ? (
+                      {isEditableIncomingLot(lot, canEditClosedLots) ? (
                         <Button
                           type="button"
                           variant="ghost"
@@ -172,6 +174,7 @@ export function PurchaseIncomingList({
           onClose={() => setEditingLot(null)}
           onSaved={refreshLots}
           onDeleted={refreshLots}
+          allowDelete={editingLot.status === "INCOMING"}
         />
       ) : null}
     </div>

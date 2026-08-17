@@ -639,9 +639,13 @@ export async function createIncomingLot(
   });
 }
 
-/** Purchase may edit any lot that is still INCOMING (including after partial receipt). */
-export function canEditIncomingLot(lot: { status: LotStatus }) {
-  return lot.status === LotStatus.INCOMING;
+/** Purchase may edit INCOMING lots; Super Admin may also edit CLOSED history lots. */
+export function canEditIncomingLot(
+  lot: { status: LotStatus },
+  options?: { allowClosed?: boolean },
+) {
+  if (lot.status === LotStatus.INCOMING) return true;
+  return Boolean(options?.allowClosed) && lot.status === LotStatus.CLOSED;
 }
 
 /** Delete and WH receive-edit require no receipts yet. */
@@ -675,13 +679,16 @@ export async function updateIncomingLot(
     commissionCharges?: number;
     updatedById: string;
     confirmSimilar?: boolean;
+    allowClosed?: boolean;
   },
 ) {
   const lot = await prisma.inventoryLot.findFirst({
     where: { id: lotId, companyId },
   });
   if (!lot) throw new Error("NOT_FOUND");
-  if (!canEditIncomingLot(lot)) throw new Error("LOT_NOT_EDITABLE");
+  if (!canEditIncomingLot(lot, { allowClosed: input.allowClosed })) {
+    throw new Error("LOT_NOT_EDITABLE");
+  }
 
   const receivedQuantity = decimalToNumber(lot.receivedQuantity);
   const damagedQuantity = decimalToNumber(lot.damagedQuantity);

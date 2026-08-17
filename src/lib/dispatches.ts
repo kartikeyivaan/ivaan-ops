@@ -57,3 +57,75 @@ export function formatDispatchStatus(status: string): string {
 export function getRemainingQty(orderedQty: number, dispatchedQty: number): number {
   return Math.max(0, orderedQty - dispatchedQty);
 }
+
+export type PartialDispatchLineInput = {
+  productName: string;
+  remainingQty: number;
+  qty: number | string;
+};
+
+export type PartialDispatchSummaryLine = {
+  productName: string;
+  dispatchQty: number;
+  remainingQty: number;
+  /** True when the line is omitted from this dispatch (qty 0). */
+  omitted: boolean;
+};
+
+/** Lines where dispatch qty is below remaining booked/assigned balance. */
+export function describePartialDispatchLines(
+  lines: PartialDispatchLineInput[],
+): PartialDispatchSummaryLine[] {
+  const partial: PartialDispatchSummaryLine[] = [];
+
+  for (const line of lines) {
+    const dispatchQty = Number(line.qty);
+    const safeDispatchQty = Number.isFinite(dispatchQty) ? dispatchQty : 0;
+    if (line.remainingQty <= 0) continue;
+
+    if (safeDispatchQty <= 0) {
+      partial.push({
+        productName: line.productName,
+        dispatchQty: 0,
+        remainingQty: line.remainingQty,
+        omitted: true,
+      });
+      continue;
+    }
+
+    if (safeDispatchQty < line.remainingQty) {
+      partial.push({
+        productName: line.productName,
+        dispatchQty: safeDispatchQty,
+        remainingQty: line.remainingQty,
+        omitted: false,
+      });
+    }
+  }
+
+  return partial;
+}
+
+export function isPartialDispatch(lines: PartialDispatchLineInput[]): boolean {
+  return describePartialDispatchLines(lines).length > 0;
+}
+
+export function formatPartialDispatchConfirmMessage(
+  lines: PartialDispatchSummaryLine[],
+): string {
+  const detail = lines
+    .map((line) => {
+      if (line.omitted) {
+        return `• ${line.productName}: not included (${line.remainingQty} remaining)`;
+      }
+      const left = line.remainingQty - line.dispatchQty;
+      return `• ${line.productName}: ${line.dispatchQty} of ${line.remainingQty} (${left} remaining)`;
+    })
+    .join("\n");
+
+  return (
+    `You are creating a partial dispatch:\n\n${detail}\n\n` +
+    "Remaining quantity will stay booked for a future dispatch.\n\n" +
+    "Continue with partial dispatch?"
+  );
+}

@@ -60,6 +60,7 @@ export const projectProposalRevisionInclude = {
       displayName: true,
       capacity: true,
       capacityUnit: true,
+      brand: { select: { name: true } },
     },
   },
   createdBy: { select: { id: true, name: true, email: true } },

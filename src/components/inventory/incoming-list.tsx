@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, History } from "lucide-react";
+import { parseApiJson } from "@/lib/api-response";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -15,24 +17,48 @@ import {
 } from "@/components/ui/table";
 import type { SerializedInventoryLot } from "@/lib/inventory-service";
 import { IncomingSerialExportButton } from "@/components/inventory/incoming-serial-export-button";
+import { IncomingLotEditDialog } from "@/components/purchase/incoming-lot-edit-dialog";
+
+type Product = { id: string; displayName: string; gstRate: number };
+type Warehouse = { id: string; name: string; companyId: string };
+type Vendor = { id: string; vendorName: string };
 
 export function IncomingReceiptList({
   initialLots,
   canInward,
   showHistory,
   canExportSerials,
+  canEditHistory = false,
+  products = [],
+  warehouses = [],
+  vendors = [],
 }: {
   initialLots: SerializedInventoryLot[];
   canInward: boolean;
   showHistory: boolean;
   canExportSerials: boolean;
+  canEditHistory?: boolean;
+  products?: Product[];
+  warehouses?: Warehouse[];
+  vendors?: Vendor[];
 }) {
-  const lots = initialLots
+  const [lots, setLots] = useState(initialLots);
+  const [editingLot, setEditingLot] = useState<SerializedInventoryLot | null>(null);
+
+  const visibleLots = lots
     .filter((lot) => (showHistory ? Number(lot.receivedQuantity) > 0 : lot.status === "INCOMING"))
     .sort((a, b) => {
       if (!showHistory) return 0;
       return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     });
+
+  async function refreshLots() {
+    const response = await fetch("/api/inventory/incoming");
+    if (response.ok) {
+      const data = await parseApiJson<SerializedInventoryLot[]>(response);
+      setLots(data);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -72,7 +98,7 @@ export function IncomingReceiptList({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {lots.length === 0 ? (
+              {visibleLots.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center text-slate-500">
                     {showHistory
@@ -81,9 +107,22 @@ export function IncomingReceiptList({
                   </TableCell>
                 </TableRow>
               ) : (
-                lots.map((lot) => (
+                visibleLots.map((lot) => (
                   <TableRow key={lot.id}>
-                    <TableCell className="font-medium">{lot.lotNumber}</TableCell>
+                    <TableCell className="font-medium">
+                      {canEditHistory && showHistory ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="h-auto p-0 font-medium text-slate-900 hover:bg-transparent hover:underline"
+                          onClick={() => setEditingLot(lot)}
+                        >
+                          {lot.lotNumber}
+                        </Button>
+                      ) : (
+                        lot.lotNumber
+                      )}
+                    </TableCell>
                     <TableCell>{lot.product.displayName}</TableCell>
                     <TableCell>{lot.warehouse.name}</TableCell>
                     <TableCell>{Number(lot.quantity)}</TableCell>
@@ -115,6 +154,18 @@ export function IncomingReceiptList({
           </Table>
         </CardContent>
       </Card>
+
+      {editingLot ? (
+        <IncomingLotEditDialog
+          lot={editingLot}
+          products={products}
+          warehouses={warehouses}
+          vendors={vendors}
+          allowDelete={false}
+          onClose={() => setEditingLot(null)}
+          onSaved={refreshLots}
+        />
+      ) : null}
     </div>
   );
 }

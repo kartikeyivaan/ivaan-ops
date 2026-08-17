@@ -107,6 +107,7 @@ function buildProposalFixture(): ProjectProposalPdfRecord {
           updatedAt: new Date("2026-01-01"),
         },
         inverterUpgrade: null,
+        moduleProduct: null,
       },
     ],
   };
@@ -143,6 +144,35 @@ describe("project proposal pdf", () => {
     };
 
     const pdf = await generateProjectProposalQuoteCardPdf(proposal);
+    expect(countPdfPages(pdf)).toBe(1);
+  });
+
+  it("shows selected NDCR module, qty and structure count on the quote card", async () => {
+    const proposal = buildProposalFixture();
+    const revision = proposal.revisions[0]!;
+    revision.package = {
+      ...revision.package,
+      code: "NDCR_COMPLETE",
+      name: "Non-subsidy Projects",
+      panelWp: 0,
+      panelCount: 0,
+      systemKw: new Prisma.Decimal(0),
+    };
+    revision.moduleQty = 18;
+    revision.inverterCapacityKw = new Prisma.Decimal(10);
+    revision.dcrAdditionalPanels = 0;
+    revision.ndcrAdditionalPanels = 0;
+    revision.futureStructurePanels = 0;
+    revision.moduleProduct = {
+      id: "66666666-6666-6666-6666-666666666666",
+      displayName: "Waaree 580Wp NDCR",
+      capacity: new Prisma.Decimal(580),
+      capacityUnit: "WP",
+      brand: { name: "Waaree" },
+    };
+
+    const pdf = await generateProjectProposalQuoteCardPdf(proposal);
+    expect(pdf.subarray(0, 4).toString()).toBe("%PDF");
     expect(countPdfPages(pdf)).toBe(1);
   });
 });

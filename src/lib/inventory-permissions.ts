@@ -1,4 +1,4 @@
-import { ROLES, hasRole } from "@/lib/rbac";
+import { ROLES, hasRole, isSuperAdmin } from "@/lib/rbac";
 
 const VIEW_ROLES = [
   ROLES.SUPER_ADMIN,
@@ -43,6 +43,11 @@ export function canViewInventoryTimeline(userRoles: string[]): boolean {
 
 export function canCreateIncoming(userRoles: string[]): boolean {
   return hasRole(userRoles, [...INCOMING_ROLES]);
+}
+
+/** Closed/history lots can be edited only by Super Admin. */
+export function canEditClosedIncomingLot(userRoles: string[]): boolean {
+  return isSuperAdmin(userRoles);
 }
 
 /** Purchase applies receive-field edits immediately; warehouse may propose them. */

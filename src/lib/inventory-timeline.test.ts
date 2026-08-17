@@ -1,12 +1,17 @@
+import { ProformaInvoiceStatus } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 
+import {
+  applyRemainingPiQtyToBookingReservations,
+  type InventoryEvent,
+} from "@/lib/inventory-events";
 import { calculateInventoryProjection } from "@/lib/inventory-projection";
-import type { InventoryEvent } from "@/lib/inventory-events";
 import {
   buildInventoryTimelineDayBreakdown,
   computeTimelineReservedQuantity,
   enrichTimelineDayEvents,
   getInventoryTimelineDateRange,
+  remainingReservedQtyByPiId,
   selectTimelineProjectionEvents,
   sumActualDispatchInDayEvents,
   sumDispatchedQuantityForDay,
@@ -156,6 +161,58 @@ describe("dispatch today day breakdown", () => {
         dispatchTodayByPiId,
       ),
     ).toBe(10);
+  });
+
+  it("counts only remaining open PI qty as reserved", () => {
+    const productId = "prod-610";
+    const events = [
+      reservation("r-open", 5, startDate, "pi-open"),
+      reservation("r-done", 36, startDate, "pi-done-old"),
+      reservation("r-partial", 40, startDate, "pi-partial"),
+    ];
+    const remainingByPiId = remainingReservedQtyByPiId(
+      [
+        {
+          id: "pi-open",
+          status: ProformaInvoiceStatus.BOOKED,
+          items: [{ productId, qty: 5, dispatchedQty: 0 }],
+        },
+        {
+          id: "pi-done-old",
+          status: ProformaInvoiceStatus.FULLY_DISPATCHED,
+          items: [{ productId, qty: 36, dispatchedQty: 36 }],
+        },
+        {
+          id: "pi-partial",
+          status: ProformaInvoiceStatus.PARTIALLY_DISPATCHED,
+          items: [{ productId, qty: 40, dispatchedQty: 30 }],
+        },
+        {
+          id: "pi-cancelled",
+          status: ProformaInvoiceStatus.CANCELLED,
+          items: [{ productId, qty: 12, dispatchedQty: 0 }],
+        },
+      ],
+      productId,
+    );
+
+    expect(remainingByPiId.get("pi-open")).toBe(5);
+    expect(remainingByPiId.get("pi-done-old")).toBe(0);
+    expect(remainingByPiId.get("pi-partial")).toBe(10);
+    expect(remainingByPiId.get("pi-cancelled")).toBe(0);
+
+    const adjusted = applyRemainingPiQtyToBookingReservations(
+      events,
+      remainingByPiId,
+    );
+    expect(
+      computeTimelineReservedQuantity(
+        adjusted,
+        new Set(),
+        startDate,
+        dispatchTodayByPiId,
+      ),
+    ).toBe(15);
   });
 
   it("does not treat dispatched dispatch-today as outgoing", () => {

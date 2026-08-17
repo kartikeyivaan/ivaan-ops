@@ -6,6 +6,7 @@ import {
   canApplyIncomingLotReceiveEdit,
   canApproveIncomingLotEdit,
   canCreateIncoming,
+  canEditClosedIncomingLot,
   canInwardMaterial,
   canProposeIncomingLotReceiveEdit,
   canViewInventory,
@@ -183,6 +184,15 @@ describe("inventory helpers", () => {
     ).toBe(false);
 
     expect(
+      canEditIncomingLot(
+        {
+          status: LotStatus.CLOSED,
+        },
+        { allowClosed: true },
+      ),
+    ).toBe(true);
+
+    expect(
       canModifyIncomingLot({
         status: LotStatus.INCOMING,
         receivedQuantity: 0,
@@ -239,5 +249,11 @@ describe("inventory permissions", () => {
   it("restricts stock adjustment to super admin", () => {
     expect(canAdjustStock([ROLES.SUPER_ADMIN])).toBe(true);
     expect(canAdjustStock([ROLES.WAREHOUSE])).toBe(false);
+  });
+
+  it("allows only super admin to edit closed history lots", () => {
+    expect(canEditClosedIncomingLot([ROLES.SUPER_ADMIN])).toBe(true);
+    expect(canEditClosedIncomingLot([ROLES.PURCHASE])).toBe(false);
+    expect(canEditClosedIncomingLot([ROLES.WAREHOUSE])).toBe(false);
   });
 });

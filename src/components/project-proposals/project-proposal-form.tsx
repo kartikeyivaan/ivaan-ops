@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { TypeaheadSelect } from "@/components/ui/typeahead-select";
 
 type PackageMaster = {
   id: string;
@@ -265,6 +266,7 @@ export function ProjectProposalForm({
 
     const inverterKw = resolveInverterKw(
       selectedInverterUpgrade?.upgradeKw ?? null,
+      selectedPackage.panelCount,
     );
 
     return {
@@ -771,21 +773,20 @@ export function ProjectProposalForm({
                 <CardTitle className="text-base">NDCR Module & Inverter</CardTitle>
               </CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2 md:col-span-2">
-                  <Label htmlFor="moduleProductId">Select Panel (Modules)</Label>
-                  <select
+                <div className="md:col-span-2">
+                  <TypeaheadSelect
                     id="moduleProductId"
+                    label="Select Panel (Modules)"
+                    options={moduleProducts.map((product) => ({
+                      value: product.id,
+                      label: `${product.displayName} (${product.capacity} ${product.capacityUnit})`,
+                    }))}
                     value={moduleProductId}
-                    onChange={(event) => setModuleProductId(event.target.value)}
-                    className={selectClassName}
-                  >
-                    <option value="">Select module product</option>
-                    {moduleProducts.map((product) => (
-                      <option key={product.id} value={product.id}>
-                        {product.displayName} ({product.capacity} {product.capacityUnit})
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setModuleProductId}
+                    placeholder="Type to search module products..."
+                    allowEmpty
+                    emptyLabel="Select module product"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="moduleQty">Panel Quantity</Label>

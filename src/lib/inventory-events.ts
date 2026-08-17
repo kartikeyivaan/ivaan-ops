@@ -163,6 +163,36 @@ export function getSupersededInventoryEventIds(
 }
 
 /**
+ * Reduce or drop booking reservations to the PI's remaining open quantity.
+ * Fully dispatched / cancelled PIs keep leftover BOOKING_RESERVATION events
+ * when a BOOKING_RELEASE was never written; those must not keep reducing
+ * reserved or projected availability.
+ */
+export function applyRemainingPiQtyToBookingReservations(
+  events: readonly InventoryEvent[],
+  remainingByPiId: ReadonlyMap<string, number>,
+): InventoryEvent[] {
+  const adjusted: InventoryEvent[] = [];
+  for (const event of events) {
+    if (
+      event.eventType !== "BOOKING_RESERVATION" ||
+      event.sourceType !== "PROFORMA_INVOICE" ||
+      !event.sourceId ||
+      !remainingByPiId.has(event.sourceId)
+    ) {
+      adjusted.push(event);
+      continue;
+    }
+
+    const remaining = remainingByPiId.get(event.sourceId) ?? 0;
+    const quantity = Math.max(0, Math.min(event.quantity, remaining));
+    if (quantity <= 0) continue;
+    adjusted.push(quantity === event.quantity ? event : { ...event, quantity });
+  }
+  return adjusted;
+}
+
+/**
  * Prepare inventory events for projection against a *live* physical baseline
  * (available + booked already excludes dispatched stock).
  *

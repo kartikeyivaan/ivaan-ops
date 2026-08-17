@@ -22,6 +22,11 @@ import {
 } from "@/lib/inventory";
 import { normalizeMobileNumber } from "@/lib/phone";
 import { cn } from "@/lib/utils";
+import {
+  describePartialDispatchLines,
+  formatPartialDispatchConfirmMessage,
+  isPartialDispatch,
+} from "@/lib/dispatches";
 
 type BookablePi = {
   id: string;
@@ -295,8 +300,22 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
   );
 
   async function handleSubmit() {
-    setLoading(true);
     setError("");
+
+    const dispatchLines = lines.filter((line) => Number(line.qty) > 0);
+    if (dispatchLines.length === 0) {
+      setError("Enter dispatch quantity for at least one line.");
+      return;
+    }
+
+    if (isPartialDispatch(lines)) {
+      const confirmed = window.confirm(
+        formatPartialDispatchConfirmMessage(describePartialDispatchLines(lines)),
+      );
+      if (!confirmed) return;
+    }
+
+    setLoading(true);
 
     const payload = {
       proformaInvoiceId: piId,
@@ -307,9 +326,7 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
       signatureUrl: signatureUrl || undefined,
       notes: notes || undefined,
       confirm: true,
-      lines: lines
-        .filter((line) => Number(line.qty) > 0)
-        .map((line) => ({
+      lines: dispatchLines.map((line) => ({
           proformaInvoiceItemId: line.proformaInvoiceItemId,
           productId: line.productId,
           qty: Number(line.qty),

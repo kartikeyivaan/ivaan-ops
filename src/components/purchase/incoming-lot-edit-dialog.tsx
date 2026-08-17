@@ -329,7 +329,15 @@ export function IncomingLotEditDialog({
 
   return (
     <Modal onClose={onClose} size="xl">
-      <ModalHeader title="Edit Incoming Lot" description={lot.lotNumber} onClose={onClose} />
+      <ModalHeader
+        title="Edit Incoming Lot"
+        description={
+          lot.status === "CLOSED"
+            ? `${lot.lotNumber} (closed history lot)`
+            : lot.lotNumber
+        }
+        onClose={onClose}
+      />
       <ModalForm onSubmit={handleSubmit}>
         <ModalBody className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
@@ -479,8 +487,8 @@ export function IncomingLotEditDialog({
   );
 }
 
-function isEditableIncomingLot(lot: SerializedInventoryLot) {
-  return lot.status === "INCOMING";
+function isEditableIncomingLot(lot: SerializedInventoryLot, allowClosed = false) {
+  return lot.status === "INCOMING" || (allowClosed && lot.status === "CLOSED");
 }
 
 export { isEditableIncomingLot };

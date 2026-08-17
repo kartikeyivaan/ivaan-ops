@@ -9,6 +9,8 @@ import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
 import { QuotationsList } from "@/components/quotations/quotations-list";
 
+export const dynamic = "force-dynamic";
+
 export default async function QuotationsPage() {
   const session = await auth();
   if (!session?.user || !canViewQuotations(session.user.roles)) {

@@ -4,6 +4,7 @@ import {
   calculateProposedSystemKwp,
   calculateStructureCapacity,
   calculateTotalSystemKw,
+  formatQuoteCardPanelLine,
   resolveInverterKw,
   totalProposedPanelCount,
 } from "@/lib/proposal-bom";
@@ -43,13 +44,16 @@ describe("proposal generation", () => {
 });
 
 describe("proposal bom", () => {
-  it("resolves inverter capacity from upgrade only (default 3 kW)", () => {
+  it("resolves inverter capacity from package base, then upgrade", () => {
     expect(resolveInverterKw(null)).toBe(3);
     expect(resolveInverterKw(undefined)).toBe(3);
     expect(resolveInverterKw(0)).toBe(3);
-    expect(resolveInverterKw(4)).toBe(4);
-    expect(resolveInverterKw(5)).toBe(5);
-    expect(resolveInverterKw(6)).toBe(6);
+    expect(resolveInverterKw(null, 6)).toBe(3);
+    expect(resolveInverterKw(undefined, 9)).toBe(5);
+    expect(resolveInverterKw(0, 9)).toBe(5);
+    expect(resolveInverterKw(4, 6)).toBe(4);
+    expect(resolveInverterKw(5, 6)).toBe(5);
+    expect(resolveInverterKw(6, 9)).toBe(6);
   });
 
   it("includes separate DCR and NDCR module rows", () => {
@@ -72,6 +76,48 @@ describe("proposal bom", () => {
       "Waaree TOPCON DCR Bi-570+Wp Modules",
     );
     expect(moduleLines[1]?.description).toContain("NDCR Bi-580Wp+");
+  });
+
+  it("uses selected NDCR module qty for complete NDCR packages", () => {
+    const bom = buildProposalBom({
+      panelWp: 580,
+      panelCount: 18,
+      systemKw: 10.44,
+      dcrAdditionalPanels: 0,
+      ndcrAdditionalPanels: 0,
+      ndcrPanelWp: 580,
+      inverterBrand: "Polycab",
+      inverterKw: 10,
+      connectionPhase: "SINGLE_PHASE",
+      structureType: "CUSTOM_FABRICATED",
+      ndcrComplete: true,
+    });
+
+    expect(bom[0]?.description).toBe("Waaree NDCR Bi-580+Wp Modules");
+    expect(bom[0]?.qty).toBe("18");
+  });
+
+  it("uses the selected module product name in NDCR BOM description", () => {
+    const bom = buildProposalBom({
+      panelWp: 585,
+      panelCount: 18,
+      systemKw: 10.53,
+      dcrAdditionalPanels: 0,
+      ndcrAdditionalPanels: 0,
+      ndcrPanelWp: 585,
+      inverterBrand: "Polycab",
+      inverterKw: 10,
+      connectionPhase: "SINGLE_PHASE",
+      structureType: "CUSTOM_FABRICATED",
+      ndcrComplete: true,
+      moduleDisplayName: "Waaree 585Wp TOPCon NDCR Bifacial",
+      moduleMake: "Waaree",
+    });
+
+    expect(bom[0]?.description).toBe("Waaree 585Wp TOPCon NDCR Bifacial Modules");
+    expect(bom[0]?.capacity).toBe("585Wp");
+    expect(bom[0]?.qty).toBe("18");
+    expect(bom[0]?.make).toBe("Waaree");
   });
 
   it("uses Mono-PERC for 530+Wp and TOPCON for 570+Wp DCR modules", () => {
@@ -160,6 +206,31 @@ describe("proposal bom", () => {
   it("calculates structure capacity from base panels and future provision", () => {
     expect(calculateStructureCapacity(6, 0)).toBe(6);
     expect(calculateStructureCapacity(9, 3)).toBe(12);
+  });
+
+  it("formats quote-card panel lines for DCR and NDCR complete systems", () => {
+    expect(
+      formatQuoteCardPanelLine({
+        ndcrComplete: false,
+        panelWp: 570,
+        panelCount: 6,
+        dcrAdditionalPanels: 0,
+        ndcrPanelWp: 580,
+        ndcrAdditionalPanels: 2,
+      }),
+    ).toBe("DCR: Waaree 570+Wp × 6 | NDCR: Waaree 580+Wp × 2");
+
+    expect(
+      formatQuoteCardPanelLine({
+        ndcrComplete: true,
+        panelWp: 580,
+        panelCount: 18,
+        dcrAdditionalPanels: 0,
+        ndcrPanelWp: 580,
+        ndcrAdditionalPanels: 0,
+        moduleDisplayName: "Waaree 580Wp NDCR",
+      }),
+    ).toBe("NDCR: Waaree 580Wp NDCR × 18");
   });
 });
 

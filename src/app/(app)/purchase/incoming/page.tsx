@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { decimalToNumber } from "@/lib/inventory";
 import { auth } from "@/lib/auth";
-import { canCreateIncoming, canViewSerialNumbers } from "@/lib/inventory-permissions";
+import { canCreateIncoming, canEditClosedIncomingLot, canViewSerialNumbers } from "@/lib/inventory-permissions";
 import { listIncomingLots, listVendors, serializeLotForRole } from "@/lib/inventory-service";
 import { prisma } from "@/lib/prisma";
 import { isSuperAdmin } from "@/lib/rbac";
@@ -70,6 +70,7 @@ export default async function PurchaseIncomingPage({ searchParams }: PageProps) 
       defaultCompanyId={companyId}
       canCreate={canCreateIncoming(session.user.roles)}
       canExportSerials={includeSerials}
+      canEditClosedLots={canEditClosedIncomingLot(session.user.roles)}
       createDefaults={{
         purchaseRequestLineId: params.prLineId,
         purchaseRequestId: params.requestId,

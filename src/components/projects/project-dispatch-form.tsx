@@ -22,6 +22,11 @@ import {
 } from "@/lib/inventory";
 import { normalizeMobileNumber } from "@/lib/phone";
 import type { DispatchableProject } from "@/lib/project-dispatch-service";
+import {
+  describePartialDispatchLines,
+  formatPartialDispatchConfirmMessage,
+  isPartialDispatch,
+} from "@/lib/dispatches";
 
 type SelectedSerial = { id: string; serialNumber: string };
 type InvalidSerial = { serialNumber: string; reason: string };
@@ -224,6 +229,19 @@ export function ProjectDispatchForm({ defaultProjectId }: { defaultProjectId?: s
       return;
     }
 
+    const dispatchLines = lines.filter((line) => Number(line.qty) > 0);
+    if (dispatchLines.length === 0) {
+      setError("Enter dispatch quantity for at least one line.");
+      return;
+    }
+
+    if (isPartialDispatch(lines)) {
+      const confirmed = window.confirm(
+        formatPartialDispatchConfirmMessage(describePartialDispatchLines(lines)),
+      );
+      if (!confirmed) return;
+    }
+
     setLoading(true);
     setError("");
 
@@ -235,8 +253,7 @@ export function ProjectDispatchForm({ defaultProjectId }: { defaultProjectId?: s
       signatureData: signatureData || undefined,
       remarks: remarks || undefined,
       confirm: true,
-      lines: lines
-        .filter((line) => Number(line.qty) > 0)
+      lines: dispatchLines
         .map((line) => ({
           materialLineId: line.materialLineId,
           productId: line.productId,
@@ -247,12 +264,6 @@ export function ProjectDispatchForm({ defaultProjectId }: { defaultProjectId?: s
           kitBomQty: line.kitBomQty,
         })),
     };
-
-    if (payload.lines.length === 0) {
-      setError("Enter dispatch quantity for at least one line.");
-      setLoading(false);
-      return;
-    }
 
     try {
       const response = await fetch("/api/project-dispatches", {

@@ -3,6 +3,7 @@ import {
   InventoryEventStatus,
   InventoryTransactionType,
   LotStatus,
+  ProformaInvoiceStatus,
   SerialStatus,
   type PrismaClient,
 } from "@prisma/client";
@@ -13,6 +14,7 @@ import {
 } from "@/lib/inventory-projection";
 import {
   applyPendingIncomingToPurchaseEvents,
+  applyRemainingPiQtyToBookingReservations,
   getInventoryEventProjectionDate,
   getSupersededInventoryEventIds,
   type DispatchTodayEventStatus,
@@ -133,6 +135,44 @@ export type DispatchTodayPiInfo = {
   piNo: string;
 };
 
+/**
+ * Remaining reserved qty for open PIs. BOOKED / PARTIALLY_DISPATCHED /
+ * CANCEL_PENDING still hold stock; FULLY_DISPATCHED and CANCELLED do not.
+ */
+const OPEN_RESERVED_PI_STATUSES = new Set<ProformaInvoiceStatus>([
+  ProformaInvoiceStatus.BOOKED,
+  ProformaInvoiceStatus.PARTIALLY_DISPATCHED,
+  ProformaInvoiceStatus.CANCEL_PENDING,
+]);
+
+export function remainingReservedQtyByPiId(
+  pis: readonly {
+    id: string;
+    status: ProformaInvoiceStatus;
+    items: readonly {
+      productId: string;
+      qty: unknown;
+      dispatchedQty: unknown;
+    }[];
+  }[],
+  productId: string,
+): Map<string, number> {
+  const remaining = new Map<string, number>();
+  for (const pi of pis) {
+    let qty = 0;
+    let hasItem = false;
+    for (const item of pi.items) {
+      if (item.productId !== productId) continue;
+      hasItem = true;
+      if (OPEN_RESERVED_PI_STATUSES.has(pi.status)) {
+        qty += Math.max(0, Number(item.qty) - Number(item.dispatchedQty));
+      }
+    }
+    if (hasItem) remaining.set(pi.id, qty);
+  }
+  return remaining;
+}
+
 function dateOnly(value: Date): string {
   return value.toISOString().slice(0, 10);
 }
@@ -156,9 +196,10 @@ function isDispatchTodayReservation(
 }
 
 /**
- * Reserved baseline excludes Dispatch Today PIs so they appear as same-day
- * outgoing (Pending) instead of being double-counted in opening reserved stock.
- * Dispatched PIs are also excluded — physical already reflects the DC.
+ * Reserved baseline is remaining open PI quantity, not the original booking
+ * event. Dispatch Today PIs are excluded so they appear as same-day outgoing
+ * (Pending) instead of being double-counted. Fully dispatched PIs are excluded
+ * because physical stock already reflects the DC.
  */
 export function computeTimelineReservedQuantity(
   events: readonly InventoryEvent[],
@@ -170,6 +211,7 @@ export function computeTimelineReservedQuantity(
   for (const event of events) {
     if (superseded.has(event.id)) continue;
     if (event.eventType !== "BOOKING_RESERVATION") continue;
+    if (event.quantity <= 0) continue;
     if (isDispatchTodayReservation(event, dispatchTodayByPiId)) continue;
     if (getInventoryEventProjectionDate(event) <= startDate) {
       reserved += event.quantity;
@@ -515,10 +557,25 @@ export async function loadInventoryTimeline(
           where: { id: { in: piSourceIds } },
           select: {
             id: true,
+            status: true,
             customer: { select: { customerName: true } },
+            items: {
+              select: { productId: true, qty: true, dispatchedQty: true },
+            },
           },
         })
-      : Promise.resolve([]),
+      : Promise.resolve(
+          [] as {
+            id: string;
+            status: ProformaInvoiceStatus;
+            customer: { customerName: string };
+            items: {
+              productId: string;
+              qty: unknown;
+              dispatchedQty: unknown;
+            }[];
+          }[],
+        ),
     client.proformaInvoice.findMany({
       where: {
         companyId: { in: input.companyIds },
@@ -701,7 +758,11 @@ export async function loadInventoryTimeline(
   for (const [key, scopes] of grouped) {
     const product = productById.get(scopes[0].productId);
     if (!product) continue;
-    const events = scopes.flatMap((scope) => scope.events);
+    const remainingByPiId = remainingReservedQtyByPiId(sourcePis, product.id);
+    const events = applyRemainingPiQtyToBookingReservations(
+      scopes.flatMap((scope) => scope.events),
+      remainingByPiId,
+    );
     const superseded = getSupersededInventoryEventIds(events);
     const reserved = computeTimelineReservedQuantity(
       events,

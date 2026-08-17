@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { isReferentialConstraintError } from "@/lib/api-response";
 import {
   canCreateIncoming,
+  canEditClosedIncomingLot,
   canViewInventory,
   canViewSerialNumbers,
 } from "@/lib/inventory-permissions";
@@ -83,6 +84,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       commissionCharges: parsed.data.commissionCharges,
       updatedById: session.user.id,
       confirmSimilar: parsed.data.confirmSimilar,
+      allowClosed: canEditClosedIncomingLot(session.user.roles),
     });
 
     return NextResponse.json(
@@ -96,7 +98,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       if (error.message === "LOT_NOT_EDITABLE") {
         return errorResponse(
           "VALIDATION_ERROR",
-          "Only incoming lots can be edited.",
+          "Only incoming lots can be edited, except closed history lots for Super Admin.",
           400,
         );
       }

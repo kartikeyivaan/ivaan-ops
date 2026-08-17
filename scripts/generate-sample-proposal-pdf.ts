@@ -97,6 +97,7 @@ const fixture: ProjectProposalPdfRecord = {
         updatedAt: new Date("2026-01-01"),
       },
       inverterUpgrade: null,
+      moduleProduct: null,
     },
   ],
 };

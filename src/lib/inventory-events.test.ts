@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   applyPendingIncomingToPurchaseEvents,
+  applyRemainingPiQtyToBookingReservations,
   eventAffectsProjection,
   filterEventsForLivePhysicalProjection,
   getInventoryEventEffect,
@@ -166,6 +167,63 @@ describe("inventory events", () => {
     );
 
     expect(filtered.map((event) => event.id)).toEqual(["reserve-open"]);
+  });
+
+  it("drops fulfilled PI reservations and reduces partial remaining qty", () => {
+    const events: InventoryEvent[] = [
+      {
+        id: "reserve-done",
+        eventType: "BOOKING_RESERVATION",
+        status: "ACTIVE",
+        quantity: 36,
+        effectiveDate: "2026-08-07",
+        expectedMinDate: "2026-08-07",
+        sourceType: "PROFORMA_INVOICE",
+        sourceId: "pi-done",
+      },
+      {
+        id: "reserve-partial",
+        eventType: "BOOKING_RESERVATION",
+        status: "ACTIVE",
+        quantity: 40,
+        effectiveDate: "2026-08-07",
+        expectedMinDate: "2026-08-07",
+        sourceType: "PROFORMA_INVOICE",
+        sourceId: "pi-partial",
+      },
+      {
+        id: "reserve-open",
+        eventType: "BOOKING_RESERVATION",
+        status: "ACTIVE",
+        quantity: 5,
+        effectiveDate: "2026-08-07",
+        expectedMinDate: "2026-08-07",
+        sourceType: "PROFORMA_INVOICE",
+        sourceId: "pi-open",
+      },
+      {
+        id: "incoming-1",
+        eventType: "PURCHASE_INCOMING",
+        status: "ACTIVE",
+        quantity: 10,
+        effectiveDate: "2026-08-08",
+      },
+    ];
+
+    expect(
+      applyRemainingPiQtyToBookingReservations(
+        events,
+        new Map([
+          ["pi-done", 0],
+          ["pi-partial", 10],
+          ["pi-open", 5],
+        ]),
+      ),
+    ).toEqual([
+      expect.objectContaining({ id: "reserve-partial", quantity: 10 }),
+      expect.objectContaining({ id: "reserve-open", quantity: 5 }),
+      expect.objectContaining({ id: "incoming-1", quantity: 10 }),
+    ]);
   });
 
   it("reduces purchase incoming events to the lot's pending quantity", () => {

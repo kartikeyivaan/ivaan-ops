@@ -15,6 +15,8 @@ import {
   calculateStructureCapacity,
   calculateTotalSystemKw,
   formatDcrPanelTechnology,
+  formatNdcrPanelTechnology,
+  formatQuoteCardPanelLine,
   resolveInverterKw,
   type BomLine,
 } from "@/lib/proposal-bom";
@@ -98,6 +100,15 @@ export const projectProposalPdfInclude = {
     include: {
       package: true,
       inverterUpgrade: true,
+      moduleProduct: {
+        select: {
+          id: true,
+          displayName: true,
+          capacity: true,
+          capacityUnit: true,
+          brand: { select: { name: true } },
+        },
+      },
     },
     orderBy: { revisionNo: "asc" as const },
   },
@@ -119,6 +130,7 @@ type PreparedProposal = {
   panelWp: number;
   panelCount: number;
   ndcrPanelWp: number;
+  ndcrComplete: boolean;
   inverterBrand: string;
   inverterKw: number;
   finalAmount: number;
@@ -185,19 +197,23 @@ function prepareProposal(proposal: ProjectProposalPdfRecord, money: (v: number) 
     throw new Error("REVISION_NOT_FOUND");
   }
 
-  const panelWp = revision.package.panelWp;
-  const panelCount = revision.package.panelCount;
-  const ndcrPanelWp = revision.ndcrPanelWp ?? 580;
-  const ndcrComplete = isNdcrCompletePackage(revision.package.code);
-  const systemKw = ndcrComplete
-    ? decimalToNumber(revision.inverterCapacityKw ?? 0)
-    : calculateTotalSystemKw({
-        panelWp,
-        panelCount,
-        dcrAdditionalPanels: revision.dcrAdditionalPanels,
-        ndcrPanelWp,
-        ndcrAdditionalPanels: revision.ndcrAdditionalPanels,
-      });
+  const ndcrComplete =
+    isNdcrCompletePackage(revision.package.code) || Boolean(revision.moduleProduct);
+  const moduleWp = revision.moduleProduct
+    ? decimalToNumber(revision.moduleProduct.capacity)
+    : 0;
+  const panelWp = ndcrComplete ? moduleWp : revision.package.panelWp;
+  const panelCount = ndcrComplete
+    ? (revision.moduleQty ?? 0)
+    : revision.package.panelCount;
+  const ndcrPanelWp = ndcrComplete ? panelWp : (revision.ndcrPanelWp ?? 580);
+  const systemKw = calculateTotalSystemKw({
+    panelWp,
+    panelCount,
+    dcrAdditionalPanels: ndcrComplete ? 0 : revision.dcrAdditionalPanels,
+    ndcrPanelWp,
+    ndcrAdditionalPanels: ndcrComplete ? 0 : revision.ndcrAdditionalPanels,
+  });
   const brands = (revision.inverterBrands as string[]) ?? [];
   const inverterBrand = brands.length > 0 ? brands.join("/") : "—";
   const inverterKw = ndcrComplete
@@ -206,6 +222,7 @@ function prepareProposal(proposal: ProjectProposalPdfRecord, money: (v: number) 
         revision.inverterUpgrade
           ? decimalToNumber(revision.inverterUpgrade.upgradeKw)
           : null,
+        panelCount,
       );
   const finalAmount = decimalToNumber(revision.finalAmount);
   const subsidyEstimate = decimalToNumber(revision.subsidyEstimate);
@@ -222,6 +239,7 @@ function prepareProposal(proposal: ProjectProposalPdfRecord, money: (v: number) 
     panelWp,
     panelCount,
     ndcrPanelWp,
+    ndcrComplete,
     inverterBrand,
     inverterKw,
     finalAmount,
@@ -237,13 +255,16 @@ function prepareProposal(proposal: ProjectProposalPdfRecord, money: (v: number) 
       panelWp,
       panelCount,
       systemKw,
-      dcrAdditionalPanels: revision.dcrAdditionalPanels,
-      ndcrAdditionalPanels: revision.ndcrAdditionalPanels,
+      dcrAdditionalPanels: ndcrComplete ? 0 : revision.dcrAdditionalPanels,
+      ndcrAdditionalPanels: ndcrComplete ? 0 : revision.ndcrAdditionalPanels,
       ndcrPanelWp,
       inverterBrand,
       inverterKw,
       connectionPhase: revision.connectionPhase,
       structureType: revision.structureType,
+      ndcrComplete,
+      moduleDisplayName: revision.moduleProduct?.displayName,
+      moduleMake: revision.moduleProduct?.brand?.name,
     }),
   };
 }
@@ -415,15 +436,19 @@ export async function generateProjectProposalQuoteCardPdf(
   );
   y = doc.y + 5;
 
-  const dcrLine = `DCR: Waaree ${data.panelWp}+Wp × ${data.panelCount + revision.dcrAdditionalPanels}`;
-  const ndcrLine =
-    revision.ndcrAdditionalPanels > 0
-      ? ` | NDCR: Waaree ${data.ndcrPanelWp}+Wp × ${revision.ndcrAdditionalPanels}`
-      : "";
+  const panelLine = formatQuoteCardPanelLine({
+    ndcrComplete: data.ndcrComplete,
+    panelWp: data.panelWp,
+    panelCount: data.panelCount,
+    dcrAdditionalPanels: data.ndcrComplete ? 0 : revision.dcrAdditionalPanels,
+    ndcrPanelWp: data.ndcrPanelWp,
+    ndcrAdditionalPanels: data.ndcrComplete ? 0 : revision.ndcrAdditionalPanels,
+    moduleDisplayName: revision.moduleProduct?.displayName,
+  });
   const inverterLine = `Inverter: ${data.inverterBrand} ${data.inverterKw} kW | ${connectionLabel(revision.connectionPhase)} | ${quoteCardStructurePhrase(revision.structureType)} ${structureCapacity} Panels`;
 
   doc.font(fonts.regular).fontSize(9).fillColor(palette.ink);
-  doc.text(`${dcrLine}${ndcrLine}`, CONTENT_LEFT, y, { width: CONTENT_WIDTH });
+  doc.text(panelLine, CONTENT_LEFT, y, { width: CONTENT_WIDTH });
   y = doc.y + 3;
   doc.text(inverterLine, CONTENT_LEFT, y, { width: CONTENT_WIDTH });
   y = doc.y + 6;
@@ -531,7 +556,12 @@ export async function generateProjectProposalPdf(
 
   const projectSummaryRows: Array<[string, string]> = [
     ["Project Capacity", `${data.systemKw} kWp On-Grid Rooftop`],
-    ["Panel Technology", formatDcrPanelTechnology(data.panelWp)],
+    [
+      "Panel Technology",
+      data.ndcrComplete
+        ? formatNdcrPanelTechnology(data.panelWp, revision.moduleProduct?.displayName)
+        : formatDcrPanelTechnology(data.panelWp),
+    ],
     ["Inverter", `${data.inverterBrand} ${data.inverterKw} kW On-Grid String`],
     ["Structure", structureLabel(revision.structureType)],
     ["Connection", connectionLabel(revision.connectionPhase)],

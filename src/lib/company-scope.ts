@@ -8,9 +8,6 @@ export const ISE_COMPANY_CODE = "ISE";
 export const PROJECTS_ISE_ONLY_MESSAGE =
   "Project proposals, projects and project dispatches are available only for Ivaan Solar Energy.";
 
-export const PCM_QUOTATION_SUPER_ADMIN_ONLY_MESSAGE =
-  "Only Super Admin can create or revise PCM quotations.";
-
 export type CompanyScopeFields = {
   code?: string | null;
   name?: string | null;

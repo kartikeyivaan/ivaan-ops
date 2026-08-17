@@ -276,7 +276,7 @@ export function QuotationForm({
     setError("");
 
     if (!isRevise && !selectedCompanyId) {
-      setError("Select a company before saving the quotation.");
+      setError("Select a company (ISE or PCM) before saving the quotation.");
       return;
     }
 
@@ -416,8 +416,8 @@ export function QuotationForm({
               <div>
                 <CardTitle className="text-base">Company *</CardTitle>
                 <p className="mt-1 text-sm text-amber-900/80">
-                  Select the company for this quotation. PCM quotations can only be created by Super
-                  Admin.
+                  Select whether this quotation is for ISE or PCM. This choice is required and
+                  cannot be skipped.
                 </p>
               </div>
             </div>
@@ -432,7 +432,7 @@ export function QuotationForm({
                 onChange={(event) => handleCompanyChange(event.target.value)}
                 className="flex h-11 w-full max-w-md rounded-md border border-amber-300 bg-white px-3 text-sm font-medium text-slate-900"
               >
-                <option value="">Select company</option>
+                <option value="">Select company (ISE / PCM)</option>
                 {companies.map((company) => (
                   <option key={company.id} value={company.id}>
                     {company.name} ({company.code})

@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import {
   canApproveQuotationPricing,
-  canManageQuotationsForCompany,
+  canManageQuotations,
   canViewQuotations,
 } from "@/lib/quotation-permissions";
 import { getQuotationById } from "@/lib/quotation-service";
@@ -38,7 +38,7 @@ export default async function QuotationDetailPage({ params }: PageProps) {
     <QuotationDetail
       quotation={JSON.parse(JSON.stringify(quotation))}
       whatsappUrl={buildQuotationWhatsappUrl(quotation)}
-      canManage={canManageQuotationsForCompany(session.user.roles, quotation.company)}
+      canManage={canManageQuotations(session.user.roles)}
       canApprovePricing={canApproveQuotationPricing(session.user.roles)}
     />
   );

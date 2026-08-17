@@ -1,8 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { getActiveSessionCompany } from "@/lib/company-scope";
 import {
-  canManageQuotationsForCompany,
+  canManageQuotations,
   canViewQuotations,
 } from "@/lib/quotation-permissions";
 import { listQuotations } from "@/lib/quotation-service";
@@ -24,15 +23,11 @@ export default async function QuotationsPage() {
   }
 
   const quotations = await listQuotations(prisma, companyId, {});
-  const activeCompany = getActiveSessionCompany(session);
-  const canManage = activeCompany
-    ? canManageQuotationsForCompany(session.user.roles, activeCompany)
-    : false;
 
   return (
     <QuotationsList
       initialQuotations={JSON.parse(JSON.stringify(quotations))}
-      canManage={canManage}
+      canManage={canManageQuotations(session.user.roles)}
     />
   );
 }

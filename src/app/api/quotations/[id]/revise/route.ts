@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { PCM_QUOTATION_SUPER_ADMIN_ONLY_MESSAGE } from "@/lib/company-scope";
-import { canManageQuotations, canManageQuotationsForCompany } from "@/lib/quotation-permissions";
+import { canManageQuotations } from "@/lib/quotation-permissions";
 import {
   QuotationWarningsRequiredError,
   reviseQuotation,
@@ -28,18 +27,6 @@ export async function POST(request: Request, context: RouteContext) {
     companyId = requireActiveCompany(session);
   } catch {
     return errorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
-  }
-
-  const activeCompany = session.user.companies.find((company) => company.id === companyId);
-  if (
-    activeCompany &&
-    !canManageQuotationsForCompany(session.user.roles, activeCompany)
-  ) {
-    return errorResponse(
-      "PCM_QUOTATION_SUPER_ADMIN_ONLY",
-      PCM_QUOTATION_SUPER_ADMIN_ONLY_MESSAGE,
-      403,
-    );
   }
 
   const body = await request.json();

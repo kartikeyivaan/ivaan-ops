@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { canEditCustomers, canViewCustomers } from "@/lib/customer-permissions";
 import { canManageProformaInvoices } from "@/lib/pi-permissions";
-import { canManageQuotationsForCompany } from "@/lib/quotation-permissions";
+import { canManageQuotations } from "@/lib/quotation-permissions";
 import { getCustomerById } from "@/lib/customer-service";
 import { listDispatches } from "@/lib/dispatch-service";
 import { listProformaInvoices } from "@/lib/pi-service";
@@ -75,11 +75,7 @@ export default async function CustomerDetailPage({ params }: PageProps) {
       )}
       customerDispatches={JSON.parse(JSON.stringify(customerDispatches))}
       canEdit={canEditCustomers(session.user.roles)}
-      canManageQuotations={canManageQuotationsForCompany(session.user.roles, {
-        id: companyId,
-        name: session.user.companies.find((company) => company.id === companyId)?.name ?? "",
-        code: session.user.companies.find((company) => company.id === companyId)?.code,
-      })}
+      canManageQuotations={canManageQuotations(session.user.roles)}
       canManageProformaInvoices={canManageProformaInvoices(session.user.roles)}
     />
   );

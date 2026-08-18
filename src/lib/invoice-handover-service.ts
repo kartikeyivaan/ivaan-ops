@@ -230,24 +230,38 @@ export async function recordInvoice(
       },
     });
 
-    await tx.documentationRecord.upsert({
+    const existingDocumentation = await tx.documentationRecord.findUnique({
       where: { dispatchId: handover.dispatchId },
-      create: {
-        dispatchId: handover.dispatchId,
-        invoiceHandoverId: handover.id,
-        companyId: handover.companyId,
-        customerId: handover.customerId,
-        status: DocumentationStatus.PENDING,
-        statusHistory: {
-          create: {
-            toStatus: DocumentationStatus.PENDING,
-            changedById: input.recordedById,
-            remarks: "Created after invoice recording",
+    });
+
+    if (existingDocumentation) {
+      await tx.documentationStatusHistory.create({
+        data: {
+          documentationRecordId: existingDocumentation.id,
+          fromStatus: existingDocumentation.status,
+          toStatus: existingDocumentation.status,
+          remarks: "Invoice recorded",
+          changedById: input.recordedById,
+        },
+      });
+    } else {
+      await tx.documentationRecord.create({
+        data: {
+          dispatchId: handover.dispatchId,
+          invoiceHandoverId: handover.id,
+          companyId: handover.companyId,
+          customerId: handover.customerId,
+          status: DocumentationStatus.PENDING,
+          statusHistory: {
+            create: {
+              toStatus: DocumentationStatus.PENDING,
+              changedById: input.recordedById,
+              remarks: "Created after invoice recording",
+            },
           },
         },
-      },
-      update: {},
-    });
+      });
+    }
 
     return updated;
   });

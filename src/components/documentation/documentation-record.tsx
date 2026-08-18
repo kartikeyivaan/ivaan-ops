@@ -54,15 +54,26 @@ export function DocumentationRecordView({ record, canManage }: {
     router.refresh();
   }
 
+  const invoicePending = !record.invoiceHandover.invoiceNumber;
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div><h1 className="text-2xl font-bold text-slate-900">{record.customer.customerName}</h1><p className="text-sm text-slate-500">{record.dispatch.dcNo} · {record.ageingDays} days</p></div>
         <Button variant="outline" asChild><Link href="/documentation">Back</Link></Button>
       </div>
+      {invoicePending ? (
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Invoice is not recorded yet. DCR can still be completed.
+        </p>
+      ) : null}
       <Card><CardContent className="grid gap-3 pt-5 text-sm sm:grid-cols-2">
         <p><span className="text-slate-500">GST:</span> {record.customer.gstNumber}</p>
-        <p><span className="text-slate-500">Invoice number:</span> {record.invoiceHandover.invoiceNumber ?? "—"}</p>
+        <p>
+          <span className="text-slate-500">Invoice number:</span>{" "}
+          {record.invoiceHandover.invoiceNumber ?? "—"}
+          {invoicePending ? <span className="ml-2 font-medium text-amber-700">Invoice pending</span> : null}
+        </p>
         <p><span className="text-slate-500">Invoice date:</span> {record.invoiceHandover.invoiceDate ? formatDocumentDate(record.invoiceHandover.invoiceDate) : "—"}</p>
         <p><span className="text-slate-500">Status:</span> {record.status.replaceAll("_", " ")}</p>
         <p><span className="text-slate-500">Receiver:</span> {record.dispatch.receiverName ?? "—"} {record.dispatch.receiverMobile ?? ""}</p>

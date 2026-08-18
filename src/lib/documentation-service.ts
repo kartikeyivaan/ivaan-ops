@@ -1,8 +1,27 @@
-import { DocumentationStatus, type PrismaClient } from "@prisma/client";
+import {
+  DispatchStatus,
+  DocumentationStatus,
+  InvoiceHandoverStatus,
+  type PrismaClient,
+} from "@prisma/client";
 import {
   notifyDocumentationAssigned,
   notifyDocumentationStatusChanged,
 } from "@/lib/notification-service";
+
+const PENDING_INVOICE_STATUSES: InvoiceHandoverStatus[] = [
+  InvoiceHandoverStatus.PENDING_INVOICE,
+  InvoiceHandoverStatus.CORRECTION_REQUIRED,
+];
+
+function pendingInvoiceDocumentationWhere(companyId: string) {
+  return {
+    companyId,
+    status: { in: PENDING_INVOICE_STATUSES },
+    documentation: { is: null },
+    dispatch: { status: DispatchStatus.DISPATCHED },
+  };
+}
 
 export function calculateDocumentationAgeing(createdAt: Date, asOf = new Date()) {
   return Math.max(0, Math.floor((asOf.getTime() - createdAt.getTime()) / 86_400_000));
@@ -105,6 +124,77 @@ export async function listDocumentation(
 export async function getDocumentation(prisma: PrismaClient, companyId: string, id: string) {
   const row = await prisma.documentationRecord.findFirst({ where: { id, companyId }, include });
   return row ? withAgeing(row) : null;
+}
+
+export async function countPendingInvoiceDocumentation(prisma: PrismaClient, companyId: string) {
+  return prisma.invoiceHandover.count({
+    where: pendingInvoiceDocumentationWhere(companyId),
+  });
+}
+
+export async function listPendingInvoiceDocumentation(prisma: PrismaClient, companyId: string) {
+  const rows = await prisma.invoiceHandover.findMany({
+    where: pendingInvoiceDocumentationWhere(companyId),
+    select: {
+      id: true,
+      createdAt: true,
+      dispatch: {
+        select: {
+          dcNo: true,
+          dispatchDate: true,
+          proformaInvoice: { select: { piNo: true } },
+        },
+      },
+      customer: { select: { customerName: true, gstNumber: true } },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+  return rows.map((row) => ({
+    ...row,
+    ageingDays: calculateDocumentationAgeing(row.dispatch.dispatchDate),
+  }));
+}
+
+export async function markDispatchForDcr(
+  prisma: PrismaClient,
+  input: { companyId: string; handoverId: string; changedById: string },
+) {
+  return prisma.$transaction(async (tx) => {
+    const handover = await tx.invoiceHandover.findFirst({
+      where: { id: input.handoverId, companyId: input.companyId },
+      include: {
+        documentation: { select: { id: true } },
+        dispatch: { select: { status: true } },
+      },
+    });
+    if (!handover) throw new Error("NOT_FOUND");
+    if (handover.documentation) throw new Error("ALREADY_EXISTS");
+    if (handover.dispatch.status !== DispatchStatus.DISPATCHED) {
+      throw new Error("DISPATCH_NOT_DISPATCHED");
+    }
+    if (!PENDING_INVOICE_STATUSES.includes(handover.status)) {
+      throw new Error("NOT_PENDING_INVOICE");
+    }
+
+    const created = await tx.documentationRecord.create({
+      data: {
+        dispatchId: handover.dispatchId,
+        invoiceHandoverId: handover.id,
+        companyId: handover.companyId,
+        customerId: handover.customerId,
+        status: DocumentationStatus.PENDING,
+        statusHistory: {
+          create: {
+            toStatus: DocumentationStatus.PENDING,
+            changedById: input.changedById,
+            remarks: "Marked to send DCR before invoice recording",
+          },
+        },
+      },
+      include,
+    });
+    return withAgeing(created);
+  });
 }
 
 export async function updateDocumentationStatus(

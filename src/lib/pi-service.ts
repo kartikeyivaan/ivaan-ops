@@ -459,8 +459,8 @@ async function applyProformaInvoiceEditTx(
       status: ProformaInvoiceStatus;
       piDate: Date;
       customerId: string;
-      totalValue: unknown;
-      items: unknown[];
+      totalValue: { toNumber(): number } | number | string;
+      items: Array<{ productId: string; qty: { toNumber(): number } | number | string; rate: { toNumber(): number } | number | string }>;
     };
     performedById: string;
     customerId: string;

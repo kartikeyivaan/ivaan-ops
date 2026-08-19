@@ -160,15 +160,15 @@ export function remainingReservedQtyByPiId(
   const remaining = new Map<string, number>();
   for (const pi of pis) {
     let qty = 0;
-    let hasItem = false;
     for (const item of pi.items) {
       if (item.productId !== productId) continue;
-      hasItem = true;
       if (OPEN_RESERVED_PI_STATUSES.has(pi.status)) {
         qty += Math.max(0, Number(item.qty) - Number(item.dispatchedQty));
       }
     }
-    if (hasItem) remaining.set(pi.id, qty);
+    // Always include the PI so stale reservation events for removed products
+    // are correctly treated as 0 remaining rather than leaking through.
+    remaining.set(pi.id, qty);
   }
   return remaining;
 }

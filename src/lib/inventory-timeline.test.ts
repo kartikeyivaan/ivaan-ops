@@ -201,6 +201,20 @@ describe("dispatch today day breakdown", () => {
     expect(remainingByPiId.get("pi-partial")).toBe(10);
     expect(remainingByPiId.get("pi-cancelled")).toBe(0);
 
+    // PIs with no items for the product still appear in the map as 0,
+    // so stale reservation events are properly dropped.
+    const piWithNoMatchingItem = remainingReservedQtyByPiId(
+      [
+        {
+          id: "pi-other-product",
+          status: ProformaInvoiceStatus.FULLY_DISPATCHED,
+          items: [{ productId: "other-product", qty: 36, dispatchedQty: 36 }],
+        },
+      ],
+      productId,
+    );
+    expect(piWithNoMatchingItem.get("pi-other-product")).toBe(0);
+
     const adjusted = applyRemainingPiQtyToBookingReservations(
       events,
       remainingByPiId,

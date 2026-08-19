@@ -167,6 +167,10 @@ export function getSupersededInventoryEventIds(
  * Fully dispatched / cancelled PIs keep leftover BOOKING_RESERVATION events
  * when a BOOKING_RELEASE was never written; those must not keep reducing
  * reserved or projected availability.
+ *
+ * PI reservation events whose PI is absent from the map (e.g. product was
+ * removed from the PI after booking) are treated as having 0 remaining and
+ * are dropped — they must not leak through as uncapped reservations.
  */
 export function applyRemainingPiQtyToBookingReservations(
   events: readonly InventoryEvent[],
@@ -177,8 +181,7 @@ export function applyRemainingPiQtyToBookingReservations(
     if (
       event.eventType !== "BOOKING_RESERVATION" ||
       event.sourceType !== "PROFORMA_INVOICE" ||
-      !event.sourceId ||
-      !remainingByPiId.has(event.sourceId)
+      !event.sourceId
     ) {
       adjusted.push(event);
       continue;

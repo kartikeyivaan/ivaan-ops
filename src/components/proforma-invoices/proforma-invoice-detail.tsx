@@ -137,6 +137,24 @@ type ProformaInvoiceDetailData = {
     overdue: boolean;
     canRequest: boolean;
   };
+  canEdit?: boolean;
+  pendingEdit?: {
+    id: string;
+    requestedBy: { id: string; name: string };
+    requestedAt: string;
+    customer: { id: string; customerName: string; gstNumber: string };
+    notes: string | null;
+    issue: boolean;
+    totalValue: number;
+    lines: Array<{
+      productId: string;
+      qty: number;
+      rate: number;
+      gstRate: number;
+      lineTotal: number;
+      displayName: string;
+    }>;
+  } | null;
 };
 
 function statusVariant(status: string): "default" | "success" | "warning" | "danger" {
@@ -158,6 +176,7 @@ export function ProformaInvoiceDetail({
   canApproveDispatchToday,
   canRequestCancel,
   canApproveCancel,
+  canApproveEdit,
   canRequestCredit,
   canApproveCreditSm,
   canApproveCreditAccounts,
@@ -173,6 +192,7 @@ export function ProformaInvoiceDetail({
   canApproveDispatchToday: boolean;
   canRequestCancel: boolean;
   canApproveCancel: boolean;
+  canApproveEdit: boolean;
   canRequestCredit: boolean;
   canApproveCreditSm: boolean;
   canApproveCreditAccounts: boolean;
@@ -664,6 +684,46 @@ export function ProformaInvoiceDetail({
     router.refresh();
   }
 
+  async function handleApproveEdit() {
+    setLoading(true);
+    setError("");
+    const response = await fetch(`/api/proforma-invoices/${pi.id}/approve-edit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const data = await response.json();
+    setLoading(false);
+    if (!response.ok) {
+      setError(data.message ?? "Unable to approve PI edit.");
+      return;
+    }
+    router.refresh();
+  }
+
+  async function handleRejectEdit() {
+    const reason = window.prompt("Rejection reason (min 3 characters):");
+    if (reason == null) return;
+    if (reason.trim().length < 3) {
+      setError("A rejection reason is required (min 3 characters).");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    const response = await fetch(`/api/proforma-invoices/${pi.id}/reject-edit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: reason.trim() }),
+    });
+    const data = await response.json();
+    setLoading(false);
+    if (!response.ok) {
+      setError(data.message ?? "Unable to reject PI edit.");
+      return;
+    }
+    router.refresh();
+  }
+
   function openWhatsapp(url: string | null | undefined) {
     if (!url) {
       setError("Add a valid mobile number for this customer to share on WhatsApp.");
@@ -736,6 +796,26 @@ export function ProformaInvoiceDetail({
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
+          ) : null}
+          {canManage && pi.canEdit ? (
+            <Button variant="outline" asChild>
+              <Link href={`/sales/proforma-invoices/${pi.id}/edit`}>
+                <Pencil className="h-4 w-4" />
+                Edit PI
+              </Link>
+            </Button>
+          ) : null}
+          {canApproveEdit && pi.pendingEdit ? (
+            <>
+              <Button variant="secondary" disabled={loading} onClick={handleApproveEdit}>
+                <ShieldCheck className="h-4 w-4" />
+                Approve Edit
+              </Button>
+              <Button variant="outline" disabled={loading} onClick={handleRejectEdit}>
+                <XCircle className="h-4 w-4" />
+                Reject Edit
+              </Button>
+            </>
           ) : null}
           {canManage && pi.status === "DRAFT" ? (
             <Button disabled={loading} onClick={handleIssue}>
@@ -845,6 +925,7 @@ export function ProformaInvoiceDetail({
               {dispatchToday?.pendingApproval ? (
                 <Badge variant="warning">Dispatch Today Pending</Badge>
               ) : null}
+              {pi.pendingEdit ? <Badge variant="warning">Edit Pending Approval</Badge> : null}
             </div>
           </CardContent>
         </Card>
@@ -956,6 +1037,67 @@ export function ProformaInvoiceDetail({
           </CardHeader>
           <CardContent className="text-sm text-slate-600">
             {pi.deliveryTermNoteSnapshot}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {pi.pendingEdit ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Pending Edit Approval</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 text-sm">
+            <p className="text-slate-600">
+              Requested by {pi.pendingEdit.requestedBy.name} on{" "}
+              {formatDocumentDate(pi.pendingEdit.requestedAt.slice(0, 10))}. The current PI stays
+              unchanged until a Sales Manager approves this edit.
+            </p>
+            <div className="grid gap-3 md:grid-cols-3">
+              <div>
+                <p className="text-slate-500">Proposed Customer</p>
+                <p className="font-medium">{pi.pendingEdit.customer.customerName}</p>
+              </div>
+              <div>
+                <p className="text-slate-500">Proposed Total</p>
+                <p className="font-medium">{formatCurrency(pi.pendingEdit.totalValue)}</p>
+              </div>
+              <div>
+                <p className="text-slate-500">Issue on Approval</p>
+                <p className="font-medium">{pi.pendingEdit.issue ? "Yes" : "No"}</p>
+              </div>
+            </div>
+            {pi.pendingEdit.notes ? (
+              <div>
+                <p className="text-slate-500">Proposed Notes</p>
+                <p>{pi.pendingEdit.notes}</p>
+              </div>
+            ) : null}
+            <Table responsive>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Product</TableHead>
+                  <TableHead className="text-right">Qty</TableHead>
+                  <TableHead className="text-right">Rate</TableHead>
+                  <TableHead className="text-right">Line Total</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pi.pendingEdit.lines.map((line) => (
+                  <TableRow key={line.productId}>
+                    <TableCell data-label="Product">{line.displayName}</TableCell>
+                    <TableCell data-label="Qty" className="text-right">
+                      {line.qty}
+                    </TableCell>
+                    <TableCell data-label="Rate" className="text-right">
+                      {formatCurrency(line.rate)}
+                    </TableCell>
+                    <TableCell data-label="Line Total" className="text-right">
+                      {formatCurrency(line.lineTotal)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
       ) : null}

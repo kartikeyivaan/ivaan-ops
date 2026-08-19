@@ -102,6 +102,26 @@ export function canManageExistingPiPayment(status: string): boolean {
   return status !== "DRAFT" && status !== "CANCEL_PENDING" && status !== "CANCELLED";
 }
 
+/**
+ * Header/line edits keep the same PI number. Allowed on drafts, and on issued
+ * PIs that still have no payments and no credit in progress or approved.
+ */
+export function canEditProformaInvoice(input: {
+  status: string;
+  paymentCount?: number;
+  totalPaid?: number;
+  creditStatus?: string | null;
+  hasPendingEdit?: boolean;
+}): boolean {
+  if (input.hasPendingEdit) return false;
+  if (input.status === "DRAFT") return true;
+  if (input.status !== "ISSUED") return false;
+  const hasPayments = (input.paymentCount ?? 0) > 0 || (input.totalPaid ?? 0) > 0;
+  if (hasPayments) return false;
+  const credit = input.creditStatus ?? "NONE";
+  return credit === "NONE" || credit === "REJECTED";
+}
+
 /** Max amount allowed when editing a payment (current outstanding + this payment). */
 export function maxPaymentAmountOnEdit(
   totalValue: number,

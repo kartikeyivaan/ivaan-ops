@@ -7,6 +7,7 @@ import {
   canApproveBooking,
   canApproveDispatchToday,
   canApprovePiCancel,
+  canApprovePiEdit,
   canApprovePiCreditAccounts,
   canApprovePiCreditSm,
   canManageProformaInvoices,
@@ -96,6 +97,7 @@ export default async function ProformaInvoiceDetailPage({ params }: PageProps) {
       canApproveDispatchToday={canApproveDispatchToday(session.user.roles)}
       canRequestCancel={canRequestPiCancel(session.user.roles)}
       canApproveCancel={canApprovePiCancel(session.user.roles)}
+      canApproveEdit={canApprovePiEdit(session.user.roles)}
       canRequestCredit={canRequestPiCredit(session.user.roles)}
       canApproveCreditSm={canApprovePiCreditSm(session.user.roles)}
       canApproveCreditAccounts={canApprovePiCreditAccounts(session.user.roles)}

@@ -70,6 +70,14 @@ export function canApprovePiCancel(userRoles: string[]): boolean {
   return hasRole(userRoles, [...APPROVE_CANCEL_ROLES]);
 }
 
+export function canRequestPiEdit(userRoles: string[]): boolean {
+  return canManageProformaInvoices(userRoles);
+}
+
+export function canApprovePiEdit(userRoles: string[]): boolean {
+  return canApprovePiCancel(userRoles);
+}
+
 const REQUEST_CREDIT_ROLES = [ROLES.SUPER_ADMIN, ROLES.SALES_EXECUTIVE] as const;
 
 const APPROVE_CREDIT_SM_ROLES = [ROLES.SUPER_ADMIN, ROLES.SALES_MANAGER] as const;

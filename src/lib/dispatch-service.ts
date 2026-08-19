@@ -198,6 +198,38 @@ async function refreshPiDispatchStatus(
       },
     });
   }
+
+  // Safety net: release any remaining booking reservations when the PI is
+  // fully dispatched. releaseFullyDispatchedBookingReservations only releases
+  // per-product when dispatched qty covers the original event qty, which can
+  // fail if products were added/removed after booking.
+  if (status === ProformaInvoiceStatus.FULLY_DISPATCHED) {
+    const staleReservations = await tx.inventoryEvent.findMany({
+      where: {
+        sourceType: "PROFORMA_INVOICE",
+        sourceId: piId,
+        eventType: InventoryEventType.BOOKING_RESERVATION,
+        status: { not: InventoryEventStatus.CANCELLED },
+        replacedBy: { none: { eventType: InventoryEventType.BOOKING_RELEASE, status: { not: InventoryEventStatus.CANCELLED } } },
+      },
+    });
+    for (const reservation of staleReservations) {
+      await createEvent(tx, {
+        companyId: reservation.companyId,
+        warehouseId: reservation.warehouseId,
+        productId: reservation.productId,
+        eventType: InventoryEventType.BOOKING_RELEASE,
+        quantity: decimalToNumber(reservation.quantity),
+        effectiveDate: new Date(),
+        sourceType: reservation.sourceType,
+        sourceId: reservation.sourceId,
+        sourceNumber: reservation.sourceNumber,
+        replacesEventId: reservation.id,
+        notes: `Auto-released: PI fully dispatched`,
+        createdById: reservation.createdById,
+      });
+    }
+  }
 }
 
 export async function listDispatches(

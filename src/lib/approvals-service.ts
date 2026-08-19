@@ -6,6 +6,7 @@ import {
   IncomingLotChangeStatus,
   ItemApprovalStatus,
   OpeningAuditStatus,
+  PiEditRequestStatus,
   PrismaClient,
   ProformaInvoiceStatus,
   ProjectProposalApprovalStatus,
@@ -29,6 +30,7 @@ export type ApprovalType =
   | "DISPATCH_TODAY"
   | "DC_CANCEL"
   | "PI_CANCEL"
+  | "PI_EDIT"
   | "PI_CREDIT"
   | "PI_CREDIT_ACCOUNTS"
   | "PROJECT_PROPOSAL"
@@ -72,6 +74,7 @@ const TYPE_LABELS: Record<ApprovalType, string> = {
   DISPATCH_TODAY: "Dispatch today",
   DC_CANCEL: "DC cancel",
   PI_CANCEL: "PI cancel",
+  PI_EDIT: "PI edit",
   PI_CREDIT: "PI credit (Sales Manager)",
   PI_CREDIT_ACCOUNTS: "PI credit (Accounts)",
   PROJECT_PROPOSAL: "Project proposal",
@@ -125,6 +128,7 @@ export async function listPendingApprovals(
   }
   if (canApprovePiCancel(userRoles)) {
     buckets.push(listPendingPiCancelApprovals(prisma, companyId));
+    buckets.push(listPendingPiEditApprovals(prisma, companyId));
   }
   if (canApprovePiCreditSm(userRoles)) {
     buckets.push(listPendingPiCreditSmApprovals(prisma, companyId));
@@ -175,6 +179,7 @@ export async function listApprovalHistory(
   }
   if (canApprovePiCancel(userRoles)) {
     buckets.push(listPiCancelApprovalHistory(prisma, companyId));
+    buckets.push(listPiEditApprovalHistory(prisma, companyId));
   }
   if (canApprovePiCreditSm(userRoles) || canApprovePiCreditAccounts(userRoles)) {
     buckets.push(listPiCreditApprovalHistory(prisma, companyId));
@@ -517,6 +522,34 @@ async function listPendingPiCancelApprovals(
   });
 }
 
+async function listPendingPiEditApprovals(
+  prisma: PrismaClient,
+  companyId: string,
+): Promise<PendingApprovalItem[]> {
+  const rows = await prisma.proformaInvoiceEditRequest.findMany({
+    where: { companyId, status: PiEditRequestStatus.PENDING },
+    include: {
+      proformaInvoice: { select: { piNo: true } },
+      proposedCustomer: { select: { customerName: true } },
+      requestedBy: { select: { name: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return rows.map((row) => ({
+    id: `PI_EDIT:${row.id}`,
+    type: "PI_EDIT" as const,
+    moduleId: row.id,
+    documentNo: row.proformaInvoice.piNo,
+    subjectName: row.proposedCustomer.customerName,
+    reason: `Proposed total ${formatInr(Number(row.proposedTotalValue))}`,
+    requestedByName: row.requestedBy.name,
+    requestedAt: toIso(row.createdAt),
+    href: `/sales/proforma-invoices/${row.piId}`,
+    canReject: true,
+  }));
+}
+
 async function listPendingPiCreditSmApprovals(
   prisma: PrismaClient,
   companyId: string,
@@ -842,6 +875,13 @@ async function listPiCancelApprovalHistory(
   companyId: string,
 ): Promise<ApprovalHistoryItem[]> {
   return listApprovalRequestHistory(prisma, companyId, ApprovalModuleType.PI_CANCEL, "PI_CANCEL");
+}
+
+async function listPiEditApprovalHistory(
+  prisma: PrismaClient,
+  companyId: string,
+): Promise<ApprovalHistoryItem[]> {
+  return listApprovalRequestHistory(prisma, companyId, ApprovalModuleType.PI_EDIT, "PI_EDIT");
 }
 
 async function listPiCreditApprovalHistory(
@@ -1182,6 +1222,22 @@ async function loadModuleMeta(
         subjectName: `${row.proposedProduct.displayName} · ${row.lot.warehouse.name}`,
         reason: "Receive-time lot edit",
         href: `/inventory/incoming/${row.lotId}`,
+      });
+    }
+  } else if (moduleType === ApprovalModuleType.PI_EDIT) {
+    const rows = await prisma.proformaInvoiceEditRequest.findMany({
+      where: { companyId, id: { in: moduleIds } },
+      include: {
+        proformaInvoice: { select: { piNo: true } },
+        proposedCustomer: { select: { customerName: true } },
+      },
+    });
+    for (const row of rows) {
+      map.set(row.id, {
+        documentNo: row.proformaInvoice.piNo,
+        subjectName: row.proposedCustomer.customerName,
+        reason: "Proforma invoice edit",
+        href: `/sales/proforma-invoices/${row.piId}`,
       });
     }
   } else if (moduleType === ApprovalModuleType.PROJECT_MATERIAL) {

@@ -230,6 +230,50 @@ export async function notifyPiCancelled(
   );
 }
 
+export async function notifyPiEditApprovalNeeded(
+  client: NotificationClient,
+  input: { companyId: string; piNo: string },
+) {
+  const users = await client.user.findMany({
+    where: {
+      status: "ACTIVE",
+      companies: { some: { companyId: input.companyId } },
+      roles: {
+        some: {
+          role: { name: { in: [ROLES.SALES_MANAGER, ROLES.SUPER_ADMIN] } },
+        },
+      },
+    },
+    select: { id: true },
+  });
+  if (!users.length) return { count: 0 };
+  return client.notification.createMany({
+    data: users.map(({ id }) => ({
+      userId: id,
+      title: "PI edit approval needed",
+      message: `${input.piNo} has an edit request pending approval.`,
+      module: "proforma",
+    })),
+  });
+}
+
+export async function notifyPiEditDecided(
+  client: NotificationClient,
+  input: { salesUserId: string; piNo: string; approved: boolean; reason?: string },
+) {
+  return createNotification(
+    {
+      userId: input.salesUserId,
+      title: input.approved ? "PI edit approved" : "PI edit rejected",
+      message: input.approved
+        ? `${input.piNo} was updated after edit approval.`
+        : `${input.piNo} edit was rejected${input.reason ? `: ${input.reason}` : "."}`,
+      module: "proforma",
+    },
+    client,
+  );
+}
+
 export async function notifyInvoicePending(
   client: NotificationClient,
   input: { companyId: string; dcNo: string },

@@ -233,6 +233,7 @@ enum ApprovalModuleType {
   PI_CREDIT
   PI_CREDIT_ACCOUNTS
   PROJECT_MATERIAL
+  PI_EDIT
 }
 
 enum PiCreditStatus {
@@ -264,6 +265,12 @@ enum DamageReportStatus {
 }
 
 enum IncomingLotChangeStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PiEditRequestStatus {
   PENDING
   APPROVED
   REJECTED
@@ -523,6 +530,7 @@ model Company {
   dailyAudits           InventoryDailyAudit[]
   damageReports         InventoryDamageReport[]
   incomingLotChanges    IncomingLotChangeRequest[]
+  piEditRequests        ProformaInvoiceEditRequest[]
   purchaseRequests      PurchaseRequest[]
   manualStockEntries    ManualStockEntry[]
 
@@ -613,6 +621,8 @@ model User {
   damageReportsDecided              InventoryDamageReport[]        @relation("DamageReportDecidedBy")
   incomingLotChangesRequested       IncomingLotChangeRequest[]     @relation("IncomingLotChangeRequestedBy")
   incomingLotChangesDecided         IncomingLotChangeRequest[]     @relation("IncomingLotChangeDecidedBy")
+  piEditsRequested                  ProformaInvoiceEditRequest[]   @relation("PiEditRequestedBy")
+  piEditsDecided                    ProformaInvoiceEditRequest[]   @relation("PiEditDecidedBy")
   purchaseRequestsRequested         PurchaseRequest[]              @relation("PurchaseRequestRequestedBy")
   purchaseRequestsUpdated           PurchaseRequest[]              @relation("PurchaseRequestUpdatedBy")
   manualStockEntriesCreated         ManualStockEntry[]             @relation("ManualStockEntryCreatedBy")
@@ -775,6 +785,7 @@ model Customer {
   contacts          CustomerContact[]
   quotations        Quotation[]
   proformaInvoices  ProformaInvoice[]
+  proposedPiEdits   ProformaInvoiceEditRequest[] @relation("PiEditProposedCustomer")
   payments          Payment[]
   dispatches        Dispatch[]
   invoiceHandovers  InvoiceHandover[]
@@ -1451,6 +1462,7 @@ model ProformaInvoice {
   dispatches            Dispatch[]
   inventoryTransfers    InventoryTransfer[]
   crossCompanyPlans     PiCrossCompanyTransferPlan[]
+  editRequests          ProformaInvoiceEditRequest[]
 
   @@index([companyId, status])
   @@index([customerId])
@@ -1458,6 +1470,34 @@ model ProformaInvoice {
   @@index([companyId, creditStatus])
   @@index([customerId, creditStatus])
   @@map("proforma_invoices")
+}
+
+model ProformaInvoiceEditRequest {
+  id                 String              @id @default(uuid()) @db.Uuid
+  companyId          String              @map("company_id") @db.Uuid
+  piId               String              @map("pi_id") @db.Uuid
+  proposedCustomerId String              @map("proposed_customer_id") @db.Uuid
+  proposedNotes      String?             @map("proposed_notes")
+  proposedIssue      Boolean             @default(false) @map("proposed_issue")
+  proposedTotalValue Decimal             @map("proposed_total_value") @db.Decimal(14, 2)
+  proposedLines      Json                @map("proposed_lines")
+  status             PiEditRequestStatus @default(PENDING)
+  requestedById      String              @map("requested_by") @db.Uuid
+  decidedById        String?             @map("decided_by") @db.Uuid
+  decidedAt          DateTime?           @map("decided_at")
+  decisionRemarks    String?             @map("decision_remarks")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+
+  company          Company         @relation(fields: [companyId], references: [id])
+  proformaInvoice  ProformaInvoice @relation(fields: [piId], references: [id], onDelete: Cascade)
+  proposedCustomer Customer        @relation("PiEditProposedCustomer", fields: [proposedCustomerId], references: [id])
+  requestedBy      User            @relation("PiEditRequestedBy", fields: [requestedById], references: [id])
+  decidedBy        User?           @relation("PiEditDecidedBy", fields: [decidedById], references: [id])
+
+  @@index([companyId, status])
+  @@index([piId, status])
+  @@map("proforma_invoice_edit_requests")
 }
 
 model ProformaInvoiceItem {

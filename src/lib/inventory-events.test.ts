@@ -226,6 +226,48 @@ describe("inventory events", () => {
     ]);
   });
 
+  it("drops PI reservation events whose PI is absent from the remaining map", () => {
+    const events: InventoryEvent[] = [
+      {
+        id: "reserve-known",
+        eventType: "BOOKING_RESERVATION",
+        status: "ACTIVE",
+        quantity: 5,
+        effectiveDate: "2026-08-07",
+        expectedMinDate: "2026-08-07",
+        sourceType: "PROFORMA_INVOICE",
+        sourceId: "pi-known",
+      },
+      {
+        id: "reserve-unknown",
+        eventType: "BOOKING_RESERVATION",
+        status: "ACTIVE",
+        quantity: 46,
+        effectiveDate: "2026-08-07",
+        expectedMinDate: "2026-08-07",
+        sourceType: "PROFORMA_INVOICE",
+        sourceId: "pi-unknown",
+      },
+      {
+        id: "incoming-1",
+        eventType: "PURCHASE_INCOMING",
+        status: "ACTIVE",
+        quantity: 10,
+        effectiveDate: "2026-08-08",
+      },
+    ];
+
+    expect(
+      applyRemainingPiQtyToBookingReservations(
+        events,
+        new Map([["pi-known", 5]]),
+      ),
+    ).toEqual([
+      expect.objectContaining({ id: "reserve-known", quantity: 5 }),
+      expect.objectContaining({ id: "incoming-1", quantity: 10 }),
+    ]);
+  });
+
   it("reduces purchase incoming events to the lot's pending quantity", () => {
     const events: InventoryEvent[] = [
       {

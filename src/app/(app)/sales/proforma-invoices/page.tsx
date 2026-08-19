@@ -1,9 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import {
-  canManageProformaInvoices,
-  canViewProformaInvoices,
-} from "@/lib/pi-permissions";
+import { canManageProformaInvoices, canViewProformaInvoices } from "@/lib/pi-permissions";
 import { listProformaInvoices } from "@/lib/pi-service";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";

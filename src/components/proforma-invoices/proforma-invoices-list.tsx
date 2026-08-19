@@ -35,6 +35,7 @@ type ProformaInvoiceListItem = {
     outstanding: number;
     readyForDispatch?: boolean;
   };
+  canEdit?: boolean;
 };
 
 function statusVariant(status: string): "default" | "success" | "warning" | "danger" {
@@ -173,9 +174,16 @@ export function ProformaInvoicesList({
                       {formatCurrency(row.paymentSummary.outstanding)}
                     </TableCell>
                     <TableCell>
-                      <Button variant="outline" size="sm" asChild onClick={(e) => e.stopPropagation()}>
-                        <Link href={`/sales/proforma-invoices/${row.id}`}>View</Link>
-                      </Button>
+                      <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                        {canManage && row.canEdit ? (
+                          <Button variant="outline" size="sm" asChild>
+                            <Link href={`/sales/proforma-invoices/${row.id}/edit`}>Edit</Link>
+                          </Button>
+                        ) : null}
+                        <Button variant="outline" size="sm" asChild>
+                          <Link href={`/sales/proforma-invoices/${row.id}`}>View</Link>
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

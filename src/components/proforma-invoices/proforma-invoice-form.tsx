@@ -36,22 +36,43 @@ export function ProformaInvoiceForm({
   customers,
   products,
   defaultCustomerId,
+  mode = "create",
+  piId,
+  piNo,
+  status = "DRAFT",
+  lockCustomer = false,
+  requiresApproval = false,
+  initialNotes,
+  initialLines,
 }: {
   customers: Customer[];
   products: Product[];
   defaultCustomerId?: string;
+  mode?: "create" | "edit";
+  piId?: string;
+  piNo?: string;
+  status?: string;
+  lockCustomer?: boolean;
+  requiresApproval?: boolean;
+  initialNotes?: string;
+  initialLines?: LineDraft[];
 }) {
   const router = useRouter();
+  const isEdit = mode === "edit";
   const [customerId, setCustomerId] = useState(defaultCustomerId ?? customers[0]?.id ?? "");
-  const [notes, setNotes] = useState("");
-  const [issue, setIssue] = useState(true);
-  const [lines, setLines] = useState<LineDraft[]>([
-    {
-      productId: products[0]?.id ?? "",
-      qty: "",
-      rate: products[0]?.currentPrice ? String(products[0].currentPrice.standardPrice) : "",
-    },
-  ]);
+  const [notes, setNotes] = useState(initialNotes ?? "");
+  const [issue, setIssue] = useState(!isEdit);
+  const [lines, setLines] = useState<LineDraft[]>(
+    initialLines && initialLines.length > 0
+      ? initialLines
+      : [
+          {
+            productId: products[0]?.id ?? "",
+            qty: "",
+            rate: products[0]?.currentPrice ? String(products[0].currentPrice.standardPrice) : "",
+          },
+        ],
+  );
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -75,6 +96,9 @@ export function ProformaInvoiceForm({
   }, [lines, products]);
 
   const grandTotal = computedLines.reduce((sum, line) => sum + line.lineTotal, 0);
+  const backHref = isEdit && piId ? `/sales/proforma-invoices/${piId}` : "/sales/proforma-invoices";
+  const canIssueOnSave = !isEdit || status === "DRAFT";
+  const showApprovalFlow = isEdit && requiresApproval;
 
   function updateLine(index: number, patch: Partial<LineDraft>) {
     setLines((current) =>
@@ -113,7 +137,7 @@ export function ProformaInvoiceForm({
     const payload = {
       customerId,
       notes: notes || undefined,
-      issue: saveAsDraft ? false : issue,
+      issue: canIssueOnSave ? (saveAsDraft ? false : issue) : false,
       lines: lines.map((line) => ({
         productId: line.productId,
         qty: Number(line.qty),
@@ -121,16 +145,27 @@ export function ProformaInvoiceForm({
       })),
     };
 
-    const response = await fetch("/api/proforma-invoices", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    const response = await fetch(
+      isEdit && piId ? `/api/proforma-invoices/${piId}` : "/api/proforma-invoices",
+      {
+        method: isEdit ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+    );
     const data = await response.json();
     setLoading(false);
 
     if (!response.ok) {
-      setError(data.message ?? "Unable to create proforma invoice.");
+      setError(
+        data.message ??
+          (isEdit ? "Unable to update proforma invoice." : "Unable to create proforma invoice."),
+      );
+      return;
+    }
+
+    if (isEdit && requiresApproval) {
+      router.push(`/sales/proforma-invoices/${data.id}?editSubmitted=1`);
       return;
     }
 
@@ -141,11 +176,21 @@ export function ProformaInvoiceForm({
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">New Proforma Invoice</h1>
-          <p className="text-sm text-slate-500">Create a direct PI without a quotation.</p>
+          <h1 className="text-2xl font-bold text-slate-900">
+            {isEdit ? `Edit ${piNo ?? "Proforma Invoice"}` : "New Proforma Invoice"}
+          </h1>
+          <p className="text-sm text-slate-500">
+            {isEdit
+              ? requiresApproval
+                ? "Submit your changes for Sales Manager approval. The PI stays unchanged until approved."
+                : status === "ISSUED"
+                  ? "Update this issued PI in place. The PI number stays the same — share a new PDF after saving."
+                  : "Update this draft PI. The PI number stays the same."
+              : "Create a direct PI without a quotation."}
+          </p>
         </div>
         <Button variant="outline" asChild>
-          <Link href="/sales/proforma-invoices">
+          <Link href={backHref}>
             <ArrowLeft className="h-4 w-4" />
             Back
           </Link>
@@ -163,7 +208,8 @@ export function ProformaInvoiceForm({
               id="customer"
               value={customerId}
               onChange={(event) => setCustomerId(event.target.value)}
-              className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
+              disabled={lockCustomer}
+              className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm disabled:bg-slate-50"
             >
               {customers.map((customer) => (
                 <option key={customer.id} value={customer.id}>
@@ -171,6 +217,11 @@ export function ProformaInvoiceForm({
                 </option>
               ))}
             </select>
+            {lockCustomer ? (
+              <p className="text-xs text-slate-500">
+                Customer is locked because this PI was converted from a quotation.
+              </p>
+            ) : null}
           </div>
           <div className="space-y-2">
             <Label htmlFor="notes">Notes</Label>
@@ -249,20 +300,44 @@ export function ProformaInvoiceForm({
       </Card>
 
       <div className="flex flex-wrap gap-3">
-        <Button disabled={loading} onClick={() => handleSubmit(false)}>
-          {issue ? "Save & Issue PI" : "Save Draft"}
-        </Button>
-        <Button variant="outline" disabled={loading} onClick={() => handleSubmit(true)}>
-          Save as Draft
-        </Button>
-        <label className="flex items-center gap-2 text-sm text-slate-600">
-          <input
-            type="checkbox"
-            checked={issue}
-            onChange={(event) => setIssue(event.target.checked)}
-          />
-          Issue immediately on save
-        </label>
+        {showApprovalFlow ? (
+          <>
+            <Button disabled={loading} onClick={() => handleSubmit(false)}>
+              Submit for Approval
+            </Button>
+            {canIssueOnSave ? (
+              <label className="flex items-center gap-2 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={issue}
+                  onChange={(event) => setIssue(event.target.checked)}
+                />
+                Issue PI when edit is approved
+              </label>
+            ) : null}
+          </>
+        ) : canIssueOnSave ? (
+          <>
+            <Button disabled={loading} onClick={() => handleSubmit(false)}>
+              {issue ? "Save & Issue PI" : "Save Draft"}
+            </Button>
+            <Button variant="outline" disabled={loading} onClick={() => handleSubmit(true)}>
+              Save as Draft
+            </Button>
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                checked={issue}
+                onChange={(event) => setIssue(event.target.checked)}
+              />
+              Issue immediately on save
+            </label>
+          </>
+        ) : (
+          <Button disabled={loading} onClick={() => handleSubmit(false)}>
+            Save PI
+          </Button>
+        )}
       </div>
 
       {error ? <p className="text-sm text-red-600">{error}</p> : null}

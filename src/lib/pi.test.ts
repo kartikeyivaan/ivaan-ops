@@ -4,6 +4,7 @@ import {
   buildDispatchTodayApprovalCopy,
   calculateAdvanceRequired,
   calculateOutstanding,
+  canEditProformaInvoice,
   canRecordPaymentAgainstPi,
   canManageExistingPiPayment,
   canRequestBooking,
@@ -96,6 +97,28 @@ describe("proforma invoice calculations", () => {
     expect(canManageExistingPiPayment("DRAFT")).toBe(false);
     expect(canManageExistingPiPayment("CANCELLED")).toBe(false);
     expect(canManageExistingPiPayment("CANCEL_PENDING")).toBe(false);
+  });
+
+  it("allows editing draft PIs and issued PIs with no payments or credit", () => {
+    expect(canEditProformaInvoice({ status: "DRAFT" })).toBe(true);
+    expect(canEditProformaInvoice({ status: "ISSUED", paymentCount: 0, creditStatus: "NONE" })).toBe(
+      true,
+    );
+    expect(
+      canEditProformaInvoice({ status: "ISSUED", paymentCount: 0, creditStatus: "REJECTED" }),
+    ).toBe(true);
+    expect(canEditProformaInvoice({ status: "ISSUED", paymentCount: 1 })).toBe(false);
+    expect(canEditProformaInvoice({ status: "ISSUED", totalPaid: 5000 })).toBe(false);
+    expect(
+      canEditProformaInvoice({ status: "ISSUED", paymentCount: 0, creditStatus: "PENDING_SM" }),
+    ).toBe(false);
+    expect(
+      canEditProformaInvoice({ status: "ISSUED", paymentCount: 0, creditStatus: "APPROVED" }),
+    ).toBe(false);
+    expect(canEditProformaInvoice({ status: "BOOKED" })).toBe(false);
+    expect(canEditProformaInvoice({ status: "PENDING_BOOKING" })).toBe(false);
+    expect(canEditProformaInvoice({ status: "CANCELLED" })).toBe(false);
+    expect(canEditProformaInvoice({ status: "DRAFT", hasPendingEdit: true })).toBe(false);
   });
 
   it("caps edited payment amount to outstanding plus the current payment", () => {

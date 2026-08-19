@@ -591,6 +591,13 @@ export const createProformaInvoiceSchema = z.object({
   lines: z.array(quotationLineSchema).min(1),
 });
 
+export const updateProformaInvoiceSchema = z.object({
+  customerId: z.string().uuid(),
+  notes: z.string().optional(),
+  issue: z.boolean().optional(),
+  lines: z.array(quotationLineSchema).min(1),
+});
+
 export const convertQuotationToPiSchema = z.object({
   warehouseId: z.string().uuid().optional(),
   issue: z.boolean().default(true),

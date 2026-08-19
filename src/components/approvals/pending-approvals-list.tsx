@@ -48,6 +48,11 @@ function approveEndpoint(item: PendingApprovalItem): { url: string; body?: objec
       return { url: `/api/dispatches/${item.moduleId}/approve-cancel`, body: {} };
     case "PI_CANCEL":
       return { url: `/api/proforma-invoices/${item.moduleId}/approve-cancel`, body: {} };
+    case "PI_EDIT":
+      return {
+        url: `/api/proforma-invoice-edit-requests/${item.moduleId}/approve`,
+        body: {},
+      };
     case "PI_CREDIT":
       return { url: `/api/proforma-invoices/${item.moduleId}/approve-credit-sm`, body: {} };
     case "PI_CREDIT_ACCOUNTS":
@@ -100,6 +105,11 @@ function rejectEndpoint(
       return { url: `/api/dispatches/${item.moduleId}/reject-cancel`, body: { reason } };
     case "PI_CANCEL":
       return { url: `/api/proforma-invoices/${item.moduleId}/reject-cancel`, body: { reason } };
+    case "PI_EDIT":
+      return {
+        url: `/api/proforma-invoice-edit-requests/${item.moduleId}/reject`,
+        body: { reason },
+      };
     case "PI_CREDIT":
     case "PI_CREDIT_ACCOUNTS":
       return { url: `/api/proforma-invoices/${item.moduleId}/reject-credit`, body: { reason } };

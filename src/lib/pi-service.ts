@@ -417,7 +417,7 @@ function normalizePiNotes(notes?: string | null) {
 }
 
 function piEditMatchesCurrent(
-  pi: { customerId: string; notes: string | null; items: Array<{ productId: string; qty: unknown; rate: unknown }> },
+  pi: { customerId: string; notes: string | null; items: Array<{ productId: string; qty: { toNumber(): number } | number | string; rate: { toNumber(): number } | number | string }> },
   input: { customerId: string; notes?: string | null },
   proposedLines: ProposedPiEditLine[],
 ) {

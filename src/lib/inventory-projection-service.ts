@@ -9,6 +9,7 @@ import {
 } from "@/lib/inventory-event-service";
 import {
   applyPendingIncomingToPurchaseEvents,
+  applyRemainingPiQtyToBookingReservations,
   filterEventsForLivePhysicalProjection,
   type InventoryEvent,
 } from "@/lib/inventory-events";
@@ -205,6 +206,42 @@ export function createInventoryProjectionService(
       );
     }
 
+    // Cap reservation events at what each PI actually needs for this product.
+    // Guards against historical over-reservations (e.g. Math.ceil rounding).
+    const reservationPiIds = [
+      ...new Set(
+        events
+          .filter(
+            (event) =>
+              event.eventType === InventoryEventType.BOOKING_RESERVATION &&
+              event.sourceType === "PROFORMA_INVOICE" &&
+              event.sourceId,
+          )
+          .map((event) => event.sourceId as string),
+      ),
+    ];
+    const remainingByPiId = new Map<string, number>();
+    if (reservationPiIds.length > 0) {
+      const piItems = await client.proformaInvoiceItem.findMany({
+        where: {
+          piId: { in: reservationPiIds },
+          productId: input.productId,
+        },
+        select: { piId: true, qty: true },
+      });
+      for (const item of piItems) {
+        remainingByPiId.set(
+          item.piId,
+          (remainingByPiId.get(item.piId) ?? 0) + Number(item.qty),
+        );
+      }
+    }
+
+    const adjustedEvents = applyRemainingPiQtyToBookingReservations(
+      applyPendingIncomingToPurchaseEvents(events, lotsById),
+      remainingByPiId,
+    );
+
     // Include booked serials in physical baseline; BOOKING_RESERVATION events
     // reduce sales-available stock on the committed dispatch start date.
     // Filter against live physical so dispatched stock is not deducted again.
@@ -216,7 +253,7 @@ export function createInventoryProjectionService(
       startDate,
       endDate,
       events: filterEventsForLivePhysicalProjection(
-        applyPendingIncomingToPurchaseEvents(events, lotsById),
+        adjustedEvents,
         dispatchedQtyByPiId,
       ),
     });

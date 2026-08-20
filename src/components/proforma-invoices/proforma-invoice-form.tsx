@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { calculateLineAmounts } from "@/lib/quotations";
 import { formatPricingType } from "@/lib/products";
+import { PAYMENT_OUTSTANDING_TOLERANCE_INR } from "@/lib/proforma-invoices";
 
 type Customer = {
   id: string;
@@ -44,6 +45,7 @@ export function ProformaInvoiceForm({
   requiresApproval = false,
   initialNotes,
   initialLines,
+  existingTotalPaid = 0,
 }: {
   customers: Customer[];
   products: Product[];
@@ -56,6 +58,7 @@ export function ProformaInvoiceForm({
   requiresApproval?: boolean;
   initialNotes?: string;
   initialLines?: LineDraft[];
+  existingTotalPaid?: number;
 }) {
   const router = useRouter();
   const isEdit = mode === "edit";
@@ -82,20 +85,23 @@ export function ProformaInvoiceForm({
       const qty = Number(line.qty);
       const rate = Number(line.rate);
       if (!product || !qty || Number.isNaN(rate)) {
-        return { lineTotal: 0 };
+        return { lineTotal: 0, gstAmount: 0, gstRate: product?.gstRate ?? 0 };
       }
-      const { lineTotal } = calculateLineAmounts({
+      const { lineTotal, gstAmount } = calculateLineAmounts({
         pricingType: product.pricingType,
         capacity: product.capacity,
         qty,
         rate,
         gstRate: product.gstRate,
       });
-      return { lineTotal };
+      return { lineTotal, gstAmount, gstRate: product.gstRate };
     });
   }, [lines, products]);
 
   const grandTotal = computedLines.reduce((sum, line) => sum + line.lineTotal, 0);
+  const editPaymentGap = existingTotalPaid - grandTotal;
+  const exceedsPaidEditTolerance =
+    isEdit && editPaymentGap > PAYMENT_OUTSTANDING_TOLERANCE_INR;
   const backHref = isEdit && piId ? `/sales/proforma-invoices/${piId}` : "/sales/proforma-invoices";
   const canIssueOnSave = !isEdit || status === "DRAFT";
   const showApprovalFlow = isEdit && requiresApproval;
@@ -131,11 +137,16 @@ export function ProformaInvoiceForm({
   }
 
   async function handleSubmit(saveAsDraft: boolean) {
-    setLoading(true);
     setError("");
+    if (exceedsPaidEditTolerance) {
+      setError(
+        `New PI total is ₹${editPaymentGap.toLocaleString("en-IN")} below received payment. Please add, remove, or update payment entries first, then save the PI edit again.`,
+      );
+      return;
+    }
+    setLoading(true);
 
     const payload = {
-      customerId,
       notes: notes || undefined,
       issue: canIssueOnSave ? (saveAsDraft ? false : issue) : false,
       lines: lines.map((line) => ({
@@ -143,6 +154,7 @@ export function ProformaInvoiceForm({
         qty: Number(line.qty),
         rate: Number(line.rate),
       })),
+      ...(isEdit ? {} : { customerId }),
     };
 
     const response = await fetch(
@@ -182,10 +194,8 @@ export function ProformaInvoiceForm({
           <p className="text-sm text-slate-500">
             {isEdit
               ? requiresApproval
-                ? "Submit your changes for Sales Manager approval. The PI stays unchanged until approved."
-                : status === "ISSUED"
-                  ? "Update this issued PI in place. The PI number stays the same — share a new PDF after saving."
-                  : "Update this draft PI. The PI number stays the same."
+                ? "Submit product and quantity changes for Sales Manager approval. Customer cannot be changed. Line totals and GST update automatically."
+                : "Update products, quantities, or rates. Customer cannot be changed. Line totals and GST update automatically. The PI number stays the same."
               : "Create a direct PI without a quotation."}
           </p>
         </div>
@@ -208,7 +218,7 @@ export function ProformaInvoiceForm({
               id="customer"
               value={customerId}
               onChange={(event) => setCustomerId(event.target.value)}
-              disabled={lockCustomer}
+              disabled={isEdit || lockCustomer}
               className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm disabled:bg-slate-50"
             >
               {customers.map((customer) => (
@@ -217,9 +227,11 @@ export function ProformaInvoiceForm({
                 </option>
               ))}
             </select>
-            {lockCustomer ? (
+            {isEdit || lockCustomer ? (
               <p className="text-xs text-slate-500">
-                Customer is locked because this PI was converted from a quotation.
+                {isEdit
+                  ? "Customer cannot be changed on an existing PI."
+                  : "Customer is locked because this PI was converted from a quotation."}
               </p>
             ) : null}
           </div>
@@ -279,6 +291,12 @@ export function ProformaInvoiceForm({
                 </div>
                 <div className="flex items-end justify-between gap-2">
                   <div>
+                    <p className="text-xs text-slate-500">
+                      GST {computedLines[index]?.gstRate ?? product?.gstRate ?? 0}%
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      ₹{(computedLines[index]?.gstAmount ?? 0).toLocaleString("en-IN")}
+                    </p>
                     <p className="text-xs text-slate-500">Line Total</p>
                     <p className="font-medium">
                       ₹{(computedLines[index]?.lineTotal ?? 0).toLocaleString("en-IN")}
@@ -296,13 +314,19 @@ export function ProformaInvoiceForm({
           <p className="text-right text-lg font-semibold">
             Grand Total: ₹{grandTotal.toLocaleString("en-IN")}
           </p>
+          {exceedsPaidEditTolerance ? (
+            <p className="text-sm text-amber-700">
+              Total is below paid amount by more than ₹{PAYMENT_OUTSTANDING_TOLERANCE_INR}. Adjust
+              payment entries first, then retry this edit.
+            </p>
+          ) : null}
         </CardContent>
       </Card>
 
       <div className="flex flex-wrap gap-3">
         {showApprovalFlow ? (
           <>
-            <Button disabled={loading} onClick={() => handleSubmit(false)}>
+            <Button disabled={loading || exceedsPaidEditTolerance} onClick={() => handleSubmit(false)}>
               Submit for Approval
             </Button>
             {canIssueOnSave ? (
@@ -318,10 +342,14 @@ export function ProformaInvoiceForm({
           </>
         ) : canIssueOnSave ? (
           <>
-            <Button disabled={loading} onClick={() => handleSubmit(false)}>
+            <Button disabled={loading || exceedsPaidEditTolerance} onClick={() => handleSubmit(false)}>
               {issue ? "Save & Issue PI" : "Save Draft"}
             </Button>
-            <Button variant="outline" disabled={loading} onClick={() => handleSubmit(true)}>
+            <Button
+              variant="outline"
+              disabled={loading || exceedsPaidEditTolerance}
+              onClick={() => handleSubmit(true)}
+            >
               Save as Draft
             </Button>
             <label className="flex items-center gap-2 text-sm text-slate-600">
@@ -334,7 +362,7 @@ export function ProformaInvoiceForm({
             </label>
           </>
         ) : (
-          <Button disabled={loading} onClick={() => handleSubmit(false)}>
+          <Button disabled={loading || exceedsPaidEditTolerance} onClick={() => handleSubmit(false)}>
             Save PI
           </Button>
         )}

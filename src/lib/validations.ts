@@ -592,7 +592,7 @@ export const createProformaInvoiceSchema = z.object({
 });
 
 export const updateProformaInvoiceSchema = z.object({
-  customerId: z.string().uuid(),
+  customerId: z.string().uuid().optional(),
   notes: z.string().optional(),
   issue: z.boolean().optional(),
   lines: z.array(quotationLineSchema).min(1),

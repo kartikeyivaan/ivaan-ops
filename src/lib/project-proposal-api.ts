@@ -46,7 +46,14 @@ const SERVICE_ERRORS: Record<string, { message: string; status: number }> = {
     status: 400,
   },
   APPROVAL_NOT_PENDING: { message: "No pending approval request found.", status: 400 },
-  NOT_APPROVED: { message: "Only approved proposals can be converted to a project.", status: 400 },
+  NOT_APPROVED: {
+    message: "Only approved or expired proposals can be converted to a project.",
+    status: 400,
+  },
+  CONVERSION_WINDOW_EXPIRED: {
+    message: "Project conversion is allowed only within 45 days from proposal date.",
+    status: 400,
+  },
   ALREADY_CONVERTED: { message: "Proposal has already been converted.", status: 400 },
   PROJECTS_WAREHOUSE_NOT_FOUND: {
     message: "Jalgaon Projects warehouse is not configured for this company.",
@@ -55,7 +62,7 @@ const SERVICE_ERRORS: Record<string, { message: string; status: number }> = {
   DRAFT_CANNOT_REVISE: { message: "Revise a sent or approved proposal, not a draft.", status: 400 },
   REJECT_REASON_REQUIRED: { message: "A rejection reason is required.", status: 400 },
   PROPOSAL_NOT_SHAREABLE: {
-    message: "Only approved proposals can be downloaded or shared.",
+    message: "Only sent, approved, expired, or converted proposals can be downloaded or shared.",
     status: 400,
   },
 };

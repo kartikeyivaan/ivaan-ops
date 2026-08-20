@@ -41,9 +41,11 @@ import {
 import { DISCOUNT_APPROVAL_THRESHOLD } from "@/lib/project-proposal-pricing";
 import { normalizeMobileNumber } from "@/lib/phone";
 import {
+  canConvertProjectProposalFromStatus,
   canShareProjectProposal,
   formatRevisionProposalLabel,
   formatProjectProposalStatus,
+  isProjectProposalConversionWindowOpen,
   openProjectProposalPdf,
   projectProposalPdfUrl,
 } from "@/lib/project-proposals";
@@ -198,7 +200,7 @@ export function ProjectProposalsList({
   }
 
   async function convertProposal(proposalId: string) {
-    if (!window.confirm("Convert this approved proposal to a project?")) return;
+    if (!window.confirm("Convert this proposal to a project?")) return;
 
     setActionLoading(proposalId);
     setError(null);
@@ -329,7 +331,13 @@ export function ProjectProposalsList({
   }
 
   function canConvertRow(item: ProposalListItem) {
-    return canManage && item.status === "APPROVED" && !isPostConversionProposal(item.convertedAt);
+    return (
+      canManage &&
+      canConvertProjectProposalFromStatus(item.status) &&
+      Boolean(item.currentRevision?.proposalDate) &&
+      isProjectProposalConversionWindowOpen(item.currentRevision?.proposalDate ?? new Date()) &&
+      !isPostConversionProposal(item.convertedAt)
+    );
   }
 
   function renderProposalActions(proposal: ProposalListItem) {

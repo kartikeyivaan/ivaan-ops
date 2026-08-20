@@ -200,6 +200,18 @@ describe("dispatch today day breakdown", () => {
     expect(remainingByPiId.get("pi-done-old")).toBe(0);
     expect(remainingByPiId.get("pi-partial")).toBe(10);
     expect(remainingByPiId.get("pi-cancelled")).toBe(0);
+    expect(
+      remainingReservedQtyByPiId(
+        [
+          {
+            id: "pi-unbooked",
+            status: ProformaInvoiceStatus.ISSUED,
+            items: [{ productId, qty: 8, dispatchedQty: 0 }],
+          },
+        ],
+        productId,
+      ).get("pi-unbooked"),
+    ).toBe(0);
 
     // PIs with no items for the product still appear in the map as 0,
     // so stale reservation events are properly dropped.

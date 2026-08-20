@@ -15,9 +15,11 @@ import {
   type ProjectProposalPricingInput,
 } from "@/lib/project-proposal-pricing";
 import {
+  canConvertProjectProposalFromStatus,
   canShareProjectProposal,
   generateProposalNumber,
   getProposalValidityDate,
+  isProjectProposalConversionWindowOpen,
 } from "@/lib/project-proposals";
 import {
   getNextProjectProposalRevisionNo,
@@ -1196,16 +1198,19 @@ export async function convertProjectProposalToProject(
   const proposal = await loadProposalOrThrow(prisma, input.companyId, input.proposalId);
   assertProjectProposalAccess(input.userRoles, input.performedById, proposal);
   assertProjectsCompany(proposal.company);
+  const revision = getCurrentRevisionRecord(proposal);
 
   if (proposal.status === ProjectProposalStatus.CONVERTED || proposal.convertedAt) {
     throw new Error("ALREADY_CONVERTED");
   }
-  if (proposal.status !== ProjectProposalStatus.APPROVED) {
+  if (!canConvertProjectProposalFromStatus(proposal.status)) {
     throw new Error("NOT_APPROVED");
+  }
+  if (!isProjectProposalConversionWindowOpen(revision.proposalDate)) {
+    throw new Error("CONVERSION_WINDOW_EXPIRED");
   }
 
   return prisma.$transaction(async (tx) => {
-    const revision = getCurrentRevisionRecord(proposal);
     const executionProject = await createProjectFromProposal(tx, {
       companyId: input.companyId,
       companyCode: proposal.company.code,

@@ -36,6 +36,7 @@ type ProformaInvoiceListItem = {
     readyForDispatch?: boolean;
   };
   canEdit?: boolean;
+  canUnbook?: boolean;
 };
 
 function statusVariant(status: string): "default" | "success" | "warning" | "danger" {
@@ -58,6 +59,7 @@ export function ProformaInvoicesList({
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
+  const [actionError, setActionError] = useState("");
 
   async function applyFilters() {
     setLoading(true);
@@ -71,6 +73,23 @@ export function ProformaInvoicesList({
     if (response.ok) {
       setRows(data);
     }
+  }
+
+  async function handleUnbook(id: string) {
+    const confirmed = window.confirm(
+      "Unbooking releases reserved stock so this PI can be edited. You will need to book it again after saving. Continue?",
+    );
+    if (!confirmed) return;
+    setLoading(true);
+    setActionError("");
+    const response = await fetch(`/api/proforma-invoices/${id}/unbook`, { method: "POST" });
+    const data = await response.json();
+    setLoading(false);
+    if (!response.ok) {
+      setActionError(data.message ?? "Unable to unbook this PI.");
+      return;
+    }
+    setRows((current) => current.map((row) => (row.id === id ? { ...row, ...data } : row)));
   }
 
   return (
@@ -128,6 +147,8 @@ export function ProformaInvoicesList({
           </div>
       </CollapsibleFilterCard>
 
+      {actionError ? <p className="text-sm text-red-600">{actionError}</p> : null}
+
       <Card>
         <CardContent className="pt-6">
           {rows.length === 0 ? (
@@ -178,6 +199,16 @@ export function ProformaInvoicesList({
                         {canManage && row.canEdit ? (
                           <Button variant="outline" size="sm" asChild>
                             <Link href={`/sales/proforma-invoices/${row.id}/edit`}>Edit</Link>
+                          </Button>
+                        ) : null}
+                        {canManage && row.canUnbook ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={loading}
+                            onClick={() => handleUnbook(row.id)}
+                          >
+                            Unbook
                           </Button>
                         ) : null}
                         <Button variant="outline" size="sm" asChild>

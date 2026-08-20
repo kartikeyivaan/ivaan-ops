@@ -1,5 +1,7 @@
-import { PROJECT_PROPOSAL_VALIDITY_DAYS } from "@/lib/project-proposal-pricing";
-import { PROJECT_PROPOSAL_PDF_LAYOUT_VERSION } from "@/lib/project-proposals";
+import {
+  PROJECT_PROPOSAL_PDF_LAYOUT_VERSION,
+  PROJECT_PROPOSAL_SHARE_LINK_TTL_DAYS,
+} from "@/lib/project-proposals";
 import { signProjectProposalShareToken } from "@/lib/share-token";
 import {
   buildProjectProposalWhatsappMessage,
@@ -7,7 +9,7 @@ import {
   PROJECT_PROPOSAL_PDF_LINK_PLACEHOLDER,
 } from "@/lib/whatsapp";
 
-const SHARE_LINK_TTL_DAYS = PROJECT_PROPOSAL_VALIDITY_DAYS;
+const SHARE_LINK_TTL_DAYS = PROJECT_PROPOSAL_SHARE_LINK_TTL_DAYS;
 
 type ProjectProposalRevisionShare = {
   revisionNo: number;

@@ -26,4 +26,11 @@ describe("rbac", () => {
     expect(canAccessNav([ROLES.SUPER_ADMIN], usersNav!)).toBe(true);
     expect(canAccessNav([ROLES.SALES_EXECUTIVE], usersNav!)).toBe(false);
   });
+
+  it("allows documentation executive to access QR History", () => {
+    const qrHistoryNav = NAV_ITEMS.find((item) => item.href === "/inventory/qr-history");
+    expect(qrHistoryNav).toBeDefined();
+    expect(canAccessNav([ROLES.DOCUMENTATION_EXECUTIVE], qrHistoryNav!)).toBe(true);
+    expect(canAccessNav([ROLES.SALES_EXECUTIVE], qrHistoryNav!)).toBe(false);
+  });
 });

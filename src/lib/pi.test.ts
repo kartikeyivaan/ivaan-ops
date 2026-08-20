@@ -5,6 +5,8 @@ import {
   calculateAdvanceRequired,
   calculateOutstanding,
   canEditProformaInvoice,
+  canUnbookProformaInvoice,
+  editTotalCoversPayments,
   canRecordPaymentAgainstPi,
   canManageExistingPiPayment,
   canRequestBooking,
@@ -99,26 +101,39 @@ describe("proforma invoice calculations", () => {
     expect(canManageExistingPiPayment("CANCEL_PENDING")).toBe(false);
   });
 
-  it("allows editing draft PIs and issued PIs with no payments or credit", () => {
+  it("allows editing drafts and issued PIs even with payments or credit", () => {
     expect(canEditProformaInvoice({ status: "DRAFT" })).toBe(true);
     expect(canEditProformaInvoice({ status: "ISSUED", paymentCount: 0, creditStatus: "NONE" })).toBe(
       true,
     );
-    expect(
-      canEditProformaInvoice({ status: "ISSUED", paymentCount: 0, creditStatus: "REJECTED" }),
-    ).toBe(true);
-    expect(canEditProformaInvoice({ status: "ISSUED", paymentCount: 1 })).toBe(false);
-    expect(canEditProformaInvoice({ status: "ISSUED", totalPaid: 5000 })).toBe(false);
+    expect(canEditProformaInvoice({ status: "ISSUED", paymentCount: 1 })).toBe(true);
+    expect(canEditProformaInvoice({ status: "ISSUED", totalPaid: 5000 })).toBe(true);
     expect(
       canEditProformaInvoice({ status: "ISSUED", paymentCount: 0, creditStatus: "PENDING_SM" }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       canEditProformaInvoice({ status: "ISSUED", paymentCount: 0, creditStatus: "APPROVED" }),
-    ).toBe(false);
+    ).toBe(true);
     expect(canEditProformaInvoice({ status: "BOOKED" })).toBe(false);
     expect(canEditProformaInvoice({ status: "PENDING_BOOKING" })).toBe(false);
+    expect(canEditProformaInvoice({ status: "PARTIALLY_DISPATCHED" })).toBe(false);
     expect(canEditProformaInvoice({ status: "CANCELLED" })).toBe(false);
     expect(canEditProformaInvoice({ status: "DRAFT", hasPendingEdit: true })).toBe(false);
+  });
+
+  it("allows unbooking pending-booking and booked PIs before edit", () => {
+    expect(canUnbookProformaInvoice({ status: "BOOKED" })).toBe(true);
+    expect(canUnbookProformaInvoice({ status: "PENDING_BOOKING" })).toBe(true);
+    expect(canUnbookProformaInvoice({ status: "ISSUED" })).toBe(false);
+    expect(canUnbookProformaInvoice({ status: "PARTIALLY_DISPATCHED" })).toBe(false);
+  });
+
+  it("blocks PI edits that drop the total below payments already received", () => {
+    expect(editTotalCoversPayments(100000, 40000)).toBe(true);
+    expect(editTotalCoversPayments(40000, 40000)).toBe(true);
+    expect(editTotalCoversPayments(39990.01, 40000)).toBe(true);
+    expect(editTotalCoversPayments(39990, 40000)).toBe(true);
+    expect(editTotalCoversPayments(39989.99, 40000)).toBe(false);
   });
 
   it("caps edited payment amount to outstanding plus the current payment", () => {

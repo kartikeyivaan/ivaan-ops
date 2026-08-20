@@ -20,10 +20,12 @@ import {
 } from "@/components/ui/table";
 import { DISCOUNT_APPROVAL_THRESHOLD } from "@/lib/project-proposal-pricing";
 import {
+  canConvertProjectProposalFromStatus,
   canShareProjectProposal,
   formatApprovalStatus,
   formatRevisionProposalLabel,
   formatProjectProposalStatus,
+  isProjectProposalConversionWindowOpen,
   openProjectProposalPdf,
   projectProposalPdfUrl,
 } from "@/lib/project-proposals";
@@ -163,7 +165,11 @@ export function ProjectProposalDetail({
   const canDownloadOrShare = canShareProjectProposal(proposal.status);
   const canDownloadPdf = canManage || canDownloadOrShare;
   const canConvertProposal =
-    canConvert && proposal.status === "APPROVED" && !postConversion;
+    canConvert &&
+    Boolean(revision) &&
+    canConvertProjectProposalFromStatus(proposal.status) &&
+    isProjectProposalConversionWindowOpen(revision?.proposalDate ?? new Date()) &&
+    !postConversion;
 
   async function openProposalPdf(format: "card" | "full") {
     setLoading(true);
@@ -196,7 +202,7 @@ export function ProjectProposalDetail({
   }
 
   async function convertProposal() {
-    if (!window.confirm("Convert this approved proposal to a project?")) return;
+    if (!window.confirm("Convert this proposal to a project?")) return;
     setLoading(true);
     const response = await fetch(`/api/project-proposals/${proposal.id}/convert`, {
       method: "POST",
@@ -359,7 +365,7 @@ export function ProjectProposalDetail({
         </div>
       ) : null}
 
-      {(proposal.status === "APPROVED" || proposal.executionProject) && (
+      {(canConvertProjectProposalFromStatus(proposal.status) || proposal.executionProject) && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Project Handoff</CardTitle>
@@ -383,7 +389,7 @@ export function ProjectProposalDetail({
                   </p>
                 ) : null}
               </>
-            ) : canConvert && proposal.status === "APPROVED" ? (
+            ) : canConvertProposal ? (
               <p className="text-slate-600">
                 Start material assignment by converting this proposal to a project execution
                 record.

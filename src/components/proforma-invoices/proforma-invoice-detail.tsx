@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { ArrowLeft, Download, MessageCircle, Pencil, Send, ShieldCheck, Trash2, Truck, XCircle } from "lucide-react";
+import { ArrowLeft, Download, MessageCircle, Pencil, Send, ShieldCheck, Trash2, Truck, Undo2, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -138,6 +138,7 @@ type ProformaInvoiceDetailData = {
     canRequest: boolean;
   };
   canEdit?: boolean;
+  canUnbook?: boolean;
   pendingEdit?: {
     id: string;
     requestedBy: { id: string; name: string };
@@ -684,6 +685,25 @@ export function ProformaInvoiceDetail({
     router.refresh();
   }
 
+  async function handleUnbook() {
+    const confirmed = window.confirm(
+      "Unbooking releases reserved stock so this PI can be edited. You will need to book it again after saving. Continue?",
+    );
+    if (!confirmed) return;
+    setLoading(true);
+    setError("");
+    const response = await fetch(`/api/proforma-invoices/${pi.id}/unbook`, {
+      method: "POST",
+    });
+    const data = await response.json();
+    setLoading(false);
+    if (!response.ok) {
+      setError(data.message ?? "Unable to unbook this PI.");
+      return;
+    }
+    router.refresh();
+  }
+
   async function handleApproveEdit() {
     setLoading(true);
     setError("");
@@ -803,6 +823,12 @@ export function ProformaInvoiceDetail({
                 <Pencil className="h-4 w-4" />
                 Edit PI
               </Link>
+            </Button>
+          ) : null}
+          {canManage && pi.canUnbook ? (
+            <Button variant="outline" disabled={loading} onClick={handleUnbook}>
+              <Undo2 className="h-4 w-4" />
+              Unbook
             </Button>
           ) : null}
           {canApproveEdit && pi.pendingEdit ? (
@@ -1052,11 +1078,7 @@ export function ProformaInvoiceDetail({
               {formatDocumentDate(pi.pendingEdit.requestedAt.slice(0, 10))}. The current PI stays
               unchanged until a Sales Manager approves this edit.
             </p>
-            <div className="grid gap-3 md:grid-cols-3">
-              <div>
-                <p className="text-slate-500">Proposed Customer</p>
-                <p className="font-medium">{pi.pendingEdit.customer.customerName}</p>
-              </div>
+            <div className="grid gap-3 md:grid-cols-2">
               <div>
                 <p className="text-slate-500">Proposed Total</p>
                 <p className="font-medium">{formatCurrency(pi.pendingEdit.totalValue)}</p>

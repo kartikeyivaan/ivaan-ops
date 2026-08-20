@@ -52,6 +52,8 @@ import {
   calculateOutstanding,
   canEditProformaInvoice,
   canRequestBooking,
+  canUnbookProformaInvoice,
+  editTotalCoversPayments,
   daysUntilCommittedDispatch,
   formatDispatchTodayApprovalMessage,
   formatDispatchTodayConfirmationMessage,
@@ -300,10 +302,9 @@ function serializePi(
     crossCompanyTransfer: options?.crossCompanyTransfer ?? null,
     canEdit: canEditProformaInvoice({
       status: pi.status,
-      paymentCount: pi.payments.length,
-      creditStatus: pi.creditStatus,
       hasPendingEdit: pi.editRequests.length > 0,
     }),
+    canUnbook: canUnbookProformaInvoice({ status: pi.status }),
     pendingEdit: serializePendingPiEdit(pi),
     customer: pi.customer,
     salesUser: pi.salesUser,
@@ -417,11 +418,10 @@ function normalizePiNotes(notes?: string | null) {
 }
 
 function piEditMatchesCurrent(
-  pi: { customerId: string; notes: string | null; items: Array<{ productId: string; qty: { toNumber(): number } | number | string; rate: { toNumber(): number } | number | string }> },
-  input: { customerId: string; notes?: string | null },
+  pi: { notes: string | null; items: Array<{ productId: string; qty: { toNumber(): number } | number | string; rate: { toNumber(): number } | number | string }> },
+  input: { notes?: string | null },
   proposedLines: ProposedPiEditLine[],
 ) {
-  if (pi.customerId !== input.customerId) return false;
   if (normalizePiNotes(pi.notes) !== normalizePiNotes(input.notes)) return false;
   if (pi.items.length !== proposedLines.length) return false;
 
@@ -463,7 +463,6 @@ async function applyProformaInvoiceEditTx(
       items: Array<{ productId: string; qty: { toNumber(): number } | number | string; rate: { toNumber(): number } | number | string }>;
     };
     performedById: string;
-    customerId: string;
     notes?: string | null;
     issue?: boolean;
     builtLines: Array<{
@@ -487,7 +486,6 @@ async function applyProformaInvoiceEditTx(
   const updated = await tx.proformaInvoice.update({
     where: { id: input.pi.id },
     data: {
-      customerId: input.customerId,
       notes,
       totalValue: input.totalValue,
       status: nextStatus,
@@ -916,7 +914,7 @@ export async function requestProformaInvoiceEdit(
     companyId: string;
     piId: string;
     requestedById: string;
-    customerId: string;
+    customerId?: string;
     notes?: string;
     issue?: boolean;
     lines: PiLineInput[];
@@ -938,21 +936,11 @@ export async function requestProformaInvoiceEdit(
   if (
     !canEditProformaInvoice({
       status: pi.status,
-      paymentCount: pi.payments.length,
-      creditStatus: pi.creditStatus,
       hasPendingEdit: pi.editRequests.length > 0,
     })
   ) {
     throw new Error("INVALID_STATUS");
   }
-  if (pi.quotationId && input.customerId !== pi.customerId) {
-    throw new Error("CUSTOMER_LOCKED");
-  }
-
-  const customer = await prisma.customer.findUnique({
-    where: { id: input.customerId },
-  });
-  if (!customer) throw new Error("CUSTOMER_NOT_FOUND");
 
   const proposedLines = await buildProposedPiEditLines(prisma, {
     companyId: input.companyId,
@@ -960,11 +948,17 @@ export async function requestProformaInvoiceEdit(
     piDate: pi.piDate,
   });
   const totalValue = roundMoney(proposedLines.reduce((sum, line) => sum + line.lineTotal, 0));
+  const totalPaid = roundMoney(
+    pi.payments.reduce((sum, payment) => sum + decimalToNumber(payment.amount), 0),
+  );
+  if (!editTotalCoversPayments(totalValue, totalPaid)) {
+    throw new Error("TOTAL_BELOW_PAID");
+  }
 
   if (
     piEditMatchesCurrent(
       pi,
-      { customerId: input.customerId, notes: input.notes },
+      { notes: input.notes },
       proposedLines,
     )
   ) {
@@ -973,17 +967,25 @@ export async function requestProformaInvoiceEdit(
 
   if (input.applyImmediately) {
     return prisma.$transaction(async (tx) => {
-      const updated = await applyProformaInvoiceEditTx(tx, {
+      await applyProformaInvoiceEditTx(tx, {
         companyId: input.companyId,
         pi,
         performedById: input.requestedById,
-        customerId: input.customerId,
         notes: input.notes,
         issue: input.issue,
         builtLines: proposedLines,
         totalValue,
       });
-      return { mode: "APPLIED" as const, pi: serializePi(updated) };
+      await clearPiCreditIfPaid(tx, {
+        companyId: input.companyId,
+        piId: pi.id,
+        performedById: input.requestedById,
+      });
+      const refreshed = await tx.proformaInvoice.findFirstOrThrow({
+        where: { id: pi.id },
+        include: piInclude,
+      });
+      return { mode: "APPLIED" as const, pi: serializePi(refreshed) };
     });
   }
 
@@ -992,7 +994,7 @@ export async function requestProformaInvoiceEdit(
       data: {
         companyId: input.companyId,
         piId: pi.id,
-        proposedCustomerId: input.customerId,
+        proposedCustomerId: pi.customerId,
         proposedNotes: normalizePiNotes(input.notes),
         proposedIssue: Boolean(input.issue),
         proposedTotalValue: totalValue,
@@ -1068,8 +1070,6 @@ export async function approveProformaInvoiceEdit(
   if (
     !canEditProformaInvoice({
       status: pi.status,
-      paymentCount: pi.payments.length,
-      creditStatus: pi.creditStatus,
     })
   ) {
     throw new Error("INVALID_STATUS");
@@ -1077,17 +1077,31 @@ export async function approveProformaInvoiceEdit(
 
   const proposedLines = parseProposedPiEditLines(editRequest.proposedLines);
   const totalValue = roundMoney(proposedLines.reduce((sum, line) => sum + line.lineTotal, 0));
+  const totalPaid = roundMoney(
+    pi.payments.reduce((sum, payment) => sum + decimalToNumber(payment.amount), 0),
+  );
+  if (!editTotalCoversPayments(totalValue, totalPaid)) {
+    throw new Error("TOTAL_BELOW_PAID");
+  }
 
   return prisma.$transaction(async (tx) => {
-    const updated = await applyProformaInvoiceEditTx(tx, {
+    await applyProformaInvoiceEditTx(tx, {
       companyId: input.companyId,
       pi,
       performedById: input.approvedById,
-      customerId: editRequest.proposedCustomerId,
       notes: editRequest.proposedNotes,
       issue: editRequest.proposedIssue,
       builtLines: proposedLines,
       totalValue,
+    });
+    await clearPiCreditIfPaid(tx, {
+      companyId: input.companyId,
+      piId: pi.id,
+      performedById: input.approvedById,
+    });
+    const refreshed = await tx.proformaInvoice.findFirstOrThrow({
+      where: { id: pi.id },
+      include: piInclude,
     });
 
     await tx.proformaInvoiceEditRequest.update({
@@ -1129,7 +1143,7 @@ export async function approveProformaInvoiceEdit(
       approved: true,
     });
 
-    return serializePi(updated);
+    return serializePi(refreshed);
   });
 }
 
@@ -3050,6 +3064,7 @@ async function releasePiBookingReservations(
     piId: string;
     piNo: string;
     performedById: string;
+    notes?: string;
   },
 ) {
   const reservations = await tx.inventoryEvent.findMany({
@@ -3083,10 +3098,99 @@ async function releasePiBookingReservations(
       sourceId: reservation.sourceId,
       sourceNumber: reservation.sourceNumber,
       replacesEventId: reservation.id,
-      notes: `Released booking for cancelled ${input.piNo}`,
+      notes: input.notes ?? `Released booking for cancelled ${input.piNo}`,
       createdById: input.performedById,
     });
   }
+}
+
+export async function unbookProformaInvoice(
+  prisma: PrismaClient,
+  input: {
+    companyId: string;
+    piId: string;
+    performedById: string;
+  },
+) {
+  const pi = await prisma.proformaInvoice.findFirst({
+    where: { id: input.piId, companyId: input.companyId },
+  });
+  if (!pi) throw new Error("NOT_FOUND");
+  if (!canUnbookProformaInvoice({ status: pi.status })) {
+    throw new Error("INVALID_STATUS");
+  }
+
+  const activeDispatch = await prisma.dispatch.findFirst({
+    where: {
+      proformaInvoiceId: pi.id,
+      status: { not: DispatchStatus.CANCELLED },
+    },
+    select: { id: true },
+  });
+  if (activeDispatch) throw new Error("HAS_ACTIVE_DISPATCH");
+
+  return prisma.$transaction(async (tx) => {
+    await releasePiBookingReservations(tx, {
+      companyId: input.companyId,
+      piId: pi.id,
+      piNo: pi.piNo,
+      performedById: input.performedById,
+      notes: `Released booking for unbooked ${pi.piNo}`,
+    });
+
+    await tx.proformaInvoiceSerial.deleteMany({
+      where: { piId: pi.id },
+    });
+
+    await tx.approvalRequest.updateMany({
+      where: {
+        moduleType: {
+          in: [ApprovalModuleType.BOOKING, ApprovalModuleType.DISPATCH_TODAY],
+        },
+        moduleId: pi.id,
+        status: ApprovalRequestStatus.PENDING,
+      },
+      data: {
+        status: ApprovalRequestStatus.REJECTED,
+        approvedById: input.performedById,
+        remarks: "Rejected because PI was unbooked for edit",
+      },
+    });
+
+    const updated = await tx.proformaInvoice.update({
+      where: { id: pi.id },
+      data: {
+        status: ProformaInvoiceStatus.ISSUED,
+        warehouseId: null,
+        bookedAt: null,
+        bookedById: null,
+        requiredDispatchMinDate: null,
+        requiredDispatchMaxDate: null,
+        dispatchTodayDate: null,
+        dispatchTodayMarkedAt: null,
+        dispatchTodayMarkedById: null,
+        dispatchDraftVehicleNo: null,
+        dispatchDraftDriverName: null,
+        dispatchDraftReceiverName: null,
+        dispatchDraftReceiverMobile: null,
+        dispatchDraftNotes: null,
+      },
+      include: piInclude,
+    });
+
+    await writeAuditLogTx(tx, {
+      tableName: "proforma_invoices",
+      recordId: pi.id,
+      action: "UPDATE",
+      oldValue: { status: pi.status },
+      newValue: { status: ProformaInvoiceStatus.ISSUED, unbooked: true },
+      performedBy: input.performedById,
+      companyId: input.companyId,
+      reference: pi.piNo,
+    });
+
+    return serializePi(updated);
+  });
 }
 
 export async function requestPiCancel(

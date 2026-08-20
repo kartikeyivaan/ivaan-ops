@@ -33,6 +33,11 @@ const SERIAL_VIEW_ROLES = [
   ROLES.PURCHASE,
 ] as const;
 
+const QR_HISTORY_ROLES = [
+  ...SERIAL_VIEW_ROLES,
+  ROLES.DOCUMENTATION_EXECUTIVE,
+] as const;
+
 export function canViewInventory(userRoles: string[]): boolean {
   return hasRole(userRoles, [...VIEW_ROLES]);
 }
@@ -86,4 +91,8 @@ export function canAdjustStock(userRoles: string[]): boolean {
 
 export function canViewSerialNumbers(userRoles: string[]): boolean {
   return hasRole(userRoles, [...SERIAL_VIEW_ROLES]);
+}
+
+export function canViewQrHistory(userRoles: string[]): boolean {
+  return hasRole(userRoles, [...QR_HISTORY_ROLES]);
 }

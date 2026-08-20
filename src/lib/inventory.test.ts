@@ -10,6 +10,7 @@ import {
   canInwardMaterial,
   canProposeIncomingLotReceiveEdit,
   canViewInventory,
+  canViewQrHistory,
   canViewSerialNumbers,
 } from "@/lib/inventory-permissions";
 import {
@@ -222,6 +223,12 @@ describe("inventory permissions", () => {
   it("allows sales to view inventory but not serials", () => {
     expect(canViewInventory([ROLES.SALES_EXECUTIVE])).toBe(true);
     expect(canViewSerialNumbers([ROLES.SALES_EXECUTIVE])).toBe(false);
+  });
+
+  it("allows documentation executive to check QR history but not other serial views", () => {
+    expect(canViewQrHistory([ROLES.DOCUMENTATION_EXECUTIVE])).toBe(true);
+    expect(canViewInventory([ROLES.DOCUMENTATION_EXECUTIVE])).toBe(false);
+    expect(canViewSerialNumbers([ROLES.DOCUMENTATION_EXECUTIVE])).toBe(false);
   });
 
   it("allows purchase to create incoming", () => {

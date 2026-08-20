@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { canApprovePiEdit } from "@/lib/pi-permissions";
-import { approveProformaInvoiceEdit } from "@/lib/pi-service";
+import { canManageProformaInvoices } from "@/lib/pi-permissions";
+import { unbookProformaInvoice } from "@/lib/pi-service";
 import { prisma } from "@/lib/prisma";
-import { approvePiCancelSchema } from "@/lib/validations";
 import { requireActiveCompany } from "@/lib/session";
 
 function errorResponse(code: string, message: string, status: number, details?: unknown) {
@@ -12,9 +11,9 @@ function errorResponse(code: string, message: string, status: number, details?: 
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-export async function POST(request: Request, context: RouteContext) {
+export async function POST(_request: Request, context: RouteContext) {
   const session = await auth();
-  if (!session?.user || !canApprovePiEdit(session.user.roles)) {
+  if (!session?.user || !canManageProformaInvoices(session.user.roles)) {
     return errorResponse("FORBIDDEN", "You do not have permission for this action.", 403);
   }
 
@@ -26,18 +25,12 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   const { id } = await context.params;
-  const body = await request.json().catch(() => ({}));
-  const parsed = approvePiCancelSchema.safeParse(body);
-  if (!parsed.success) {
-    return errorResponse("VALIDATION_ERROR", "Invalid request.", 400, parsed.error.flatten());
-  }
 
   try {
-    const pi = await approveProformaInvoiceEdit(prisma, {
+    const pi = await unbookProformaInvoice(prisma, {
       companyId,
       piId: id,
-      approvedById: session.user.id,
-      remarks: parsed.data.remarks,
+      performedById: session.user.id,
     });
     return NextResponse.json(pi);
   } catch (error) {
@@ -45,20 +38,17 @@ export async function POST(request: Request, context: RouteContext) {
       if (error.message === "NOT_FOUND") {
         return errorResponse("NOT_FOUND", "Proforma invoice not found.", 404);
       }
-      if (error.message === "NO_PENDING_EDIT") {
-        return errorResponse("NO_PENDING_EDIT", "No pending PI edit request found.", 400);
-      }
       if (error.message === "INVALID_STATUS") {
         return errorResponse(
           "INVALID_STATUS",
-          "This PI can no longer be updated with the pending edit.",
+          "Only pending-booking or booked PIs can be unbooked. Cancel related delivery challans first if any exist.",
           400,
         );
       }
-      if (error.message === "TOTAL_BELOW_PAID") {
+      if (error.message === "HAS_ACTIVE_DISPATCH") {
         return errorResponse(
-          "TOTAL_BELOW_PAID",
-          "The updated PI total cannot be less than payments already received. Add, remove, or update payment entries first.",
+          "HAS_ACTIVE_DISPATCH",
+          "Cancel related delivery challans before unbooking this PI.",
           400,
         );
       }

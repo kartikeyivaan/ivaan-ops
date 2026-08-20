@@ -103,8 +103,8 @@ export function canManageExistingPiPayment(status: string): boolean {
 }
 
 /**
- * Header/line edits keep the same PI number. Allowed on drafts, and on issued
- * PIs that still have no payments and no credit in progress or approved.
+ * Header/line edits keep the same PI number and customer. Allowed on drafts
+ * and issued PIs (including paid / on-credit). Booked PIs must be unbooked first.
  */
 export function canEditProformaInvoice(input: {
   status: string;
@@ -114,12 +114,17 @@ export function canEditProformaInvoice(input: {
   hasPendingEdit?: boolean;
 }): boolean {
   if (input.hasPendingEdit) return false;
-  if (input.status === "DRAFT") return true;
-  if (input.status !== "ISSUED") return false;
-  const hasPayments = (input.paymentCount ?? 0) > 0 || (input.totalPaid ?? 0) > 0;
-  if (hasPayments) return false;
-  const credit = input.creditStatus ?? "NONE";
-  return credit === "NONE" || credit === "REJECTED";
+  return input.status === "DRAFT" || input.status === "ISSUED";
+}
+
+/** Booked stock must be released before lines can change. */
+export function canUnbookProformaInvoice(input: { status: string }): boolean {
+  return input.status === "PENDING_BOOKING" || input.status === "BOOKED";
+}
+
+/** Edited PI total cannot fall more than the payment tolerance below amount already received. */
+export function editTotalCoversPayments(totalValue: number, totalPaid: number): boolean {
+  return totalPaid - totalValue <= PAYMENT_OUTSTANDING_TOLERANCE_INR;
 }
 
 /** Max amount allowed when editing a payment (current outstanding + this payment). */

@@ -127,7 +127,12 @@ export const NAV_ITEMS: NavItem[] = [
   {
     label: "QR History",
     href: "/inventory/qr-history",
-    roles: [ROLES.SUPER_ADMIN, ROLES.WAREHOUSE, ROLES.PURCHASE],
+    roles: [
+      ROLES.SUPER_ADMIN,
+      ROLES.WAREHOUSE,
+      ROLES.PURCHASE,
+      ROLES.DOCUMENTATION_EXECUTIVE,
+    ],
   },
   {
     label: "Product In / Out",

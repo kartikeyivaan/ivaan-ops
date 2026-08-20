@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { canViewSerialNumbers } from "@/lib/inventory-permissions";
+import { canViewQrHistory } from "@/lib/inventory-permissions";
 import { prisma } from "@/lib/prisma";
 import { getSerialPhysicalHistory } from "@/lib/serial-history-service";
 import { requireActiveCompany } from "@/lib/session";
@@ -11,7 +11,7 @@ function errorResponse(code: string, message: string, status: number) {
 
 export async function GET(request: Request) {
   const session = await auth();
-  if (!session?.user || !canViewSerialNumbers(session.user.roles)) {
+  if (!session?.user || !canViewQrHistory(session.user.roles)) {
     return errorResponse("FORBIDDEN", "You do not have permission for this action.", 403);
   }
 

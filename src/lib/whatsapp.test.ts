@@ -6,6 +6,7 @@ import {
   PROJECT_PROPOSAL_PDF_LINK_PLACEHOLDER,
 } from "@/lib/whatsapp";
 import { buildProjectProposalSharePayload } from "@/lib/project-proposal-share";
+import { PROJECT_PROPOSAL_SHARE_LINK_TTL_DAYS } from "@/lib/project-proposals";
 
 describe("project proposal whatsapp share", () => {
   it("formats the customer-facing proposal message", () => {
@@ -77,6 +78,43 @@ describe("project proposal whatsapp share", () => {
       expect(payload.message).toContain("Dear Rahul Sharma,");
       expect(payload.whatsappUrl).toMatch(/^https:\/\/wa\.me\/919876543210\?text=/);
       expect(payload.pdfUrl).toContain("/api/share/project-proposal?token=");
+    } finally {
+      process.env.APP_URL = originalAppUrl;
+    }
+  });
+
+  it("creates proposal share links valid for at least six months", () => {
+    const originalAppUrl = process.env.APP_URL;
+    process.env.APP_URL = "https://app.ivaansolar.com";
+    process.env.AUTH_SECRET = "test-secret-for-share-token-signing";
+
+    try {
+      const before = Date.now();
+      const payload = buildProjectProposalSharePayload({
+        id: "11111111-1111-1111-1111-111111111111",
+        proposalNo: "IVAAN-PP-2526-00012",
+        currentRevisionNo: 0,
+        revisions: [
+          {
+            revisionNo: 0,
+            customerName: "Rahul Sharma",
+            customerMobile: "9876543210",
+            finalAmount: 285000,
+            subsidyEstimate: 78000,
+            effectiveCustomerInvestment: 207000,
+          },
+        ],
+      });
+      const token = new URL(payload.pdfUrl).searchParams.get("token");
+      expect(token).toBeTruthy();
+
+      const encoded = token?.split(".")[0] ?? "";
+      const decoded = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as {
+        e: number;
+      };
+      const minExpectedExpiry =
+        before + PROJECT_PROPOSAL_SHARE_LINK_TTL_DAYS * 24 * 60 * 60 * 1000;
+      expect(decoded.e).toBeGreaterThanOrEqual(minExpectedExpiry);
     } finally {
       process.env.APP_URL = originalAppUrl;
     }

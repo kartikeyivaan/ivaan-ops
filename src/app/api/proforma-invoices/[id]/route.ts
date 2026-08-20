@@ -76,7 +76,6 @@ export async function PATCH(request: Request, context: RouteContext) {
       companyId,
       piId: id,
       requestedById: session.user.id,
-      customerId: parsed.data.customerId,
       notes: parsed.data.notes,
       issue: parsed.data.issue,
       lines: parsed.data.lines,
@@ -88,9 +87,6 @@ export async function PATCH(request: Request, context: RouteContext) {
       if (error.message === "NOT_FOUND") {
         return errorResponse("NOT_FOUND", "Proforma invoice not found.", 404);
       }
-      if (error.message === "CUSTOMER_NOT_FOUND") {
-        return errorResponse("NOT_FOUND", "Customer not found.", 404);
-      }
       if (error.message === "PRODUCT_NOT_FOUND") {
         return errorResponse("NOT_FOUND", "Product not found.", 404);
       }
@@ -100,10 +96,10 @@ export async function PATCH(request: Request, context: RouteContext) {
       if (error.message === "NO_CHANGES") {
         return errorResponse("NO_CHANGES", "No changes were detected in this edit.", 400);
       }
-      if (error.message === "CUSTOMER_LOCKED") {
+      if (error.message === "TOTAL_BELOW_PAID") {
         return errorResponse(
-          "CUSTOMER_LOCKED",
-          "Customer cannot be changed on a PI converted from a quotation.",
+          "TOTAL_BELOW_PAID",
+          "The updated PI total cannot be less than payments already received. Add, remove, or update payment entries first.",
           400,
         );
       }
@@ -111,7 +107,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         return errorResponse(
           "INVALID_STATUS",
           applyImmediately
-            ? "This PI can no longer be edited."
+            ? "This PI can no longer be edited. Unbook it first if it is still booked."
             : "This PI can no longer be edited, or an edit is already pending approval.",
           400,
         );

@@ -1,16 +1,13 @@
 import { redirect } from "next/navigation";
 import { QrHistoryWorkbench } from "@/components/inventory/qr-history-workbench";
 import { auth } from "@/lib/auth";
-import {
-  canViewInventory,
-  canViewSerialNumbers,
-} from "@/lib/inventory-permissions";
+import { canViewQrHistory } from "@/lib/inventory-permissions";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
 
 export default async function QrHistoryPage() {
   const session = await auth();
-  if (!session?.user || !canViewInventory(session.user.roles)) {
+  if (!session?.user || !canViewQrHistory(session.user.roles)) {
     redirect("/dashboard");
   }
 
@@ -33,7 +30,7 @@ export default async function QrHistoryPage() {
       activeTab="qr"
       products={products}
       warehouses={warehouses}
-      canScanSerials={canViewSerialNumbers(session.user.roles)}
+      canScanSerials={canViewQrHistory(session.user.roles)}
     />
   );
 }

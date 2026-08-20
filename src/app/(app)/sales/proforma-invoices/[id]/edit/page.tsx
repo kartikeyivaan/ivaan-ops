@@ -85,10 +85,11 @@ export default async function EditProformaInvoicePage({ params }: PageProps) {
       piNo={pi.piNo}
       status={pi.status}
       requiresApproval={!canApprovePiEdit(session.user.roles)}
-      lockCustomer={Boolean(pi.quotation)}
+      lockCustomer={true}
       customers={customerOptions}
       products={productOptions}
       defaultCustomerId={pi.customer.id}
+      existingTotalPaid={pi.paymentSummary.totalPaid}
       initialNotes={pi.notes ?? ""}
       initialLines={pi.items.map((item) => ({
         productId: item.product.id,

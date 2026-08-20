@@ -28,10 +28,29 @@ export function formatApprovalStatus(status: string): string {
     .join(" ");
 }
 
-const SHAREABLE_STATUSES = new Set(["APPROVED", "SENT", "CONVERTED"]);
+export const PROJECT_PROPOSAL_CONVERSION_WINDOW_DAYS = 45;
+export const PROJECT_PROPOSAL_SHARE_LINK_TTL_DAYS = 180;
+
+const SHAREABLE_STATUSES = new Set(["APPROVED", "SENT", "EXPIRED", "CONVERTED"]);
+const CONVERTIBLE_STATUSES = new Set(["APPROVED", "EXPIRED"]);
 
 export function canShareProjectProposal(status: string): boolean {
   return SHAREABLE_STATUSES.has(status);
+}
+
+export function canConvertProjectProposalFromStatus(status: string): boolean {
+  return CONVERTIBLE_STATUSES.has(status);
+}
+
+export function isProjectProposalConversionWindowOpen(
+  proposalDate: Date | string,
+  now = new Date(),
+): boolean {
+  const proposalStart = toDateOnly(new Date(proposalDate));
+  const conversionCutoff = toDateOnly(
+    addDays(proposalStart, PROJECT_PROPOSAL_CONVERSION_WINDOW_DAYS),
+  );
+  return toDateOnly(now) <= conversionCutoff;
 }
 
 export function getProposalValidityDate(proposalDate: Date): Date {

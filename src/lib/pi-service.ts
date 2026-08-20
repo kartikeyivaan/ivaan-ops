@@ -53,7 +53,6 @@ import {
   canEditProformaInvoice,
   canRequestBooking,
   canUnbookProformaInvoice,
-  editTotalCoversPayments,
   daysUntilCommittedDispatch,
   formatDispatchTodayApprovalMessage,
   formatDispatchTodayConfirmationMessage,
@@ -471,6 +470,7 @@ async function applyProformaInvoiceEditTx(
       rate: number;
       gstRate: number;
       lineTotal: number;
+      displayName?: string;
     }>;
     totalValue: number;
   },
@@ -483,13 +483,21 @@ async function applyProformaInvoiceEditTx(
 
   await tx.proformaInvoiceItem.deleteMany({ where: { piId: input.pi.id } });
 
+  const itemCreates = input.builtLines.map(({ productId, qty, rate, gstRate, lineTotal }) => ({
+    productId,
+    qty,
+    rate,
+    gstRate,
+    lineTotal,
+  }));
+
   const updated = await tx.proformaInvoice.update({
     where: { id: input.pi.id },
     data: {
       notes,
       totalValue: input.totalValue,
       status: nextStatus,
-      items: { create: input.builtLines },
+      items: { create: itemCreates },
     },
     include: piInclude,
   });
@@ -924,7 +932,6 @@ export async function requestProformaInvoiceEdit(
   const pi = await prisma.proformaInvoice.findFirst({
     where: { id: input.piId, companyId: input.companyId },
     include: {
-      payments: true,
       items: true,
       editRequests: {
         where: { status: PiEditRequestStatus.PENDING },
@@ -948,12 +955,6 @@ export async function requestProformaInvoiceEdit(
     piDate: pi.piDate,
   });
   const totalValue = roundMoney(proposedLines.reduce((sum, line) => sum + line.lineTotal, 0));
-  const totalPaid = roundMoney(
-    pi.payments.reduce((sum, payment) => sum + decimalToNumber(payment.amount), 0),
-  );
-  if (!editTotalCoversPayments(totalValue, totalPaid)) {
-    throw new Error("TOTAL_BELOW_PAID");
-  }
 
   if (
     piEditMatchesCurrent(
@@ -1059,7 +1060,7 @@ export async function approveProformaInvoiceEdit(
     },
     include: {
       proformaInvoice: {
-        include: { payments: true, items: true },
+        include: { items: true },
       },
     },
     orderBy: { createdAt: "desc" },
@@ -1077,12 +1078,6 @@ export async function approveProformaInvoiceEdit(
 
   const proposedLines = parseProposedPiEditLines(editRequest.proposedLines);
   const totalValue = roundMoney(proposedLines.reduce((sum, line) => sum + line.lineTotal, 0));
-  const totalPaid = roundMoney(
-    pi.payments.reduce((sum, payment) => sum + decimalToNumber(payment.amount), 0),
-  );
-  if (!editTotalCoversPayments(totalValue, totalPaid)) {
-    throw new Error("TOTAL_BELOW_PAID");
-  }
 
   return prisma.$transaction(async (tx) => {
     await applyProformaInvoiceEditTx(tx, {

@@ -10,7 +10,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { calculateLineAmounts } from "@/lib/quotations";
 import { formatPricingType } from "@/lib/products";
-import { PAYMENT_OUTSTANDING_TOLERANCE_INR } from "@/lib/proforma-invoices";
 
 type Customer = {
   id: string;
@@ -45,7 +44,6 @@ export function ProformaInvoiceForm({
   requiresApproval = false,
   initialNotes,
   initialLines,
-  existingTotalPaid = 0,
 }: {
   customers: Customer[];
   products: Product[];
@@ -58,7 +56,6 @@ export function ProformaInvoiceForm({
   requiresApproval?: boolean;
   initialNotes?: string;
   initialLines?: LineDraft[];
-  existingTotalPaid?: number;
 }) {
   const router = useRouter();
   const isEdit = mode === "edit";
@@ -99,9 +96,6 @@ export function ProformaInvoiceForm({
   }, [lines, products]);
 
   const grandTotal = computedLines.reduce((sum, line) => sum + line.lineTotal, 0);
-  const editPaymentGap = existingTotalPaid - grandTotal;
-  const exceedsPaidEditTolerance =
-    isEdit && editPaymentGap > PAYMENT_OUTSTANDING_TOLERANCE_INR;
   const backHref = isEdit && piId ? `/sales/proforma-invoices/${piId}` : "/sales/proforma-invoices";
   const canIssueOnSave = !isEdit || status === "DRAFT";
   const showApprovalFlow = isEdit && requiresApproval;
@@ -138,12 +132,6 @@ export function ProformaInvoiceForm({
 
   async function handleSubmit(saveAsDraft: boolean) {
     setError("");
-    if (exceedsPaidEditTolerance) {
-      setError(
-        `New PI total is ₹${editPaymentGap.toLocaleString("en-IN")} below received payment. Please add, remove, or update payment entries first, then save the PI edit again.`,
-      );
-      return;
-    }
     setLoading(true);
 
     const payload = {
@@ -314,19 +302,13 @@ export function ProformaInvoiceForm({
           <p className="text-right text-lg font-semibold">
             Grand Total: ₹{grandTotal.toLocaleString("en-IN")}
           </p>
-          {exceedsPaidEditTolerance ? (
-            <p className="text-sm text-amber-700">
-              Total is below paid amount by more than ₹{PAYMENT_OUTSTANDING_TOLERANCE_INR}. Adjust
-              payment entries first, then retry this edit.
-            </p>
-          ) : null}
         </CardContent>
       </Card>
 
       <div className="flex flex-wrap gap-3">
         {showApprovalFlow ? (
           <>
-            <Button disabled={loading || exceedsPaidEditTolerance} onClick={() => handleSubmit(false)}>
+            <Button disabled={loading} onClick={() => handleSubmit(false)}>
               Submit for Approval
             </Button>
             {canIssueOnSave ? (
@@ -342,12 +324,12 @@ export function ProformaInvoiceForm({
           </>
         ) : canIssueOnSave ? (
           <>
-            <Button disabled={loading || exceedsPaidEditTolerance} onClick={() => handleSubmit(false)}>
+            <Button disabled={loading} onClick={() => handleSubmit(false)}>
               {issue ? "Save & Issue PI" : "Save Draft"}
             </Button>
             <Button
               variant="outline"
-              disabled={loading || exceedsPaidEditTolerance}
+              disabled={loading}
               onClick={() => handleSubmit(true)}
             >
               Save as Draft
@@ -362,7 +344,7 @@ export function ProformaInvoiceForm({
             </label>
           </>
         ) : (
-          <Button disabled={loading || exceedsPaidEditTolerance} onClick={() => handleSubmit(false)}>
+          <Button disabled={loading} onClick={() => handleSubmit(false)}>
             Save PI
           </Button>
         )}

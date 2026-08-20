@@ -55,13 +55,6 @@ export async function POST(request: Request, context: RouteContext) {
           400,
         );
       }
-      if (error.message === "TOTAL_BELOW_PAID") {
-        return errorResponse(
-          "TOTAL_BELOW_PAID",
-          "The updated PI total cannot be less than payments already received. Add, remove, or update payment entries first.",
-          400,
-        );
-      }
     }
     throw error;
   }

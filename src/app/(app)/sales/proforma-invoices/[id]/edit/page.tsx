@@ -89,7 +89,6 @@ export default async function EditProformaInvoicePage({ params }: PageProps) {
       customers={customerOptions}
       products={productOptions}
       defaultCustomerId={pi.customer.id}
-      existingTotalPaid={pi.paymentSummary.totalPaid}
       initialNotes={pi.notes ?? ""}
       initialLines={pi.items.map((item) => ({
         productId: item.product.id,

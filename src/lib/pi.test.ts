@@ -6,7 +6,6 @@ import {
   calculateOutstanding,
   canEditProformaInvoice,
   canUnbookProformaInvoice,
-  editTotalCoversPayments,
   canRecordPaymentAgainstPi,
   canManageExistingPiPayment,
   canRequestBooking,
@@ -126,14 +125,6 @@ describe("proforma invoice calculations", () => {
     expect(canUnbookProformaInvoice({ status: "PENDING_BOOKING" })).toBe(true);
     expect(canUnbookProformaInvoice({ status: "ISSUED" })).toBe(false);
     expect(canUnbookProformaInvoice({ status: "PARTIALLY_DISPATCHED" })).toBe(false);
-  });
-
-  it("blocks PI edits that drop the total below payments already received", () => {
-    expect(editTotalCoversPayments(100000, 40000)).toBe(true);
-    expect(editTotalCoversPayments(40000, 40000)).toBe(true);
-    expect(editTotalCoversPayments(39990.01, 40000)).toBe(true);
-    expect(editTotalCoversPayments(39990, 40000)).toBe(true);
-    expect(editTotalCoversPayments(39989.99, 40000)).toBe(false);
   });
 
   it("caps edited payment amount to outstanding plus the current payment", () => {

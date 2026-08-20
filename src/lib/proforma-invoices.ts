@@ -105,6 +105,7 @@ export function canManageExistingPiPayment(status: string): boolean {
 /**
  * Header/line edits keep the same PI number and customer. Allowed on drafts
  * and issued PIs (including paid / on-credit). Booked PIs must be unbooked first.
+ * Payment sufficiency is enforced at booking of the updated PI, not at edit time.
  */
 export function canEditProformaInvoice(input: {
   status: string;
@@ -120,11 +121,6 @@ export function canEditProformaInvoice(input: {
 /** Booked stock must be released before lines can change. */
 export function canUnbookProformaInvoice(input: { status: string }): boolean {
   return input.status === "PENDING_BOOKING" || input.status === "BOOKED";
-}
-
-/** Edited PI total cannot fall more than the payment tolerance below amount already received. */
-export function editTotalCoversPayments(totalValue: number, totalPaid: number): boolean {
-  return totalPaid - totalValue <= PAYMENT_OUTSTANDING_TOLERANCE_INR;
 }
 
 /** Max amount allowed when editing a payment (current outstanding + this payment). */

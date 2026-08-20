@@ -96,13 +96,6 @@ export async function PATCH(request: Request, context: RouteContext) {
       if (error.message === "NO_CHANGES") {
         return errorResponse("NO_CHANGES", "No changes were detected in this edit.", 400);
       }
-      if (error.message === "TOTAL_BELOW_PAID") {
-        return errorResponse(
-          "TOTAL_BELOW_PAID",
-          "The updated PI total cannot be less than payments already received. Add, remove, or update payment entries first.",
-          400,
-        );
-      }
       if (error.message === "INVALID_STATUS") {
         return errorResponse(
           "INVALID_STATUS",

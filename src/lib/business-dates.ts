@@ -57,7 +57,6 @@ export function getBusinessMonthRange(
 /** ISO week starts Monday in business timezone. */
 export function getBusinessWeekRange(asOf = new Date()): { fromDate: string; toDate: string } {
   const today = getBusinessToday(asOf);
-  const { year, month, day } = parseBusinessDateString(today);
   const weekday = new Date(`${today}T12:00:00.000Z`).getUTCDay();
   const mondayOffset = weekday === 0 ? -6 : 1 - weekday;
   const monday = addDaysToDateString(today, mondayOffset);

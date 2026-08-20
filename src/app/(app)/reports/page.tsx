@@ -4,11 +4,15 @@ import { auth } from "@/lib/auth";
 import {
   canViewAnyReport,
   canViewBookedAvailableReport,
+  canViewCollectionReport,
   canViewDispatchReport,
+  canViewExecutivePerformanceReport,
   canViewPaymentFollowupReport,
   canViewProductMovementReport,
   canViewReservedQtyReport,
   canViewSalesExecutiveReport,
+  canViewSalesFunnelReport,
+  canViewSalesPerformanceReport,
 } from "@/lib/report-permissions";
 import { prisma } from "@/lib/prisma";
 import { ROLES, isSuperAdmin } from "@/lib/rbac";
@@ -27,6 +31,10 @@ export default async function ReportsPage() {
 
   const allowedReports = [
     canViewSalesExecutiveReport(roles) ? "sales-executive" : null,
+    canViewSalesPerformanceReport(roles) ? "sales-performance" : null,
+    canViewSalesFunnelReport(roles) ? "sales-funnel" : null,
+    canViewExecutivePerformanceReport(roles) ? "executive-performance" : null,
+    canViewCollectionReport(roles) ? "collection" : null,
     canViewPaymentFollowupReport(roles) ? "payment-followup" : null,
     canViewProductMovementReport(roles) ? "product-movement" : null,
     canViewBookedAvailableReport(roles) ? "booked-available" : null,
@@ -34,6 +42,10 @@ export default async function ReportsPage() {
     canViewDispatchReport(roles) ? "dispatch" : null,
   ].filter(Boolean) as Array<
     | "sales-executive"
+    | "sales-performance"
+    | "sales-funnel"
+    | "executive-performance"
+    | "collection"
     | "payment-followup"
     | "product-movement"
     | "booked-available"

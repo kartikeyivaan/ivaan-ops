@@ -67,6 +67,22 @@ export function canViewDispatchReport(userRoles: string[]): boolean {
   return hasRole(userRoles, [...DISPATCH_REPORT_ROLES]);
 }
 
+export function canViewSalesPerformanceReport(userRoles: string[]): boolean {
+  return canViewSalesExecutiveReport(userRoles);
+}
+
+export function canViewSalesFunnelReport(userRoles: string[]): boolean {
+  return canViewSalesExecutiveReport(userRoles);
+}
+
+export function canViewCollectionReport(userRoles: string[]): boolean {
+  return canViewPaymentFollowupReport(userRoles);
+}
+
+export function canViewExecutivePerformanceReport(userRoles: string[]): boolean {
+  return canViewSalesExecutiveReport(userRoles);
+}
+
 export function canViewAnyReport(userRoles: string[]): boolean {
   return (
     canViewSalesExecutiveReport(userRoles) ||
@@ -74,7 +90,11 @@ export function canViewAnyReport(userRoles: string[]): boolean {
     canViewProductMovementReport(userRoles) ||
     canViewBookedAvailableReport(userRoles) ||
     canViewReservedQtyReport(userRoles) ||
-    canViewDispatchReport(userRoles)
+    canViewDispatchReport(userRoles) ||
+    canViewSalesPerformanceReport(userRoles) ||
+    canViewSalesFunnelReport(userRoles) ||
+    canViewCollectionReport(userRoles) ||
+    canViewExecutivePerformanceReport(userRoles)
   );
 }
 
@@ -90,4 +110,16 @@ export function restrictSalesUserId(
     return userId;
   }
   return requestedSalesUserId;
+}
+
+/**
+ * Soft UX default for list filters only. Access control must use
+ * `restrictSalesUserId` — executives cannot bypass isolation via "all".
+ * @deprecated Prefer `restrictSalesUserId` for authorization.
+ */
+export function defaultSalesListFilterUserId(
+  userRoles: string[],
+  userId: string,
+): string | undefined {
+  return restrictSalesUserId(userRoles, userId, undefined);
 }

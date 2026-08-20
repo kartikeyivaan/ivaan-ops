@@ -65,6 +65,7 @@ import {
   toDateOnly,
 } from "@/lib/proforma-invoices";
 import { calculateLineAmounts, roundMoney } from "@/lib/quotations";
+import { endOfBusinessDay, parseBusinessDate } from "@/lib/business-dates";
 import { addCalendarDays } from "@/lib/working-days";
 import { createWorkingDaysService } from "@/lib/working-days-service";
 
@@ -748,15 +749,31 @@ export async function listProformaInvoices(
     q?: string;
     status?: ProformaInvoiceStatus;
     customerId?: string;
+    salesUserId?: string;
+    fromDate?: string;
+    toDate?: string;
+    outstandingOnly?: boolean;
   },
 ) {
   await clearExpiredDispatchTodayFlags(prisma, companyId);
+
+  const fromDate = filters.fromDate ? parseBusinessDate(filters.fromDate) : undefined;
+  const toDate = filters.toDate ? endOfBusinessDay(filters.toDate) : undefined;
 
   const rows = await prisma.proformaInvoice.findMany({
     where: {
       companyId,
       ...(filters.status ? { status: filters.status } : {}),
       ...(filters.customerId ? { customerId: filters.customerId } : {}),
+      ...(filters.salesUserId ? { salesUserId: filters.salesUserId } : {}),
+      ...(fromDate || toDate
+        ? {
+            piDate: {
+              ...(fromDate ? { gte: fromDate } : {}),
+              ...(toDate ? { lte: toDate } : {}),
+            },
+          }
+        : {}),
       ...(filters.q
         ? {
             OR: [
@@ -770,7 +787,9 @@ export async function listProformaInvoices(
     orderBy: { createdAt: "desc" },
   });
 
-  return rows.map((row) => serializePi(row));
+  const serialized = rows.map((row) => serializePi(row));
+  if (!filters.outstandingOnly) return serialized;
+  return serialized.filter((row) => row.paymentSummary.outstanding > 0);
 }
 
 export async function getProformaInvoiceById(

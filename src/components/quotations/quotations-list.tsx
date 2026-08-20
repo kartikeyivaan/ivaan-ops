@@ -33,6 +33,17 @@ type QuotationListItem = {
   salesUser: { name: string };
 };
 
+type SalesExecutive = { id: string; name: string; email?: string };
+
+type InitialFilters = {
+  q?: string;
+  status?: string;
+  fromDate?: string;
+  toDate?: string;
+  salesUserId?: string;
+  expiry?: string;
+};
+
 function statusVariant(status: string): "default" | "success" | "warning" | "danger" {
   if (status === "SENT") return "success";
   if (status === "EXPIRED") return "danger";
@@ -42,15 +53,25 @@ function statusVariant(status: string): "default" | "success" | "warning" | "dan
 
 export function QuotationsList({
   initialQuotations,
+  salesExecutives = [],
   canManage,
+  canFilterByExecutive = false,
+  initialFilters,
 }: {
   initialQuotations: QuotationListItem[];
+  salesExecutives?: SalesExecutive[];
   canManage: boolean;
+  canFilterByExecutive?: boolean;
+  initialFilters?: InitialFilters;
 }) {
   const router = useRouter();
   const [quotations, setQuotations] = useState(initialQuotations);
-  const [q, setQ] = useState("");
-  const [status, setStatus] = useState("");
+  const [q, setQ] = useState(initialFilters?.q ?? "");
+  const [status, setStatus] = useState(initialFilters?.status ?? "");
+  const [fromDate, setFromDate] = useState(initialFilters?.fromDate ?? "");
+  const [toDate, setToDate] = useState(initialFilters?.toDate ?? "");
+  const [expiry, setExpiry] = useState(initialFilters?.expiry ?? "");
+  const [salesUserId, setSalesUserId] = useState(initialFilters?.salesUserId ?? "");
   const [loading, setLoading] = useState(false);
 
   async function applyFilters() {
@@ -58,8 +79,15 @@ export function QuotationsList({
     const params = new URLSearchParams();
     if (q) params.set("q", q);
     if (status) params.set("status", status);
+    if (fromDate) params.set("fromDate", fromDate);
+    if (toDate) params.set("toDate", toDate);
+    if (salesUserId) params.set("salesUserId", salesUserId);
+    if (expiry) params.set("expiry", expiry);
 
-    const response = await fetch(`/api/quotations?${params.toString()}`);
+    const query = params.toString();
+    router.replace(query ? `/sales/quotations?${query}` : "/sales/quotations");
+
+    const response = await fetch(`/api/quotations?${query}`);
     const data = await response.json();
     setLoading(false);
     if (response.ok) {
@@ -86,36 +114,84 @@ export function QuotationsList({
         ) : null}
       </div>
 
-      <CollapsibleFilterCard contentClassName="grid gap-4 md:grid-cols-4">
+      <CollapsibleFilterCard contentClassName="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+        <div className="space-y-2">
+          <Label htmlFor="q">Search</Label>
+          <Input
+            id="q"
+            value={q}
+            onChange={(event) => setQ(event.target.value)}
+            placeholder="Quotation no or customer"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="status">Status</Label>
+          <select
+            id="status"
+            value={status}
+            onChange={(event) => setStatus(event.target.value)}
+            className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
+          >
+            <option value="">All statuses</option>
+            <option value="DRAFT">Draft</option>
+            <option value="SENT">Sent</option>
+            <option value="EXPIRED">Expired</option>
+            <option value="CONVERTED">Converted</option>
+          </select>
+        </div>
+        {canFilterByExecutive ? (
           <div className="space-y-2">
-            <Label htmlFor="q">Search</Label>
-            <Input
-              id="q"
-              value={q}
-              onChange={(event) => setQ(event.target.value)}
-              placeholder="Quotation no or customer"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="status">Status</Label>
+            <Label htmlFor="salesUserId">Sales Executive</Label>
             <select
-              id="status"
-              value={status}
-              onChange={(event) => setStatus(event.target.value)}
+              id="salesUserId"
+              value={salesUserId}
+              onChange={(event) => setSalesUserId(event.target.value)}
               className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
             >
-              <option value="">All statuses</option>
-              <option value="DRAFT">Draft</option>
-              <option value="SENT">Sent</option>
-              <option value="EXPIRED">Expired</option>
-              <option value="CONVERTED">Converted</option>
+              <option value="">All</option>
+              {salesExecutives.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.name}
+                </option>
+              ))}
             </select>
           </div>
-          <div className="flex items-end">
-            <Button onClick={applyFilters} disabled={loading}>
-              Apply Filters
-            </Button>
-          </div>
+        ) : null}
+        <div className="space-y-2">
+          <Label htmlFor="fromDate">From date</Label>
+          <Input
+            id="fromDate"
+            type="date"
+            value={fromDate}
+            onChange={(event) => setFromDate(event.target.value)}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="toDate">To date</Label>
+          <Input
+            id="toDate"
+            type="date"
+            value={toDate}
+            onChange={(event) => setToDate(event.target.value)}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="expiry">Expiry</Label>
+          <select
+            id="expiry"
+            value={expiry}
+            onChange={(event) => setExpiry(event.target.value)}
+            className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
+          >
+            <option value="">Any</option>
+            <option value="soon">Expiring soon / expired</option>
+          </select>
+        </div>
+        <div className="flex items-end">
+          <Button onClick={() => void applyFilters()} disabled={loading}>
+            {loading ? "Loading..." : "Apply Filters"}
+          </Button>
+        </div>
       </CollapsibleFilterCard>
 
       <Card>

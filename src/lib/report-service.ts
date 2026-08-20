@@ -3,7 +3,6 @@ import {
   DispatchStatus,
   InventoryTransactionType,
   ProformaInvoiceStatus,
-  QuotationStatus,
   type PrismaClient,
 } from "@prisma/client";
 import { decimalToNumber } from "@/lib/inventory";
@@ -13,6 +12,20 @@ import {
   resolveBookingRequirement,
 } from "@/lib/proforma-invoices";
 import { calculateLineAmounts, roundMoney } from "@/lib/quotations";
+import {
+  buildExecutiveKpiSummary,
+  buildPaymentWhere,
+  buildTeamKpiSummaries,
+  listSalesExecutivesForCompany,
+  type SalesMetricFilters,
+} from "@/lib/report-builders";
+import { getBusinessMonthRange } from "@/lib/business-dates";
+import {
+  calculateModuleMasteryLevel,
+  loadMasteryEngineConfig,
+} from "@/lib/module-mastery-service";
+import { getModuleTargetProgress } from "@/lib/sales-target-service";
+import { getSalesFunnel } from "@/lib/sales-dashboard/funnel-service";
 import {
   calculateAgeingDays,
   calculateFreeQty,
@@ -56,6 +69,14 @@ export type ReservedQtyFilters = {
   warehouseId?: string;
   q?: string;
 };
+
+export type ExecutivePerformanceReportFilters = SalesExecutiveReportFilters;
+
+export type SalesPerformanceReportFilters = SalesExecutiveReportFilters;
+
+export type SalesFunnelReportFilters = SalesExecutiveReportFilters;
+
+export type CollectionReportFilters = PaymentFollowupFilters;
 
 export type DispatchReportFilters = ReportDateFilters & {
   salesUserId?: string;
@@ -138,172 +159,33 @@ export async function getSalesExecutiveReport(
   companyId: string,
   filters: SalesExecutiveReportFilters,
 ) {
-  const fromDate = parseReportDate(filters.fromDate);
-  const toDate = endOfReportDay(filters.toDate);
-
-  const salesUsers = await prisma.user.findMany({
-    where: {
-      status: "ACTIVE",
-      companies: { some: { companyId } },
-      ...(filters.salesUserId ? { id: filters.salesUserId } : {}),
-      roles: {
-        some: {
-          role: {
-            name: { in: ["Sales Executive", "Sales Manager", "Super Admin"] },
-          },
-        },
-      },
-    },
-    select: { id: true, name: true, email: true },
-    orderBy: { name: "asc" },
-  });
+  const salesUsers = await listSalesExecutivesForCompany(
+    prisma,
+    companyId,
+    filters.salesUserId,
+  );
 
   const rows = await Promise.all(
-    salesUsers.map(async (user) => {
-      const quotationWhere = {
-        companyId,
-        salesUserId: user.id,
-        ...(fromDate || toDate
-          ? {
-              quotationDate: {
-                ...(fromDate ? { gte: fromDate } : {}),
-                ...(toDate ? { lte: toDate } : {}),
-              },
-            }
-          : {}),
-        status: { not: QuotationStatus.DRAFT },
-        ...(filters.customerType
-          ? { customer: { customerType: filters.customerType } }
-          : {}),
-      };
-
-      const piWhere = {
-        companyId,
-        salesUserId: user.id,
-        ...(fromDate || toDate
-          ? {
-              piDate: {
-                ...(fromDate ? { gte: fromDate } : {}),
-                ...(toDate ? { lte: toDate } : {}),
-              },
-            }
-          : {}),
-        ...(filters.customerType
-          ? { customer: { customerType: filters.customerType } }
-          : {}),
-      };
-
-      const [quotations, pis, payments, dispatches, newCustomers] = await Promise.all([
-        prisma.quotation.findMany({
-          where: quotationWhere,
-          select: { totalValue: true },
-        }),
-        prisma.proformaInvoice.findMany({
-          where: piWhere,
-          select: { totalValue: true },
-        }),
-        prisma.payment.findMany({
-          where: {
-            proformaInvoice: {
-              companyId,
-              salesUserId: user.id,
-              ...(filters.customerType
-                ? { customer: { customerType: filters.customerType } }
-                : {}),
-            },
-            ...(fromDate || toDate
-              ? {
-                  paymentDate: {
-                    ...(fromDate ? { gte: fromDate } : {}),
-                    ...(toDate ? { lte: toDate } : {}),
-                  },
-                }
-              : {}),
-          },
-          select: { amount: true },
-        }),
-        prisma.dispatch.findMany({
-          where: {
-            companyId,
-            status: DispatchStatus.DISPATCHED,
-            proformaInvoice: { salesUserId: user.id },
-            ...(fromDate || toDate
-              ? {
-                  dispatchDate: {
-                    ...(fromDate ? { gte: fromDate } : {}),
-                    ...(toDate ? { lte: toDate } : {}),
-                  },
-                }
-              : {}),
-            ...(filters.customerType
-              ? { customer: { customerType: filters.customerType } }
-              : {}),
-          },
-          include: {
-            lines: {
-              include: {
-                proformaInvoiceItem: { select: { rate: true } },
-              },
-            },
-          },
-        }),
-        prisma.customer.count({
-          where: {
-            assignedSalesUserId: user.id,
-            ...(filters.customerType ? { customerType: filters.customerType } : {}),
-            ...(fromDate || toDate
-              ? {
-                  createdAt: {
-                    ...(fromDate ? { gte: fromDate } : {}),
-                    ...(toDate ? { lte: toDate } : {}),
-                  },
-                }
-              : {}),
-          },
-        }),
-      ]);
-
-      const quotationValue = roundMoney(
-        quotations.reduce((sum, row) => sum + decimalToNumber(row.totalValue), 0),
-      );
-      const piValue = roundMoney(
-        pis.reduce((sum, row) => sum + decimalToNumber(row.totalValue), 0),
-      );
-      const collectionValue = roundMoney(
-        payments.reduce((sum, row) => sum + decimalToNumber(row.amount), 0),
-      );
-      const dispatchedValue = roundMoney(
-        dispatches.reduce((sum, dispatch) => {
-          const lineTotal = dispatch.lines.reduce((lineSum, line) => {
-            const rate = decimalToNumber(line.proformaInvoiceItem.rate);
-            return lineSum + decimalToNumber(line.qty) * rate;
-          }, 0);
-          return sum + lineTotal;
-        }, 0),
-      );
-
-      return {
-        executiveId: user.id,
-        executiveName: user.name,
-        executiveEmail: user.email,
-        quotationValue,
-        piValue,
-        collectionValue,
-        dispatchedValue,
-        newCustomers,
-      };
-    }),
+    salesUsers.map((user) =>
+      buildExecutiveKpiSummary(prisma, companyId, user, {
+        fromDate: filters.fromDate,
+        toDate: filters.toDate,
+        customerType: filters.customerType,
+      }),
+    ),
   );
 
-  return rows.filter(
-    (row) =>
-      row.quotationValue > 0 ||
-      row.piValue > 0 ||
-      row.collectionValue > 0 ||
-      row.dispatchedValue > 0 ||
-      row.newCustomers > 0 ||
-      Boolean(filters.salesUserId),
-  );
+  return rows
+    .filter(
+      (row) =>
+        row.quotationValue > 0 ||
+        row.piValue > 0 ||
+        row.collectionValue > 0 ||
+        row.dispatchedValue > 0 ||
+        row.newCustomers > 0 ||
+        Boolean(filters.salesUserId),
+    )
+    .map(({ moduleUnits, inverterUnits, otherUnits, ...reportRow }) => reportRow);
 }
 
 export async function getPaymentFollowupReport(
@@ -818,4 +700,194 @@ export async function getDispatchReport(
   }
 
   return rows;
+}
+
+export async function getSalesPerformanceReport(
+  prisma: PrismaClient,
+  companyId: string,
+  filters: SalesPerformanceReportFilters,
+) {
+  return buildTeamKpiSummaries(
+    prisma,
+    companyId,
+    {
+      fromDate: filters.fromDate,
+      toDate: filters.toDate,
+      customerType: filters.customerType,
+    },
+    filters.salesUserId,
+  );
+}
+
+export async function getSalesFunnelReport(
+  prisma: PrismaClient,
+  companyId: string,
+  filters: SalesFunnelReportFilters,
+) {
+  const metricFilters: SalesMetricFilters = {
+    companyId,
+    salesUserId: filters.salesUserId,
+    fromDate: filters.fromDate,
+    toDate: filters.toDate,
+    customerType: filters.customerType,
+  };
+  const funnel = await getSalesFunnel(prisma, metricFilters);
+
+  return [
+    {
+      stage: "Quotation",
+      value: funnel.quotationValue,
+      conversionPercent: null as number | null,
+    },
+    {
+      stage: "PI",
+      value: funnel.piValue,
+      conversionPercent: funnel.conversion.quotationToPi,
+    },
+    {
+      stage: "Collection",
+      value: funnel.collectionValue,
+      conversionPercent: funnel.conversion.piToCollection,
+    },
+    {
+      stage: "Dispatch",
+      value: funnel.dispatchedValue,
+      conversionPercent: funnel.conversion.collectionToDispatch,
+    },
+  ];
+}
+
+export async function getCollectionReport(
+  prisma: PrismaClient,
+  companyId: string,
+  filters: CollectionReportFilters,
+) {
+  const metricFilters: SalesMetricFilters = {
+    companyId,
+    salesUserId: filters.salesUserId,
+    fromDate: filters.fromDate,
+    toDate: filters.toDate,
+  };
+
+  const paymentWhere = buildPaymentWhere(metricFilters);
+
+  const payments = await prisma.payment.findMany({
+    where: {
+      ...paymentWhere,
+      ...(filters.customerId ? { customerId: filters.customerId } : {}),
+    },
+    include: {
+      proformaInvoice: {
+        select: {
+          piNo: true,
+          customer: { select: { customerName: true } },
+          salesUser: { select: { name: true } },
+        },
+      },
+    },
+    orderBy: [{ paymentDate: "asc" }, { createdAt: "asc" }],
+  });
+
+  const collectionRows = payments.map((payment) => ({
+    recordType: "Collection" as const,
+    date: payment.paymentDate.toISOString().slice(0, 10),
+    piNo: payment.proformaInvoice.piNo,
+    customerName: payment.proformaInvoice.customer.customerName,
+    executiveName: payment.proformaInvoice.salesUser.name,
+    collectionAmount: decimalToNumber(payment.amount),
+    outstanding: null as number | null,
+    ageingDays: null as number | null,
+    ageingBucket: null as string | null,
+  }));
+
+  const outstandingRows = (await getPaymentFollowupReport(prisma, companyId, filters)).map(
+    (row) => ({
+      recordType: "Outstanding" as const,
+      date: row.piDate,
+      piNo: row.piNo,
+      customerName: row.customerName,
+      executiveName: row.salesExecutive,
+      collectionAmount: null as number | null,
+      outstanding: row.outstanding,
+      ageingDays: row.ageingDays,
+      ageingBucket: row.ageingBucket,
+    }),
+  );
+
+  return [...collectionRows, ...outstandingRows];
+}
+
+export async function getExecutivePerformanceReport(
+  prisma: PrismaClient,
+  companyId: string,
+  filters: ExecutivePerformanceReportFilters,
+) {
+  const salesUsers = await listSalesExecutivesForCompany(
+    prisma,
+    companyId,
+    filters.salesUserId,
+  );
+  if (salesUsers.length === 0) return [];
+
+  const asOf = filters.toDate ? parseReportDate(filters.toDate) : new Date();
+  const { year, month } = getBusinessMonthRange(asOf);
+  const masteryConfig = await loadMasteryEngineConfig(prisma, companyId);
+
+  const rows = await Promise.all(
+    salesUsers.map(async (user) => {
+      const [kpi, target, masteryProgress] = await Promise.all([
+        buildExecutiveKpiSummary(prisma, companyId, user, {
+          fromDate: filters.fromDate,
+          toDate: filters.toDate,
+          customerType: filters.customerType,
+        }),
+        getModuleTargetProgress(prisma, companyId, user.id, asOf),
+        prisma.executiveModuleMasteryProgress.findUnique({
+          where: {
+            companyId_executiveId_year_month: {
+              companyId,
+              executiveId: user.id,
+              year,
+              month,
+            },
+          },
+        }),
+      ]);
+
+      const modulesDispatched = masteryProgress
+        ? decimalToNumber(masteryProgress.modulesDispatched)
+        : 0;
+      const mastery = calculateModuleMasteryLevel(modulesDispatched, masteryConfig);
+
+      return {
+        executiveId: user.id,
+        executiveName: user.name,
+        executiveEmail: user.email,
+        targetModules: target.targetModules,
+        achievedModules: target.achievedModules,
+        targetProgressPercent: target.progressPercent,
+        masteryLevel: mastery.currentLevelName,
+        masteryLevelNumber: mastery.currentLevelNumber,
+        modulesDispatchedThisMonth: modulesDispatched,
+        quotationValue: kpi.quotationValue,
+        piValue: kpi.piValue,
+        collectionValue: kpi.collectionValue,
+        dispatchedValue: kpi.dispatchedValue,
+        moduleUnits: kpi.moduleUnits,
+        newCustomers: kpi.newCustomers,
+      };
+    }),
+  );
+
+  return rows.filter(
+    (row) =>
+      row.quotationValue > 0 ||
+      row.piValue > 0 ||
+      row.collectionValue > 0 ||
+      row.dispatchedValue > 0 ||
+      row.moduleUnits > 0 ||
+      row.newCustomers > 0 ||
+      row.achievedModules > 0 ||
+      Boolean(filters.salesUserId),
+  );
 }

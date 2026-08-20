@@ -23,6 +23,10 @@ import { formatCurrency } from "@/lib/quotations";
 
 type ReportKey =
   | "sales-executive"
+  | "sales-performance"
+  | "sales-funnel"
+  | "executive-performance"
+  | "collection"
   | "payment-followup"
   | "product-movement"
   | "booked-available"
@@ -46,6 +50,31 @@ const REPORTS: ReportDefinition[] = [
     label: "Sales Executive",
     endpoint: "/api/reports/sales-executive",
     description: "Dispatched value, quotations, PI, collections, and new customers by executive.",
+  },
+  {
+    key: "sales-performance",
+    label: "Sales Performance",
+    endpoint: "/api/reports/sales-performance",
+    description:
+      "Detailed executive performance with quotation, PI, collection, dispatch, and unit mix.",
+  },
+  {
+    key: "sales-funnel",
+    label: "Sales Funnel",
+    endpoint: "/api/reports/sales-funnel",
+    description: "Stage values and conversion rates from quotation through dispatch.",
+  },
+  {
+    key: "executive-performance",
+    label: "Executive Performance",
+    endpoint: "/api/reports/executive-performance",
+    description: "Monthly targets, module mastery, and KPI composite by executive.",
+  },
+  {
+    key: "collection",
+    label: "Collection",
+    endpoint: "/api/reports/collection",
+    description: "Collections received in the period plus current outstanding balances.",
   },
   {
     key: "payment-followup",
@@ -92,7 +121,13 @@ const RESERVED_QTY_COLUMNS = [
 ] as const;
 
 function isMoneyColumn(key: string): boolean {
-  return /value|paid|outstanding|amount|ratePerWp/i.test(key);
+  return /value|paid|outstanding|amount|ratePerWp|collectionAmount/i.test(key);
+}
+
+function isUnitColumn(key: string): boolean {
+  return /Units|moduleUnits|inverterUnits|otherUnits|targetModules|achievedModules|modulesDispatched/i.test(
+    key,
+  );
 }
 
 function formatHeader(key: string) {
@@ -139,16 +174,18 @@ export function ReportsHub({
   const [activeReport, setActiveReport] = useState<ReportKey>(initialReport);
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(false);
-  const [fromDate, setFromDate] = useState(defaults.fromDate);
-  const [toDate, setToDate] = useState(defaults.toDate);
-  const [salesUserId, setSalesUserId] = useState("");
+  const [fromDate, setFromDate] = useState(
+    searchParams.get("fromDate") ?? defaults.fromDate,
+  );
+  const [toDate, setToDate] = useState(searchParams.get("toDate") ?? defaults.toDate);
+  const [salesUserId, setSalesUserId] = useState(searchParams.get("salesUserId") ?? "");
   const [warehouseId, setWarehouseId] = useState(
     searchParams.get("warehouseId") ?? "",
   );
   const [productId, setProductId] = useState(searchParams.get("productId") ?? "");
-  const [customerType, setCustomerType] = useState("");
-  const [ageingBucket, setAgeingBucket] = useState("");
-  const [q, setQ] = useState("");
+  const [customerType, setCustomerType] = useState(searchParams.get("customerType") ?? "");
+  const [ageingBucket, setAgeingBucket] = useState(searchParams.get("ageingBucket") ?? "");
+  const [q, setQ] = useState(searchParams.get("q") ?? "");
   const [didAutoRun, setDidAutoRun] = useState(false);
 
   const currentReport = visibleReports.find((report) => report.key === activeReport)!;
@@ -188,11 +225,12 @@ export function ReportsHub({
 
   useEffect(() => {
     if (didAutoRun) return;
-    if (searchParams.get("report") !== "reserved-qty") return;
-    if (activeReport !== "reserved-qty") return;
+    const requested = searchParams.get("report");
+    if (!requested) return;
+    if (activeReport !== requested) return;
     setDidAutoRun(true);
     void runReport();
-    // Deep-link from Stock Timeline: run once on open.
+    // Deep-link from dashboard / stock timeline: run once on open.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeReport, didAutoRun, searchParams]);
 
@@ -205,8 +243,31 @@ export function ReportsHub({
     if (typeof value === "number" && isMoneyColumn(key)) {
       return formatCurrency(value);
     }
+    if (typeof value === "number" && key === "conversionPercent") {
+      return `${value}%`;
+    }
+    if (typeof value === "number" && (key === "targetProgressPercent" || isUnitColumn(key))) {
+      return value.toLocaleString("en-IN", { maximumFractionDigits: key.includes("Percent") ? 1 : 0 });
+    }
     return String(value ?? "—");
   }
+
+  const salesKpiReports = new Set<ReportKey>([
+    "sales-executive",
+    "sales-performance",
+    "sales-funnel",
+    "executive-performance",
+  ]);
+
+  const executiveFilterReports = new Set<ReportKey>([
+    "sales-executive",
+    "sales-performance",
+    "sales-funnel",
+    "executive-performance",
+    "payment-followup",
+    "collection",
+    "dispatch",
+  ]);
 
   return (
     <div className="space-y-6">
@@ -279,10 +340,7 @@ export function ReportsHub({
               </>
             ) : null}
 
-            {canFilterByExecutive &&
-            (activeReport === "sales-executive" ||
-              activeReport === "payment-followup" ||
-              activeReport === "dispatch") ? (
+            {canFilterByExecutive && executiveFilterReports.has(activeReport) ? (
               <div className="space-y-2">
                 <Label htmlFor="salesUserId">Sales Executive</Label>
                 <select
@@ -301,7 +359,7 @@ export function ReportsHub({
               </div>
             ) : null}
 
-            {activeReport === "sales-executive" ? (
+            {salesKpiReports.has(activeReport) ? (
               <div className="space-y-2">
                 <Label htmlFor="customerType">Customer Type</Label>
                 <select
@@ -317,7 +375,7 @@ export function ReportsHub({
               </div>
             ) : null}
 
-            {activeReport === "payment-followup" ? (
+            {activeReport === "payment-followup" || activeReport === "collection" ? (
               <div className="space-y-2">
                 <Label htmlFor="ageingBucket">Ageing Bucket</Label>
                 <select

@@ -38,6 +38,7 @@ import { calculateOutstanding } from "@/lib/proforma-invoices";
 import { clearExpiredDispatchTodayFlags } from "@/lib/pi-service";
 import { deductNonSerialStock } from "@/lib/transfer-service";
 import { roundMoney } from "@/lib/quotations";
+import { recalculateModuleMasteryForDispatch } from "@/lib/module-mastery-service";
 import { isKitCategory } from "@/lib/products";
 import { getKitComponentsForFulfillment } from "@/lib/product-service";
 
@@ -240,6 +241,7 @@ export async function listDispatches(
     status?: DispatchStatus;
     customerId?: string;
     proformaInvoiceId?: string;
+    salesUserId?: string;
     fromDate?: string;
     toDate?: string;
   },
@@ -254,6 +256,9 @@ export async function listDispatches(
       ...(filters.customerId ? { customerId: filters.customerId } : {}),
       ...(filters.proformaInvoiceId
         ? { proformaInvoiceId: filters.proformaInvoiceId }
+        : {}),
+      ...(filters.salesUserId
+        ? { proformaInvoice: { salesUserId: filters.salesUserId } }
         : {}),
       ...(fromDate || toDate
         ? {
@@ -281,6 +286,46 @@ export async function listDispatches(
   });
 
   return rows.map(serializeDispatch);
+}
+
+export async function listPiDispatchedChallans(
+  prisma: PrismaClient,
+  companyId: string,
+  proformaInvoiceId: string,
+) {
+  const rows = await prisma.dispatch.findMany({
+    where: {
+      companyId,
+      proformaInvoiceId,
+      status: DispatchStatus.DISPATCHED,
+    },
+    select: {
+      id: true,
+      dcNo: true,
+      dispatchDate: true,
+      invoiceHandover: {
+        select: {
+          invoiceNumber: true,
+          invoiceDate: true,
+        },
+      },
+      documentation: {
+        select: {
+          status: true,
+        },
+      },
+    },
+    orderBy: [{ dispatchDate: "desc" }, { createdAt: "desc" }],
+  });
+
+  return rows.map((dispatch) => ({
+    id: dispatch.id,
+    dcNo: dispatch.dcNo,
+    dispatchDate: dispatch.dispatchDate.toISOString().slice(0, 10),
+    invoiceNumber: dispatch.invoiceHandover?.invoiceNumber ?? null,
+    invoiceDate: dispatch.invoiceHandover?.invoiceDate?.toISOString().slice(0, 10) ?? null,
+    documentationStatus: dispatch.documentation?.status ?? null,
+  }));
 }
 
 export async function getDispatchById(
@@ -1219,10 +1264,21 @@ export async function confirmDispatch(
     performedById: string;
   },
 ) {
-  return prisma.$transaction((tx) => confirmDispatchTx(tx, input), {
+  const result = await prisma.$transaction((tx) => confirmDispatchTx(tx, input), {
     maxWait: 10_000,
     timeout: 60_000,
   });
+
+  try {
+    await recalculateModuleMasteryForDispatch(prisma, {
+      companyId: input.companyId,
+      dispatchId: input.dispatchId,
+    });
+  } catch (error) {
+    console.error("Module Mastery recalculation failed after dispatch confirm", error);
+  }
+
+  return result;
 }
 
 export async function requestDispatchCancel(
@@ -1306,7 +1362,7 @@ export async function approveDispatchCancel(
   if (!dispatch) throw new Error("NOT_FOUND");
   if (dispatch.status !== DispatchStatus.CANCEL_PENDING) throw new Error("INVALID_STATUS");
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const kitProductIds = dispatch.lines
       .filter((line) => isKitCategory(line.proformaInvoiceItem.product.category.name))
       .map((line) => line.proformaInvoiceItem.productId);
@@ -1417,6 +1473,17 @@ export async function approveDispatchCancel(
 
     return serializeDispatch(updated);
   });
+
+  try {
+    await recalculateModuleMasteryForDispatch(prisma, {
+      companyId: input.companyId,
+      dispatchId: input.dispatchId,
+    });
+  } catch (error) {
+    console.error("Module Mastery recalculation failed after dispatch cancel", error);
+  }
+
+  return result;
 }
 
 export async function rejectDispatchCancel(

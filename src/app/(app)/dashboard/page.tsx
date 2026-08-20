@@ -1,193 +1,236 @@
-import Link from "next/link";
+import { redirect } from "next/navigation";
+
 import { auth } from "@/lib/auth";
-import { canAccessApprovalsInbox } from "@/lib/approvals-permissions";
-import { countPendingApprovalsForUser } from "@/lib/approvals-service";
+
 import { ROLES } from "@/lib/rbac";
-import { countOpenQuotations } from "@/lib/quotation-service";
-import { countBookedOrders, countPendingPayments } from "@/lib/pi-service";
-import { countTodaysDispatches } from "@/lib/dispatch-service";
-import { countPendingIncomingTransfers } from "@/lib/transfer-service";
+
 import { prisma } from "@/lib/prisma";
-import { requireActiveCompany } from "@/lib/session";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-export default async function DashboardPage() {
-  const session = await auth();
-  const roles = session?.user.roles ?? [];
-  const activeCompany = session?.user.companies.find(
-    (c) => c.id === session.user.activeCompanyId,
-  );
+import type { DashboardPeriod } from "@/lib/business-dates";
 
-  let pendingTransfers: number | null = null;
-  let openQuotations: number | null = null;
-  let pendingApprovals: number | null = null;
-  let bookedOrders: number | null = null;
-  let pendingPayments: number | null = null;
-  let todaysDispatches: number | null = null;
+import {
 
-  if (session?.user.activeCompanyId) {
-    const companyId = requireActiveCompany(session);
+  resolveSalesDashboardScope,
 
-    const isWarehouse = roles.includes(ROLES.WAREHOUSE);
-    const isSalesish =
-      roles.includes(ROLES.SALES_EXECUTIVE) ||
-      roles.includes(ROLES.SALES_MANAGER) ||
-      roles.includes(ROLES.SUPER_ADMIN);
-    const canSeeApprovals = canAccessApprovalsInbox(roles);
-    const isAccountsish =
-      roles.includes(ROLES.SUPER_ADMIN) || roles.includes(ROLES.ACCOUNTS);
+  SalesDashboardAccessError,
 
-    const [
-      pendingTransfersResult,
-      todaysDispatchesResult,
-      openQuotationsResult,
-      pendingApprovalsResult,
-      bookedOrdersResult,
-      pendingPaymentsResult,
-    ] = await Promise.all([
-      isWarehouse ? countPendingIncomingTransfers(prisma, companyId) : Promise.resolve(null),
-      isWarehouse ? countTodaysDispatches(prisma, companyId) : Promise.resolve(null),
-      isSalesish
-        ? countOpenQuotations(
-            prisma,
-            companyId,
-            roles.includes(ROLES.SALES_EXECUTIVE) ? session.user.id : undefined,
-          )
-        : Promise.resolve(null),
-      canSeeApprovals
-        ? countPendingApprovalsForUser(prisma, companyId, roles)
-        : Promise.resolve(null),
-      isSalesish ? countBookedOrders(prisma, companyId) : Promise.resolve(null),
-      isAccountsish ? countPendingPayments(prisma, companyId) : Promise.resolve(null),
-    ]);
+} from "@/lib/sales-dashboard/dashboard-api";
 
-    pendingTransfers = pendingTransfersResult;
-    todaysDispatches = todaysDispatchesResult;
-    openQuotations = openQuotationsResult;
-    pendingApprovals = pendingApprovalsResult;
-    bookedOrders = bookedOrdersResult;
-    pendingPayments = pendingPaymentsResult;
-  }
+import {
 
-  const widgets =
-    roles.includes(ROLES.SUPER_ADMIN)
-      ? [
-          "Sales by Executive",
-          "This Month Sales Value",
-          "Pending Approvals",
-          "Inventory Value",
-          "Pending Payments",
-        ]
-      : roles.includes(ROLES.SALES_MANAGER)
-        ? [
-            "Open Quotations",
-            "Booked Orders",
-            "Order Value This Month",
-            "Pending Approvals",
-          ]
-        : roles.includes(ROLES.PROJECTS_MANAGER)
-          ? ["Pending Approvals"]
-          : roles.includes(ROLES.SALES_EXECUTIVE)
-            ? [
-                "Open Quotations",
-                "Booked Orders",
-                "Order Value This Month",
-                "Available Qty For Sale",
-              ]
-            : roles.includes(ROLES.WAREHOUSE)
-              ? [
-                  "Today's Dispatches",
-                  "Pending Inwarding",
-                  "Low Stock",
-                  "Transfer Requests",
-                ]
-              : ["Role-based dashboard"];
+  canViewSalesDashboard,
 
-  function widgetValue(widget: string): string {
-    if (widget === "Transfer Requests" && pendingTransfers !== null) {
-      return String(pendingTransfers);
-    }
-    if (widget === "Open Quotations" && openQuotations !== null) {
-      return String(openQuotations);
-    }
-    if (widget === "Pending Approvals" && pendingApprovals !== null) {
-      return String(pendingApprovals);
-    }
-    if (widget === "Booked Orders" && bookedOrders !== null) {
-      return String(bookedOrders);
-    }
-    if (widget === "Pending Payments" && pendingPayments !== null) {
-      return String(pendingPayments);
-    }
-    if (widget === "Today's Dispatches" && todaysDispatches !== null) {
-      return String(todaysDispatches);
-    }
-    return "—";
-  }
+  canViewTeamSalesDashboard,
 
-  function widgetDescription(widget: string): string {
-    if (widget === "Transfer Requests" && pendingTransfers !== null) {
-      return "Incoming transfers awaiting receipt";
-    }
-    if (widget === "Open Quotations" && openQuotations !== null) {
-      return "Sent quotations still within validity";
-    }
-    if (widget === "Pending Approvals" && pendingApprovals !== null) {
-      return "Items awaiting your approval — click to review";
-    }
-    if (widget === "Booked Orders" && bookedOrders !== null) {
-      return "Orders with approved booking and reserved stock";
-    }
-    if (widget === "Pending Payments" && pendingPayments !== null) {
-      return "Issued PIs with outstanding balance";
-    }
-    if (widget === "Today's Dispatches" && todaysDispatches !== null) {
-      return "Delivery challans dispatched today";
-    }
-    return "Placeholder for Sprint 1 module data";
-  }
+} from "@/lib/sales-dashboard/dashboard-permissions";
 
-  function widgetHref(widget: string): string | null {
-    if (widget === "Pending Approvals") return "/approvals";
-    return null;
-  }
+import {
 
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
-        <p className="text-sm text-slate-500">
-          {activeCompany
-            ? `Working in ${activeCompany.name} (${activeCompany.code})`
-            : "No active company selected"}
-        </p>
-      </div>
+  getExecutiveDashboard,
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {widgets.map((widget) => {
-          const href = widgetHref(widget);
-          const card = (
-            <Card className={href ? "h-full transition hover:border-emerald-300" : undefined}>
-              <CardHeader>
-                <CardTitle className="text-base">{widget}</CardTitle>
-                <CardDescription>{widgetDescription(widget)}</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-semibold text-slate-900">{widgetValue(widget)}</p>
-              </CardContent>
-            </Card>
-          );
+  getManagerDashboard,
 
-          if (href) {
-            return (
-              <Link key={widget} href={href} className="block">
-                {card}
-              </Link>
-            );
-          }
-          return <div key={widget}>{card}</div>;
-        })}
-      </div>
-    </div>
-  );
+} from "@/lib/sales-dashboard/dashboard-service";
+
+import { ExecutiveDashboardView } from "@/components/dashboard/executive-dashboard-view";
+
+import { ManagerDashboardView } from "@/components/dashboard/manager-dashboard-view";
+
+import { LegacyRoleDashboard } from "@/components/dashboard/legacy-role-dashboard";
+
+
+
+type PageProps = {
+
+  searchParams: Promise<{
+
+    period?: string;
+
+    fromDate?: string;
+
+    toDate?: string;
+
+    trendMetric?: string;
+
+  }>;
+
+};
+
+
+
+const VALID_PERIODS = new Set<DashboardPeriod>([
+
+  "today",
+
+  "week",
+
+  "month",
+
+  "quarter",
+
+  "custom",
+
+]);
+
+
+
+function isSalesExecutiveOnly(roles: string[]): boolean {
+
+  return roles.includes(ROLES.SALES_EXECUTIVE) && !canViewTeamSalesDashboard(roles);
+
 }
+
+
+
+function parseTrendMetric(
+  value: string | undefined,
+): "modules" | "dispatch" | "collection" | "pi" {
+
+  return value === "dispatch" ||
+
+    value === "collection" ||
+
+    value === "pi" ||
+
+    value === "modules"
+
+    ? value
+
+    : "modules";
+
+}
+
+
+
+export default async function DashboardPage({ searchParams }: PageProps) {
+
+  const session = await auth();
+
+  if (!session?.user) {
+
+    redirect("/login");
+
+  }
+
+
+
+  const params = await searchParams;
+
+  const roles = session.user.roles ?? [];
+
+
+
+  if (!canViewSalesDashboard(roles)) {
+
+    return <LegacyRoleDashboard session={session} />;
+
+  }
+
+
+
+  let scope;
+
+  try {
+
+    scope = resolveSalesDashboardScope(session);
+
+  } catch (error) {
+
+    if (error instanceof SalesDashboardAccessError) {
+
+      return <LegacyRoleDashboard session={session} />;
+
+    }
+
+    throw error;
+
+  }
+
+
+
+  const period = VALID_PERIODS.has(params.period as DashboardPeriod)
+
+    ? (params.period as DashboardPeriod)
+
+    : "month";
+
+
+
+  const query = {
+
+    period,
+
+    fromDate: params.fromDate,
+
+    toDate: params.toDate,
+
+    trendMetric: parseTrendMetric(params.trendMetric),
+
+  };
+
+
+
+  const activeCompany = session.user.companies.find(
+
+    (company) => company.id === session.user.activeCompanyId,
+
+  );
+
+  const companyLabel = activeCompany
+
+    ? `${activeCompany.name} (${activeCompany.code})`
+
+    : undefined;
+
+
+
+  if (scope.canViewTeam && !scope.restrictToUserId) {
+
+    const dashboard = await getManagerDashboard(prisma, scope, query);
+
+    return (
+
+      <ManagerDashboardView
+
+        data={dashboard}
+
+        userName={session.user.name ?? "there"}
+
+        companyLabel={companyLabel}
+
+      />
+
+    );
+
+  }
+
+
+
+  if (isSalesExecutiveOnly(roles)) {
+
+    const dashboard = await getExecutiveDashboard(prisma, scope, query);
+
+    return (
+
+      <ExecutiveDashboardView
+
+        data={dashboard}
+
+        userName={session.user.name ?? "there"}
+
+        salesUserId={scope.userId}
+
+        companyLabel={companyLabel}
+
+      />
+
+    );
+
+  }
+
+
+
+  return <LegacyRoleDashboard session={session} />;
+
+}
+

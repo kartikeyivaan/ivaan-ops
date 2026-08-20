@@ -1,3 +1,4 @@
+import { defaultBusinessReportDateRange } from "@/lib/business-dates";
 import { roundMoney } from "@/lib/quotations";
 
 export type AgeingBucket = "0-30" | "31-60" | "61-90" | "90+";
@@ -41,12 +42,7 @@ export function endOfReportDay(value?: string): Date | undefined {
 }
 
 export function defaultReportDateRange(): { fromDate: string; toDate: string } {
-  const now = new Date();
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  return {
-    fromDate: start.toISOString().slice(0, 10),
-    toDate: now.toISOString().slice(0, 10),
-  };
+  return defaultBusinessReportDateRange();
 }
 
 export function sumMovementClosing(input: {

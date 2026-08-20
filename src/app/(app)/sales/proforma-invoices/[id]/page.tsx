@@ -1,8 +1,7 @@
-import { DispatchStatus } from "@prisma/client";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { buildDispatchWhatsappUrl } from "@/lib/dispatch-share";
-import { listDispatches } from "@/lib/dispatch-service";
+import { listPiDispatchedChallans } from "@/lib/dispatch-service";
 import {
   canApproveBooking,
   canApproveDispatchToday,
@@ -52,10 +51,7 @@ export default async function ProformaInvoiceDetailPage({ params }: PageProps) {
       where: { id: companyId },
       select: { name: true },
     }),
-    listDispatches(prisma, companyId, {
-      proformaInvoiceId: id,
-      status: DispatchStatus.DISPATCHED,
-    }),
+    listPiDispatchedChallans(prisma, companyId, id),
   ]);
 
   if (!pi || !company) {
@@ -71,16 +67,15 @@ export default async function ProformaInvoiceDetailPage({ params }: PageProps) {
     salesUser: pi.salesUser,
   });
 
-  const challanShares = dispatchedChallans.map((dispatch) => ({
-    id: dispatch.id,
-    dcNo: dispatch.dcNo,
+  const dispatchedChallanDetails = dispatchedChallans.map((dispatch) => ({
+    ...dispatch,
     whatsappUrl: buildDispatchWhatsappUrl({
       id: dispatch.id,
       dcNo: dispatch.dcNo,
-      status: dispatch.status,
-      customer: dispatch.customer,
+      status: "DISPATCHED",
+      customer: pi.customer,
       company,
-      proformaInvoice: dispatch.proformaInvoice,
+      proformaInvoice: { piNo: pi.piNo },
     }),
   }));
 
@@ -89,7 +84,7 @@ export default async function ProformaInvoiceDetailPage({ params }: PageProps) {
       pi={JSON.parse(JSON.stringify(pi))}
       warehouses={warehouses}
       whatsappUrl={whatsappUrl}
-      challanShares={challanShares}
+      dispatchedChallans={dispatchedChallanDetails}
       canManage={canManageProformaInvoices(session.user.roles)}
       canRecordPayments={canRecordPayments(session.user.roles)}
       canApproveBooking={canApproveBooking(session.user.roles)}

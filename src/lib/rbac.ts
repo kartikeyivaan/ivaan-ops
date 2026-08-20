@@ -250,6 +250,11 @@ export const NAV_ITEMS: NavItem[] = [
     roles: [ROLES.SUPER_ADMIN, ROLES.SALES_MANAGER],
   },
   {
+    label: "Sales Targets",
+    href: "/admin/sales-targets",
+    roles: [ROLES.SUPER_ADMIN, ROLES.SALES_MANAGER],
+  },
+  {
     label: "Audit Logs",
     href: "/admin/audit",
     roles: [ROLES.SUPER_ADMIN],

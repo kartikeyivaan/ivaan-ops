@@ -37,6 +37,7 @@ export async function GET(request: Request) {
     status: searchParams.get("status") ?? undefined,
     customerId: searchParams.get("customerId") ?? undefined,
     proformaInvoiceId: searchParams.get("proformaInvoiceId") ?? undefined,
+    salesUserId: searchParams.get("salesUserId") ?? undefined,
     fromDate: searchParams.get("fromDate") ?? undefined,
     toDate: searchParams.get("toDate") ?? undefined,
   });
@@ -45,7 +46,17 @@ export async function GET(request: Request) {
     return errorResponse("VALIDATION_ERROR", "Invalid filters.", 400, parsed.error.flatten());
   }
 
-  const rows = await listDispatches(prisma, companyId, parsed.data);
+  const { restrictSalesUserId } = await import("@/lib/report-permissions");
+  const salesUserId = restrictSalesUserId(
+    session.user.roles,
+    session.user.id,
+    parsed.data.salesUserId,
+  );
+
+  const rows = await listDispatches(prisma, companyId, {
+    ...parsed.data,
+    salesUserId,
+  });
   return NextResponse.json(rows);
 }
 

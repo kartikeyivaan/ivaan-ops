@@ -39,6 +39,8 @@ type ProformaInvoiceListItem = {
   canUnbook?: boolean;
 };
 
+type SalesExecutive = { id: string; name: string; email?: string };
+
 function statusVariant(status: string): "default" | "success" | "warning" | "danger" {
   if (status === "ISSUED") return "success";
   if (status === "BOOKED") return "success";
@@ -49,15 +51,34 @@ function statusVariant(status: string): "default" | "success" | "warning" | "dan
 
 export function ProformaInvoicesList({
   initialProformaInvoices,
+  salesExecutives = [],
   canManage,
+  canFilterByExecutive = false,
+  initialFilters,
 }: {
   initialProformaInvoices: ProformaInvoiceListItem[];
+  salesExecutives?: SalesExecutive[];
   canManage: boolean;
+  canFilterByExecutive?: boolean;
+  initialFilters?: {
+    q: string;
+    status: string;
+    fromDate: string;
+    toDate: string;
+    salesUserId: string;
+    outstandingOnly: boolean;
+  };
 }) {
   const router = useRouter();
   const [rows, setRows] = useState(initialProformaInvoices);
-  const [q, setQ] = useState("");
-  const [status, setStatus] = useState("");
+  const [q, setQ] = useState(initialFilters?.q ?? "");
+  const [status, setStatus] = useState(initialFilters?.status ?? "");
+  const [fromDate, setFromDate] = useState(initialFilters?.fromDate ?? "");
+  const [toDate, setToDate] = useState(initialFilters?.toDate ?? "");
+  const [salesUserId, setSalesUserId] = useState(initialFilters?.salesUserId ?? "");
+  const [outstandingOnly, setOutstandingOnly] = useState(
+    initialFilters?.outstandingOnly ?? false,
+  );
   const [loading, setLoading] = useState(false);
   const [actionError, setActionError] = useState("");
 
@@ -66,8 +87,17 @@ export function ProformaInvoicesList({
     const params = new URLSearchParams();
     if (q) params.set("q", q);
     if (status) params.set("status", status);
+    if (fromDate) params.set("fromDate", fromDate);
+    if (toDate) params.set("toDate", toDate);
+    if (salesUserId) params.set("salesUserId", salesUserId);
+    if (outstandingOnly) params.set("outstandingOnly", "true");
 
-    const response = await fetch(`/api/proforma-invoices?${params.toString()}`);
+    const query = params.toString();
+    router.replace(
+      query ? `/sales/proforma-invoices?${query}` : "/sales/proforma-invoices",
+    );
+
+    const response = await fetch(`/api/proforma-invoices?${query}`);
     const data = await response.json();
     setLoading(false);
     if (response.ok) {
@@ -111,40 +141,85 @@ export function ProformaInvoicesList({
         ) : null}
       </div>
 
-      <CollapsibleFilterCard contentClassName="grid gap-4 md:grid-cols-4">
+      <CollapsibleFilterCard contentClassName="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+        <div className="space-y-2">
+          <Label htmlFor="q">Search</Label>
+          <Input
+            id="q"
+            value={q}
+            onChange={(event) => setQ(event.target.value)}
+            placeholder="PI no or customer"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="status">Status</Label>
+          <select
+            id="status"
+            value={status}
+            onChange={(event) => setStatus(event.target.value)}
+            className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
+          >
+            <option value="">All</option>
+            <option value="DRAFT">Draft</option>
+            <option value="ISSUED">Issued</option>
+            <option value="PENDING_BOOKING">Pending Booking</option>
+            <option value="BOOKED">Booked</option>
+            <option value="PARTIALLY_DISPATCHED">Partially Dispatched</option>
+            <option value="FULLY_DISPATCHED">Fully Dispatched</option>
+            <option value="CANCEL_PENDING">Cancel Pending</option>
+            <option value="CANCELLED">Cancelled</option>
+          </select>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="fromDate">From date</Label>
+          <Input
+            id="fromDate"
+            type="date"
+            value={fromDate}
+            onChange={(event) => setFromDate(event.target.value)}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="toDate">To date</Label>
+          <Input
+            id="toDate"
+            type="date"
+            value={toDate}
+            onChange={(event) => setToDate(event.target.value)}
+          />
+        </div>
+        {canFilterByExecutive ? (
           <div className="space-y-2">
-            <Label htmlFor="q">Search</Label>
-            <Input
-              id="q"
-              value={q}
-              onChange={(event) => setQ(event.target.value)}
-              placeholder="PI no or customer"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="status">Status</Label>
+            <Label htmlFor="salesUserId">Sales Executive</Label>
             <select
-              id="status"
-              value={status}
-              onChange={(event) => setStatus(event.target.value)}
+              id="salesUserId"
+              value={salesUserId}
+              onChange={(event) => setSalesUserId(event.target.value)}
               className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
             >
               <option value="">All</option>
-              <option value="DRAFT">Draft</option>
-              <option value="ISSUED">Issued</option>
-              <option value="PENDING_BOOKING">Pending Booking</option>
-              <option value="BOOKED">Booked</option>
-              <option value="PARTIALLY_DISPATCHED">Partially Dispatched</option>
-              <option value="FULLY_DISPATCHED">Fully Dispatched</option>
-              <option value="CANCEL_PENDING">Cancel Pending</option>
-              <option value="CANCELLED">Cancelled</option>
+              {salesExecutives.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.name}
+                </option>
+              ))}
             </select>
           </div>
-          <div className="flex items-end gap-2 md:col-span-2">
-            <Button onClick={applyFilters} disabled={loading}>
-              {loading ? "Loading..." : "Apply"}
-            </Button>
-          </div>
+        ) : null}
+        <div className="flex items-end gap-3">
+          <label className="flex h-10 items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={outstandingOnly}
+              onChange={(event) => setOutstandingOnly(event.target.checked)}
+              className="h-4 w-4 rounded border-slate-300"
+            />
+            Outstanding only
+          </label>
+          <Button onClick={() => void applyFilters()} disabled={loading}>
+            {loading ? "Loading..." : "Apply"}
+          </Button>
+        </div>
       </CollapsibleFilterCard>
 
       {actionError ? <p className="text-sm text-red-600">{actionError}</p> : null}
@@ -162,6 +237,7 @@ export function ProformaInvoicesList({
                 <TableRow>
                   <TableHead>PI No</TableHead>
                   <TableHead>Customer</TableHead>
+                  <TableHead>Executive</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Total</TableHead>
@@ -178,6 +254,7 @@ export function ProformaInvoicesList({
                   >
                     <TableCell data-label="PI No" className="font-medium">{row.piNo}</TableCell>
                     <TableCell data-label="Customer">{row.customer.customerName}</TableCell>
+                    <TableCell data-label="Executive">{row.salesUser.name}</TableCell>
                     <TableCell data-label="Date">{formatDocumentDate(row.piDate)}</TableCell>
                     <TableCell data-label="Status">
                       <div className="flex flex-wrap items-center gap-1.5">
@@ -190,7 +267,9 @@ export function ProformaInvoicesList({
                         ) : null}
                       </div>
                     </TableCell>
-                    <TableCell data-label="Total" className="text-right">{formatCurrency(row.totalValue)}</TableCell>
+                    <TableCell data-label="Total" className="text-right">
+                      {formatCurrency(row.totalValue)}
+                    </TableCell>
                     <TableCell data-label="Outstanding" className="text-right">
                       {formatCurrency(row.paymentSummary.outstanding)}
                     </TableCell>

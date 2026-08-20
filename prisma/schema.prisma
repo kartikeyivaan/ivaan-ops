@@ -475,6 +475,16 @@ enum ServicePaymentMode {
   OTHER
 }
 
+enum SalesModuleTargetScope {
+  COMPANY_DEFAULT
+  EXECUTIVE_DEFAULT
+  MONTHLY_OVERRIDE
+}
+
+enum ModuleMasteryResetPeriod {
+  MONTHLY
+}
+
 model Company {
   id                  String   @id @default(uuid()) @db.Uuid
   name                String
@@ -533,6 +543,11 @@ model Company {
   piEditRequests        ProformaInvoiceEditRequest[]
   purchaseRequests      PurchaseRequest[]
   manualStockEntries    ManualStockEntry[]
+  salesModuleTargets    SalesModuleTarget[]
+  moduleMasteryConfig   ModuleMasteryConfig?
+  moduleMasteryLevels   ModuleMasteryLevel[]
+  moduleMasteryProgress ExecutiveModuleMasteryProgress[]
+  moduleLevelAchievements ExecutiveModuleLevelAchievement[]
 
   @@map("companies")
 }
@@ -631,6 +646,11 @@ model User {
   closedExecutionProjects           Project[]                      @relation("ProjectClosedBy")
   approvedMaterialAssignments       ProjectMaterialAssignment[]    @relation("ProjectMaterialApprovedBy")
   createdProjectDispatches          ProjectDispatch[]              @relation("ProjectDispatchCreatedBy")
+  salesModuleTargetsAsExecutive     SalesModuleTarget[]            @relation("SalesModuleTargetExecutive")
+  salesModuleTargetsCreated         SalesModuleTarget[]            @relation("SalesModuleTargetCreatedBy")
+  salesModuleTargetsUpdated         SalesModuleTarget[]            @relation("SalesModuleTargetUpdatedBy")
+  moduleMasteryProgress             ExecutiveModuleMasteryProgress[] @relation("ModuleMasteryProgressExecutive")
+  moduleLevelAchievements           ExecutiveModuleLevelAchievement[] @relation("ModuleLevelAchievementExecutive")
 
   @@map("users")
 }
@@ -2472,4 +2492,116 @@ model InventoryDailyAuditLine {
   @@unique([auditId, productId])
   @@index([auditId])
   @@map("inventory_daily_audit_lines")
+}
+
+/// Monthly module target hierarchy (company default → executive override → monthly override).
+model SalesModuleTarget {
+  id            String                 @id @default(uuid()) @db.Uuid
+  companyId     String                 @map("company_id") @db.Uuid
+  scope         SalesModuleTargetScope
+  executiveId   String?                @map("executive_id") @db.Uuid
+  year          Int?
+  month         Int?
+  targetModules Int                    @default(3000) @map("target_modules")
+  createdById   String                 @map("created_by_id") @db.Uuid
+  updatedById   String                 @map("updated_by_id") @db.Uuid
+  createdAt     DateTime               @default(now()) @map("created_at")
+  updatedAt     DateTime               @updatedAt @map("updated_at")
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  executive User?   @relation("SalesModuleTargetExecutive", fields: [executiveId], references: [id], onDelete: Cascade)
+  createdBy User    @relation("SalesModuleTargetCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy User    @relation("SalesModuleTargetUpdatedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@index([companyId])
+  @@index([executiveId])
+  @@map("sales_module_targets")
+}
+
+model ModuleMasteryConfig {
+  id                             String                   @id @default(uuid()) @db.Uuid
+  companyId                      String                   @unique @map("company_id") @db.Uuid
+  metricType                     String                   @default("DISPATCHED_MODULES") @map("metric_type")
+  slabSize                       Int                      @default(500) @map("slab_size")
+  namedLevelCount                Int                      @default(15) @map("named_level_count")
+  godLevelIncrement              Int                      @default(500) @map("god_level_increment")
+  godLevelsEnabled               Boolean                  @default(true) @map("god_levels_enabled")
+  resetPeriod                    ModuleMasteryResetPeriod @default(MONTHLY) @map("reset_period")
+  leaderboardVisibleToExecutives Boolean                  @default(false) @map("leaderboard_visible_to_executives")
+  createdAt                      DateTime                 @default(now()) @map("created_at")
+  updatedAt                      DateTime                 @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("module_mastery_config")
+}
+
+model ModuleMasteryLevel {
+  id                String   @id @default(uuid()) @db.Uuid
+  companyId         String   @map("company_id") @db.Uuid
+  levelNumber       Int      @map("level_number")
+  name              String
+  badge             String
+  thresholdModules  Int      @map("threshold_modules")
+  isActive          Boolean  @default(true) @map("is_active")
+  sortOrder         Int      @map("sort_order")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, levelNumber])
+  @@index([companyId])
+  @@map("module_mastery_levels")
+}
+
+model ExecutiveModuleMasteryProgress {
+  id                    String   @id @default(uuid()) @db.Uuid
+  companyId             String   @map("company_id") @db.Uuid
+  executiveId           String   @map("executive_id") @db.Uuid
+  year                  Int
+  month                 Int
+  modulesDispatched     Decimal  @default(0) @map("modules_dispatched") @db.Decimal(12, 3)
+  currentLevelNumber    Int      @default(1) @map("current_level_number")
+  currentLevelName      String   @map("current_level_name")
+  currentSlabProgress   Int      @default(0) @map("current_slab_progress")
+  nextLevelThreshold    Int      @map("next_level_threshold")
+  highestCompletedLevel Int      @default(0) @map("highest_completed_level")
+  isGodLevel            Boolean  @default(false) @map("is_god_level")
+  godLevelRank          Int      @default(0) @map("god_level_rank")
+  lastCalculatedAt      DateTime @default(now()) @map("last_calculated_at")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  executive User    @relation("ModuleMasteryProgressExecutive", fields: [executiveId], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, executiveId, year, month])
+  @@index([companyId, year, month])
+  @@index([executiveId])
+  @@map("executive_module_mastery_progress")
+}
+
+model ExecutiveModuleLevelAchievement {
+  id                        String    @id @default(uuid()) @db.Uuid
+  companyId                 String    @map("company_id") @db.Uuid
+  executiveId               String    @map("executive_id") @db.Uuid
+  year                      Int
+  month                     Int
+  levelNumber               Int       @map("level_number")
+  levelName                 String    @map("level_name")
+  isGodLevel                Boolean   @default(false) @map("is_god_level")
+  godLevelRank              Int       @default(0) @map("god_level_rank")
+  thresholdModules          Int       @map("threshold_modules")
+  achievedAt                DateTime  @map("achieved_at")
+  celebrationShownAt        DateTime? @map("celebration_shown_at")
+  celebrationAcknowledgedAt DateTime? @map("celebration_acknowledged_at")
+  createdAt                 DateTime  @default(now()) @map("created_at")
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  executive User    @relation("ModuleLevelAchievementExecutive", fields: [executiveId], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, executiveId, year, month, levelNumber, godLevelRank])
+  @@index([executiveId, year, month])
+  @@map("executive_module_level_achievements")
 }

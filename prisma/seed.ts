@@ -21,6 +21,10 @@ import { generateLotNumber, getFinancialYear } from "../src/lib/inventory";
 import { addDays, toDateOnly } from "../src/lib/quotations";
 import { seedProjectProposalMasters } from "./seed-project-proposal-masters";
 import { seedLearningPractice } from "./seed-learning";
+import {
+  DEFAULT_MASTERY_SLAB_SIZE,
+  DEFAULT_NAMED_LEVELS,
+} from "../src/lib/module-mastery-service";
 
 const prisma = new PrismaClient();
 
@@ -646,6 +650,48 @@ async function main() {
   await seedSampleProformaInvoices();
   await seedSampleDispatches();
 
+  // Sales module targets — company defaults (lazy-create also happens on admin open).
+  for (const company of [ise, pcmv]) {
+    const existing = await prisma.salesModuleTarget.findFirst({
+      where: { companyId: company.id, scope: "COMPANY_DEFAULT" },
+    });
+    if (!existing) {
+      await prisma.salesModuleTarget.create({
+        data: {
+          companyId: company.id,
+          scope: "COMPANY_DEFAULT",
+          targetModules: 3000,
+          createdById: admin.id,
+          updatedById: admin.id,
+        },
+      });
+    }
+
+    const masteryConfig = await prisma.moduleMasteryConfig.findUnique({
+      where: { companyId: company.id },
+    });
+    if (!masteryConfig) {
+      await prisma.moduleMasteryConfig.create({
+        data: { companyId: company.id },
+      });
+    }
+    const levelCount = await prisma.moduleMasteryLevel.count({
+      where: { companyId: company.id },
+    });
+    if (levelCount === 0) {
+      await prisma.moduleMasteryLevel.createMany({
+        data: DEFAULT_NAMED_LEVELS.map((level) => ({
+          companyId: company.id,
+          levelNumber: level.levelNumber,
+          name: level.name,
+          badge: level.badge,
+          thresholdModules: level.levelNumber * DEFAULT_MASTERY_SLAB_SIZE,
+          sortOrder: level.levelNumber,
+        })),
+      });
+    }
+  }
+
   console.log("Seed completed.");
   console.log("Admin login: admin@ivaansolar.com / Admin@123");
   console.log("Sales Manager login: manager@ivaansolar.com / Manager@123");
@@ -1177,8 +1223,6 @@ async function seedSampleDispatches() {
 
   // Re-run learning seed so practice UserCompany links include users created above.
   await seedLearningPractice(prisma);
-
-  console.log("Seed completed.");
 }
 
 main()

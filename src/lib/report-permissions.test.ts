@@ -6,6 +6,7 @@ import {
   canViewProductMovementReport,
   canViewReservedQtyReport,
   canViewSalesExecutiveReport,
+  defaultSalesListFilterUserId,
   restrictSalesUserId,
 } from "@/lib/report-permissions";
 import { ROLES } from "@/lib/rbac";
@@ -51,5 +52,20 @@ describe("report-permissions", () => {
     expect(
       restrictSalesUserId([ROLES.SALES_MANAGER], "exec-1", "exec-2"),
     ).toBe("exec-2");
+    expect(
+      restrictSalesUserId([ROLES.SALES_EXECUTIVE], "exec-1", undefined),
+    ).toBe("exec-1");
+  });
+
+  it("defaults sales executive list filter to self (hard isolation via restrictSalesUserId)", () => {
+    expect(defaultSalesListFilterUserId([ROLES.SALES_EXECUTIVE], "exec-1")).toBe(
+      "exec-1",
+    );
+    expect(defaultSalesListFilterUserId([ROLES.SALES_MANAGER], "mgr-1")).toBe(
+      undefined,
+    );
+    expect(defaultSalesListFilterUserId([ROLES.SUPER_ADMIN], "admin-1")).toBe(
+      undefined,
+    );
   });
 });

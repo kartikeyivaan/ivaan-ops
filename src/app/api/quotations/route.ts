@@ -14,6 +14,7 @@ import { buildQuotationWhatsappUrl } from "@/lib/quotation-share";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
 import { createQuotationSchema, quotationSearchSchema } from "@/lib/validations";
+import { restrictSalesUserId } from "@/lib/report-permissions";
 
 function errorResponse(code: string, message: string, status: number, details?: unknown) {
   return NextResponse.json({ code, message, details }, { status });
@@ -33,17 +34,31 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
+  const rawSalesUserId = searchParams.get("salesUserId");
   const parsed = quotationSearchSchema.safeParse({
     q: searchParams.get("q") ?? undefined,
     status: searchParams.get("status") ?? undefined,
     customerId: searchParams.get("customerId") ?? undefined,
+    salesUserId: rawSalesUserId && rawSalesUserId !== "all" ? rawSalesUserId : undefined,
+    fromDate: searchParams.get("fromDate") ?? undefined,
+    toDate: searchParams.get("toDate") ?? undefined,
+    expiry: searchParams.get("expiry") ?? undefined,
   });
 
   if (!parsed.success) {
     return errorResponse("VALIDATION_ERROR", "Invalid filters.", 400, parsed.error.flatten());
   }
 
-  const quotations = await listQuotations(prisma, companyId, parsed.data);
+  const salesUserId = restrictSalesUserId(
+    session.user.roles,
+    session.user.id,
+    parsed.data.salesUserId,
+  );
+
+  const quotations = await listQuotations(prisma, companyId, {
+    ...parsed.data,
+    salesUserId,
+  });
   return NextResponse.json(quotations);
 }
 
@@ -76,7 +91,11 @@ export async function POST(request: Request) {
     return errorResponse("FORBIDDEN", "You do not have access to this company.", 403);
   }
 
-  const salesUserId = parsed.data.salesUserId ?? session.user.id;
+  const salesUserId = restrictSalesUserId(
+    session.user.roles,
+    session.user.id,
+    parsed.data.salesUserId ?? session.user.id,
+  );
 
   if (!salesUserId) {
     return errorResponse("VALIDATION_ERROR", "Sales executive is required.", 400);

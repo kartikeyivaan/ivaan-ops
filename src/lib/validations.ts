@@ -580,6 +580,10 @@ export const quotationSearchSchema = z.object({
   q: z.string().optional(),
   status: z.enum(["DRAFT", "SENT", "EXPIRED", "CONVERTED"]).optional(),
   customerId: z.string().uuid().optional(),
+  salesUserId: z.string().uuid().optional(),
+  fromDate: z.string().optional(),
+  toDate: z.string().optional(),
+  expiry: z.enum(["soon"]).optional(),
 });
 
 export const createProformaInvoiceSchema = z.object({
@@ -671,6 +675,17 @@ export const proformaInvoiceSearchSchema = z.object({
     ])
     .optional(),
   customerId: z.string().uuid().optional(),
+  salesUserId: z.string().uuid().optional(),
+  fromDate: z.string().optional(),
+  toDate: z.string().optional(),
+  outstandingOnly: z
+    .union([z.boolean(), z.enum(["true", "false", "1", "0"])])
+    .optional()
+    .transform((value) => {
+      if (value === undefined) return undefined;
+      if (typeof value === "boolean") return value;
+      return value === "true" || value === "1";
+    }),
 });
 
 export const dispatchLineSchema = z.object({
@@ -708,6 +723,7 @@ export const dispatchSearchSchema = z.object({
   status: z.enum(["DRAFT", "DISPATCHED", "CANCEL_PENDING", "CANCELLED"]).optional(),
   customerId: z.string().uuid().optional(),
   proformaInvoiceId: z.string().uuid().optional(),
+  salesUserId: z.string().uuid().optional(),
   fromDate: z.string().optional(),
   toDate: z.string().optional(),
 });

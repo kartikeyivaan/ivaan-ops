@@ -40,9 +40,13 @@ import { formatPricingType } from "@/lib/products";
 
 type Warehouse = { id: string; name: string; code: string | null };
 
-type ChallanShare = {
+type DispatchedChallan = {
   id: string;
   dcNo: string;
+  dispatchDate: string;
+  invoiceNumber: string | null;
+  invoiceDate: string | null;
+  documentationStatus: string | null;
   whatsappUrl: string | null;
 };
 
@@ -169,7 +173,7 @@ export function ProformaInvoiceDetail({
   pi,
   warehouses,
   whatsappUrl,
-  challanShares = [],
+  dispatchedChallans = [],
   canManage,
   canRecordPayments,
   canApproveBooking,
@@ -185,7 +189,7 @@ export function ProformaInvoiceDetail({
   pi: ProformaInvoiceDetailData;
   warehouses: Warehouse[];
   whatsappUrl?: string | null;
-  challanShares?: ChallanShare[];
+  dispatchedChallans?: DispatchedChallan[];
   canManage: boolean;
   canRecordPayments: boolean;
   canApproveBooking: boolean;
@@ -788,34 +792,69 @@ export function ProformaInvoiceDetail({
               Share on WhatsApp
             </Button>
           ) : null}
-          {challanShares.length === 1 ? (
-            <Button
-              variant="outline"
-              onClick={() => openWhatsapp(challanShares[0].whatsappUrl)}
-            >
-              <MessageCircle className="h-4 w-4" />
-              Share Delivery Challan
-            </Button>
+          {dispatchedChallans.length === 1 ? (
+            <>
+              <Button variant="outline" asChild>
+                <a
+                  href={`/api/dispatches/${dispatchedChallans[0].id}/pdf`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <Download className="h-4 w-4" />
+                  DC PDF
+                </a>
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => openWhatsapp(dispatchedChallans[0].whatsappUrl)}
+              >
+                <MessageCircle className="h-4 w-4" />
+                Share Delivery Challan
+              </Button>
+            </>
           ) : null}
-          {challanShares.length > 1 ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline">
-                  <MessageCircle className="h-4 w-4" />
-                  Share Delivery Challan
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {challanShares.map((challan) => (
-                  <DropdownMenuItem
-                    key={challan.id}
-                    onClick={() => openWhatsapp(challan.whatsappUrl)}
-                  >
-                    {challan.dcNo}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+          {dispatchedChallans.length > 1 ? (
+            <>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline">
+                    <Download className="h-4 w-4" />
+                    DC PDF
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {dispatchedChallans.map((challan) => (
+                    <DropdownMenuItem key={challan.id} asChild>
+                      <a
+                        href={`/api/dispatches/${challan.id}/pdf`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {challan.dcNo}
+                      </a>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline">
+                    <MessageCircle className="h-4 w-4" />
+                    Share Delivery Challan
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {dispatchedChallans.map((challan) => (
+                    <DropdownMenuItem
+                      key={challan.id}
+                      onClick={() => openWhatsapp(challan.whatsappUrl)}
+                    >
+                      {challan.dcNo}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
           ) : null}
           {canManage && pi.canEdit ? (
             <Button variant="outline" asChild>
@@ -1551,6 +1590,74 @@ export function ProformaInvoiceDetail({
             ) : null}
 
             {warning ? <p className="text-sm text-amber-700">{warning}</p> : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {dispatchedChallans.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Delivery Challans</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {dispatchedChallans.map((challan) => {
+              const invoicePending = !challan.invoiceNumber;
+              return (
+                <div key={challan.id} className="space-y-3 rounded-lg border p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-slate-900">{challan.dcNo}</p>
+                      <p className="text-sm text-slate-500">
+                        Dispatched {formatDocumentDate(challan.dispatchDate)}
+                      </p>
+                    </div>
+                    {challan.documentationStatus ? (
+                      <span className="text-sm font-medium text-emerald-700">
+                        {challan.documentationStatus.replaceAll("_", " ")}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="grid gap-2 text-sm sm:grid-cols-2">
+                    <p>
+                      <span className="text-slate-500">Invoice number:</span>{" "}
+                      {challan.invoiceNumber ?? "—"}
+                      {invoicePending ? (
+                        <span className="ml-2 font-medium text-amber-700">Invoice pending</span>
+                      ) : null}
+                    </p>
+                    <p>
+                      <span className="text-slate-500">Invoice date:</span>{" "}
+                      {challan.invoiceDate ? formatDocumentDate(challan.invoiceDate) : "—"}
+                    </p>
+                  </div>
+                  {!challan.documentationStatus && invoicePending ? (
+                    <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                      Invoice is not recorded yet. Documentation will begin once invoice is entered.
+                    </p>
+                  ) : null}
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" size="sm" asChild>
+                      <a
+                        href={`/api/dispatches/${challan.id}/pdf`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <Download className="h-4 w-4" />
+                        DC PDF
+                      </a>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openWhatsapp(challan.whatsappUrl)}
+                    >
+                      <MessageCircle className="h-4 w-4" />
+                      Share on WhatsApp
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
           </CardContent>
         </Card>
       ) : null}

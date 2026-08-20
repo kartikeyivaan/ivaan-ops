@@ -31,6 +31,17 @@ import {
   type QuotationLineChange,
   type QuotationLineSnapshot,
 } from "@/lib/quotations";
+import {
+  endOfBusinessDay,
+  getBusinessToday,
+  parseBusinessDate,
+} from "@/lib/business-dates";
+
+function addDaysToBusinessDate(value: string, days: number): string {
+  const date = parseBusinessDate(value);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
 
 export const quotationInclude = {
   company: {
@@ -333,23 +344,70 @@ export async function listQuotations(
     q?: string;
     status?: QuotationStatus;
     customerId?: string;
+    salesUserId?: string;
+    fromDate?: string;
+    toDate?: string;
+    expiry?: "soon";
   },
 ) {
   await refreshExpiredQuotations(prisma, companyId);
 
+  const fromDate = filters.fromDate ? parseBusinessDate(filters.fromDate) : undefined;
+  const toDate = filters.toDate ? endOfBusinessDay(filters.toDate) : undefined;
+
   const where: Prisma.QuotationWhereInput = {
     companyId,
-    ...(filters.status ? { status: filters.status } : {}),
     ...(filters.customerId ? { customerId: filters.customerId } : {}),
-    ...(filters.q
+    ...(filters.salesUserId ? { salesUserId: filters.salesUserId } : {}),
+    ...(fromDate || toDate
       ? {
-          OR: [
-            { quotationNo: { contains: filters.q, mode: "insensitive" } },
-            { customer: { customerName: { contains: filters.q, mode: "insensitive" } } },
-          ],
+          quotationDate: {
+            ...(fromDate ? { gte: fromDate } : {}),
+            ...(toDate ? { lte: toDate } : {}),
+          },
         }
       : {}),
   };
+
+  const andFilters: Prisma.QuotationWhereInput[] = [];
+
+  if (filters.q) {
+    andFilters.push({
+      OR: [
+        { quotationNo: { contains: filters.q, mode: "insensitive" } },
+        { customer: { customerName: { contains: filters.q, mode: "insensitive" } } },
+      ],
+    });
+  }
+
+  if (filters.expiry === "soon") {
+    const today = getBusinessToday();
+    const soonEnd = addDaysToBusinessDate(today, 3);
+    if (filters.status === QuotationStatus.SENT) {
+      andFilters.push({
+        status: QuotationStatus.SENT,
+        expiryDate: { lte: parseBusinessDate(soonEnd) },
+      });
+    } else if (filters.status === QuotationStatus.EXPIRED) {
+      andFilters.push({ status: QuotationStatus.EXPIRED });
+    } else {
+      andFilters.push({
+        OR: [
+          { status: QuotationStatus.EXPIRED },
+          {
+            status: QuotationStatus.SENT,
+            expiryDate: { lte: parseBusinessDate(soonEnd) },
+          },
+        ],
+      });
+    }
+  } else if (filters.status) {
+    andFilters.push({ status: filters.status });
+  }
+
+  if (andFilters.length > 0) {
+    where.AND = andFilters;
+  }
 
   const quotations = await prisma.quotation.findMany({
     where,

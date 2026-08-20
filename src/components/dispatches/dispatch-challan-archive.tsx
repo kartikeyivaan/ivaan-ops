@@ -48,15 +48,24 @@ function dateKey(value: string) {
 
 export function DispatchChallanArchive({
   initialDispatches,
+  initialFilters,
 }: {
   initialDispatches: DispatchListItem[];
+  initialFilters?: {
+    q: string;
+    status: string;
+    fromDate: string;
+    toDate: string;
+    salesUserId: string;
+  };
 }) {
   const router = useRouter();
   const [rows, setRows] = useState(initialDispatches);
-  const [q, setQ] = useState("");
-  const [status, setStatus] = useState("");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
+  const [q, setQ] = useState(initialFilters?.q ?? "");
+  const [status, setStatus] = useState(initialFilters?.status ?? "");
+  const [fromDate, setFromDate] = useState(initialFilters?.fromDate ?? "");
+  const [toDate, setToDate] = useState(initialFilters?.toDate ?? "");
+  const salesUserId = initialFilters?.salesUserId ?? "";
   const [loading, setLoading] = useState(false);
 
   async function applyFilters() {
@@ -66,7 +75,14 @@ export function DispatchChallanArchive({
     if (status) params.set("status", status);
     if (fromDate) params.set("fromDate", fromDate);
     if (toDate) params.set("toDate", toDate);
-    const response = await fetch(`/api/dispatches?${params.toString()}`);
+    if (salesUserId) params.set("salesUserId", salesUserId);
+    const query = params.toString();
+    router.replace(
+      query
+        ? `/inventory/dispatches/challans?${query}`
+        : "/inventory/dispatches/challans",
+    );
+    const response = await fetch(`/api/dispatches?${query}`);
     const data = await response.json();
     setLoading(false);
     if (response.ok) setRows(data);

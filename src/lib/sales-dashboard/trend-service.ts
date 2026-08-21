@@ -1,5 +1,6 @@
 import { DispatchStatus, type PrismaClient } from "@prisma/client";
 import { parseBusinessDate, endOfBusinessDay } from "@/lib/business-dates";
+import { loadKitBomMapForDispatches } from "@/lib/dispatch-value";
 import { applyIncentiveCredit } from "@/lib/incentive-credit";
 import { decimalToNumber } from "@/lib/inventory";
 import {
@@ -119,8 +120,23 @@ export async function getPerformanceTrend(
       customer: { select: { incentiveCreditPercent: true } },
       lines: {
         select: {
+          productId: true,
           qty: true,
-          proformaInvoiceItem: { select: { rate: true, gstRate: true } },
+          proformaInvoiceItem: {
+            select: {
+              id: true,
+              rate: true,
+              gstRate: true,
+              product: {
+                select: {
+                  id: true,
+                  pricingType: true,
+                  capacity: true,
+                  category: { select: { name: true } },
+                },
+              },
+            },
+          },
           product: {
             select: {
               pricingType: true,
@@ -133,12 +149,13 @@ export async function getPerformanceTrend(
     },
   });
 
+  const kitBomMap = await loadKitBomMapForDispatches(prisma, dispatches);
   const byDate = new Map<string, number>();
   for (const dispatch of dispatches) {
     const key = dispatch.dispatchDate.toISOString().slice(0, 10);
     const value =
       metric === "dispatch"
-        ? sumDispatchedValueFromLines([dispatch]).counted
+        ? sumDispatchedValueFromLines([dispatch], kitBomMap).counted
         : sumDispatchedUnitsFromLines([dispatch]).modules.counted;
     byDate.set(key, (byDate.get(key) ?? 0) + value);
   }

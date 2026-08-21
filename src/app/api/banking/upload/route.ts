@@ -189,7 +189,7 @@ export async function POST(request: Request) {
         exactMatchesSkipped: confirmed.exactMatchesSkipped,
         mismatchesRecorded: confirmed.mismatchesRecorded,
         balanceIssuesRecorded: confirmed.balanceIssuesRecorded,
-        message: `Imported ${confirmed.newTransactions} new transaction(s) into ${result.preview?.company.code ?? "firm"} · ${result.preview?.bankAccount.accountNumberMasked ?? "account"}. Exact matches skipped; mismatches were not overwritten.`,
+        message: `Imported ${confirmed.newTransactions} new transaction(s) into ${result.preview?.company.code ?? "firm"} · ${result.preview?.bankAccount.accountNumberMasked ?? "account"}. Exact full-line matches skipped.`,
       });
     }
 

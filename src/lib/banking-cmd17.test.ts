@@ -203,7 +203,7 @@ describe("Cmd17 IMPORT", () => {
     expect(withoutRef.analyzed[0]!.matchMethod).toBe("STRONG");
   });
 
-  it("existing-data mismatch is MISMATCH (never silently NEW / overwrite)", () => {
+  it("partial line overlap with shared reference is NEW (record uploaded row)", () => {
     const { analyzed, summary } = analyzeIncomingTransactions(
       ACCOUNT,
       [
@@ -226,8 +226,9 @@ describe("Cmd17 IMPORT", () => {
         }),
       ],
     );
-    expect(analyzed[0]!.classification).toBe("MISMATCH");
-    expect(summary.newTransactions).toBe(0);
+    expect(analyzed[0]!.classification).toBe("NEW");
+    expect(summary.newTransactions).toBe(1);
+    expect(summary.mismatches).toBe(0);
   });
 });
 

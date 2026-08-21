@@ -54,7 +54,7 @@ export async function POST(_request: Request, { params }: Params) {
     );
     return NextResponse.json({
       ...result,
-      message: `Imported ${result.newTransactions} new transaction(s). Exact matches skipped; mismatches were not overwritten.`,
+      message: `Imported ${result.newTransactions} new transaction(s). Exact full-line matches skipped.`,
     });
   } catch (err) {
     if (!(err instanceof Error)) throw err;

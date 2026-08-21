@@ -1,7 +1,6 @@
 import {
   CustomerType,
   DispatchStatus,
-  PricingType,
   QuotationStatus,
   type Prisma,
   type PrismaClient,
@@ -20,8 +19,14 @@ import {
   roundDualUnits,
   type DualMetric,
 } from "@/lib/incentive-credit";
+import {
+  loadKitBomMapForDispatches,
+  sumCommercialValueFromDispatchLines,
+  type DispatchCommercialValueLine,
+} from "@/lib/dispatch-value";
 import { decimalToNumber } from "@/lib/inventory";
-import { calculateLineSubtotal, roundMoney } from "@/lib/quotations";
+import type { KitBomComponent } from "@/lib/kit-fulfillment";
+import { roundMoney } from "@/lib/quotations";
 import { ROLES } from "@/lib/rbac";
 
 export type { DualMetric } from "@/lib/incentive-credit";
@@ -223,31 +228,13 @@ export function sumPaymentAmounts(
 export function sumDispatchedValueFromLines(
   dispatches: ReadonlyArray<{
     customer?: { incentiveCreditPercent: Prisma.Decimal | number | string } | null;
-    lines: ReadonlyArray<{
-      qty: Prisma.Decimal | number | string;
-      proformaInvoiceItem: {
-        rate: Prisma.Decimal | number | string;
-        gstRate: Prisma.Decimal | number | string;
-      };
-      product: {
-        pricingType: PricingType;
-        capacity: Prisma.Decimal | number | string;
-      };
-    }>;
+    lines: ReadonlyArray<DispatchCommercialValueLine>;
   }>,
+  kitBomMap: ReadonlyMap<string, KitBomComponent[]> = new Map(),
 ): DualMetric {
   return roundDualMoney(
     dispatches.reduce((sum, dispatch) => {
-      const lineTotal = dispatch.lines.reduce((lineSum, line) => {
-        const subtotal = calculateLineSubtotal({
-          pricingType: line.product.pricingType,
-          capacity: decimalToNumber(line.product.capacity),
-          qty: decimalToNumber(line.qty),
-          rate: decimalToNumber(line.proformaInvoiceItem.rate),
-        });
-        const gstRate = decimalToNumber(line.proformaInvoiceItem.gstRate);
-        return lineSum + subtotal * (1 + gstRate / 100);
-      }, 0);
+      const lineTotal = sumCommercialValueFromDispatchLines(dispatch.lines, kitBomMap);
       return addDualMetric(
         sum,
         applyIncentiveCredit(lineTotal, dispatch.customer?.incentiveCreditPercent),
@@ -365,8 +352,23 @@ export async function fetchDispatchesForMetrics(
       proformaInvoice: { select: { salesUserId: true } },
       lines: {
         select: {
+          productId: true,
           qty: true,
-          proformaInvoiceItem: { select: { rate: true, gstRate: true } },
+          proformaInvoiceItem: {
+            select: {
+              id: true,
+              rate: true,
+              gstRate: true,
+              product: {
+                select: {
+                  id: true,
+                  pricingType: true,
+                  capacity: true,
+                  category: { select: { name: true } },
+                },
+              },
+            },
+          },
           product: {
             select: {
               pricingType: true,
@@ -385,7 +387,8 @@ export async function buildDispatchedValueAggregate(
   filters: SalesMetricFilters,
 ): Promise<DualMetric> {
   const dispatches = await fetchDispatchesForMetrics(prisma, filters);
-  return sumDispatchedValueFromLines(dispatches);
+  const kitBomMap = await loadKitBomMapForDispatches(prisma, dispatches);
+  return sumDispatchedValueFromLines(dispatches, kitBomMap);
 }
 
 export async function buildDispatchedUnitTotals(
@@ -481,6 +484,7 @@ export async function buildExecutiveKpiSummary(
     buildNewCustomersCount(prisma, scoped),
   ]);
 
+  const kitBomMap = await loadKitBomMapForDispatches(prisma, dispatches);
   const units = sumDispatchedUnitsFromLines(dispatches);
 
   return finalizeExecutiveKpi({
@@ -490,7 +494,7 @@ export async function buildExecutiveKpiSummary(
     quotationValue: sumDocumentValues(quotations),
     piValue: sumDocumentValues(pis),
     collectionValue: sumPaymentAmounts(payments),
-    dispatchedValue: sumDispatchedValueFromLines(dispatches),
+    dispatchedValue: sumDispatchedValueFromLines(dispatches, kitBomMap),
     moduleUnits: units.modules,
     inverterUnits: units.inverters,
     otherUnits: units.other,
@@ -579,13 +583,14 @@ export async function buildTeamKpiSummaries(
       newCustomerCreditCount(row.incentiveCreditPercent),
     );
   }
+  const kitBomMap = await loadKitBomMapForDispatches(prisma, dispatches);
   for (const dispatch of dispatches) {
     const execId = dispatch.proformaInvoice.salesUserId;
     const entry = byExec.get(execId);
     if (!entry) continue;
     entry.dispatchedValue = addDualMetric(
       entry.dispatchedValue,
-      sumDispatchedValueFromLines([dispatch]),
+      sumDispatchedValueFromLines([dispatch], kitBomMap),
     );
     const units = sumDispatchedUnitsFromLines([dispatch]);
     entry.moduleUnits = addDualMetric(entry.moduleUnits, units.modules);

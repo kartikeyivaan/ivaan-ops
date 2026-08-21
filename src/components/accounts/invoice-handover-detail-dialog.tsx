@@ -177,9 +177,9 @@ export function InvoiceHandoverDetailDialog({
                         {line.product.displayName}
                       </TableCell>
                       <TableCell className="text-right">{line.qty}</TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="max-w-[11rem] whitespace-normal break-words text-right">
                         {line.product.pricingType === "WP"
-                          ? `${formatCurrency(line.rate)} × ${line.product.capacity} Wp`
+                          ? `${formatCurrency(line.rate)} × ${line.product.capacity} Wp = ${formatCurrency(line.rate * line.product.capacity)}/Unit`
                           : formatCurrency(line.rate)}
                       </TableCell>
                       <TableCell className="text-right">{formatCurrency(line.amount)}</TableCell>

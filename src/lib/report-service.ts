@@ -5,13 +5,14 @@ import {
   ProformaInvoiceStatus,
   type PrismaClient,
 } from "@prisma/client";
+import { commercialValuesByDispatchLine, loadKitBomMapForDispatches } from "@/lib/dispatch-value";
 import { decimalToNumber } from "@/lib/inventory";
 import { getWarehouseStockForProduct } from "@/lib/inventory-service";
 import {
   calculateAdvanceRequired,
   resolveBookingRequirement,
 } from "@/lib/proforma-invoices";
-import { calculateLineAmounts, calculateLineSubtotal, roundMoney } from "@/lib/quotations";
+import { calculateLineAmounts, roundMoney } from "@/lib/quotations";
 import {
   buildExecutiveKpiSummary,
   buildPaymentWhere,
@@ -689,9 +690,28 @@ export async function getDispatchReport(
       lines: {
         include: {
           product: {
-            select: { displayName: true, pricingType: true, capacity: true },
+            select: {
+              id: true,
+              displayName: true,
+              pricingType: true,
+              capacity: true,
+            },
           },
-          proformaInvoiceItem: { select: { rate: true, gstRate: true } },
+          proformaInvoiceItem: {
+            select: {
+              id: true,
+              rate: true,
+              gstRate: true,
+              product: {
+                select: {
+                  id: true,
+                  pricingType: true,
+                  capacity: true,
+                  category: { select: { name: true } },
+                },
+              },
+            },
+          },
           serials: {
             include: {
               serial: { select: { serialNumber: true } },
@@ -722,6 +742,8 @@ export async function getDispatchReport(
     value: number;
   }> = [];
 
+  const kitBomMap = await loadKitBomMapForDispatches(prisma, dispatches);
+
   for (const dispatch of dispatches) {
     const firmAddress = [
       dispatch.customer.address,
@@ -732,16 +754,19 @@ export async function getDispatchReport(
       .filter(Boolean)
       .join(", ");
 
-    for (const line of dispatch.lines) {
+    const lineValues = commercialValuesByDispatchLine(
+      dispatch.lines.map((line) => ({
+        productId: line.productId,
+        qty: line.qty,
+        product: line.product,
+        proformaInvoiceItem: line.proformaInvoiceItem,
+      })),
+      kitBomMap,
+    );
+
+    for (let index = 0; index < dispatch.lines.length; index += 1) {
+      const line = dispatch.lines[index]!;
       const qty = decimalToNumber(line.qty);
-      const rate = decimalToNumber(line.proformaInvoiceItem.rate);
-      const gstRate = decimalToNumber(line.proformaInvoiceItem.gstRate);
-      const subtotal = calculateLineSubtotal({
-        pricingType: line.product.pricingType,
-        capacity: decimalToNumber(line.product.capacity),
-        qty,
-        rate,
-      });
       rows.push({
         dispatchDate: dispatch.dispatchDate.toISOString().slice(0, 10),
         dcNo: dispatch.dcNo,
@@ -761,7 +786,7 @@ export async function getDispatchReport(
           .join(", "),
         vehicleNo: dispatch.vehicleNo ?? "",
         warehouseName: dispatch.warehouse.name,
-        value: roundMoney(subtotal * (1 + gstRate / 100)),
+        value: roundMoney(lineValues[index] ?? 0),
       });
     }
   }

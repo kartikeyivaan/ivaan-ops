@@ -3,8 +3,12 @@ import {
   InvoiceHandoverStatus,
   type PrismaClient,
 } from "@prisma/client";
+import {
+  commercialValuesByDispatchLine,
+  loadKitBomMapForDispatches,
+} from "@/lib/dispatch-value";
 import { decimalToNumber } from "@/lib/inventory";
-import { calculateLineSubtotal, roundMoney } from "@/lib/quotations";
+import { roundMoney } from "@/lib/quotations";
 
 const PENDING_STATUSES: InvoiceHandoverStatus[] = [
   InvoiceHandoverStatus.PENDING_INVOICE,
@@ -43,6 +47,7 @@ const detailInclude = {
       lines: {
         select: {
           id: true,
+          productId: true,
           qty: true,
           product: {
             select: {
@@ -52,7 +57,21 @@ const detailInclude = {
               capacity: true,
             },
           },
-          proformaInvoiceItem: { select: { rate: true, gstRate: true } },
+          proformaInvoiceItem: {
+            select: {
+              id: true,
+              rate: true,
+              gstRate: true,
+              product: {
+                select: {
+                  id: true,
+                  pricingType: true,
+                  capacity: true,
+                  category: { select: { name: true } },
+                },
+              },
+            },
+          },
           serials: {
             select: { serial: { select: { id: true, serialNumber: true } } },
           },
@@ -118,18 +137,22 @@ export async function getInvoiceHandoverDetail(
   });
   if (!handover) return null;
 
-  const lines = handover.dispatch.lines.map((line) => {
+  const kitBomMap = await loadKitBomMapForDispatches(prisma, [handover.dispatch]);
+  const lineValues = commercialValuesByDispatchLine(
+    handover.dispatch.lines.map((line) => ({
+      productId: line.productId,
+      qty: line.qty,
+      product: line.product,
+      proformaInvoiceItem: line.proformaInvoiceItem,
+    })),
+    kitBomMap,
+  );
+
+  const lines = handover.dispatch.lines.map((line, index) => {
     const qty = decimalToNumber(line.qty);
     const rate = decimalToNumber(line.proformaInvoiceItem.rate);
-    const gstRate = decimalToNumber(line.proformaInvoiceItem.gstRate);
     const capacity = decimalToNumber(line.product.capacity);
-    const subtotal = calculateLineSubtotal({
-      pricingType: line.product.pricingType,
-      capacity,
-      qty,
-      rate,
-    });
-    const amount = roundMoney(subtotal * (1 + gstRate / 100));
+    const amount = roundMoney(lineValues[index] ?? 0);
     return {
       id: line.id,
       qty,

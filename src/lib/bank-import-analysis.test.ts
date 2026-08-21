@@ -56,7 +56,7 @@ function existing(
 }
 
 describe("bank import analysis", () => {
-  it("matches by reference then compares critical fields (exact)", () => {
+  it("matches only when every critical line item is equal (exact)", () => {
     const date = new Date("2026-08-02T00:00:00.000Z");
     const incoming = [
       txn({
@@ -86,7 +86,36 @@ describe("bank import analysis", () => {
     expect(summary.newTransactions).toBe(0);
   });
 
-  it("flags mismatch when same UTR has different amount and does not treat as new", () => {
+  it("same reused reference with different line items is NEW (not a mismatch)", () => {
+    const incoming = [
+      txn({
+        transactionDate: new Date("2026-07-01T00:00:00.000Z"),
+        description: "BY TRANSFER-NEFT*HDFC0000001*SUNTECH ELECTRIC--",
+        referenceNumber: "TRANSFERFROM99509044300/",
+        creditAmount: 7014,
+        runningBalance: 36522.73,
+        statementSequence: 1,
+      }),
+    ];
+    const ledger = [
+      existing({
+        id: "e1",
+        transactionDate: new Date("2026-08-01T00:00:00.000Z"),
+        description: "BY TRANSFER-NEFT*IBKL0NEFT01*THE AMERICAN SOL--",
+        referenceNumber: "TRANSFERFROM99509044300/",
+        creditAmount: 100000,
+        runningBalance: 1467986.47,
+      }),
+    ];
+
+    const { analyzed, summary } = analyzeIncomingTransactions(ACCOUNT, incoming, ledger);
+    expect(analyzed[0]!.classification).toBe("NEW");
+    expect(analyzed[0]!.fieldDiffs).toEqual([]);
+    expect(summary.newTransactions).toBe(1);
+    expect(summary.mismatches).toBe(0);
+  });
+
+  it("same UTR with different amount is NEW so the uploaded row can be recorded", () => {
     const date = new Date("2026-08-02T00:00:00.000Z");
     const incoming = [
       txn({
@@ -110,13 +139,12 @@ describe("bank import analysis", () => {
     ];
 
     const { analyzed, summary } = analyzeIncomingTransactions(ACCOUNT, incoming, ledger);
-    expect(analyzed[0]!.classification).toBe("MISMATCH");
-    expect(analyzed[0]!.fieldDiffs.some((d) => d.field === "creditAmount")).toBe(true);
-    expect(summary.mismatches).toBe(1);
-    expect(summary.newTransactions).toBe(0);
+    expect(analyzed[0]!.classification).toBe("NEW");
+    expect(summary.newTransactions).toBe(1);
+    expect(summary.mismatches).toBe(0);
   });
 
-  it("uses strong match without reference (date + direction + amount + balance)", () => {
+  it("uses strong match without reference when all line items match", () => {
     const date = new Date("2026-08-03T00:00:00.000Z");
     const incoming = [
       txn({

@@ -260,8 +260,9 @@ export function BankStatementUploadForm() {
         <h1 className="text-2xl font-bold text-slate-900">Upload Statements</h1>
         <p className="text-sm text-slate-500">
           Drop multiple bank statements (any firm / bank). Each file is identified from statement
-          account number, then imported automatically in sequence. Exact matches are skipped;
-          mismatches are never overwritten. Original files are always deleted after analysis.
+          account number, then imported automatically in sequence. A row is skipped only when every
+          line item matches an existing transaction; shared reference alone is not enough. Original
+          files are always deleted after analysis.
         </p>
       </div>
 

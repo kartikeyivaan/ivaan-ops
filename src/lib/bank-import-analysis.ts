@@ -89,9 +89,9 @@ function amountOf(txn: { debitAmount: number; creditAmount: number }): number {
 }
 
 /**
- * Deterministic fingerprint — never amount alone.
- * With reference: account + ref + date + amounts + balance.
- * Without reference: account + date + direction + amount + running balance + description.
+ * Deterministic fingerprint — never amount or reference alone.
+ * Always includes date, description, amounts, and balance so reused SBI
+ * "TRANSFER FROM …" refs cannot collide distinct ledger rows.
  * Excludes statement sequence so overlapping statements can match the same logical row.
  */
 export function buildTransactionFingerprint(
@@ -106,18 +106,14 @@ export function buildTransactionFingerprint(
     | "runningBalance"
   >,
 ): string {
-  const ref = normalizeReference(txn.referenceNumber);
+  const ref = normalizeReference(txn.referenceNumber) ?? "NOREF";
   const date = dateKey(txn.transactionDate) ?? "";
   const desc = normalizeDescription(txn.description);
   const debit = roundMoney(txn.debitAmount).toFixed(2);
   const credit = roundMoney(txn.creditAmount).toFixed(2);
   const balance = roundMoney(txn.runningBalance).toFixed(2);
-  const direction = directionOf(txn);
-  const amount = amountOf(txn).toFixed(2);
 
-  const payload = ref
-    ? ["v1", bankAccountId, "REF", ref, date, debit, credit, balance].join("|")
-    : ["v1", bankAccountId, "NOREF", date, direction, amount, balance, desc].join("|");
+  const payload = ["v2", bankAccountId, ref, date, debit, credit, balance, desc].join("|");
 
   return createHash("sha256").update(payload).digest("hex");
 }
@@ -165,54 +161,45 @@ function compareCriticalFields(
   return diffs;
 }
 
-function findByReference(
-  existing: ExistingBankTransactionSnapshot[],
-  incoming: NormalizedBankTransaction,
-): ExistingBankTransactionSnapshot | null {
-  const ref = normalizeReference(incoming.referenceNumber);
-  if (!ref) return null;
-  return (
-    existing.find((row) => normalizeReference(row.referenceNumber) === ref) ?? null
-  );
-}
-
 /**
- * Strong match when reference is unavailable:
- * same date + direction + amount + running balance.
- * Never amount alone.
+ * Duplicate only when every critical line item matches an existing ledger row.
+ * Same reference alone is never enough (SBI reuses TRANSFER FROM / pool refs).
  */
-function findByStrongIdentity(
+function findExactLineMatch(
   existing: ExistingBankTransactionSnapshot[],
   incoming: NormalizedBankTransaction,
+  claimedExistingIds: Set<string>,
 ): ExistingBankTransactionSnapshot | null {
-  if (normalizeReference(incoming.referenceNumber)) return null;
-  const date = dateKey(incoming.transactionDate);
-  const direction = directionOf(incoming);
-  const amount = amountOf(incoming);
-  const balance = roundMoney(incoming.runningBalance);
-
   return (
-    existing.find((row) => {
-      if (normalizeReference(row.referenceNumber)) return false;
-      return (
-        dateKey(row.transactionDate) === date &&
-        directionOf(row) === direction &&
-        moneyEqual(amountOf(row), amount) &&
-        moneyEqual(row.runningBalance, balance)
-      );
-    }) ?? null
+    existing.find(
+      (row) =>
+        !claimedExistingIds.has(row.id) && compareCriticalFields(row, incoming).length === 0,
+    ) ?? null
   );
 }
 
-function findByFingerprint(
-  existing: ExistingBankTransactionSnapshot[],
+function matchMethodForExact(
+  existing: ExistingBankTransactionSnapshot,
+  incoming: NormalizedBankTransaction,
   fingerprint: string,
-): ExistingBankTransactionSnapshot | null {
-  return existing.find((row) => row.transactionFingerprint === fingerprint) ?? null;
+): MatchMethod {
+  const incomingRef = normalizeReference(incoming.referenceNumber);
+  const existingRef = normalizeReference(existing.referenceNumber);
+  if (incomingRef && existingRef && incomingRef === existingRef) {
+    return "REFERENCE";
+  }
+  if (!incomingRef && !existingRef) {
+    return "STRONG";
+  }
+  if (existing.transactionFingerprint === fingerprint) {
+    return "FINGERPRINT";
+  }
+  return "STRONG";
 }
 
 /**
- * Classify each incoming row against existing ledger rows using the PRD matching hierarchy.
+ * Classify each incoming row against existing ledger rows.
+ * Only full line-item equality is a duplicate; otherwise the row is NEW and should be recorded.
  */
 export function analyzeIncomingTransactions(
   bankAccountId: string,
@@ -228,27 +215,7 @@ export function analyzeIncomingTransactions(
 
   for (const txn of incoming) {
     const fingerprint = buildTransactionFingerprint(bankAccountId, txn);
-
-    let match: ExistingBankTransactionSnapshot | null = null;
-    let matchMethod: MatchMethod | null = null;
-
-    const byRef = findByReference(existing, txn);
-    if (byRef && !claimedExistingIds.has(byRef.id)) {
-      match = byRef;
-      matchMethod = "REFERENCE";
-    } else {
-      const byStrong = findByStrongIdentity(existing, txn);
-      if (byStrong && !claimedExistingIds.has(byStrong.id)) {
-        match = byStrong;
-        matchMethod = "STRONG";
-      } else {
-        const byFp = findByFingerprint(existing, fingerprint);
-        if (byFp && !claimedExistingIds.has(byFp.id)) {
-          match = byFp;
-          matchMethod = "FINGERPRINT";
-        }
-      }
-    }
+    const match = findExactLineMatch(existing, txn, claimedExistingIds);
 
     if (!match) {
       analyzed.push({
@@ -263,14 +230,13 @@ export function analyzeIncomingTransactions(
     }
 
     claimedExistingIds.add(match.id);
-    const fieldDiffs = compareCriticalFields(match, txn);
     analyzed.push({
       incoming: txn,
       fingerprint,
-      classification: fieldDiffs.length === 0 ? "EXACT_MATCH" : "MISMATCH",
-      matchMethod,
+      classification: "EXACT_MATCH",
+      matchMethod: matchMethodForExact(match, txn, fingerprint),
       existingTransactionId: match.id,
-      fieldDiffs,
+      fieldDiffs: [],
     });
   }
 

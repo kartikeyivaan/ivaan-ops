@@ -8,6 +8,34 @@ import {
   sumPaymentAmounts,
 } from "@/lib/report-builders";
 import { applyIncentiveCredit } from "@/lib/incentive-credit";
+import type { KitBomComponent } from "@/lib/kit-fulfillment";
+
+function unitPiProduct(id: string) {
+  return {
+    id,
+    pricingType: PricingType.UNIT,
+    capacity: 1,
+    category: { name: "Other" },
+  };
+}
+
+function wpPiProduct(id: string, capacity: number) {
+  return {
+    id,
+    pricingType: PricingType.WP,
+    capacity,
+    category: { name: "Modules" },
+  };
+}
+
+function kitPiProduct(id: string, capacity: number) {
+  return {
+    id,
+    pricingType: PricingType.UNIT,
+    capacity,
+    category: { name: "Kit" },
+  };
+}
 
 describe("report-builders", () => {
   it("sums document values with roundMoney", () => {
@@ -46,13 +74,25 @@ describe("report-builders", () => {
       {
         lines: [
           {
+            productId: "p1",
             qty: 10,
-            proformaInvoiceItem: { rate: 100, gstRate: 12 },
+            proformaInvoiceItem: {
+              id: "i1",
+              rate: 100,
+              gstRate: 12,
+              product: unitPiProduct("p1"),
+            },
             product: { pricingType: PricingType.UNIT, capacity: 1 },
           },
           {
+            productId: "p2",
             qty: 2,
-            proformaInvoiceItem: { rate: 50, gstRate: 18 },
+            proformaInvoiceItem: {
+              id: "i2",
+              rate: 50,
+              gstRate: 18,
+              product: unitPiProduct("p2"),
+            },
             product: { pricingType: PricingType.UNIT, capacity: 1 },
           },
         ],
@@ -67,13 +107,25 @@ describe("report-builders", () => {
       {
         lines: [
           {
+            productId: "mod",
             qty: 100,
-            proformaInvoiceItem: { rate: 22, gstRate: 12 },
+            proformaInvoiceItem: {
+              id: "i1",
+              rate: 22,
+              gstRate: 12,
+              product: wpPiProduct("mod", 590),
+            },
             product: { pricingType: PricingType.WP, capacity: 590 },
           },
           {
+            productId: "inv",
             qty: 2,
-            proformaInvoiceItem: { rate: 5000, gstRate: 12 },
+            proformaInvoiceItem: {
+              id: "i2",
+              rate: 5000,
+              gstRate: 12,
+              product: unitPiProduct("inv"),
+            },
             product: { pricingType: PricingType.UNIT, capacity: 10 },
           },
         ],
@@ -81,6 +133,64 @@ describe("report-builders", () => {
     ]);
     // (100 * 590 * 22 + 2 * 5000) * 1.12 = 1,308,000 * 1.12
     expect(value).toEqual({ actual: 1464960, counted: 1464960 });
+  });
+
+  it("values kit component lines as kitQty * kitRate, not module capacity * kitRate", () => {
+    const kitId = "kit-1";
+    const moduleId = "mod-610";
+    const inverterId = "inv-1";
+    const bom: KitBomComponent[] = [
+      {
+        componentProductId: moduleId,
+        qty: 5,
+        displayName: "Module",
+        serialTracking: true,
+        categoryName: "Modules",
+      },
+      {
+        componentProductId: inverterId,
+        qty: 1,
+        displayName: "Inverter",
+        serialTracking: true,
+        categoryName: "Inverters",
+      },
+    ];
+    const kitBomMap = new Map([[kitId, bom]]);
+
+    const value = sumDispatchedValueFromLines(
+      [
+        {
+          lines: [
+            {
+              productId: moduleId,
+              qty: 40,
+              proformaInvoiceItem: {
+                id: "pi-item-kit",
+                rate: 110000,
+                gstRate: 5,
+                product: kitPiProduct(kitId, 3.05),
+              },
+              product: { pricingType: PricingType.WP, capacity: 610 },
+            },
+            {
+              productId: inverterId,
+              qty: 8,
+              proformaInvoiceItem: {
+                id: "pi-item-kit",
+                rate: 110000,
+                gstRate: 5,
+                product: kitPiProduct(kitId, 3.05),
+              },
+              product: { pricingType: PricingType.UNIT, capacity: 3.3 },
+            },
+          ],
+        },
+      ],
+      kitBomMap,
+    );
+
+    // 8 kits * 110000 * 1.05 = 924000 (NOT 40 * 610 * 110000 * 1.05)
+    expect(value).toEqual({ actual: 924000, counted: 924000 });
   });
 
   it("classifies dispatched units by product category", () => {
@@ -155,13 +265,25 @@ describe("report-builders", () => {
       {
         lines: [
           {
+            productId: "m1",
             qty: 480,
-            proformaInvoiceItem: { rate: 10, gstRate: 12 },
+            proformaInvoiceItem: {
+              id: "a",
+              rate: 10,
+              gstRate: 12,
+              product: wpPiProduct("m1", 540),
+            },
             product: { pricingType: PricingType.WP, capacity: 540 },
           },
           {
+            productId: "m2",
             qty: 1100,
-            proformaInvoiceItem: { rate: 10, gstRate: 12 },
+            proformaInvoiceItem: {
+              id: "b",
+              rate: 10,
+              gstRate: 12,
+              product: wpPiProduct("m2", 540),
+            },
             product: { pricingType: PricingType.WP, capacity: 540 },
           },
         ],

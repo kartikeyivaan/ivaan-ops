@@ -29,6 +29,7 @@ import {
   componentRemainingQty,
   loadKitBomMap,
   resolveKitDispatchQty,
+  type KitBomComponent,
 } from "@/lib/kit-fulfillment";
 import {
   notifyDispatchCompleted,
@@ -37,7 +38,11 @@ import {
 import { calculateOutstanding } from "@/lib/proforma-invoices";
 import { clearExpiredDispatchTodayFlags } from "@/lib/pi-service";
 import { deductNonSerialStock } from "@/lib/transfer-service";
-import { calculateLineSubtotal, roundMoney } from "@/lib/quotations";
+import {
+  loadKitBomMapForDispatches,
+  sumCommercialValueFromDispatchLines,
+} from "@/lib/dispatch-value";
+import { roundMoney } from "@/lib/quotations";
 import { recalculateModuleMasteryForDispatch } from "@/lib/module-mastery-service";
 import { isKitCategory } from "@/lib/products";
 import { getKitComponentsForFulfillment } from "@/lib/product-service";
@@ -97,6 +102,14 @@ export const dispatchInclude = {
           dispatchedQty: true,
           rate: true,
           gstRate: true,
+          product: {
+            select: {
+              id: true,
+              pricingType: true,
+              capacity: true,
+              category: { select: { name: true } },
+            },
+          },
         },
       },
       serials: {
@@ -121,7 +134,10 @@ type DispatchLineInput = {
   serialIds?: string[];
 };
 
-function serializeDispatch(dispatch: DispatchRecord) {
+function serializeDispatch(
+  dispatch: DispatchRecord,
+  kitBomMap: ReadonlyMap<string, KitBomComponent[]> = new Map(),
+) {
   return {
     id: dispatch.id,
     dcNo: dispatch.dcNo,
@@ -155,18 +171,25 @@ function serializeDispatch(dispatch: DispatchRecord) {
       })),
     })),
     totalValue: roundMoney(
-      dispatch.lines.reduce((sum, line) => {
-        const subtotal = calculateLineSubtotal({
-          pricingType: line.product.pricingType,
-          capacity: decimalToNumber(line.product.capacity),
-          qty: decimalToNumber(line.qty),
-          rate: decimalToNumber(line.proformaInvoiceItem.rate),
-        });
-        const gstRate = decimalToNumber(line.proformaInvoiceItem.gstRate);
-        return sum + subtotal * (1 + gstRate / 100);
-      }, 0),
+      sumCommercialValueFromDispatchLines(
+        dispatch.lines.map((line) => ({
+          productId: line.productId,
+          qty: line.qty,
+          product: line.product,
+          proformaInvoiceItem: line.proformaInvoiceItem,
+        })),
+        kitBomMap,
+      ),
     ),
   };
+}
+
+async function serializeDispatchWithKits(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  dispatch: DispatchRecord,
+) {
+  const kitBomMap = await loadKitBomMapForDispatches(prisma, [dispatch]);
+  return serializeDispatch(dispatch, kitBomMap);
 }
 
 async function refreshPiDispatchStatus(
@@ -296,7 +319,8 @@ export async function listDispatches(
     orderBy: [{ dispatchDate: "desc" }, { createdAt: "desc" }],
   });
 
-  return rows.map(serializeDispatch);
+  const kitBomMap = await loadKitBomMapForDispatches(prisma, rows);
+  return rows.map((row) => serializeDispatch(row, kitBomMap));
 }
 
 export async function listPiDispatchedChallans(
@@ -349,7 +373,7 @@ export async function getDispatchById(
     include: dispatchInclude,
   });
   if (!dispatch) return null;
-  return serializeDispatch(dispatch);
+  return serializeDispatchWithKits(prisma, dispatch);
 }
 
 export async function getDispatchRecord(
@@ -909,7 +933,7 @@ export async function createDispatch(
         });
       }
 
-      return serializeDispatch(dispatch);
+      return serializeDispatchWithKits(tx, dispatch);
     },
     { maxWait: 10_000, timeout: 60_000 },
   );
@@ -1264,7 +1288,7 @@ async function confirmDispatchTx(
     }),
   ]);
 
-  return serializeDispatch(updated);
+  return serializeDispatchWithKits(tx, updated);
 }
 
 export async function confirmDispatch(
@@ -1343,7 +1367,7 @@ export async function requestDispatchCancel(
       reference: dispatch.dcNo,
     });
 
-    return serializeDispatch(updated);
+    return serializeDispatchWithKits(tx, updated);
   });
 }
 
@@ -1482,7 +1506,7 @@ export async function approveDispatchCancel(
       reference: dispatch.dcNo,
     });
 
-    return serializeDispatch(updated);
+    return serializeDispatchWithKits(tx, updated);
   });
 
   try {
@@ -1552,7 +1576,7 @@ export async function rejectDispatchCancel(
       reference: dispatch.dcNo,
     });
 
-    return serializeDispatch(updated);
+    return serializeDispatchWithKits(tx, updated);
   });
 }
 
@@ -1587,7 +1611,21 @@ export async function getCustomerDispatchMetrics(
     include: {
       lines: {
         include: {
-          proformaInvoiceItem: { select: { rate: true, gstRate: true } },
+          proformaInvoiceItem: {
+            select: {
+              id: true,
+              rate: true,
+              gstRate: true,
+              product: {
+                select: {
+                  id: true,
+                  pricingType: true,
+                  capacity: true,
+                  category: { select: { name: true } },
+                },
+              },
+            },
+          },
           product: { select: { pricingType: true, capacity: true } },
         },
       },
@@ -1595,20 +1633,20 @@ export async function getCustomerDispatchMetrics(
   });
 
   const yearStart = new Date(new Date().getFullYear(), 0, 1);
+  const kitBomMap = await loadKitBomMapForDispatches(prisma, dispatches);
   let totalDispatchValueThisYear = 0;
 
   for (const dispatch of dispatches) {
     if (dispatch.dispatchedAt && dispatch.dispatchedAt >= yearStart) {
-      for (const line of dispatch.lines) {
-        const subtotal = calculateLineSubtotal({
-          pricingType: line.product.pricingType,
-          capacity: decimalToNumber(line.product.capacity),
-          qty: decimalToNumber(line.qty),
-          rate: decimalToNumber(line.proformaInvoiceItem.rate),
-        });
-        const gstRate = decimalToNumber(line.proformaInvoiceItem.gstRate);
-        totalDispatchValueThisYear += subtotal * (1 + gstRate / 100);
-      }
+      totalDispatchValueThisYear += sumCommercialValueFromDispatchLines(
+        dispatch.lines.map((line) => ({
+          productId: line.productId,
+          qty: line.qty,
+          product: line.product,
+          proformaInvoiceItem: line.proformaInvoiceItem,
+        })),
+        kitBomMap,
+      );
     }
   }
 

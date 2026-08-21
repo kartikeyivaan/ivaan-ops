@@ -17,9 +17,12 @@ import {
   applyRemainingPiQtyToBookingReservations,
   getInventoryEventProjectionDate,
   getSupersededInventoryEventIds,
+  remainingReservedQtyByPiId,
   type DispatchTodayEventStatus,
   type InventoryEvent,
 } from "@/lib/inventory-events";
+
+export { remainingReservedQtyByPiId };
 import { pendingIncomingQuantity } from "@/lib/inventory";
 import { prisma } from "@/lib/prisma";
 import { resolveSafetyQty } from "@/lib/safety-stock";
@@ -134,44 +137,6 @@ export type DispatchTodayPiInfo = {
   customerName: string;
   piNo: string;
 };
-
-/**
- * Remaining reserved qty for open PIs. BOOKED / PARTIALLY_DISPATCHED /
- * CANCEL_PENDING still hold stock; FULLY_DISPATCHED and CANCELLED do not.
- */
-const OPEN_RESERVED_PI_STATUSES = new Set<ProformaInvoiceStatus>([
-  ProformaInvoiceStatus.BOOKED,
-  ProformaInvoiceStatus.PARTIALLY_DISPATCHED,
-  ProformaInvoiceStatus.CANCEL_PENDING,
-]);
-
-export function remainingReservedQtyByPiId(
-  pis: readonly {
-    id: string;
-    status: ProformaInvoiceStatus;
-    items: readonly {
-      productId: string;
-      qty: unknown;
-      dispatchedQty: unknown;
-    }[];
-  }[],
-  productId: string,
-): Map<string, number> {
-  const remaining = new Map<string, number>();
-  for (const pi of pis) {
-    let qty = 0;
-    for (const item of pi.items) {
-      if (item.productId !== productId) continue;
-      if (OPEN_RESERVED_PI_STATUSES.has(pi.status)) {
-        qty += Math.max(0, Number(item.qty) - Number(item.dispatchedQty));
-      }
-    }
-    // Always include the PI so stale reservation events for removed products
-    // are correctly treated as 0 remaining rather than leaking through.
-    remaining.set(pi.id, qty);
-  }
-  return remaining;
-}
 
 function dateOnly(value: Date): string {
   return value.toISOString().slice(0, 10);

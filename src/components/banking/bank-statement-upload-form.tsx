@@ -337,6 +337,22 @@ export function BankStatementUploadForm() {
               </ul>
             ) : null}
 
+            {awaitingConfirm ? (
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" onClick={handleConfirm} disabled={confirming}>
+                  {confirming ? "Importing..." : "Import safe transactions"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleCancel}
+                  disabled={confirming}
+                >
+                  Cancel
+                </Button>
+              </div>
+            ) : null}
+
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
@@ -384,22 +400,6 @@ export function BankStatementUploadForm() {
                 </TableBody>
               </Table>
             </div>
-
-            {awaitingConfirm ? (
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" onClick={handleConfirm} disabled={confirming}>
-                  {confirming ? "Importing..." : "Import safe transactions"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleCancel}
-                  disabled={confirming}
-                >
-                  Cancel
-                </Button>
-              </div>
-            ) : null}
           </CardContent>
         </Card>
       ) : null}

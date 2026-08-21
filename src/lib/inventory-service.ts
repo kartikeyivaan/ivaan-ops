@@ -36,6 +36,12 @@ const lotInclude = {
   vendor: true,
   createdBy: { select: { id: true, name: true, email: true } },
   serials: true,
+  transactions: {
+    where: { transactionType: InventoryTransactionType.INWARD },
+    orderBy: { createdAt: "desc" as const },
+    take: 1,
+    select: { createdAt: true },
+  },
 } satisfies Prisma.InventoryLotInclude;
 
 export type InventoryLotRecord = Prisma.InventoryLotGetPayload<{
@@ -272,8 +278,10 @@ export type IncomingLotRecordedSerial = {
 };
 
 /**
- * Serials originally inwarded on a lot, including units later moved to another
- * lot by inter-company transfer (those keep their original createdAt).
+ * Serials originally inwarded on a lot, including units later moved off the lot
+ * (inter-company transfer or interchangeable ownership swap). Those rows keep
+ * their original createdAt, which is how we recover them for purchase-history
+ * download even though lotId has changed.
  */
 export async function getIncomingLotRecordedSerials(
   prisma: PrismaClient,
@@ -313,6 +321,8 @@ export async function getIncomingLotRecordedSerials(
   const to = new Date(Math.max(...windowTimes) + 2_000);
   const currentNumbers = new Set(current.map((row) => row.serialNumber));
 
+  // Transfers leave transfer-line serial rows; interchangeable swaps only
+  // reassign lotId onto a system lot whose remarks mark the swap.
   const moved = await prisma.inventorySerial.findMany({
     where: {
       productId: lot.productId,
@@ -321,13 +331,22 @@ export async function getIncomingLotRecordedSerials(
         ? { serialNumber: { notIn: [...currentNumbers] } }
         : {}),
       createdAt: { gte: from, lte: to },
-      transferLineSerials: {
-        some: {
-          line: {
-            transfer: { fromWarehouseId: lot.warehouseId },
+      OR: [
+        {
+          transferLineSerials: {
+            some: {
+              line: {
+                transfer: { fromWarehouseId: lot.warehouseId },
+              },
+            },
           },
         },
-      },
+        {
+          lot: {
+            remarks: { startsWith: "Interchangeable serial swap" },
+          },
+        },
+      ],
     },
     select: {
       serialNumber: true,
@@ -1491,8 +1510,9 @@ export function serializeLotForRole(
   lot: InventoryLotRecord,
   includeSerials: boolean,
 ) {
+  const { transactions, serials, ...lotFields } = lot;
   return {
-    ...lot,
+    ...lotFields,
     quantity: decimalToNumber(lot.quantity),
     unitPurchaseRate: decimalToNumber(lot.unitPurchaseRate),
     transportCharges: decimalToNumber(lot.transportCharges),
@@ -1503,6 +1523,7 @@ export function serializeLotForRole(
     purchaseDate: lot.purchaseDate.toISOString(),
     expectedMinDate: lot.expectedMinDate?.toISOString() ?? null,
     expectedMaxDate: lot.expectedMaxDate?.toISOString() ?? null,
+    receivedAt: transactions[0]?.createdAt.toISOString() ?? null,
     createdAt: lot.createdAt.toISOString(),
     updatedAt: lot.updatedAt.toISOString(),
     product: {
@@ -1517,7 +1538,7 @@ export function serializeLotForRole(
     vendor: lot.vendor ? serializeTimestampRecord(lot.vendor) : null,
     createdBy: lot.createdBy,
     serials: includeSerials
-      ? lot.serials.map((serial) => serializeTimestampRecord(serial))
+      ? serials.map((serial) => serializeTimestampRecord(serial))
       : [],
   };
 }

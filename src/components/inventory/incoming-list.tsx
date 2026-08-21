@@ -15,13 +15,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { isInternalTransferLot } from "@/lib/inventory";
 import type { SerializedInventoryLot } from "@/lib/inventory-service";
 import { IncomingSerialExportButton } from "@/components/inventory/incoming-serial-export-button";
 import { IncomingLotEditDialog } from "@/components/purchase/incoming-lot-edit-dialog";
+import { formatDate } from "@/lib/utils";
 
 type Product = { id: string; displayName: string; gstRate: number };
 type Warehouse = { id: string; name: string; companyId: string };
 type Vendor = { id: string; vendorName: string };
+
+const wrapCell = "max-w-[14rem] whitespace-normal break-words align-top";
 
 export function IncomingReceiptList({
   initialLots,
@@ -44,12 +48,18 @@ export function IncomingReceiptList({
 }) {
   const [lots, setLots] = useState(initialLots);
   const [editingLot, setEditingLot] = useState<SerializedInventoryLot | null>(null);
+  const [showInternalTransfers, setShowInternalTransfers] = useState(false);
 
   const visibleLots = lots
     .filter((lot) => (showHistory ? Number(lot.receivedQuantity) > 0 : lot.status === "INCOMING"))
+    .filter(
+      (lot) => showInternalTransfers || !isInternalTransferLot(lot.purchaseInvoiceNo),
+    )
     .sort((a, b) => {
       if (!showHistory) return 0;
-      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      const aReceived = a.receivedAt ?? a.updatedAt;
+      const bReceived = b.receivedAt ?? b.updatedAt;
+      return new Date(bReceived).getTime() - new Date(aReceived).getTime();
     });
 
   async function refreshLots() {
@@ -75,24 +85,37 @@ export function IncomingReceiptList({
             Record physical receipt of purchase lots created by the Purchase team.
           </p>
         </div>
-        <Button variant="outline" asChild>
-          <Link href={showHistory ? "/inventory/incoming" : "/inventory/incoming?view=history"}>
-            <History className="h-4 w-4" />
-            {showHistory ? "Back to Pending" : "History"}
-          </Link>
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant={showInternalTransfers ? "default" : "outline"}
+            onClick={() => setShowInternalTransfers((current) => !current)}
+          >
+            {showInternalTransfers
+              ? "Hide internal transfer"
+              : "Show internal transfer as well"}
+          </Button>
+          <Button variant="outline" asChild>
+            <Link href={showHistory ? "/inventory/incoming" : "/inventory/incoming?view=history"}>
+              <History className="h-4 w-4" />
+              {showHistory ? "Back to Pending" : "History"}
+            </Link>
+          </Button>
+        </div>
       </div>
 
       <Card>
-        <CardContent className="overflow-x-auto p-0">
+        <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Lot</TableHead>
                 <TableHead>Product</TableHead>
+                <TableHead>Vendor Name</TableHead>
                 <TableHead>Warehouse</TableHead>
                 <TableHead>Expected</TableHead>
                 <TableHead>Received</TableHead>
+                <TableHead>Date Received</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
@@ -100,7 +123,7 @@ export function IncomingReceiptList({
             <TableBody>
               {visibleLots.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-slate-500">
+                  <TableCell colSpan={9} className="text-center text-slate-500">
                     {showHistory
                       ? "No received incoming lots in history."
                       : "No pending incoming lots to receive."}
@@ -109,12 +132,12 @@ export function IncomingReceiptList({
               ) : (
                 visibleLots.map((lot) => (
                   <TableRow key={lot.id}>
-                    <TableCell className="font-medium">
+                    <TableCell className={`font-medium ${wrapCell}`}>
                       {canEditHistory && showHistory ? (
                         <Button
                           type="button"
                           variant="ghost"
-                          className="h-auto p-0 font-medium text-slate-900 hover:bg-transparent hover:underline"
+                          className="h-auto whitespace-normal p-0 text-left font-medium text-slate-900 hover:bg-transparent hover:underline"
                           onClick={() => setEditingLot(lot)}
                         >
                           {lot.lotNumber}
@@ -123,16 +146,31 @@ export function IncomingReceiptList({
                         lot.lotNumber
                       )}
                     </TableCell>
-                    <TableCell>{lot.product.displayName}</TableCell>
-                    <TableCell>{lot.warehouse.name}</TableCell>
-                    <TableCell>{Number(lot.quantity)}</TableCell>
-                    <TableCell>{Number(lot.receivedQuantity)}</TableCell>
-                    <TableCell>
+                    <TableCell className={`min-w-[12rem] max-w-[22rem] ${wrapCell}`}>
+                      {lot.product.displayName}
+                    </TableCell>
+                    <TableCell className={wrapCell}>
+                      {lot.vendor?.vendorName ?? "—"}
+                    </TableCell>
+                    <TableCell className={wrapCell}>
+                      <div>{lot.warehouse.name}</div>
+                      <div className="text-xs text-slate-500">{lot.company.code}</div>
+                    </TableCell>
+                    <TableCell className="align-top">{Number(lot.quantity)}</TableCell>
+                    <TableCell className="align-top">{Number(lot.receivedQuantity)}</TableCell>
+                    <TableCell className={`align-top ${wrapCell}`}>
+                      {lot.receivedAt
+                        ? formatDate(lot.receivedAt)
+                        : Number(lot.receivedQuantity) > 0
+                          ? formatDate(lot.updatedAt)
+                          : "—"}
+                    </TableCell>
+                    <TableCell className="align-top">
                       <Badge variant={lot.status === "INCOMING" ? "warning" : "success"}>
                         {lot.status}
                       </Badge>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="align-top">
                       <div className="flex flex-wrap items-center gap-2">
                         {canInward && lot.status === "INCOMING" ? (
                           <Button size="sm" variant="outline" asChild>

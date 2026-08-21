@@ -33,6 +33,14 @@ export function systemPurchaseInvoiceNo(lotNumber: string): string {
   return `SYS-${lotNumber}`;
 }
 
+/** Destination lots created by warehouse / cross-company transfers (SYS-LOT-…, not MSE/OSA). */
+export function isInternalTransferLot(purchaseInvoiceNo: string): boolean {
+  const normalized = normalizePurchaseInvoiceNo(purchaseInvoiceNo);
+  if (!normalized.startsWith("SYS-")) return false;
+  if (normalized.endsWith("-MSE") || normalized.endsWith("-OSA")) return false;
+  return true;
+}
+
 export async function generateLotNumber(
   prisma: PrismaClient | Prisma.TransactionClient,
   date = new Date(),

@@ -163,6 +163,49 @@ export function getSupersededInventoryEventIds(
 }
 
 /**
+ * PI statuses that still hold bookable reserved stock. Fully dispatched and
+ * cancelled PIs must not reduce projected / timeline availability.
+ */
+export const OPEN_RESERVED_PI_STATUSES: ReadonlySet<string> = new Set([
+  "BOOKED",
+  "PARTIALLY_DISPATCHED",
+  "CANCEL_PENDING",
+]);
+
+/**
+ * Remaining reserved qty for open PIs (qty − dispatched). Closed PIs and
+ * products no longer on the PI map to 0 so stale BOOKING_RESERVATION events
+ * are capped away by {@link applyRemainingPiQtyToBookingReservations}.
+ */
+export function remainingReservedQtyByPiId(
+  pis: readonly {
+    id: string;
+    status: string;
+    items: readonly {
+      productId: string;
+      qty: unknown;
+      dispatchedQty: unknown;
+    }[];
+  }[],
+  productId: string,
+): Map<string, number> {
+  const remaining = new Map<string, number>();
+  for (const pi of pis) {
+    let qty = 0;
+    for (const item of pi.items) {
+      if (item.productId !== productId) continue;
+      if (OPEN_RESERVED_PI_STATUSES.has(pi.status)) {
+        qty += Math.max(0, Number(item.qty) - Number(item.dispatchedQty));
+      }
+    }
+    // Always include the PI so stale reservation events for removed products
+    // are correctly treated as 0 remaining rather than leaking through.
+    remaining.set(pi.id, qty);
+  }
+  return remaining;
+}
+
+/**
  * Reduce or drop booking reservations to the PI's remaining open quantity.
  * Fully dispatched / cancelled PIs keep leftover BOOKING_RESERVATION events
  * when a BOOKING_RELEASE was never written; those must not keep reducing

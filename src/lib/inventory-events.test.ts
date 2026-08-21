@@ -9,6 +9,7 @@ import {
   getInventoryEventProjectionDate,
   getSupersededInventoryEventIds,
   inventoryEventSignedQuantity,
+  remainingReservedQtyByPiId,
   toSignedInventoryQuantity,
   type InventoryEvent,
 } from "@/lib/inventory-events";
@@ -224,6 +225,40 @@ describe("inventory events", () => {
       expect.objectContaining({ id: "reserve-open", quantity: 5 }),
       expect.objectContaining({ id: "incoming-1", quantity: 10 }),
     ]);
+  });
+
+  it("computes remaining reserved qty only for open PI statuses", () => {
+    const productId = "prod-610";
+    const remaining = remainingReservedQtyByPiId(
+      [
+        {
+          id: "pi-open",
+          status: "BOOKED",
+          items: [{ productId, qty: 5, dispatchedQty: 0 }],
+        },
+        {
+          id: "pi-done",
+          status: "FULLY_DISPATCHED",
+          items: [{ productId, qty: 15, dispatchedQty: 15 }],
+        },
+        {
+          id: "pi-partial",
+          status: "PARTIALLY_DISPATCHED",
+          items: [{ productId, qty: 40, dispatchedQty: 30 }],
+        },
+        {
+          id: "pi-cancelled",
+          status: "CANCELLED",
+          items: [{ productId, qty: 10, dispatchedQty: 0 }],
+        },
+      ],
+      productId,
+    );
+
+    expect(remaining.get("pi-open")).toBe(5);
+    expect(remaining.get("pi-done")).toBe(0);
+    expect(remaining.get("pi-partial")).toBe(10);
+    expect(remaining.get("pi-cancelled")).toBe(0);
   });
 
   it("drops PI reservation events whose PI is absent from the remaining map", () => {

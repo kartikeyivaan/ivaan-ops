@@ -11,6 +11,7 @@ import {
   applyPendingIncomingToPurchaseEvents,
   applyRemainingPiQtyToBookingReservations,
   filterEventsForLivePhysicalProjection,
+  remainingReservedQtyByPiId,
   type InventoryEvent,
 } from "@/lib/inventory-events";
 import { getWarehouseStockForProduct } from "@/lib/inventory-service";
@@ -206,8 +207,10 @@ export function createInventoryProjectionService(
       );
     }
 
-    // Cap reservation events at what each PI actually needs for this product.
-    // Guards against historical over-reservations (e.g. Math.ceil rounding).
+    // Cap reservation events at remaining open PI qty for this product
+    // (same rule as the stock timeline). Using full line qty here left
+    // FULLY_DISPATCHED / CANCELLED reservations in projected availability
+    // whenever ACTUAL_DISPATCH events under-counted the PI line.
     const reservationPiIds = [
       ...new Set(
         events
@@ -220,22 +223,27 @@ export function createInventoryProjectionService(
           .map((event) => event.sourceId as string),
       ),
     ];
-    const remainingByPiId = new Map<string, number>();
-    if (reservationPiIds.length > 0) {
-      const piItems = await client.proformaInvoiceItem.findMany({
-        where: {
-          piId: { in: reservationPiIds },
-          productId: input.productId,
-        },
-        select: { piId: true, qty: true },
-      });
-      for (const item of piItems) {
-        remainingByPiId.set(
-          item.piId,
-          (remainingByPiId.get(item.piId) ?? 0) + Number(item.qty),
-        );
-      }
-    }
+    const remainingByPiId =
+      reservationPiIds.length === 0
+        ? new Map<string, number>()
+        : remainingReservedQtyByPiId(
+            await client.proformaInvoice.findMany({
+              where: { id: { in: reservationPiIds } },
+              select: {
+                id: true,
+                status: true,
+                items: {
+                  where: { productId: input.productId },
+                  select: {
+                    productId: true,
+                    qty: true,
+                    dispatchedQty: true,
+                  },
+                },
+              },
+            }),
+            input.productId,
+          );
 
     const adjustedEvents = applyRemainingPiQtyToBookingReservations(
       applyPendingIncomingToPurchaseEvents(events, lotsById),

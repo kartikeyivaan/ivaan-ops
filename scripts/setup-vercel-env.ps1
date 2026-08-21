@@ -29,8 +29,12 @@ if (-not $vars.ContainsKey("DATABASE_URL")) {
   exit 1
 }
 
-if (-not $vars.ContainsKey("DIRECT_URL")) {
-  $vars["DIRECT_URL"] = $vars["DATABASE_URL"] -replace "-pooler\.", "."
+# Neon pooler URLs cannot take Prisma migrate advisory locks (P1002).
+# Always store a non-pooler DIRECT_URL, even if the file already has a pooled one.
+if (-not $vars.ContainsKey("DIRECT_URL") -or [string]::IsNullOrWhiteSpace($vars["DIRECT_URL"]) -or $vars["DIRECT_URL"] -match "-pooler\.") {
+  $source = if ($vars.ContainsKey("DIRECT_URL") -and -not [string]::IsNullOrWhiteSpace($vars["DIRECT_URL"])) { $vars["DIRECT_URL"] } else { $vars["DATABASE_URL"] }
+  $vars["DIRECT_URL"] = $source -replace "-pooler\.", "."
+  Write-Host "Using non-pooler DIRECT_URL for Prisma migrations." -ForegroundColor Yellow
 }
 
 if (-not $vars.ContainsKey("AUTH_SECRET") -or $vars["AUTH_SECRET"] -match "replace-with") {

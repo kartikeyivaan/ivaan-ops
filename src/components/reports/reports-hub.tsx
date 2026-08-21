@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/table";
 import { TypeaheadSelect } from "@/components/ui/typeahead-select";
 import { defaultReportDateRange } from "@/lib/reports";
+import { getBusinessToday } from "@/lib/business-dates";
 import { formatCurrency } from "@/lib/quotations";
 
 type ReportKey =
@@ -103,9 +104,10 @@ const REPORTS: ReportDefinition[] = [
   },
   {
     key: "dispatch",
-    label: "Dispatch",
+    label: "Daily Dispatch",
     endpoint: "/api/reports/dispatch",
-    description: "Dispatched DC lines with customer, executive, and value.",
+    description:
+      "Continuous listing of confirmed dispatches for the selected day — PI, firm details, product, qty, and serial numbers.",
   },
 ];
 
@@ -133,8 +135,17 @@ function isUnitColumn(key: string): boolean {
 function formatHeader(key: string) {
   if (key === "ratePerWp") return "Rate (per Wp)";
   if (key === "piNo") return "PI No";
+  if (key === "piDate") return "PI Date";
+  if (key === "dcNo") return "DC No";
   if (key === "committedDate") return "Committed Date";
   if (key === "customerName") return "Customer Name";
+  if (key === "firmName") return "Firm Name";
+  if (key === "firmCode") return "Firm Code";
+  if (key === "firmGst") return "Firm GST";
+  if (key === "firmAddress") return "Firm Address";
+  if (key === "firmMobile") return "Firm Mobile";
+  if (key === "serialNumbers") return "Serial Numbers";
+  if (key === "dispatchDate") return "Dispatch Date";
   if (key === "totalQty") return "Total Qty";
   if (key === "totalAmount") return "Total Amount";
   if (key === "bookingAmount") return "Booking Amount";
@@ -174,10 +185,18 @@ export function ReportsHub({
   const [activeReport, setActiveReport] = useState<ReportKey>(initialReport);
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(false);
-  const [fromDate, setFromDate] = useState(
-    searchParams.get("fromDate") ?? defaults.fromDate,
-  );
-  const [toDate, setToDate] = useState(searchParams.get("toDate") ?? defaults.toDate);
+  const [fromDate, setFromDate] = useState(() => {
+    if (searchParams.get("fromDate")) return searchParams.get("fromDate")!;
+    if (initialReport === "dispatch") return getBusinessToday();
+    return defaults.fromDate;
+  });
+  const [toDate, setToDate] = useState(() => {
+    if (searchParams.get("toDate")) return searchParams.get("toDate")!;
+    if (initialReport === "dispatch") {
+      return searchParams.get("fromDate") ?? getBusinessToday();
+    }
+    return defaults.toDate;
+  });
   const [salesUserId, setSalesUserId] = useState(searchParams.get("salesUserId") ?? "");
   const [warehouseId, setWarehouseId] = useState(
     searchParams.get("warehouseId") ?? "",
@@ -286,6 +305,11 @@ export function ReportsHub({
             onClick={() => {
               setActiveReport(report.key);
               setRows([]);
+              if (report.key === "dispatch") {
+                const day = getBusinessToday();
+                setFromDate(day);
+                setToDate(day);
+              }
             }}
           >
             {report.label}
@@ -315,9 +339,23 @@ export function ReportsHub({
         <CardContent className="space-y-4 pt-6">
           <p className="text-sm text-slate-600">{currentReport.description}</p>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {activeReport !== "booked-available" &&
-            activeReport !== "payment-followup" &&
-            activeReport !== "reserved-qty" ? (
+            {activeReport === "dispatch" ? (
+              <div className="space-y-2">
+                <Label htmlFor="dispatchDate">Dispatch Date</Label>
+                <Input
+                  id="dispatchDate"
+                  type="date"
+                  value={fromDate}
+                  onChange={(event) => {
+                    const day = event.target.value;
+                    setFromDate(day);
+                    setToDate(day);
+                  }}
+                />
+              </div>
+            ) : activeReport !== "booked-available" &&
+              activeReport !== "payment-followup" &&
+              activeReport !== "reserved-qty" ? (
               <>
                 <div className="space-y-2">
                   <Label htmlFor="fromDate">From Date</Label>

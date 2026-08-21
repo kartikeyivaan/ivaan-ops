@@ -158,7 +158,11 @@ export async function getSalesStockWatch(
       productId,
       warehouseId,
     );
-    const freeQty = calculateFreeQty(stock.availableStock, stock.bookedStock);
+    const freeQty = calculateFreeQty(
+      stock.availableStock,
+      stock.bookedStock,
+      stock.incomingStock,
+    );
     const status = resolveStockStatus(meta.openRequirement, freeQty);
 
     items.push({
@@ -167,6 +171,8 @@ export async function getSalesStockWatch(
       brandName: meta.brandName,
       openRequirement: meta.openRequirement,
       available: stock.availableStock,
+      booked: stock.bookedStock,
+      upcoming: stock.incomingStock,
       freeQty,
       status,
       warehouseId,
@@ -204,6 +210,9 @@ export async function getStockConflicts(
       productId: item.productId,
       productName: item.productName,
       available: item.available,
+      booked: item.booked,
+      upcoming: item.upcoming,
+      freeQty: item.freeQty,
       required: item.openRequirement,
       shortBy: Math.max(0, item.openRequirement - item.freeQty),
     }));

@@ -37,6 +37,7 @@ import { normalizeMobileNumber } from "@/lib/phone";
 import { formatCurrency } from "@/lib/quotations";
 import { formatDocumentDate, formatPaymentDate } from "@/lib/utils";
 import { formatPricingType } from "@/lib/products";
+import { CourierStickersButton } from "@/components/dispatches/courier-stickers-button";
 
 type Warehouse = { id: string; name: string; code: string | null };
 
@@ -63,7 +64,17 @@ type ProformaInvoiceDetailData = {
   requiredDispatchMinDate?: string | null;
   requiredDispatchMaxDate?: string | null;
   daysUntilCommittedDispatch?: number | null;
-  customer: { id: string; customerName: string; gstNumber: string; mobile?: string | null };
+  customer: {
+    id: string;
+    customerName: string;
+    contactPersonName?: string | null;
+    gstNumber: string;
+    address?: string | null;
+    city?: string | null;
+    state?: string | null;
+    pinCode?: string | null;
+    mobile?: string | null;
+  };
   salesUser: { name: string };
   quotation?: { quotationNo: string } | null;
   warehouse?: { name: string } | null;
@@ -2007,6 +2018,19 @@ export function ProformaInvoiceDetail({
                       <MessageCircle className="h-4 w-4" />
                       Share on WhatsApp
                     </Button>
+                    <CourierStickersButton
+                      dispatchId={challan.id}
+                      dcNo={challan.dcNo}
+                      toDefaults={{
+                        firmName: pi.customer.customerName,
+                        contactName: pi.customer.contactPersonName,
+                        address: pi.customer.address,
+                        city: pi.customer.city,
+                        state: pi.customer.state,
+                        pinCode: pi.customer.pinCode,
+                        phone: pi.customer.mobile,
+                      }}
+                    />
                   </div>
                 </div>
               );

@@ -19,6 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatQuotationStatus } from "@/lib/quotations";
+import { FIRM_SALES_SCOPE, isFirmSalesScope } from "@/lib/report-permissions";
 import { formatDocumentDate } from "@/lib/utils";
 
 type QuotationListItem = {
@@ -56,12 +57,14 @@ export function QuotationsList({
   salesExecutives = [],
   canManage,
   canFilterByExecutive = false,
+  canViewFirmWide = false,
   initialFilters,
 }: {
   initialQuotations: QuotationListItem[];
   salesExecutives?: SalesExecutive[];
   canManage: boolean;
   canFilterByExecutive?: boolean;
+  canViewFirmWide?: boolean;
   initialFilters?: InitialFilters;
 }) {
   const router = useRouter();
@@ -73,15 +76,16 @@ export function QuotationsList({
   const [expiry, setExpiry] = useState(initialFilters?.expiry ?? "");
   const [salesUserId, setSalesUserId] = useState(initialFilters?.salesUserId ?? "");
   const [loading, setLoading] = useState(false);
+  const viewingFirmWide = canViewFirmWide && isFirmSalesScope(salesUserId);
 
-  async function applyFilters() {
+  async function applyFilters(nextSalesUserId = salesUserId) {
     setLoading(true);
     const params = new URLSearchParams();
     if (q) params.set("q", q);
     if (status) params.set("status", status);
     if (fromDate) params.set("fromDate", fromDate);
     if (toDate) params.set("toDate", toDate);
-    if (salesUserId) params.set("salesUserId", salesUserId);
+    if (nextSalesUserId) params.set("salesUserId", nextSalesUserId);
     if (expiry) params.set("expiry", expiry);
 
     const query = params.toString();
@@ -93,6 +97,12 @@ export function QuotationsList({
     if (response.ok) {
       setQuotations(data);
     }
+  }
+
+  function toggleFirmWide() {
+    const next = viewingFirmWide ? "" : FIRM_SALES_SCOPE;
+    setSalesUserId(next);
+    void applyFilters(next);
   }
 
   return (
@@ -187,12 +197,28 @@ export function QuotationsList({
             <option value="soon">Expiring soon / expired</option>
           </select>
         </div>
-        <div className="flex items-end">
+        <div className="flex flex-wrap items-end gap-3">
+          {canViewFirmWide ? (
+            <Button
+              type="button"
+              variant={viewingFirmWide ? "secondary" : "outline"}
+              onClick={toggleFirmWide}
+              disabled={loading}
+            >
+              {viewingFirmWide ? "Show my quotations only" : "See all firm quotations"}
+            </Button>
+          ) : null}
           <Button onClick={() => void applyFilters()} disabled={loading}>
             {loading ? "Loading..." : "Apply Filters"}
           </Button>
         </div>
       </CollapsibleFilterCard>
+
+      {viewingFirmWide ? (
+        <p className="text-sm text-slate-600">
+          Showing all firm quotations so you can cover colleagues when needed.
+        </p>
+      ) : null}
 
       <Card>
         <CardContent className="pt-6">

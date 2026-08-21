@@ -11,9 +11,20 @@ import {
   parseBusinessDate,
   type DashboardPeriod,
 } from "@/lib/business-dates";
+import {
+  addDualMetric,
+  applyIncentiveCredit,
+  emptyDualMetric,
+  newCustomerCreditCount,
+  roundDualMoney,
+  roundDualUnits,
+  type DualMetric,
+} from "@/lib/incentive-credit";
 import { decimalToNumber } from "@/lib/inventory";
 import { calculateLineSubtotal, roundMoney } from "@/lib/quotations";
 import { ROLES } from "@/lib/rbac";
+
+export type { DualMetric } from "@/lib/incentive-credit";
 
 export type CompanyIdFilter = string | { in: string[] };
 
@@ -40,24 +51,28 @@ export function toCompanyIdList(companyId: CompanyIdFilter): string[] {
   return typeof companyId === "string" ? [companyId] : companyId.in;
 }
 
+const incentivePercentSelect = {
+  select: { incentiveCreditPercent: true },
+} as const;
+
 export type ExecutiveKpiSummary = {
   executiveId: string;
   executiveName: string;
   executiveEmail: string;
-  quotationValue: number;
-  piValue: number;
-  collectionValue: number;
-  dispatchedValue: number;
-  moduleUnits: number;
-  inverterUnits: number;
-  otherUnits: number;
-  newCustomers: number;
+  quotationValue: DualMetric;
+  piValue: DualMetric;
+  collectionValue: DualMetric;
+  dispatchedValue: DualMetric;
+  moduleUnits: DualMetric;
+  inverterUnits: DualMetric;
+  otherUnits: DualMetric;
+  newCustomers: DualMetric;
 };
 
 export type DispatchedUnitTotals = {
-  modules: number;
-  inverters: number;
-  other: number;
+  modules: DualMetric;
+  inverters: DualMetric;
+  other: DualMetric;
 };
 
 const SALES_ROLE_NAMES = [ROLES.SALES_EXECUTIVE, ROLES.SALES_MANAGER, ROLES.SUPER_ADMIN] as const;
@@ -172,21 +187,42 @@ export function buildNewCustomersWhere(
 }
 
 export function sumDocumentValues(
-  rows: ReadonlyArray<{ totalValue: Prisma.Decimal | number | string }>,
-): number {
-  return roundMoney(
-    rows.reduce((sum, row) => sum + decimalToNumber(row.totalValue), 0),
+  rows: ReadonlyArray<{
+    totalValue: Prisma.Decimal | number | string;
+    customer?: { incentiveCreditPercent: Prisma.Decimal | number | string } | null;
+  }>,
+): DualMetric {
+  return roundDualMoney(
+    rows.reduce((sum, row) => {
+      const dual = applyIncentiveCredit(
+        decimalToNumber(row.totalValue),
+        row.customer?.incentiveCreditPercent,
+      );
+      return addDualMetric(sum, dual);
+    }, emptyDualMetric()),
   );
 }
 
 export function sumPaymentAmounts(
-  rows: ReadonlyArray<{ amount: Prisma.Decimal | number | string }>,
-): number {
-  return roundMoney(rows.reduce((sum, row) => sum + decimalToNumber(row.amount), 0));
+  rows: ReadonlyArray<{
+    amount: Prisma.Decimal | number | string;
+    customer?: { incentiveCreditPercent: Prisma.Decimal | number | string } | null;
+  }>,
+): DualMetric {
+  return roundDualMoney(
+    rows.reduce((sum, row) => {
+      const dual = applyIncentiveCredit(
+        decimalToNumber(row.amount),
+        row.customer?.incentiveCreditPercent,
+      );
+      return addDualMetric(sum, dual);
+    }, emptyDualMetric()),
+  );
 }
 
 export function sumDispatchedValueFromLines(
   dispatches: ReadonlyArray<{
+    customer?: { incentiveCreditPercent: Prisma.Decimal | number | string } | null;
     lines: ReadonlyArray<{
       qty: Prisma.Decimal | number | string;
       proformaInvoiceItem: {
@@ -199,8 +235,8 @@ export function sumDispatchedValueFromLines(
       };
     }>;
   }>,
-): number {
-  return roundMoney(
+): DualMetric {
+  return roundDualMoney(
     dispatches.reduce((sum, dispatch) => {
       const lineTotal = dispatch.lines.reduce((lineSum, line) => {
         const subtotal = calculateLineSubtotal({
@@ -212,33 +248,45 @@ export function sumDispatchedValueFromLines(
         const gstRate = decimalToNumber(line.proformaInvoiceItem.gstRate);
         return lineSum + subtotal * (1 + gstRate / 100);
       }, 0);
-      return sum + lineTotal;
-    }, 0),
+      return addDualMetric(
+        sum,
+        applyIncentiveCredit(lineTotal, dispatch.customer?.incentiveCreditPercent),
+      );
+    }, emptyDualMetric()),
   );
 }
 
 export function sumDispatchedUnitsFromLines(
   dispatches: ReadonlyArray<{
+    customer?: { incentiveCreditPercent: Prisma.Decimal | number | string } | null;
     lines: ReadonlyArray<{
       qty: Prisma.Decimal | number | string;
       product: { category: { name: string } };
     }>;
   }>,
 ): DispatchedUnitTotals {
-  const totals: DispatchedUnitTotals = { modules: 0, inverters: 0, other: 0 };
+  const totals: DispatchedUnitTotals = {
+    modules: emptyDualMetric(),
+    inverters: emptyDualMetric(),
+    other: emptyDualMetric(),
+  };
   for (const dispatch of dispatches) {
+    const percent = dispatch.customer?.incentiveCreditPercent;
     for (const line of dispatch.lines) {
-      const qty = decimalToNumber(line.qty);
+      const dual = applyIncentiveCredit(decimalToNumber(line.qty), percent);
       const category = line.product.category.name;
-      if (category === "Modules") totals.modules += qty;
-      else if (category === "Inverters") totals.inverters += qty;
-      else if (category === "Other") totals.other += qty;
+      if (category === "Modules") totals.modules = addDualMetric(totals.modules, dual);
+      else if (category === "Inverters") {
+        totals.inverters = addDualMetric(totals.inverters, dual);
+      } else if (category === "Other") {
+        totals.other = addDualMetric(totals.other, dual);
+      }
     }
   }
   return {
-    modules: Math.round(totals.modules * 1000) / 1000,
-    inverters: Math.round(totals.inverters * 1000) / 1000,
-    other: Math.round(totals.other * 1000) / 1000,
+    modules: roundDualUnits(totals.modules),
+    inverters: roundDualUnits(totals.inverters),
+    other: roundDualUnits(totals.other),
   };
 }
 
@@ -266,10 +314,13 @@ export async function listSalesExecutivesForCompany(
 export async function buildQuotationValueAggregate(
   prisma: PrismaClient,
   filters: SalesMetricFilters,
-): Promise<number> {
+): Promise<DualMetric> {
   const rows = await prisma.quotation.findMany({
     where: buildQuotationWhere(filters),
-    select: { totalValue: true },
+    select: {
+      totalValue: true,
+      customer: incentivePercentSelect,
+    },
   });
   return sumDocumentValues(rows);
 }
@@ -277,10 +328,13 @@ export async function buildQuotationValueAggregate(
 export async function buildPiValueAggregate(
   prisma: PrismaClient,
   filters: SalesMetricFilters,
-): Promise<number> {
+): Promise<DualMetric> {
   const rows = await prisma.proformaInvoice.findMany({
     where: buildPiWhere(filters),
-    select: { totalValue: true },
+    select: {
+      totalValue: true,
+      customer: incentivePercentSelect,
+    },
   });
   return sumDocumentValues(rows);
 }
@@ -288,10 +342,13 @@ export async function buildPiValueAggregate(
 export async function buildCollectionValueAggregate(
   prisma: PrismaClient,
   filters: SalesMetricFilters,
-): Promise<number> {
+): Promise<DualMetric> {
   const rows = await prisma.payment.findMany({
     where: buildPaymentWhere(filters),
-    select: { amount: true },
+    select: {
+      amount: true,
+      customer: incentivePercentSelect,
+    },
   });
   return sumPaymentAmounts(rows);
 }
@@ -304,6 +361,7 @@ export async function fetchDispatchesForMetrics(
     where: buildDispatchWhere(filters),
     select: {
       id: true,
+      customer: incentivePercentSelect,
       proformaInvoice: { select: { salesUserId: true } },
       lines: {
         select: {
@@ -325,7 +383,7 @@ export async function fetchDispatchesForMetrics(
 export async function buildDispatchedValueAggregate(
   prisma: PrismaClient,
   filters: SalesMetricFilters,
-): Promise<number> {
+): Promise<DualMetric> {
   const dispatches = await fetchDispatchesForMetrics(prisma, filters);
   return sumDispatchedValueFromLines(dispatches);
 }
@@ -341,8 +399,57 @@ export async function buildDispatchedUnitTotals(
 export async function buildNewCustomersCount(
   prisma: PrismaClient,
   filters: SalesMetricFilters,
-): Promise<number> {
-  return prisma.customer.count({ where: buildNewCustomersWhere(filters) });
+): Promise<DualMetric> {
+  const customers = await prisma.customer.findMany({
+    where: buildNewCustomersWhere(filters),
+    select: { incentiveCreditPercent: true },
+  });
+  return customers.reduce(
+    (sum, customer) => addDualMetric(sum, newCustomerCreditCount(customer.incentiveCreditPercent)),
+    emptyDualMetric(),
+  );
+}
+
+function emptyExecutiveKpi(
+  executive: { id: string; name: string; email: string },
+): ExecutiveKpiSummary {
+  return {
+    executiveId: executive.id,
+    executiveName: executive.name,
+    executiveEmail: executive.email,
+    quotationValue: emptyDualMetric(),
+    piValue: emptyDualMetric(),
+    collectionValue: emptyDualMetric(),
+    dispatchedValue: emptyDualMetric(),
+    moduleUnits: emptyDualMetric(),
+    inverterUnits: emptyDualMetric(),
+    otherUnits: emptyDualMetric(),
+    newCustomers: emptyDualMetric(),
+  };
+}
+
+function finalizeExecutiveKpi(row: ExecutiveKpiSummary): ExecutiveKpiSummary {
+  return {
+    ...row,
+    quotationValue: roundDualMoney(row.quotationValue),
+    piValue: roundDualMoney(row.piValue),
+    collectionValue: roundDualMoney(row.collectionValue),
+    dispatchedValue: roundDualMoney(row.dispatchedValue),
+    moduleUnits: roundDualUnits(row.moduleUnits),
+    inverterUnits: roundDualUnits(row.inverterUnits),
+    otherUnits: roundDualUnits(row.otherUnits),
+  };
+}
+
+function executiveKpiHasActivity(row: ExecutiveKpiSummary): boolean {
+  return (
+    row.quotationValue.actual > 0 ||
+    row.piValue.actual > 0 ||
+    row.collectionValue.actual > 0 ||
+    row.dispatchedValue.actual > 0 ||
+    row.moduleUnits.actual > 0 ||
+    row.newCustomers.actual > 0
+  );
 }
 
 export async function buildExecutiveKpiSummary(
@@ -360,15 +467,15 @@ export async function buildExecutiveKpiSummary(
   const [quotations, pis, payments, dispatches, newCustomers] = await Promise.all([
     prisma.quotation.findMany({
       where: buildQuotationWhere(scoped),
-      select: { totalValue: true },
+      select: { totalValue: true, customer: incentivePercentSelect },
     }),
     prisma.proformaInvoice.findMany({
       where: buildPiWhere(scoped),
-      select: { totalValue: true },
+      select: { totalValue: true, customer: incentivePercentSelect },
     }),
     prisma.payment.findMany({
       where: buildPaymentWhere(scoped),
-      select: { amount: true },
+      select: { amount: true, customer: incentivePercentSelect },
     }),
     fetchDispatchesForMetrics(prisma, scoped),
     buildNewCustomersCount(prisma, scoped),
@@ -376,7 +483,7 @@ export async function buildExecutiveKpiSummary(
 
   const units = sumDispatchedUnitsFromLines(dispatches);
 
-  return {
+  return finalizeExecutiveKpi({
     executiveId: executive.id,
     executiveName: executive.name,
     executiveEmail: executive.email,
@@ -388,7 +495,7 @@ export async function buildExecutiveKpiSummary(
     inverterUnits: units.inverters,
     otherUnits: units.other,
     newCustomers,
-  };
+  });
 }
 
 export async function buildTeamKpiSummaries(
@@ -402,110 +509,132 @@ export async function buildTeamKpiSummaries(
 
   const base: SalesMetricFilters = { companyId, ...filters };
 
-  const [quotations, pis, payments, dispatches, customerCounts] = await Promise.all([
+  const [quotations, pis, payments, dispatches, customers] = await Promise.all([
     prisma.quotation.findMany({
       where: buildQuotationWhere(base),
-      select: { salesUserId: true, totalValue: true },
+      select: {
+        salesUserId: true,
+        totalValue: true,
+        customer: incentivePercentSelect,
+      },
     }),
     prisma.proformaInvoice.findMany({
       where: buildPiWhere(base),
-      select: { salesUserId: true, totalValue: true },
+      select: {
+        salesUserId: true,
+        totalValue: true,
+        customer: incentivePercentSelect,
+      },
     }),
     prisma.payment.findMany({
       where: buildPaymentWhere(base),
       select: {
         amount: true,
+        customer: incentivePercentSelect,
         proformaInvoice: { select: { salesUserId: true } },
       },
     }),
     fetchDispatchesForMetrics(prisma, base),
-    prisma.customer.groupBy({
-      by: ["assignedSalesUserId"],
+    prisma.customer.findMany({
       where: buildNewCustomersWhere(base),
-      _count: { _all: true },
+      select: { assignedSalesUserId: true, incentiveCreditPercent: true },
     }),
   ]);
 
   const byExec = new Map<string, ExecutiveKpiSummary>();
 
   for (const executive of executives) {
-    byExec.set(executive.id, {
-      executiveId: executive.id,
-      executiveName: executive.name,
-      executiveEmail: executive.email,
-      quotationValue: 0,
-      piValue: 0,
-      collectionValue: 0,
-      dispatchedValue: 0,
-      moduleUnits: 0,
-      inverterUnits: 0,
-      otherUnits: 0,
-      newCustomers: 0,
-    });
+    byExec.set(executive.id, emptyExecutiveKpi(executive));
   }
 
   for (const row of quotations) {
     const entry = byExec.get(row.salesUserId);
-    if (entry) entry.quotationValue += decimalToNumber(row.totalValue);
+    if (!entry) continue;
+    entry.quotationValue = addDualMetric(
+      entry.quotationValue,
+      applyIncentiveCredit(decimalToNumber(row.totalValue), row.customer.incentiveCreditPercent),
+    );
   }
   for (const row of pis) {
     const entry = byExec.get(row.salesUserId);
-    if (entry) entry.piValue += decimalToNumber(row.totalValue);
+    if (!entry) continue;
+    entry.piValue = addDualMetric(
+      entry.piValue,
+      applyIncentiveCredit(decimalToNumber(row.totalValue), row.customer.incentiveCreditPercent),
+    );
   }
   for (const row of payments) {
     const entry = byExec.get(row.proformaInvoice.salesUserId);
-    if (entry) entry.collectionValue += decimalToNumber(row.amount);
+    if (!entry) continue;
+    entry.collectionValue = addDualMetric(
+      entry.collectionValue,
+      applyIncentiveCredit(decimalToNumber(row.amount), row.customer.incentiveCreditPercent),
+    );
   }
-  for (const row of customerCounts) {
+  for (const row of customers) {
     const entry = byExec.get(row.assignedSalesUserId);
-    if (entry) entry.newCustomers = row._count._all;
+    if (!entry) continue;
+    entry.newCustomers = addDualMetric(
+      entry.newCustomers,
+      newCustomerCreditCount(row.incentiveCreditPercent),
+    );
   }
   for (const dispatch of dispatches) {
     const execId = dispatch.proformaInvoice.salesUserId;
     const entry = byExec.get(execId);
     if (!entry) continue;
-    entry.dispatchedValue += sumDispatchedValueFromLines([dispatch]);
+    entry.dispatchedValue = addDualMetric(
+      entry.dispatchedValue,
+      sumDispatchedValueFromLines([dispatch]),
+    );
     const units = sumDispatchedUnitsFromLines([dispatch]);
-    entry.moduleUnits += units.modules;
-    entry.inverterUnits += units.inverters;
-    entry.otherUnits += units.other;
+    entry.moduleUnits = addDualMetric(entry.moduleUnits, units.modules);
+    entry.inverterUnits = addDualMetric(entry.inverterUnits, units.inverters);
+    entry.otherUnits = addDualMetric(entry.otherUnits, units.other);
   }
 
   return [...byExec.values()]
-    .map((row) => ({
-      ...row,
-      quotationValue: roundMoney(row.quotationValue),
-      piValue: roundMoney(row.piValue),
-      collectionValue: roundMoney(row.collectionValue),
-      dispatchedValue: roundMoney(row.dispatchedValue),
-      moduleUnits: Math.round(row.moduleUnits * 1000) / 1000,
-      inverterUnits: Math.round(row.inverterUnits * 1000) / 1000,
-      otherUnits: Math.round(row.otherUnits * 1000) / 1000,
-    }))
-    .filter(
-      (row) =>
-        row.quotationValue > 0 ||
-        row.piValue > 0 ||
-        row.collectionValue > 0 ||
-        row.dispatchedValue > 0 ||
-        row.moduleUnits > 0 ||
-        row.newCustomers > 0 ||
-        Boolean(salesUserId),
-    );
+    .map(finalizeExecutiveKpi)
+    .filter((row) => executiveKpiHasActivity(row) || Boolean(salesUserId));
 }
 
 export type PeriodComparison = {
+  /** Incentive-counted value (used for period change %). */
   current: number;
   previous: number;
   changePercent: number | null;
+  actualCurrent: number;
+  actualPrevious: number;
 };
 
-export function computePeriodComparison(current: number, previous: number): PeriodComparison {
-  if (previous <= 0) {
-    return { current, previous, changePercent: current > 0 ? 100 : null };
+export function computePeriodComparison(
+  current: DualMetric | number,
+  previous: DualMetric | number,
+): PeriodComparison {
+  const currentDual =
+    typeof current === "number" ? { actual: current, counted: current } : current;
+  const previousDual =
+    typeof previous === "number" ? { actual: previous, counted: previous } : previous;
+
+  if (previousDual.counted <= 0) {
+    return {
+      current: currentDual.counted,
+      previous: previousDual.counted,
+      changePercent: currentDual.counted > 0 ? 100 : null,
+      actualCurrent: currentDual.actual,
+      actualPrevious: previousDual.actual,
+    };
   }
-  const changePercent = roundMoney(((current - previous) / previous) * 100);
-  return { current, previous, changePercent };
+  const changePercent = roundMoney(
+    ((currentDual.counted - previousDual.counted) / previousDual.counted) * 100,
+  );
+  return {
+    current: currentDual.counted,
+    previous: previousDual.counted,
+    changePercent,
+    actualCurrent: currentDual.actual,
+    actualPrevious: previousDual.actual,
+  };
 }
 
 export type KpiStripDto = {

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CustomerForm } from "@/components/customers/customer-form";
+import { IncentiveCreditField } from "@/components/customers/incentive-credit-field";
 import { formatCustomerType } from "@/lib/customers";
 import { formatPaymentMode, formatProformaStatus, formatReceivedInAccount } from "@/lib/proforma-invoices";
 import { formatDispatchStatus } from "@/lib/dispatches";
@@ -61,6 +62,7 @@ export function CustomerProfile({
   customerPayments,
   customerDispatches,
   canEdit,
+  canEditIncentiveCredit,
   canManageQuotations,
   canManageProformaInvoices,
 }: {
@@ -71,6 +73,7 @@ export function CustomerProfile({
   customerPayments: CustomerPayment[];
   customerDispatches: CustomerDispatch[];
   canEdit: boolean;
+  canEditIncentiveCredit: boolean;
   canManageQuotations: boolean;
   canManageProformaInvoices: boolean;
 }) {
@@ -157,6 +160,13 @@ export function CustomerProfile({
               <div>
                 <p className="text-xs uppercase text-slate-500">Assigned Executive</p>
                 <p className="font-medium">{customer.assignedSalesUser.name}</p>
+              </div>
+              <div className="md:col-span-2">
+                <IncentiveCreditField
+                  customerId={customer.id}
+                  value={customer.incentiveCreditPercent}
+                  canEdit={canEditIncentiveCredit}
+                />
               </div>
               <div>
                 <p className="text-xs uppercase text-slate-500">City</p>

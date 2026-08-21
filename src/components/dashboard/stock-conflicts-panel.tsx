@@ -11,6 +11,10 @@ import {
 } from "@/components/ui/table";
 import type { StockConflictDto } from "@/lib/sales-dashboard/dashboard-types";
 import { formatCompactNumber } from "@/components/dashboard/dashboard-formatters";
+import {
+  shortByHintLines,
+  StockQtyHint,
+} from "@/components/dashboard/stock-qty-hint";
 
 export function StockConflictsPanel({ data }: { data: StockConflictDto[] }) {
   return (
@@ -30,7 +34,17 @@ export function StockConflictsPanel({ data }: { data: StockConflictDto[] }) {
                 <TableHead>Product</TableHead>
                 <TableHead className="text-right">Required</TableHead>
                 <TableHead className="text-right">Available</TableHead>
-                <TableHead className="text-right">Short by</TableHead>
+                <TableHead className="text-right">
+                  <StockQtyHint
+                    label="Short by"
+                    className="justify-end"
+                    lines={[
+                      "Short by = Required − Free qty",
+                      "Free qty = Available − Booked + Upcoming",
+                      "Upcoming = pending qty on incoming lots",
+                    ]}
+                  />
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -51,7 +65,13 @@ export function StockConflictsPanel({ data }: { data: StockConflictDto[] }) {
                     {formatCompactNumber(item.available)}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Badge variant="danger">{formatCompactNumber(item.shortBy)}</Badge>
+                    <StockQtyHint
+                      label="Short by"
+                      className="justify-end"
+                      lines={shortByHintLines(item)}
+                    >
+                      <Badge variant="danger">{formatCompactNumber(item.shortBy)}</Badge>
+                    </StockQtyHint>
                   </TableCell>
                 </TableRow>
               ))}

@@ -102,6 +102,8 @@ export type SalesStockWatchItemDto = {
   brandName: string;
   openRequirement: number;
   available: number;
+  booked: number;
+  upcoming: number;
   freeQty: number;
   status: "AVAILABLE" | "LOW" | "SHORT" | "CONFLICT";
   warehouseId: string | null;
@@ -171,6 +173,9 @@ export type StockConflictDto = {
   productId: string;
   productName: string;
   available: number;
+  booked: number;
+  upcoming: number;
+  freeQty: number;
   required: number;
   shortBy: number;
 };

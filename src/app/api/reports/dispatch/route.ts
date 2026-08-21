@@ -22,40 +22,51 @@ export async function GET(request: Request) {
     q: filters!.q,
   });
 
+  const dateLabel =
+    filters!.fromDate && filters!.toDate && filters!.fromDate === filters!.toDate
+      ? filters!.fromDate
+      : [filters!.fromDate, filters!.toDate].filter(Boolean).join(" to ");
+
   return respondWithReport({
-    reportKey: "dispatch",
-    title: "Dispatch Report",
-    subtitle: [filters!.fromDate, filters!.toDate].filter(Boolean).join(" to "),
+    reportKey: "daily-dispatch",
+    title: "Daily Dispatch Report",
+    subtitle: dateLabel,
     rows,
     format: format!,
     columns: [
+      { key: "dispatchDate", header: "Dispatch Date" },
       { key: "dcNo", header: "DC No" },
       { key: "piNo", header: "PI No" },
-      { key: "customerName", header: "Customer" },
+      { key: "piDate", header: "PI Date" },
+      { key: "firmName", header: "Firm Name" },
+      { key: "firmCode", header: "Firm Code" },
+      { key: "firmGst", header: "Firm GST" },
+      { key: "firmAddress", header: "Firm Address" },
+      { key: "firmMobile", header: "Firm Mobile" },
       { key: "executiveName", header: "Executive" },
       { key: "productName", header: "Product" },
       { key: "qty", header: "Qty" },
-      { key: "dispatchDate", header: "Dispatch Date" },
+      { key: "serialNumbers", header: "Serial Numbers" },
       { key: "vehicleNo", header: "Vehicle" },
       { key: "warehouseName", header: "Warehouse" },
       { key: "value", header: "Value" },
     ],
     pdfColumns: [
-      { header: "DC No", width: 90 },
-      { header: "PI No", width: 90 },
-      { header: "Customer", width: 110 },
-      { header: "Product", width: 120 },
-      { header: "Qty", width: 45, align: "right" },
-      { header: "Date", width: 70 },
-      { header: "Value", width: 80, align: "right" },
+      { header: "DC No", width: 70 },
+      { header: "PI No", width: 70 },
+      { header: "Firm", width: 100 },
+      { header: "Product", width: 100 },
+      { header: "Qty", width: 40, align: "right" },
+      { header: "Serials", width: 120 },
+      { header: "Value", width: 70, align: "right" },
     ],
     toPdfRow: (row) => [
       String(row.dcNo),
       String(row.piNo),
-      String(row.customerName),
+      String(row.firmName),
       String(row.productName),
       String(row.qty),
-      String(row.dispatchDate),
+      String(row.serialNumbers || "—"),
       formatCurrency(Number(row.value)),
     ],
   });

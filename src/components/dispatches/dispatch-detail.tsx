@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/table";
 import { formatDispatchStatus } from "@/lib/dispatches";
 import { formatDocumentDate } from "@/lib/utils";
+import { CourierStickersButton } from "@/components/dispatches/courier-stickers-button";
 
 type DispatchDetailData = {
   id: string;
@@ -29,7 +30,16 @@ type DispatchDetailData = {
   receiverMobile?: string | null;
   signatureUrl?: string | null;
   notes?: string | null;
-  customer: { customerName: string; gstNumber: string; mobile?: string | null };
+  customer: {
+    customerName: string;
+    contactPersonName?: string | null;
+    gstNumber: string;
+    address?: string | null;
+    city?: string | null;
+    state?: string | null;
+    pinCode?: string | null;
+    mobile?: string | null;
+  };
   proformaInvoice: { piNo: string };
   warehouse: { name: string };
   lines: Array<{
@@ -174,6 +184,23 @@ export function DispatchDetail({
               <MessageCircle className="h-4 w-4" />
               Share Delivery Challan
             </Button>
+          ) : null}
+          {dispatch.status === "DISPATCHED" ? (
+            <CourierStickersButton
+              dispatchId={dispatch.id}
+              dcNo={dispatch.dcNo}
+              size="default"
+              className="h-12"
+              toDefaults={{
+                firmName: dispatch.customer.customerName,
+                contactName: dispatch.customer.contactPersonName,
+                address: dispatch.customer.address,
+                city: dispatch.customer.city,
+                state: dispatch.customer.state,
+                pinCode: dispatch.customer.pinCode,
+                phone: dispatch.customer.mobile,
+              }}
+            />
           ) : null}
           {canManage && dispatch.status === "DRAFT" ? (
             <Button className="h-12" disabled={loading} onClick={handleConfirm}>

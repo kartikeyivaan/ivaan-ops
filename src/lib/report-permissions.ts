@@ -98,23 +98,41 @@ export function canViewAnyReport(userRoles: string[]): boolean {
   );
 }
 
+/** Query/filter sentinel: list all company sales records (no salesUserId filter). */
+export const FIRM_SALES_SCOPE = "all" as const;
+
+export function isFirmSalesScope(
+  value: string | undefined | null,
+): value is typeof FIRM_SALES_SCOPE {
+  return value === FIRM_SALES_SCOPE;
+}
+
+/**
+ * Resolves list/report salesUserId scoping.
+ * - Managers / Super Admin: honour requested id; `"all"` / empty → firm-wide.
+ * - Sales Executive: defaults to self; explicit `"all"` opts into firm-wide (cover colleagues).
+ * - Create flows must pass a concrete user id (never `"all"`).
+ */
 export function restrictSalesUserId(
   userRoles: string[],
   userId: string,
   requestedSalesUserId?: string,
 ): string | undefined {
   if (isSuperAdmin(userRoles) || userRoles.includes(ROLES.SALES_MANAGER)) {
-    return requestedSalesUserId;
+    return isFirmSalesScope(requestedSalesUserId) ? undefined : requestedSalesUserId;
   }
   if (userRoles.includes(ROLES.SALES_EXECUTIVE)) {
+    if (isFirmSalesScope(requestedSalesUserId)) {
+      return undefined;
+    }
     return userId;
   }
-  return requestedSalesUserId;
+  return isFirmSalesScope(requestedSalesUserId) ? undefined : requestedSalesUserId;
 }
 
 /**
  * Soft UX default for list filters only. Access control must use
- * `restrictSalesUserId` — executives cannot bypass isolation via "all".
+ * `restrictSalesUserId`. Executives default to self unless they pass `"all"`.
  * @deprecated Prefer `restrictSalesUserId` for authorization.
  */
 export function defaultSalesListFilterUserId(

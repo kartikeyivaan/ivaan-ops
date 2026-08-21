@@ -3,8 +3,12 @@ import { roundMoney } from "@/lib/quotations";
 
 export type AgeingBucket = "0-30" | "31-60" | "61-90" | "90+";
 
-export function calculateFreeQty(available: number, booked: number): number {
-  return Math.max(0, available - booked);
+export function calculateFreeQty(
+  available: number,
+  booked: number,
+  upcomingStock = 0,
+): number {
+  return Math.max(0, available - booked + upcomingStock);
 }
 
 export function calculateOutstanding(piValue: number, paid: number): number {

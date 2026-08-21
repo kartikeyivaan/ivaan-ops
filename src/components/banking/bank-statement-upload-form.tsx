@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,7 +13,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatCurrency } from "@/lib/quotations";
 
 type BankAccountOption = {
   id: string;
@@ -21,6 +20,7 @@ type BankAccountOption = {
   accountName: string;
   accountNumberMasked: string;
   receivedInAccount: string;
+  company?: { id: string; code: string; name: string };
 };
 
 type PreviewPayload = {
@@ -42,63 +42,54 @@ type PreviewPayload = {
     mismatches: number;
     balanceIssues: number;
   };
-  balanceIssues: Array<{ type: string; message: string }>;
-  transactions: Array<{
-    classification: "EXACT_MATCH" | "MISMATCH" | "NEW";
-    matchMethod: string | null;
-    fieldDiffs: Array<{ field: string; existing: string | number | null; uploaded: string | number | null }>;
-    incoming: {
-      transactionDate: string;
-      description: string;
-      referenceNumber: string | null;
-      debitAmount: number;
-      creditAmount: number;
-      runningBalance: number;
-      statementSequence: number;
-    };
-  }>;
 };
 
-type UploadResult = {
-  importId: string;
-  processingStatus: string;
-  parserType: string;
-  bankAccountId: string | null;
-  fileHash: string;
-  fileDeleted: boolean;
-  fileDeletedAt: string | null;
-  transactionsDetected: number;
-  newTransactions: number;
-  duplicatesDetected: number;
-  mismatchesDetected: number;
-  balanceIssuesDetected: number;
-  errorMessage: string | null;
-  preview: PreviewPayload | null;
+type UploadApiResult = {
+  importId?: string;
+  processingStatus?: string;
+  parserType?: string;
+  bankAccountId?: string | null;
+  transactionsDetected?: number;
+  newTransactions?: number;
+  duplicatesDetected?: number;
+  mismatchesDetected?: number;
+  balanceIssuesDetected?: number;
+  errorMessage?: string | null;
+  preview?: PreviewPayload | null;
+  confirmed?: boolean;
   message?: string;
+  code?: string;
 };
 
-function classificationLabel(value: string) {
-  switch (value) {
-    case "EXACT_MATCH":
-      return "Exact match";
-    case "MISMATCH":
-      return "Mismatch";
-    case "NEW":
-      return "New";
-    default:
-      return value;
-  }
+type FileRowStatus = "queued" | "processing" | "imported" | "failed";
+
+type FileRow = {
+  key: string;
+  file: File;
+  status: FileRowStatus;
+  message: string | null;
+  parserType: string | null;
+  companyLabel: string | null;
+  accountLabel: string | null;
+  detected: number | null;
+  newTransactions: number | null;
+  exactMatches: number | null;
+  mismatches: number | null;
+};
+
+function fileKey(file: File, index: number) {
+  return `${file.name}:${file.size}:${file.lastModified}:${index}`;
 }
 
 export function BankStatementUploadForm() {
   const [accounts, setAccounts] = useState<BankAccountOption[]>([]);
-  const [bankAccountId, setBankAccountId] = useState("");
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [rows, setRows] = useState<FileRow[]>([]);
+  const [overrideAccountId, setOverrideAccountId] = useState("");
+  const [showOverride, setShowOverride] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<UploadResult | null>(null);
-  const [confirmMessage, setConfirmMessage] = useState<string | null>(null);
+  const [metaError, setMetaError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -110,15 +101,12 @@ export function BankStatementUploadForm() {
           message?: string;
         };
         if (!response.ok) {
-          if (!cancelled) setError(data.message ?? "Failed to load bank accounts.");
+          if (!cancelled) setMetaError(data.message ?? "Failed to load bank accounts.");
           return;
         }
-        if (!cancelled) {
-          setAccounts(data.accounts ?? []);
-          setBankAccountId(data.accounts?.[0]?.id ?? "");
-        }
+        if (!cancelled) setAccounts(data.accounts ?? []);
       } catch {
-        if (!cancelled) setError("Could not reach the server.");
+        if (!cancelled) setMetaError("Could not reach the server.");
       }
     })();
     return () => {
@@ -126,95 +114,139 @@ export function BankStatementUploadForm() {
     };
   }, []);
 
+  const summary = useMemo(() => {
+    const imported = rows.filter((r) => r.status === "imported").length;
+    const failed = rows.filter((r) => r.status === "failed").length;
+    const processing = rows.filter((r) => r.status === "processing").length;
+    const queued = rows.filter((r) => r.status === "queued").length;
+    const newTx = rows.reduce((n, r) => n + (r.newTransactions ?? 0), 0);
+    return { imported, failed, processing, queued, newTx, total: rows.length };
+  }, [rows]);
+
+  function onFilesChosen(list: FileList | null) {
+    const next = list ? Array.from(list) : [];
+    setFiles(next);
+    setRows([]);
+    setError(null);
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!file) {
-      setError("Choose a statement file to upload.");
+    if (files.length === 0) {
+      setError("Choose one or more statement files to upload.");
+      return;
+    }
+    if (showOverride && overrideAccountId && files.length > 1) {
+      setError("Manual account override applies to a single file only. Upload one file, or clear the override.");
       return;
     }
 
+    const initialRows: FileRow[] = files.map((file, index) => ({
+      key: fileKey(file, index),
+      file,
+      status: "queued",
+      message: null,
+      parserType: null,
+      companyLabel: null,
+      accountLabel: null,
+      detected: null,
+      newTransactions: null,
+      exactMatches: null,
+      mismatches: null,
+    }));
+    setRows(initialRows);
     setLoading(true);
     setError(null);
-    setResult(null);
-    setConfirmMessage(null);
 
-    const form = new FormData();
-    form.set("file", file);
-    if (bankAccountId) form.set("bankAccountId", bankAccountId);
-
-    try {
-      const response = await fetch("/api/banking/upload", {
-        method: "POST",
-        body: form,
-      });
-      const data = (await response.json()) as UploadResult & { message?: string };
-      if (!response.ok && !data.importId) {
-        setError(data.message ?? "Upload failed.");
-        return;
-      }
-      setResult(data);
-      if (!response.ok) {
-        setError(data.message ?? data.errorMessage ?? "Analysis failed.");
-      }
-      setFile(null);
-    } catch {
-      setError("Could not reach the server.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleConfirm() {
-    if (!result?.importId) return;
-    setConfirming(true);
-    setError(null);
-    setConfirmMessage(null);
-    try {
-      const response = await fetch(`/api/banking/upload/${result.importId}/confirm`, {
-        method: "POST",
-      });
-      const data = (await response.json()) as { message?: string };
-      if (!response.ok) {
-        setError(data.message ?? "Confirm failed.");
-        return;
-      }
-      setConfirmMessage(data.message ?? "Import confirmed.");
-      setResult((prev) =>
-        prev ? { ...prev, processingStatus: "COMPLETED", message: data.message } : prev,
+    for (let i = 0; i < initialRows.length; i += 1) {
+      const row = initialRows[i]!;
+      setRows((prev) =>
+        prev.map((r) => (r.key === row.key ? { ...r, status: "processing", message: null } : r)),
       );
-    } catch {
-      setError("Could not reach the server.");
-    } finally {
-      setConfirming(false);
-    }
-  }
 
-  async function handleCancel() {
-    if (!result?.importId) return;
-    setConfirming(true);
-    setError(null);
-    try {
-      const response = await fetch(`/api/banking/upload/${result.importId}/cancel`, {
-        method: "POST",
-      });
-      const data = (await response.json()) as { message?: string };
-      if (!response.ok) {
-        setError(data.message ?? "Cancel failed.");
-        return;
+      const form = new FormData();
+      form.set("file", row.file);
+      form.set("autoConfirm", "1");
+      if (showOverride && overrideAccountId) {
+        form.set("bankAccountId", overrideAccountId);
       }
-      setConfirmMessage(data.message ?? "Import cancelled.");
-      setResult((prev) =>
-        prev ? { ...prev, processingStatus: "CANCELLED", preview: null } : prev,
-      );
-    } catch {
-      setError("Could not reach the server.");
-    } finally {
-      setConfirming(false);
-    }
-  }
 
-  const preview = result?.preview;
-  const awaitingConfirm = result?.processingStatus === "PREVIEWED" && preview;
+      try {
+        const response = await fetch("/api/banking/upload", {
+          method: "POST",
+          body: form,
+        });
+        const data = (await response.json()) as UploadApiResult;
+
+        const importedOk =
+          response.ok &&
+          data.confirmed === true &&
+          data.processingStatus === "COMPLETED";
+
+        if (!importedOk) {
+          const failedMessage =
+            data.message ?? data.errorMessage ?? "Upload or import failed for this file.";
+          setRows((prev) =>
+            prev.map((r) =>
+              r.key === row.key
+                ? {
+                    ...r,
+                    status: "failed",
+                    message: failedMessage,
+                    parserType: data.parserType ?? null,
+                    companyLabel: data.preview
+                      ? `${data.preview.company.name} (${data.preview.company.code})`
+                      : null,
+                    accountLabel: data.preview
+                      ? `${data.preview.bankAccount.bankName} · ${data.preview.bankAccount.accountNumberMasked}`
+                      : null,
+                    detected: data.transactionsDetected ?? data.preview?.summary.detected ?? null,
+                    newTransactions: data.newTransactions ?? null,
+                    exactMatches: data.duplicatesDetected ?? null,
+                    mismatches: data.mismatchesDetected ?? null,
+                  }
+                : r,
+            ),
+          );
+          continue;
+        }
+
+        setRows((prev) =>
+          prev.map((r) =>
+            r.key === row.key
+              ? {
+                  ...r,
+                  status: "imported",
+                  message: data.message ?? "Imported.",
+                  parserType: data.parserType ?? data.preview?.parserType ?? null,
+                  companyLabel: data.preview
+                    ? `${data.preview.company.name} (${data.preview.company.code})`
+                    : null,
+                  accountLabel: data.preview
+                    ? `${data.preview.bankAccount.bankName} · ${data.preview.bankAccount.accountNumberMasked}`
+                    : null,
+                  detected: data.transactionsDetected ?? data.preview?.summary.detected ?? null,
+                  newTransactions: data.newTransactions ?? 0,
+                  exactMatches: data.duplicatesDetected ?? data.preview?.summary.exactMatches ?? null,
+                  mismatches: data.mismatchesDetected ?? data.preview?.summary.mismatches ?? null,
+                }
+              : r,
+          ),
+        );
+      } catch {
+        setRows((prev) =>
+          prev.map((r) =>
+            r.key === row.key
+              ? { ...r, status: "failed", message: "Could not reach the server." }
+              : r,
+          ),
+        );
+      }
+    }
+
+    setLoading(false);
+    setFiles([]);
+  }
 
   return (
     <div className="space-y-6">
@@ -225,175 +257,145 @@ export function BankStatementUploadForm() {
           </Link>{" "}
           / Upload Statement
         </p>
-        <h1 className="text-2xl font-bold text-slate-900">Upload Statement</h1>
+        <h1 className="text-2xl font-bold text-slate-900">Upload Statements</h1>
         <p className="text-sm text-slate-500">
-          Temporary upload → import analysis → confirm new transactions only. Exact matches are
-          skipped; mismatches are never overwritten. The original file is always deleted.
+          Drop multiple bank statements (any firm / bank). Each file is identified from statement
+          account number, then imported automatically in sequence. Exact matches are skipped;
+          mismatches are never overwritten. Original files are always deleted after analysis.
         </p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Statement file</CardTitle>
+          <CardTitle>Statement files</CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="grid max-w-xl gap-4">
+          <form onSubmit={handleSubmit} className="grid max-w-2xl gap-4">
             <div className="space-y-2">
-              <Label htmlFor="bankAccountId">Bank account (fallback)</Label>
-              <select
-                id="bankAccountId"
-                className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
-                value={bankAccountId}
-                onChange={(e) => setBankAccountId(e.target.value)}
-                required
-              >
-                {accounts.length === 0 ? (
-                  <option value="">No active accounts — configure Bank Accounts first</option>
-                ) : (
-                  accounts.map((account) => (
-                    <option key={account.id} value={account.id}>
-                      {account.bankName} · {account.accountNumberMasked} ({account.receivedInAccount})
-                    </option>
-                  ))
-                )}
-              </select>
-              <p className="text-xs text-slate-500">
-                Preferred mapping uses statement account number metadata when present.
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="statementFile">File (.xlsx, .xls, .csv, .tsv)</Label>
+              <Label htmlFor="statementFiles">Files (.xlsx, .xls, .csv, .tsv)</Label>
               <input
-                id="statementFile"
+                id="statementFiles"
                 type="file"
+                multiple
                 accept=".xlsx,.xls,.csv,.tsv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
                 className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-emerald-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-emerald-800"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => onFilesChosen(e.target.files)}
+                disabled={loading}
               />
+              {files.length > 0 ? (
+                <p className="text-xs text-slate-500">{files.length} file(s) selected</p>
+              ) : null}
             </div>
+
+            <div className="space-y-2">
+              <button
+                type="button"
+                className="text-left text-sm font-medium text-emerald-800 hover:underline"
+                onClick={() => setShowOverride((v) => !v)}
+              >
+                {showOverride ? "Hide manual account override" : "Manual account override (optional)"}
+              </button>
+              {showOverride ? (
+                <div className="space-y-2 rounded-md border border-slate-200 bg-slate-50 p-3">
+                  <Label htmlFor="bankAccountId">Force bank account</Label>
+                  <select
+                    id="bankAccountId"
+                    className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
+                    value={overrideAccountId}
+                    onChange={(e) => setOverrideAccountId(e.target.value)}
+                    disabled={loading}
+                  >
+                    <option value="">Auto-detect from statement</option>
+                    {accounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {account.company ? `${account.company.code} · ` : ""}
+                        {account.bankName} · {account.accountNumberMasked} (
+                        {account.receivedInAccount})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-slate-500">
+                    Use only when statement metadata cannot be mapped. Applies to a single-file
+                    upload.
+                  </p>
+                </div>
+              ) : null}
+            </div>
+
             <div>
-              <Button type="submit" disabled={loading || accounts.length === 0}>
-                {loading ? "Analyzing..." : "Upload & analyze"}
+              <Button type="submit" disabled={loading || files.length === 0}>
+                {loading ? "Importing…" : "Upload & import all"}
               </Button>
             </div>
           </form>
+          {metaError ? <p className="mt-3 text-sm text-amber-700">{metaError}</p> : null}
           {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
-          {confirmMessage ? <p className="mt-3 text-sm text-emerald-700">{confirmMessage}</p> : null}
         </CardContent>
       </Card>
 
-      {preview ? (
+      {rows.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle>Import analysis</CardTitle>
+            <CardTitle>Batch results</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-2 text-sm text-slate-700 md:grid-cols-2">
-              <p>
-                Entity:{" "}
-                <strong>
-                  {preview.company.name} ({preview.company.code})
-                </strong>
-              </p>
-              <p>
-                Bank / account:{" "}
-                <strong>
-                  {preview.bankAccount.bankName} · {preview.bankAccount.accountNumberMasked}
-                </strong>
-              </p>
-              <p>
-                Period:{" "}
-                <strong>
-                  {preview.statementPeriod.start ?? "—"} → {preview.statementPeriod.end ?? "—"}
-                </strong>
-              </p>
-              <p>
-                Parser: <strong>{preview.parserType}</strong>
-              </p>
-              <p>Detected: <strong>{preview.summary.detected}</strong></p>
-              <p>Exact matches: <strong>{preview.summary.exactMatches}</strong></p>
-              <p>New: <strong>{preview.summary.newTransactions}</strong></p>
-              <p>Mismatches: <strong>{preview.summary.mismatches}</strong></p>
-              <p>Balance / sequence issues: <strong>{preview.summary.balanceIssues}</strong></p>
-              <p>
-                Temp file deleted:{" "}
-                <strong>{result?.fileDeleted ? "Yes" : "No"}</strong>
-              </p>
-            </div>
-
-            {preview.balanceIssues.length > 0 ? (
-              <ul className="list-disc space-y-1 pl-5 text-sm text-amber-800">
-                {preview.balanceIssues.map((issue, index) => (
-                  <li key={`${issue.type}-${index}`}>{issue.message}</li>
-                ))}
-              </ul>
-            ) : null}
-
-            {preview.warnings.length > 0 ? (
-              <ul className="list-disc space-y-1 pl-5 text-sm text-slate-500">
-                {preview.warnings.map((warning) => (
-                  <li key={warning}>{warning}</li>
-                ))}
-              </ul>
-            ) : null}
-
-            {awaitingConfirm ? (
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" onClick={handleConfirm} disabled={confirming}>
-                  {confirming ? "Importing..." : "Import safe transactions"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleCancel}
-                  disabled={confirming}
-                >
-                  Cancel
-                </Button>
-              </div>
-            ) : null}
-
+            <p className="text-sm text-slate-600">
+              {summary.imported} imported · {summary.failed} failed
+              {summary.processing || summary.queued
+                ? ` · ${summary.processing + summary.queued} pending`
+                : ""}
+              {" · "}
+              {summary.newTx} new transaction(s) total
+            </p>
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>#</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Reference</TableHead>
-                    <TableHead className="text-right">Debit</TableHead>
-                    <TableHead className="text-right">Credit</TableHead>
+                    <TableHead>File</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Firm / account</TableHead>
+                    <TableHead>Parser</TableHead>
+                    <TableHead className="text-right">New</TableHead>
+                    <TableHead className="text-right">Match</TableHead>
+                    <TableHead className="text-right">Mismatch</TableHead>
+                    <TableHead>Detail</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {preview.transactions.map((row) => (
-                    <TableRow key={`${row.incoming.statementSequence}-${row.incoming.transactionDate}`}>
-                      <TableCell>{row.incoming.statementSequence}</TableCell>
-                      <TableCell>{row.incoming.transactionDate}</TableCell>
-                      <TableCell className="max-w-[240px] truncate">
-                        {row.incoming.description}
+                  {rows.map((row) => (
+                    <TableRow key={row.key}>
+                      <TableCell className="max-w-[200px] truncate font-medium">
+                        {row.file.name}
                       </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {row.incoming.referenceNumber ?? "—"}
+                      <TableCell className="capitalize">
+                        <span
+                          className={
+                            row.status === "imported"
+                              ? "text-emerald-700"
+                              : row.status === "failed"
+                                ? "text-red-600"
+                                : "text-slate-600"
+                          }
+                        >
+                          {row.status}
+                        </span>
                       </TableCell>
-                      <TableCell className="text-right">
-                        {row.incoming.debitAmount
-                          ? formatCurrency(row.incoming.debitAmount)
-                          : "—"}
+                      <TableCell className="text-sm">
+                        {row.companyLabel || row.accountLabel ? (
+                          <>
+                            <div>{row.companyLabel ?? "—"}</div>
+                            <div className="text-xs text-slate-500">{row.accountLabel ?? ""}</div>
+                          </>
+                        ) : (
+                          "—"
+                        )}
                       </TableCell>
-                      <TableCell className="text-right">
-                        {row.incoming.creditAmount
-                          ? formatCurrency(row.incoming.creditAmount)
-                          : "—"}
-                      </TableCell>
-                      <TableCell>
-                        {classificationLabel(row.classification)}
-                        {row.classification === "MISMATCH" && row.fieldDiffs.length > 0 ? (
-                          <span className="block text-xs text-amber-700">
-                            {row.fieldDiffs.map((d) => d.field).join(", ")}
-                          </span>
-                        ) : null}
+                      <TableCell>{row.parserType ?? "—"}</TableCell>
+                      <TableCell className="text-right">{row.newTransactions ?? "—"}</TableCell>
+                      <TableCell className="text-right">{row.exactMatches ?? "—"}</TableCell>
+                      <TableCell className="text-right">{row.mismatches ?? "—"}</TableCell>
+                      <TableCell className="max-w-[240px] text-xs text-slate-500">
+                        {row.message ?? "—"}
                       </TableCell>
                     </TableRow>
                   ))}

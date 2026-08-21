@@ -25,14 +25,14 @@ export async function getSalesFunnel(
   ]);
 
   return {
-    quotationValue,
-    piValue,
-    collectionValue,
-    dispatchedValue,
+    quotationValue: quotationValue.actual,
+    piValue: piValue.actual,
+    collectionValue: collectionValue.actual,
+    dispatchedValue: dispatchedValue.actual,
     conversion: {
-      quotationToPi: conversionRate(piValue, quotationValue),
-      piToCollection: conversionRate(collectionValue, piValue),
-      collectionToDispatch: conversionRate(dispatchedValue, collectionValue),
+      quotationToPi: conversionRate(piValue.actual, quotationValue.actual),
+      piToCollection: conversionRate(collectionValue.actual, piValue.actual),
+      collectionToDispatch: conversionRate(dispatchedValue.actual, collectionValue.actual),
     },
   };
 }

@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { canEditCustomers, canViewCustomers } from "@/lib/customer-permissions";
+import { canEditCustomers, canEditIncentiveCredit, canViewCustomers } from "@/lib/customer-permissions";
 import { canManageProformaInvoices } from "@/lib/pi-permissions";
 import { canManageQuotations } from "@/lib/quotation-permissions";
 import { getCustomerById } from "@/lib/customer-service";
@@ -75,6 +75,7 @@ export default async function CustomerDetailPage({ params }: PageProps) {
       )}
       customerDispatches={JSON.parse(JSON.stringify(customerDispatches))}
       canEdit={canEditCustomers(session.user.roles)}
+      canEditIncentiveCredit={canEditIncentiveCredit(session.user.roles)}
       canManageQuotations={canManageQuotations(session.user.roles)}
       canManageProformaInvoices={canManageProformaInvoices(session.user.roles)}
     />

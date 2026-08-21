@@ -10,10 +10,28 @@ import {
 } from "@/components/ui/table";
 import type { TeamScoreboardDto } from "@/lib/sales-dashboard/dashboard-types";
 import {
+  formatActualCounted,
   formatCompactNumber,
   formatCurrency,
   PERIOD_LABELS,
 } from "@/components/dashboard/dashboard-formatters";
+
+function DualCell({
+  actual,
+  counted,
+  format,
+}: {
+  actual: number;
+  counted: number;
+  format: (value: number) => string;
+}) {
+  return (
+    <div className="text-right">
+      <p className="font-medium text-slate-800">{formatActualCounted(actual, counted, format)}</p>
+      <p className="text-[10px] uppercase tracking-wide text-slate-400">Actual / Counted</p>
+    </div>
+  );
+}
 
 export function TeamScoreboardPanel({ data }: { data: TeamScoreboardDto }) {
   return (
@@ -21,7 +39,8 @@ export function TeamScoreboardPanel({ data }: { data: TeamScoreboardDto }) {
       <CardHeader>
         <CardTitle className="text-base">Team Scoreboard</CardTitle>
         <p className="text-xs text-slate-500">
-          {PERIOD_LABELS[data.period]} · sorted by module units
+          {PERIOD_LABELS[data.period]} · sorted by counted module units · values show Actual /
+          Counted (incentive credit)
         </p>
       </CardHeader>
       <CardContent>
@@ -54,21 +73,47 @@ export function TeamScoreboardPanel({ data }: { data: TeamScoreboardDto }) {
                     </Link>
                     <p className="text-xs text-slate-500">{row.executiveEmail}</p>
                   </TableCell>
-                  <TableCell className="text-right">
-                    {formatCurrency(row.quotationValue)}
+                  <TableCell>
+                    <DualCell
+                      actual={row.quotationValue.actual}
+                      counted={row.quotationValue.counted}
+                      format={formatCurrency}
+                    />
                   </TableCell>
-                  <TableCell className="text-right">{formatCurrency(row.piValue)}</TableCell>
-                  <TableCell className="text-right">
-                    {formatCurrency(row.collectionValue)}
+                  <TableCell>
+                    <DualCell
+                      actual={row.piValue.actual}
+                      counted={row.piValue.counted}
+                      format={formatCurrency}
+                    />
                   </TableCell>
-                  <TableCell className="text-right">
-                    {formatCurrency(row.dispatchedValue)}
+                  <TableCell>
+                    <DualCell
+                      actual={row.collectionValue.actual}
+                      counted={row.collectionValue.counted}
+                      format={formatCurrency}
+                    />
                   </TableCell>
-                  <TableCell className="text-right font-medium">
-                    {formatCompactNumber(row.moduleUnits)}
+                  <TableCell>
+                    <DualCell
+                      actual={row.dispatchedValue.actual}
+                      counted={row.dispatchedValue.counted}
+                      format={formatCurrency}
+                    />
                   </TableCell>
-                  <TableCell className="text-right">
-                    {formatCompactNumber(row.newCustomers)}
+                  <TableCell>
+                    <DualCell
+                      actual={row.moduleUnits.actual}
+                      counted={row.moduleUnits.counted}
+                      format={(v) => formatCompactNumber(v, 3)}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <DualCell
+                      actual={row.newCustomers.actual}
+                      counted={row.newCustomers.counted}
+                      format={formatCompactNumber}
+                    />
                   </TableCell>
                 </TableRow>
               ))}

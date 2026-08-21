@@ -1,5 +1,6 @@
 import { DispatchStatus, type PrismaClient } from "@prisma/client";
 import { parseBusinessDate, endOfBusinessDay } from "@/lib/business-dates";
+import { applyIncentiveCredit } from "@/lib/incentive-credit";
 import { decimalToNumber } from "@/lib/inventory";
 import {
   buildCollectionValueAggregate,
@@ -47,12 +48,20 @@ export async function getPerformanceTrend(
           lte: endOfBusinessDay(filters.toDate),
         },
       },
-      select: { piDate: true, totalValue: true },
+      select: {
+        piDate: true,
+        totalValue: true,
+        customer: { select: { incentiveCreditPercent: true } },
+      },
     });
     const byDate = new Map<string, number>();
     for (const row of rows) {
       const key = row.piDate.toISOString().slice(0, 10);
-      byDate.set(key, (byDate.get(key) ?? 0) + decimalToNumber(row.totalValue));
+      const credited = applyIncentiveCredit(
+        decimalToNumber(row.totalValue),
+        row.customer.incentiveCreditPercent,
+      ).counted;
+      byDate.set(key, (byDate.get(key) ?? 0) + credited);
     }
     for (const date of dates) {
       points.push({ date, value: Math.round((byDate.get(date) ?? 0) * 100) / 100 });
@@ -72,12 +81,20 @@ export async function getPerformanceTrend(
           lte: endOfBusinessDay(filters.toDate),
         },
       },
-      select: { paymentDate: true, amount: true },
+      select: {
+        paymentDate: true,
+        amount: true,
+        customer: { select: { incentiveCreditPercent: true } },
+      },
     });
     const byDate = new Map<string, number>();
     for (const row of rows) {
       const key = row.paymentDate.toISOString().slice(0, 10);
-      byDate.set(key, (byDate.get(key) ?? 0) + decimalToNumber(row.amount));
+      const credited = applyIncentiveCredit(
+        decimalToNumber(row.amount),
+        row.customer.incentiveCreditPercent,
+      ).counted;
+      byDate.set(key, (byDate.get(key) ?? 0) + credited);
     }
     for (const date of dates) {
       points.push({ date, value: Math.round((byDate.get(date) ?? 0) * 100) / 100 });
@@ -99,6 +116,7 @@ export async function getPerformanceTrend(
     },
     select: {
       dispatchDate: true,
+      customer: { select: { incentiveCreditPercent: true } },
       lines: {
         select: {
           qty: true,
@@ -120,8 +138,8 @@ export async function getPerformanceTrend(
     const key = dispatch.dispatchDate.toISOString().slice(0, 10);
     const value =
       metric === "dispatch"
-        ? sumDispatchedValueFromLines([dispatch])
-        : sumDispatchedUnitsFromLines([dispatch]).modules;
+        ? sumDispatchedValueFromLines([dispatch]).counted
+        : sumDispatchedUnitsFromLines([dispatch]).modules.counted;
     byDate.set(key, (byDate.get(key) ?? 0) + value);
   }
 
@@ -137,8 +155,12 @@ export async function getDefaultTrendMetricValue(
   filters: SalesMetricFilters,
   metric: TrendMetric,
 ): Promise<number> {
-  if (metric === "collection") return buildCollectionValueAggregate(prisma, filters);
-  if (metric === "pi") return buildPiValueAggregate(prisma, filters);
+  if (metric === "collection") {
+    return (await buildCollectionValueAggregate(prisma, filters)).counted;
+  }
+  if (metric === "pi") {
+    return (await buildPiValueAggregate(prisma, filters)).counted;
+  }
   const trend = await getPerformanceTrend(prisma, filters, metric);
   return trend.points.reduce((sum, point) => sum + point.value, 0);
 }

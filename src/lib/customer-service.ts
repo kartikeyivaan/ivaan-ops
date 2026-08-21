@@ -12,6 +12,7 @@ import {
   type CustomerImportPreviewRow,
   type CustomerImportRow,
 } from "@/lib/customers";
+import { decimalToNumber } from "@/lib/inventory";
 
 const customerInclude = {
   assignedSalesUser: { select: { id: true, name: true, email: true } },
@@ -24,9 +25,17 @@ type CustomerWithRelations = Prisma.CustomerGetPayload<{
   include: typeof customerInclude;
 }>;
 
-export type CustomerListItem = CustomerWithRelations & {
+export type CustomerListItem = Omit<CustomerWithRelations, "incentiveCreditPercent"> & {
+  incentiveCreditPercent: number;
   metrics: ReturnType<typeof calculateCustomerOutstanding>;
 };
+
+function mapCustomerDecimals(customer: CustomerWithRelations) {
+  return {
+    ...customer,
+    incentiveCreditPercent: decimalToNumber(customer.incentiveCreditPercent),
+  };
+}
 
 // Customers are a global master shared by every company. Metrics (outstanding,
 // open PIs/quotations, dispatch value) are still scoped to the active company so
@@ -46,7 +55,7 @@ export async function serializeCustomer(
   ]);
 
   return {
-    ...customer,
+    ...mapCustomerDecimals(customer),
     metrics: {
       outstandingValue: piMetrics.outstandingValue,
       openPiCount: piMetrics.openPiCount,
@@ -209,6 +218,7 @@ export async function updateCustomer(
     email?: string;
     assignedSalesUserId?: string;
     status?: CustomerStatus;
+    incentiveCreditPercent?: number;
     contacts?: Array<{
       id?: string;
       name: string;
@@ -272,6 +282,10 @@ export async function updateCustomer(
         email: input.email === "" ? null : input.email,
         assignedSalesUserId: input.assignedSalesUserId,
         status: input.status,
+        incentiveCreditPercent:
+          input.incentiveCreditPercent === undefined
+            ? undefined
+            : input.incentiveCreditPercent,
         updatedById: input.updatedById,
       },
       include: customerInclude,

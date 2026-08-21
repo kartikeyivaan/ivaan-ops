@@ -75,7 +75,7 @@ export function ModuleTargetCard({ data }: { data: ModuleTargetProgressDto }) {
             href="/reports?report=dispatch"
             className="text-xs font-medium text-sky-700 hover:underline"
           >
-            View dispatch report
+            View daily dispatch report
           </Link>
         </div>
       </CardContent>

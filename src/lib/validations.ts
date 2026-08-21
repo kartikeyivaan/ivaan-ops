@@ -111,6 +111,7 @@ export const customerSchema = z.object({
 
 export const customerUpdateSchema = customerSchema.partial().extend({
   contacts: z.array(customerContactSchema.extend({ id: z.string().uuid().optional() })).optional(),
+  incentiveCreditPercent: z.coerce.number().min(0).max(100).optional(),
 });
 
 export const customerSearchSchema = z.object({

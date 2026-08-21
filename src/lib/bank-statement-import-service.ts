@@ -40,6 +40,7 @@ import {
   runPostImportReconciliation,
 } from "@/lib/bank-reconciliation-service";
 import { allocateUniquePaymentCode } from "@/lib/bank-payment-code";
+import { extractDigitsAccountNumber } from "@/lib/bank-parsers/parse-utils";
 
 type Db = PrismaClient;
 
@@ -47,7 +48,8 @@ export type ProcessBankStatementUploadInput = {
   originalFilename: string;
   contents: Buffer | Uint8Array;
   uploadedById: string;
-  companyId: string;
+  /** Used when an explicit bankAccountId is provided (scoped lookup). Also fallback audit company before mapping. */
+  companyId?: string | null;
   bankAccountId?: string | null;
 };
 
@@ -180,25 +182,43 @@ function buildStoredPayload(input: {
   };
 }
 
-async function resolveBankAccount(
+/**
+ * Map a parsed statement to Bank Account Master.
+ * - Explicit id: scoped to companyId when provided; otherwise by id alone.
+ * - Otherwise: global match on digits-normalized accountNumber (unique in DB).
+ */
+export async function resolveBankAccount(
   db: Db,
-  companyId: string,
   parsed: ParsedBankStatement,
-  explicitBankAccountId: string | null | undefined,
+  options: {
+    companyId?: string | null;
+    explicitBankAccountId?: string | null;
+  } = {},
 ) {
-  if (explicitBankAccountId) {
+  const includeCompany = {
+    company: { select: { id: true, code: true, name: true } },
+  } as const;
+
+  if (options.explicitBankAccountId) {
     return db.bankAccount.findFirst({
-      where: { id: explicitBankAccountId, companyId, isActive: true },
-      include: { company: { select: { id: true, code: true, name: true } } },
+      where: {
+        id: options.explicitBankAccountId,
+        isActive: true,
+        ...(options.companyId ? { companyId: options.companyId } : {}),
+      },
+      include: includeCompany,
     });
   }
 
-  const accountNumber = parsed.account.accountNumber?.replace(/\s+/g, "").trim();
+  const accountNumber =
+    extractDigitsAccountNumber(parsed.account.accountNumber) ??
+    parsed.account.accountNumber?.replace(/\s+/g, "").trim() ??
+    null;
   if (!accountNumber) return null;
 
   return db.bankAccount.findFirst({
-    where: { companyId, isActive: true, accountNumber },
-    include: { company: { select: { id: true, code: true, name: true } } },
+    where: { isActive: true, accountNumber },
+    include: includeCompany,
   });
 }
 
@@ -296,7 +316,7 @@ export async function previewBankStatementUpload(
       recordId: importRow.id,
       action: "CREATE",
       performedBy: input.uploadedById,
-      companyId: input.companyId,
+      companyId: input.companyId ?? null,
       newValue: {
         originalFilename: importRow.originalFilename,
         fileHash,
@@ -306,7 +326,11 @@ export async function previewBankStatementUpload(
 
     const parser = options.parser ?? createBankStatementParser(parserType);
     const parsed = await parser.parse(tempPath);
-    const account = await resolveBankAccount(db, input.companyId, parsed, input.bankAccountId);
+    const account = await resolveBankAccount(db, parsed, {
+      companyId: input.bankAccountId ? input.companyId : null,
+      explicitBankAccountId: input.bankAccountId,
+    });
+    const resolvedCompanyId = account?.companyId ?? input.companyId ?? null;
 
     if (!account) {
       await db.bankTransactionIssue.create({
@@ -398,7 +422,7 @@ export async function previewBankStatementUpload(
       recordId: importId,
       action: "UPDATE",
       performedBy: input.uploadedById,
-      companyId: input.companyId,
+      companyId: resolvedCompanyId,
       newValue: {
         processingStatus: BankStatementImportStatus.PREVIEWED,
         summary,
@@ -456,7 +480,7 @@ export async function previewBankStatementUpload(
         recordId: importId,
         action: "UPDATE",
         performedBy: input.uploadedById,
-        companyId: input.companyId,
+        companyId: input.companyId ?? null,
         newValue: {
           processingStatus: BankStatementImportStatus.FAILED,
           errorMessage: message,
@@ -524,9 +548,9 @@ export async function confirmBankStatementImport(
   }
 
   const account = await db.bankAccount.findFirst({
-    where: { id: importRow.bankAccountId, companyId },
+    where: { id: importRow.bankAccountId },
   });
-  if (!account) throw new Error("FORBIDDEN_COMPANY");
+  if (!account || account.companyId !== companyId) throw new Error("FORBIDDEN_COMPANY");
 
   const payload = importRow.analysisPayload as unknown as StoredImportAnalysisPayload;
   const newRows = payload.transactions.filter((row) => row.classification === "NEW");
@@ -736,10 +760,10 @@ export async function cancelBankStatementImport(
 
   if (importRow.bankAccountId) {
     const account = await db.bankAccount.findFirst({
-      where: { id: importRow.bankAccountId, companyId },
-      select: { id: true },
+      where: { id: importRow.bankAccountId },
+      select: { id: true, companyId: true },
     });
-    if (!account) throw new Error("FORBIDDEN_COMPANY");
+    if (!account || account.companyId !== companyId) throw new Error("FORBIDDEN_COMPANY");
   }
 
   await db.bankStatementImport.update({

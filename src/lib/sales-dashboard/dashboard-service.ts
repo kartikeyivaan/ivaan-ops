@@ -160,9 +160,9 @@ export async function getExecutiveDashboard(
     funnel,
     trend,
     unitComposition: {
-      modules: unitTotals.modules,
-      inverters: unitTotals.inverters,
-      other: unitTotals.other,
+      modules: unitTotals.modules.actual,
+      inverters: unitTotals.inverters.actual,
+      other: unitTotals.other.actual,
     },
     moduleTarget,
     moduleMastery,
@@ -230,9 +230,9 @@ export async function getManagerDashboard(
     funnel,
     trend,
     unitComposition: {
-      modules: unitTotals.modules,
-      inverters: unitTotals.inverters,
-      other: unitTotals.other,
+      modules: unitTotals.modules.actual,
+      inverters: unitTotals.inverters.actual,
+      other: unitTotals.other.actual,
     },
   };
 }

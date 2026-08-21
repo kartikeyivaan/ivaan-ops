@@ -47,8 +47,17 @@ export function getBusinessGreeting(asOf = new Date()): string {
   return "Good evening";
 }
 
-export function formatCompactNumber(value: number): string {
-  return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(value);
+export function formatCompactNumber(value: number, maximumFractionDigits = 0): string {
+  return new Intl.NumberFormat("en-IN", { maximumFractionDigits }).format(value);
+}
+
+/** Format Actual / Counted pair for incentive-aware KPIs. */
+export function formatActualCounted(
+  actual: number,
+  counted: number,
+  format: (value: number) => string = formatCompactNumber,
+): string {
+  return `${format(actual)} / ${format(counted)}`;
 }
 
 /** Dashboard money display: amount in Lakh INR (1 Lakh = ₹1,00,000). */

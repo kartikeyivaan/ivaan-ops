@@ -458,6 +458,7 @@ export async function sumExecutiveModulesForMonth(
       },
     },
     select: {
+      customer: { select: { incentiveCreditPercent: true } },
       lines: {
         select: {
           qty: true,
@@ -467,7 +468,8 @@ export async function sumExecutiveModulesForMonth(
     },
   });
 
-  return sumDispatchedUnitsFromLines(dispatches).modules;
+  // Incentive-counted modules drive mastery / incentive progress.
+  return sumDispatchedUnitsFromLines(dispatches).modules.counted;
 }
 
 export async function recalculateExecutiveModuleMastery(

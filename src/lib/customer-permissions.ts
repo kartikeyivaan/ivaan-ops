@@ -17,12 +17,18 @@ const EDIT_ROLES = [
 
 const REASSIGN_ROLES = [ROLES.SUPER_ADMIN, ROLES.SALES_MANAGER] as const;
 
+const INCENTIVE_CREDIT_ROLES = [ROLES.SUPER_ADMIN, ROLES.SALES_MANAGER] as const;
+
 export function canViewCustomers(userRoles: string[]): boolean {
   return hasRole(userRoles, [...VIEW_ROLES]);
 }
 
 export function canEditCustomers(userRoles: string[]): boolean {
   return hasRole(userRoles, [...EDIT_ROLES]);
+}
+
+export function canEditIncentiveCredit(userRoles: string[]): boolean {
+  return hasRole(userRoles, [...INCENTIVE_CREDIT_ROLES]);
 }
 
 export function canReassignCustomers(userRoles: string[]): boolean {

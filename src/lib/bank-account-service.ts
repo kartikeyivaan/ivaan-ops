@@ -49,6 +49,25 @@ export async function listBankAccounts(db: Db, companyId: string, options?: { in
   });
 }
 
+/** Active (or all) bank accounts across one or more companies the caller may access. */
+export async function listBankAccountsForCompanies(
+  db: Db,
+  companyIds: string[],
+  options?: { includeInactive?: boolean },
+) {
+  if (companyIds.length === 0) return [];
+  return db.bankAccount.findMany({
+    where: {
+      companyId: { in: companyIds },
+      ...(options?.includeInactive ? {} : { isActive: true }),
+    },
+    include: {
+      company: { select: { id: true, code: true, name: true } },
+    },
+    orderBy: [{ bankName: "asc" }, { accountName: "asc" }],
+  });
+}
+
 export type CreateBankAccountInput = {
   companyId: string;
   bankName: string;

@@ -7,7 +7,12 @@ import {
 import { listQuotations } from "@/lib/quotation-service";
 import { prisma } from "@/lib/prisma";
 import { listSalesExecutivesForCompany } from "@/lib/report-builders";
-import { restrictSalesUserId } from "@/lib/report-permissions";
+import {
+  FIRM_SALES_SCOPE,
+  isFirmSalesScope,
+  restrictSalesUserId,
+} from "@/lib/report-permissions";
+import { ROLES } from "@/lib/rbac";
 import { canViewTeamSalesDashboard } from "@/lib/sales-dashboard/dashboard-permissions";
 import { requireActiveCompany } from "@/lib/session";
 import { quotationSearchSchema } from "@/lib/validations";
@@ -38,11 +43,14 @@ export default async function QuotationsPage({ searchParams }: PageProps) {
   }
 
   const params = await searchParams;
+  const rawSalesUserId = first(params.salesUserId);
+  const firmWideRequested = isFirmSalesScope(rawSalesUserId);
   const parsed = quotationSearchSchema.safeParse({
     q: first(params.q),
     status: first(params.status),
     customerId: first(params.customerId),
-    salesUserId: first(params.salesUserId),
+    salesUserId:
+      rawSalesUserId && !firmWideRequested ? rawSalesUserId : undefined,
     fromDate: first(params.fromDate),
     toDate: first(params.toDate),
     expiry: first(params.expiry),
@@ -52,9 +60,12 @@ export default async function QuotationsPage({ searchParams }: PageProps) {
   const salesUserId = restrictSalesUserId(
     session.user.roles,
     session.user.id,
-    filters.salesUserId,
+    firmWideRequested ? FIRM_SALES_SCOPE : filters.salesUserId,
   );
   const canFilterByExecutive = canViewTeamSalesDashboard(session.user.roles);
+  const canViewFirmWide =
+    !canFilterByExecutive &&
+    session.user.roles.includes(ROLES.SALES_EXECUTIVE);
 
   const [quotations, salesExecutives] = await Promise.all([
     listQuotations(prisma, companyId, {
@@ -72,12 +83,15 @@ export default async function QuotationsPage({ searchParams }: PageProps) {
       salesExecutives={salesExecutives}
       canManage={canManageQuotations(session.user.roles)}
       canFilterByExecutive={canFilterByExecutive}
+      canViewFirmWide={canViewFirmWide}
       initialFilters={{
         q: filters.q ?? "",
         status: filters.status ?? "",
         fromDate: filters.fromDate ?? "",
         toDate: filters.toDate ?? "",
-        salesUserId: salesUserId ?? "",
+        salesUserId: firmWideRequested
+          ? FIRM_SALES_SCOPE
+          : (salesUserId ?? ""),
         expiry: filters.expiry ?? "",
       }}
     />

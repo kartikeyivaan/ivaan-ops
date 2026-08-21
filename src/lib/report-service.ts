@@ -178,14 +178,26 @@ export async function getSalesExecutiveReport(
   return rows
     .filter(
       (row) =>
-        row.quotationValue > 0 ||
-        row.piValue > 0 ||
-        row.collectionValue > 0 ||
-        row.dispatchedValue > 0 ||
-        row.newCustomers > 0 ||
+        row.quotationValue.actual > 0 ||
+        row.piValue.actual > 0 ||
+        row.collectionValue.actual > 0 ||
+        row.dispatchedValue.actual > 0 ||
+        row.newCustomers.actual > 0 ||
         Boolean(filters.salesUserId),
     )
-    .map(({ moduleUnits, inverterUnits, otherUnits, ...reportRow }) => reportRow);
+    .map(({ moduleUnits, inverterUnits, otherUnits, ...reportRow }) => ({
+      ...reportRow,
+      quotationValue: reportRow.quotationValue.counted,
+      quotationValueActual: reportRow.quotationValue.actual,
+      piValue: reportRow.piValue.counted,
+      piValueActual: reportRow.piValue.actual,
+      collectionValue: reportRow.collectionValue.counted,
+      collectionValueActual: reportRow.collectionValue.actual,
+      dispatchedValue: reportRow.dispatchedValue.counted,
+      dispatchedValueActual: reportRow.dispatchedValue.actual,
+      newCustomers: reportRow.newCustomers.counted,
+      newCustomersActual: reportRow.newCustomers.actual,
+    }));
 }
 
 export async function getPaymentFollowupReport(
@@ -424,7 +436,11 @@ export async function getBookedAvailableReport(
         product.id,
         warehouse.id,
       );
-      const freeQty = calculateFreeQty(stock.availableStock, stock.bookedStock);
+      const freeQty = calculateFreeQty(
+        stock.availableStock,
+        stock.bookedStock,
+        stock.incomingStock,
+      );
 
       if (
         stock.availableStock === 0 &&
@@ -649,11 +665,24 @@ export async function getDispatchReport(
         : {}),
     },
     include: {
-      customer: { select: { customerName: true } },
+      customer: {
+        select: {
+          customerName: true,
+          customerCode: true,
+          gstNumber: true,
+          address: true,
+          city: true,
+          state: true,
+          pinCode: true,
+          mobile: true,
+        },
+      },
       warehouse: { select: { name: true } },
       proformaInvoice: {
         select: {
           piNo: true,
+          piDate: true,
+          totalValue: true,
           salesUser: { select: { id: true, name: true } },
         },
       },
@@ -663,26 +692,46 @@ export async function getDispatchReport(
             select: { displayName: true, pricingType: true, capacity: true },
           },
           proformaInvoiceItem: { select: { rate: true, gstRate: true } },
+          serials: {
+            include: {
+              serial: { select: { serialNumber: true } },
+            },
+          },
         },
       },
     },
-    orderBy: { dispatchDate: "desc" },
+    orderBy: [{ dispatchDate: "asc" }, { dcNo: "asc" }],
   });
 
   const rows: Array<{
+    dispatchDate: string;
     dcNo: string;
     piNo: string;
-    customerName: string;
+    piDate: string;
+    firmName: string;
+    firmCode: string;
+    firmGst: string;
+    firmAddress: string;
+    firmMobile: string;
     executiveName: string;
     productName: string;
     qty: number;
-    dispatchDate: string;
+    serialNumbers: string;
     vehicleNo: string;
     warehouseName: string;
     value: number;
   }> = [];
 
   for (const dispatch of dispatches) {
+    const firmAddress = [
+      dispatch.customer.address,
+      dispatch.customer.city,
+      dispatch.customer.state,
+      dispatch.customer.pinCode,
+    ]
+      .filter(Boolean)
+      .join(", ");
+
     for (const line of dispatch.lines) {
       const qty = decimalToNumber(line.qty);
       const rate = decimalToNumber(line.proformaInvoiceItem.rate);
@@ -694,13 +743,22 @@ export async function getDispatchReport(
         rate,
       });
       rows.push({
+        dispatchDate: dispatch.dispatchDate.toISOString().slice(0, 10),
         dcNo: dispatch.dcNo,
         piNo: dispatch.proformaInvoice.piNo,
-        customerName: dispatch.customer.customerName,
+        piDate: dispatch.proformaInvoice.piDate.toISOString().slice(0, 10),
+        firmName: dispatch.customer.customerName,
+        firmCode: dispatch.customer.customerCode,
+        firmGst: dispatch.customer.gstNumber,
+        firmAddress,
+        firmMobile: dispatch.customer.mobile ?? "",
         executiveName: dispatch.proformaInvoice.salesUser.name,
         productName: line.product.displayName,
         qty,
-        dispatchDate: dispatch.dispatchDate.toISOString().slice(0, 10),
+        serialNumbers: line.serials
+          .map((entry) => entry.serial.serialNumber)
+          .sort((a, b) => a.localeCompare(b))
+          .join(", "),
         vehicleNo: dispatch.vehicleNo ?? "",
         warehouseName: dispatch.warehouse.name,
         value: roundMoney(subtotal * (1 + gstRate / 100)),
@@ -878,24 +936,30 @@ export async function getExecutivePerformanceReport(
         masteryLevel: mastery.currentLevelName,
         masteryLevelNumber: mastery.currentLevelNumber,
         modulesDispatchedThisMonth: modulesDispatched,
-        quotationValue: kpi.quotationValue,
-        piValue: kpi.piValue,
-        collectionValue: kpi.collectionValue,
-        dispatchedValue: kpi.dispatchedValue,
-        moduleUnits: kpi.moduleUnits,
-        newCustomers: kpi.newCustomers,
+        quotationValue: kpi.quotationValue.counted,
+        quotationValueActual: kpi.quotationValue.actual,
+        piValue: kpi.piValue.counted,
+        piValueActual: kpi.piValue.actual,
+        collectionValue: kpi.collectionValue.counted,
+        collectionValueActual: kpi.collectionValue.actual,
+        dispatchedValue: kpi.dispatchedValue.counted,
+        dispatchedValueActual: kpi.dispatchedValue.actual,
+        moduleUnits: kpi.moduleUnits.counted,
+        moduleUnitsActual: kpi.moduleUnits.actual,
+        newCustomers: kpi.newCustomers.counted,
+        newCustomersActual: kpi.newCustomers.actual,
       };
     }),
   );
 
   return rows.filter(
     (row) =>
-      row.quotationValue > 0 ||
-      row.piValue > 0 ||
-      row.collectionValue > 0 ||
-      row.dispatchedValue > 0 ||
-      row.moduleUnits > 0 ||
-      row.newCustomers > 0 ||
+      row.quotationValueActual > 0 ||
+      row.piValueActual > 0 ||
+      row.collectionValueActual > 0 ||
+      row.dispatchedValueActual > 0 ||
+      row.moduleUnitsActual > 0 ||
+      row.newCustomersActual > 0 ||
       row.achievedModules > 0 ||
       Boolean(filters.salesUserId),
   );

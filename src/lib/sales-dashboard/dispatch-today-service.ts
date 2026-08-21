@@ -181,9 +181,9 @@ export async function getDispatchTodaySummary(
     pending,
     blocked,
     completionPercent,
-    moduleUnits: units.modules,
-    inverterUnits: units.inverters,
-    otherUnits: units.other,
+    moduleUnits: units.modules.actual,
+    inverterUnits: units.inverters.actual,
+    otherUnits: units.other.actual,
     items,
   };
 }

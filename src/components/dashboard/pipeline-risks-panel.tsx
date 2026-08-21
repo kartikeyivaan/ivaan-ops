@@ -87,6 +87,7 @@ export function PipelineRisksPanel({ data }: { data: PipelineRiskDto }) {
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Pipeline Risks</CardTitle>
+        <p className="text-xs text-slate-500">Last 30 days</p>
       </CardHeader>
       <CardContent>
         <Tabs defaultValue={defaultTab}>

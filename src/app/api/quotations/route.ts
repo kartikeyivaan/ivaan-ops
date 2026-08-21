@@ -14,7 +14,11 @@ import { buildQuotationWhatsappUrl } from "@/lib/quotation-share";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
 import { createQuotationSchema, quotationSearchSchema } from "@/lib/validations";
-import { restrictSalesUserId } from "@/lib/report-permissions";
+import {
+  FIRM_SALES_SCOPE,
+  isFirmSalesScope,
+  restrictSalesUserId,
+} from "@/lib/report-permissions";
 
 function errorResponse(code: string, message: string, status: number, details?: unknown) {
   return NextResponse.json({ code, message, details }, { status });
@@ -35,11 +39,13 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const rawSalesUserId = searchParams.get("salesUserId");
+  const firmWideRequested = isFirmSalesScope(rawSalesUserId);
   const parsed = quotationSearchSchema.safeParse({
     q: searchParams.get("q") ?? undefined,
     status: searchParams.get("status") ?? undefined,
     customerId: searchParams.get("customerId") ?? undefined,
-    salesUserId: rawSalesUserId && rawSalesUserId !== "all" ? rawSalesUserId : undefined,
+    salesUserId:
+      rawSalesUserId && !firmWideRequested ? rawSalesUserId : undefined,
     fromDate: searchParams.get("fromDate") ?? undefined,
     toDate: searchParams.get("toDate") ?? undefined,
     expiry: searchParams.get("expiry") ?? undefined,
@@ -52,7 +58,7 @@ export async function GET(request: Request) {
   const salesUserId = restrictSalesUserId(
     session.user.roles,
     session.user.id,
-    parsed.data.salesUserId,
+    firmWideRequested ? FIRM_SALES_SCOPE : parsed.data.salesUserId,
   );
 
   const quotations = await listQuotations(prisma, companyId, {

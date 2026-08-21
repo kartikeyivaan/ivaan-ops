@@ -851,6 +851,8 @@ model Customer {
   assignedSalesUserId String         @map("assigned_sales_user_id") @db.Uuid
   createdById         String         @map("created_by") @db.Uuid
   updatedById         String         @map("updated_by") @db.Uuid
+  /// Share of this firm's sales credited toward SE incentive KPIs (0–100). Default 100.
+  incentiveCreditPercent Decimal      @default(100) @map("incentive_credit_percent") @db.Decimal(5, 2)
   status              CustomerStatus @default(ACTIVE)
   createdAt           DateTime       @default(now()) @map("created_at")
   updatedAt           DateTime       @updatedAt @map("updated_at")

@@ -45,7 +45,7 @@ describe("report-permissions", () => {
     expect(canViewAnyReport([ROLES.PURCHASE])).toBe(true);
   });
 
-  it("restricts sales executive to own data", () => {
+  it("restricts sales executive to own data by default", () => {
     expect(
       restrictSalesUserId([ROLES.SALES_EXECUTIVE], "exec-1", "exec-2"),
     ).toBe("exec-1");
@@ -55,6 +55,15 @@ describe("report-permissions", () => {
     expect(
       restrictSalesUserId([ROLES.SALES_EXECUTIVE], "exec-1", undefined),
     ).toBe("exec-1");
+  });
+
+  it("allows sales executive firm-wide list scope via explicit all", () => {
+    expect(
+      restrictSalesUserId([ROLES.SALES_EXECUTIVE], "exec-1", "all"),
+    ).toBeUndefined();
+    expect(
+      restrictSalesUserId([ROLES.SALES_MANAGER], "mgr-1", "all"),
+    ).toBeUndefined();
   });
 
   it("defaults sales executive list filter to self (hard isolation via restrictSalesUserId)", () => {

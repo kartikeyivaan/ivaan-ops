@@ -9,9 +9,11 @@ import {
 } from "@/lib/reports";
 
 describe("reports", () => {
-  it("calculates free quantity", () => {
+  it("calculates free quantity including upcoming stock", () => {
     expect(calculateFreeQty(10, 3)).toBe(7);
     expect(calculateFreeQty(2, 5)).toBe(0);
+    expect(calculateFreeQty(2, 5, 10)).toBe(7);
+    expect(calculateFreeQty(10, 3, 5)).toBe(12);
   });
 
   it("calculates outstanding balance", () => {

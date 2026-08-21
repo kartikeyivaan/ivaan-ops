@@ -11,6 +11,10 @@ import {
 } from "@/components/ui/table";
 import type { SalesStockWatchDto } from "@/lib/sales-dashboard/dashboard-types";
 import { formatCompactNumber } from "@/components/dashboard/dashboard-formatters";
+import {
+  freeQtyHintLines,
+  StockQtyHint,
+} from "@/components/dashboard/stock-qty-hint";
 
 export function StockWatchPanel({ data }: { data: SalesStockWatchDto }) {
   return (
@@ -29,7 +33,17 @@ export function StockWatchPanel({ data }: { data: SalesStockWatchDto }) {
               <TableRow>
                 <TableHead>Product</TableHead>
                 <TableHead className="text-right">Required</TableHead>
-                <TableHead className="text-right">Available</TableHead>
+                <TableHead className="text-right">
+                  <StockQtyHint
+                    label="Available"
+                    className="justify-end"
+                    lines={[
+                      "Status uses Free qty, not physical available alone.",
+                      "Free qty = Available − Booked + Upcoming",
+                      "Upcoming = pending qty on incoming lots",
+                    ]}
+                  />
+                </TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
@@ -45,8 +59,18 @@ export function StockWatchPanel({ data }: { data: SalesStockWatchDto }) {
                     </Link>
                     <p className="text-xs text-slate-500">{item.brandName}</p>
                   </TableCell>
-                  <TableCell className="text-right">{formatCompactNumber(item.openRequirement)}</TableCell>
-                  <TableCell className="text-right">{formatCompactNumber(item.available)}</TableCell>
+                  <TableCell className="text-right">
+                    {formatCompactNumber(item.openRequirement)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <StockQtyHint
+                      label="Available"
+                      className="justify-end"
+                      lines={freeQtyHintLines(item)}
+                    >
+                      <span>{formatCompactNumber(item.available)}</span>
+                    </StockQtyHint>
+                  </TableCell>
                   <TableCell>
                     <StockStatusBadge status={item.status} />
                   </TableCell>

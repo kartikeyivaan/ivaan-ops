@@ -96,11 +96,13 @@ export const piInclude = {
     select: {
       id: true,
       customerName: true,
+      contactPersonName: true,
       customerCode: true,
       gstNumber: true,
       address: true,
       city: true,
       state: true,
+      pinCode: true,
       mobile: true,
       email: true,
     },

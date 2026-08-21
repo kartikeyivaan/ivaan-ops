@@ -5,9 +5,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { LayoutDashboard, Menu, X } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { getActiveSessionCompany, isProjectsCompany } from "@/lib/company-scope";
-import { canAccessNav, NAV_ITEMS } from "@/lib/rbac";
+import { canAccessNav, NAV_GROUPS, NAV_ITEMS } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import { CompanySwitcher } from "@/components/layout/company-switcher";
 import { IvaanLogo } from "@/components/layout/ivaan-logo";
@@ -27,27 +27,41 @@ function NavLinks({
   pathname: string;
   onNavigate?: () => void;
 }) {
+  const grouped = NAV_GROUPS.map((group) => ({
+    group,
+    items: items.filter((item) => item.group === group),
+  })).filter((section) => section.items.length > 0);
+
   return (
-    <nav className="space-y-1">
-      {items.map((item) => {
-        const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            onClick={onNavigate}
-            className={cn(
-              "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-              active
-                ? "bg-emerald-50 text-emerald-800"
-                : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
-            )}
-          >
-            <LayoutDashboard className="h-4 w-4" />
-            {item.label}
-          </Link>
-        );
-      })}
+    <nav className="space-y-4">
+      {grouped.map((section) => (
+        <div key={section.group}>
+          <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            {section.group}
+          </p>
+          <div className="space-y-0.5">
+            {section.items.map((item) => {
+              const active =
+                pathname === item.href || pathname.startsWith(`${item.href}/`);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={onNavigate}
+                  className={cn(
+                    "block rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                    active
+                      ? "bg-emerald-50 text-emerald-800"
+                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
+                  )}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </nav>
   );
 }

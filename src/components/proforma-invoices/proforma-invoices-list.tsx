@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/table";
 import { formatProformaStatus, isReadyForDispatch } from "@/lib/proforma-invoices";
 import { formatCurrency } from "@/lib/quotations";
+import { FIRM_SALES_SCOPE, isFirmSalesScope } from "@/lib/report-permissions";
 import { formatDocumentDate } from "@/lib/utils";
 
 type ProformaInvoiceListItem = {
@@ -54,12 +55,14 @@ export function ProformaInvoicesList({
   salesExecutives = [],
   canManage,
   canFilterByExecutive = false,
+  canViewFirmWide = false,
   initialFilters,
 }: {
   initialProformaInvoices: ProformaInvoiceListItem[];
   salesExecutives?: SalesExecutive[];
   canManage: boolean;
   canFilterByExecutive?: boolean;
+  canViewFirmWide?: boolean;
   initialFilters?: {
     q: string;
     status: string;
@@ -81,15 +84,16 @@ export function ProformaInvoicesList({
   );
   const [loading, setLoading] = useState(false);
   const [actionError, setActionError] = useState("");
+  const viewingFirmWide = canViewFirmWide && isFirmSalesScope(salesUserId);
 
-  async function applyFilters() {
+  async function applyFilters(nextSalesUserId = salesUserId) {
     setLoading(true);
     const params = new URLSearchParams();
     if (q) params.set("q", q);
     if (status) params.set("status", status);
     if (fromDate) params.set("fromDate", fromDate);
     if (toDate) params.set("toDate", toDate);
-    if (salesUserId) params.set("salesUserId", salesUserId);
+    if (nextSalesUserId) params.set("salesUserId", nextSalesUserId);
     if (outstandingOnly) params.set("outstandingOnly", "true");
 
     const query = params.toString();
@@ -103,6 +107,12 @@ export function ProformaInvoicesList({
     if (response.ok) {
       setRows(data);
     }
+  }
+
+  function toggleFirmWide() {
+    const next = viewingFirmWide ? "" : FIRM_SALES_SCOPE;
+    setSalesUserId(next);
+    void applyFilters(next);
   }
 
   async function handleUnbook(id: string) {
@@ -206,7 +216,7 @@ export function ProformaInvoicesList({
             </select>
           </div>
         ) : null}
-        <div className="flex items-end gap-3">
+        <div className="flex flex-wrap items-end gap-3">
           <label className="flex h-10 items-center gap-2 text-sm text-slate-700">
             <input
               type="checkbox"
@@ -216,11 +226,27 @@ export function ProformaInvoicesList({
             />
             Outstanding only
           </label>
+          {canViewFirmWide ? (
+            <Button
+              type="button"
+              variant={viewingFirmWide ? "secondary" : "outline"}
+              onClick={toggleFirmWide}
+              disabled={loading}
+            >
+              {viewingFirmWide ? "Show my PI only" : "See all firm PI"}
+            </Button>
+          ) : null}
           <Button onClick={() => void applyFilters()} disabled={loading}>
             {loading ? "Loading..." : "Apply"}
           </Button>
         </div>
       </CollapsibleFilterCard>
+
+      {viewingFirmWide ? (
+        <p className="text-sm text-slate-600">
+          Showing all firm proforma invoices so you can cover colleagues when needed.
+        </p>
+      ) : null}
 
       {actionError ? <p className="text-sm text-red-600">{actionError}</p> : null}
 

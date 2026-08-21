@@ -5,9 +5,12 @@ import { writeAuditLog } from "@/lib/audit";
 import {
   assertCompanyAccess,
   canEditCustomers,
+  canEditIncentiveCredit,
   canViewCustomers,
 } from "@/lib/customer-permissions";
 import { getCustomerById, updateCustomer } from "@/lib/customer-service";
+import { getBusinessMonthRange } from "@/lib/business-dates";
+import { recalculateExecutiveModuleMastery } from "@/lib/module-mastery-service";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
 import { customerUpdateSchema } from "@/lib/validations";
@@ -42,8 +45,41 @@ export async function GET(_request: Request, context: RouteContext) {
 
 export async function PATCH(request: Request, context: RouteContext) {
   const session = await auth();
-  if (!session?.user || !canEditCustomers(session.user.roles)) {
+  if (!session?.user) {
     return errorResponse("FORBIDDEN", "You do not have permission for this action.", 403);
+  }
+
+  const body = await request.json();
+  const parsed = customerUpdateSchema.safeParse(body);
+  if (!parsed.success) {
+    return errorResponse("VALIDATION_ERROR", "Invalid customer data.", 400, parsed.error.flatten());
+  }
+
+  const isIncentiveOnlyUpdate =
+    parsed.data.incentiveCreditPercent !== undefined &&
+    Object.keys(parsed.data).every((key) => key === "incentiveCreditPercent");
+
+  if (isIncentiveOnlyUpdate) {
+    if (!canEditIncentiveCredit(session.user.roles)) {
+      return errorResponse(
+        "FORBIDDEN",
+        "Only Sales Managers and Super Admins can edit incentive credit %.",
+        403,
+      );
+    }
+  } else if (!canEditCustomers(session.user.roles)) {
+    return errorResponse("FORBIDDEN", "You do not have permission for this action.", 403);
+  }
+
+  if (
+    parsed.data.incentiveCreditPercent !== undefined &&
+    !canEditIncentiveCredit(session.user.roles)
+  ) {
+    return errorResponse(
+      "FORBIDDEN",
+      "Only Sales Managers and Super Admins can edit incentive credit %.",
+      403,
+    );
   }
 
   let companyId: string;
@@ -71,12 +107,6 @@ export async function PATCH(request: Request, context: RouteContext) {
     return errorResponse("NOT_FOUND", "Customer not found.", 404);
   }
 
-  const body = await request.json();
-  const parsed = customerUpdateSchema.safeParse(body);
-  if (!parsed.success) {
-    return errorResponse("VALIDATION_ERROR", "Invalid customer data.", 400, parsed.error.flatten());
-  }
-
   try {
     const customer = await updateCustomer(prisma, id, {
       updatedById: session.user.id,
@@ -93,7 +123,51 @@ export async function PATCH(request: Request, context: RouteContext) {
       assignedSalesUserId: parsed.data.assignedSalesUserId,
       status: parsed.data.status as CustomerStatus | undefined,
       contacts: parsed.data.contacts,
+      incentiveCreditPercent: parsed.data.incentiveCreditPercent,
     });
+
+    if (
+      parsed.data.incentiveCreditPercent !== undefined &&
+      Number(existing.incentiveCreditPercent) !== parsed.data.incentiveCreditPercent
+    ) {
+      const { year, month } = getBusinessMonthRange();
+      const companyIds = [...new Set(session.user.companies.map((company) => company.id))];
+      const affected = await prisma.dispatch.findMany({
+        where: {
+          customerId: id,
+          status: "DISPATCHED",
+          companyId: { in: companyIds },
+        },
+        select: {
+          companyId: true,
+          proformaInvoice: { select: { salesUserId: true } },
+        },
+      });
+      const jobs = new Map<string, { companyId: string; executiveId: string }>();
+      for (const row of affected) {
+        const key = `${row.companyId}:${row.proformaInvoice.salesUserId}`;
+        jobs.set(key, {
+          companyId: row.companyId,
+          executiveId: row.proformaInvoice.salesUserId,
+        });
+      }
+      for (const cid of companyIds) {
+        jobs.set(`${cid}:${existing.assignedSalesUserId}`, {
+          companyId: cid,
+          executiveId: existing.assignedSalesUserId,
+        });
+      }
+      await Promise.all(
+        [...jobs.values()].map((job) =>
+          recalculateExecutiveModuleMastery(prisma, {
+            companyId: job.companyId,
+            executiveId: job.executiveId,
+            year,
+            month,
+          }),
+        ),
+      );
+    }
 
     await writeAuditLog({
       tableName: "customers",
@@ -105,7 +179,8 @@ export async function PATCH(request: Request, context: RouteContext) {
       newValue: customer,
     });
 
-    return NextResponse.json(customer);
+    const serialized = await getCustomerById(prisma, companyId, customer.id);
+    return NextResponse.json(serialized);
   } catch (error) {
     if (error instanceof Error) {
       if (error.message === "DUPLICATE_GST") {

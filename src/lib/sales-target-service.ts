@@ -134,7 +134,7 @@ export async function getModuleTargetProgress(
     }),
   ]);
 
-  const achievedModules = units.modules;
+  const achievedModules = units.modules.counted;
   const remainingModules = Math.max(0, resolved.targetModules - achievedModules);
   const progressPercent =
     resolved.targetModules > 0

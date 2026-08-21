@@ -114,6 +114,15 @@ type ProformaInvoiceDetailData = {
     paymentMode: string;
     receivedInAccount?: string | null;
     referenceNo?: string | null;
+    verificationStatus?: "MANUAL_UNVERIFIED" | "BANK_VERIFIED";
+    bankTransactionId?: string | null;
+    bankTransaction?: {
+      id: string;
+      paymentCode: string | null;
+      referenceNumber: string | null;
+      transactionDate: string;
+    } | null;
+    hasActiveBankAllocation?: boolean;
     recordedBy: { name: string };
   }>;
   paymentSummary: {
@@ -176,6 +185,7 @@ export function ProformaInvoiceDetail({
   dispatchedChallans = [],
   canManage,
   canRecordPayments,
+  canAllocateBankPayments = false,
   canApproveBooking,
   canMarkDispatchToday,
   canApproveDispatchToday,
@@ -192,6 +202,7 @@ export function ProformaInvoiceDetail({
   dispatchedChallans?: DispatchedChallan[];
   canManage: boolean;
   canRecordPayments: boolean;
+  canAllocateBankPayments?: boolean;
   canApproveBooking: boolean;
   canMarkDispatchToday: boolean;
   canApproveDispatchToday: boolean;
@@ -212,6 +223,20 @@ export function ProformaInvoiceDetail({
   const [receivedInAccount, setReceivedInAccount] = useState("");
   const [referenceNo, setReferenceNo] = useState("");
   const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
+  const [showManualPaymentForm, setShowManualPaymentForm] = useState(false);
+  const [showLinkBankForm, setShowLinkBankForm] = useState(false);
+  const [linkPaymentCode, setLinkPaymentCode] = useState("");
+  const [linkAmount, setLinkAmount] = useState("");
+  const [linkPreview, setLinkPreview] = useState<{
+    availableAmount: number;
+    piOutstanding: number;
+    defaultAllocation: number;
+    bankName: string;
+    transactionDate: string;
+    description: string | null;
+  } | null>(null);
+  const [matchingPaymentId, setMatchingPaymentId] = useState<string | null>(null);
+  const [matchPaymentCode, setMatchPaymentCode] = useState("");
   const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id ?? "");
   const [vehicleNo, setVehicleNo] = useState(pi.dispatchToday?.draft.vehicleNo ?? "");
   const [driverName, setDriverName] = useState(pi.dispatchToday?.draft.driverName ?? "");
@@ -234,7 +259,10 @@ export function ProformaInvoiceDetail({
   const showRecordPayment =
     canRecordPayments &&
     canRecordPaymentAgainstPi(pi.status, pi.paymentSummary.outstanding);
-  const showPaymentForm = showRecordPayment || editingPaymentId !== null;
+  const showPaymentForm =
+    (showManualPaymentForm && showRecordPayment) || editingPaymentId !== null;
+  const showBankActions =
+    canAllocateBankPayments && canManageExistingPiPayment(pi.status);
   const readyForDispatch =
     pi.paymentSummary.readyForDispatch ??
     isReadyForDispatch(pi.status, pi.paymentSummary.outstanding, {
@@ -260,6 +288,7 @@ export function ProformaInvoiceDetail({
 
   function resetPaymentForm() {
     setEditingPaymentId(null);
+    setShowManualPaymentForm(false);
     setPaymentAmount("");
     setPaymentDate(new Date().toISOString().slice(0, 10));
     setPaymentMode("BANK_TRANSFER");
@@ -267,8 +296,21 @@ export function ProformaInvoiceDetail({
     setReferenceNo("");
   }
 
+  function resetLinkBankForm() {
+    setShowLinkBankForm(false);
+    setLinkPaymentCode("");
+    setLinkAmount("");
+    setLinkPreview(null);
+  }
+
   function startEditPayment(payment: ProformaInvoiceDetailData["payments"][number]) {
+    if (payment.verificationStatus === "BANK_VERIFIED" || payment.bankTransactionId) {
+      setError("Bank-verified payments cannot be edited. Use Remove Assignment first.");
+      return;
+    }
     setError("");
+    setShowLinkBankForm(false);
+    setShowManualPaymentForm(true);
     setEditingPaymentId(payment.id);
     setPaymentAmount(String(payment.amount));
     setPaymentDate(payment.paymentDate.slice(0, 10));
@@ -342,6 +384,110 @@ export function ProformaInvoiceDetail({
       return;
     }
     if (editingPaymentId === paymentId) resetPaymentForm();
+    router.refresh();
+  }
+
+  async function handlePreviewLinkBank() {
+    setError("");
+    if (!linkPaymentCode.trim()) {
+      setError("Payment code is required.");
+      return;
+    }
+    setLoading(true);
+    const response = await fetch(`/api/proforma-invoices/${pi.id}/payments/link-bank`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paymentCode: linkPaymentCode.trim(), previewOnly: true }),
+    });
+    const data = await response.json();
+    setLoading(false);
+    if (!response.ok) {
+      setLinkPreview(null);
+      setError(data.message ?? "Unable to look up payment code.");
+      return;
+    }
+    setLinkPreview({
+      availableAmount: data.bankTransaction.availableAmount,
+      piOutstanding: data.piOutstanding,
+      defaultAllocation: data.defaultAllocation,
+      bankName: data.bankTransaction.bankName,
+      transactionDate: data.bankTransaction.transactionDate,
+      description: data.bankTransaction.description,
+    });
+    setLinkAmount(String(data.defaultAllocation));
+  }
+
+  async function handleConfirmLinkBank() {
+    setError("");
+    if (!linkPaymentCode.trim()) {
+      setError("Payment code is required.");
+      return;
+    }
+    setLoading(true);
+    const response = await fetch(`/api/proforma-invoices/${pi.id}/payments/link-bank`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        paymentCode: linkPaymentCode.trim(),
+        amount: linkAmount ? Number(linkAmount) : undefined,
+      }),
+    });
+    const data = await response.json();
+    setLoading(false);
+    if (!response.ok) {
+      setError(data.message ?? "Unable to link bank payment.");
+      return;
+    }
+    resetLinkBankForm();
+    router.refresh();
+  }
+
+  async function handleMatchBankPayment(paymentId: string) {
+    setError("");
+    if (!matchPaymentCode.trim()) {
+      setError("Payment code is required to match.");
+      return;
+    }
+    setLoading(true);
+    const response = await fetch(
+      `/api/proforma-invoices/${pi.id}/payments/${paymentId}/match-bank`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentCode: matchPaymentCode.trim() }),
+      },
+    );
+    const data = await response.json();
+    setLoading(false);
+    if (!response.ok) {
+      setError(data.message ?? "Unable to match with bank transaction.");
+      return;
+    }
+    setMatchingPaymentId(null);
+    setMatchPaymentCode("");
+    router.refresh();
+  }
+
+  async function handleRemoveAssignment(paymentId: string) {
+    if (
+      !window.confirm(
+        "Remove bank assignment? The payment stays as Manual Unverified and bank available amount is restored.",
+      )
+    ) {
+      return;
+    }
+    setLoading(true);
+    setError("");
+    const response = await fetch(
+      `/api/proforma-invoices/${pi.id}/payments/${paymentId}/remove-assignment`,
+      { method: "POST" },
+    );
+    const data = await response.json();
+    setLoading(false);
+    if (!response.ok) {
+      setError(data.message ?? "Unable to remove bank assignment.");
+      return;
+    }
     router.refresh();
   }
 
@@ -1196,8 +1342,40 @@ export function ProformaInvoiceDetail({
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
           <CardTitle className="text-base">Payments</CardTitle>
+          <div className="flex flex-wrap gap-2">
+            {showRecordPayment ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={loading}
+                onClick={() => {
+                  resetLinkBankForm();
+                  setEditingPaymentId(null);
+                  setShowManualPaymentForm(true);
+                  setError("");
+                }}
+              >
+                + Add Manual Payment
+              </Button>
+            ) : null}
+            {showBankActions && showRecordPayment ? (
+              <Button
+                type="button"
+                size="sm"
+                disabled={loading}
+                onClick={() => {
+                  resetPaymentForm();
+                  setShowLinkBankForm(true);
+                  setError("");
+                }}
+              >
+                Link Bank Payment
+              </Button>
+            ) : null}
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {pi.payments.length === 0 ? (
@@ -1212,53 +1390,223 @@ export function ProformaInvoiceDetail({
                   <TableHead>Reference</TableHead>
                   <TableHead>Recorded By</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
-                  {canManagePayments ? <TableHead className="w-[1%] text-right">Actions</TableHead> : null}
+                  <TableHead>Verification</TableHead>
+                  {canManagePayments || showBankActions ? (
+                    <TableHead className="w-[1%] text-right">Actions</TableHead>
+                  ) : null}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {pi.payments.map((payment) => (
-                  <TableRow key={payment.id}>
-                    <TableCell>{formatPaymentDate(payment.paymentDate)}</TableCell>
-                    <TableCell>{formatPaymentMode(payment.paymentMode)}</TableCell>
-                    <TableCell>
-                      {payment.receivedInAccount
-                        ? formatReceivedInAccount(payment.receivedInAccount)
-                        : "—"}
-                    </TableCell>
-                    <TableCell>{payment.referenceNo ?? "—"}</TableCell>
-                    <TableCell>{payment.recordedBy.name}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(payment.amount)}</TableCell>
-                    {canManagePayments ? (
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            disabled={loading}
-                            onClick={() => startEditPayment(payment)}
-                            aria-label="Edit payment"
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            disabled={loading}
-                            onClick={() => handleDeletePayment(payment.id)}
-                            aria-label="Delete payment"
-                          >
-                            <Trash2 className="h-4 w-4 text-red-600" />
-                          </Button>
+                {pi.payments.map((payment) => {
+                  const bankLinked =
+                    payment.verificationStatus === "BANK_VERIFIED" ||
+                    Boolean(payment.bankTransactionId) ||
+                    Boolean(payment.hasActiveBankAllocation);
+                  const verified = payment.verificationStatus === "BANK_VERIFIED";
+                  return (
+                    <TableRow key={payment.id}>
+                      <TableCell>{formatPaymentDate(payment.paymentDate)}</TableCell>
+                      <TableCell>{formatPaymentMode(payment.paymentMode)}</TableCell>
+                      <TableCell>
+                        {payment.receivedInAccount
+                          ? formatReceivedInAccount(payment.receivedInAccount)
+                          : "—"}
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-0.5">
+                          <div>{payment.referenceNo ?? "—"}</div>
+                          {payment.bankTransaction?.paymentCode ? (
+                            <div className="font-mono text-xs text-slate-500">
+                              {payment.bankTransaction.paymentCode}
+                            </div>
+                          ) : null}
                         </div>
                       </TableCell>
-                    ) : null}
-                  </TableRow>
-                ))}
+                      <TableCell>{payment.recordedBy.name}</TableCell>
+                      <TableCell className="text-right">
+                        {formatCurrency(payment.amount)}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={verified ? "success" : "warning"}>
+                          {verified ? "Bank Verified" : "Manual Unverified"}
+                        </Badge>
+                      </TableCell>
+                      {canManagePayments || showBankActions ? (
+                        <TableCell className="text-right">
+                          <div className="flex flex-wrap justify-end gap-1">
+                            {canManagePayments && !bankLinked ? (
+                              <>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled={loading}
+                                  onClick={() => startEditPayment(payment)}
+                                  aria-label="Edit payment"
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  disabled={loading}
+                                  onClick={() => handleDeletePayment(payment.id)}
+                                  aria-label="Delete payment"
+                                >
+                                  <Trash2 className="h-4 w-4 text-red-600" />
+                                </Button>
+                              </>
+                            ) : null}
+                            {showBankActions && !verified ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={loading}
+                                onClick={() => {
+                                  setMatchingPaymentId(payment.id);
+                                  setMatchPaymentCode("");
+                                  setError("");
+                                }}
+                              >
+                                Match with Bank
+                              </Button>
+                            ) : null}
+                            {showBankActions && bankLinked ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                disabled={loading}
+                                onClick={() => handleRemoveAssignment(payment.id)}
+                              >
+                                Remove Assignment
+                              </Button>
+                            ) : null}
+                          </div>
+                          {matchingPaymentId === payment.id ? (
+                            <div className="mt-2 flex flex-col items-end gap-2 sm:flex-row sm:justify-end">
+                              <Input
+                                className="max-w-[160px] font-mono uppercase"
+                                placeholder="e.g. P8K4X2"
+                                value={matchPaymentCode}
+                                onChange={(event) =>
+                                  setMatchPaymentCode(event.target.value.toUpperCase())
+                                }
+                              />
+                              <Button
+                                type="button"
+                                size="sm"
+                                disabled={loading}
+                                onClick={() => handleMatchBankPayment(payment.id)}
+                              >
+                                Confirm Match
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                disabled={loading}
+                                onClick={() => {
+                                  setMatchingPaymentId(null);
+                                  setMatchPaymentCode("");
+                                }}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          ) : null}
+                        </TableCell>
+                      ) : null}
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
+
+          {showLinkBankForm ? (
+            <div className="grid gap-3 rounded-md border p-4 md:grid-cols-3 lg:grid-cols-6">
+              <div className="md:col-span-3 lg:col-span-6">
+                <p className="text-sm font-medium text-slate-700">Link Bank Payment</p>
+                <p className="text-xs text-slate-500">
+                  Paste the short payment code from Daily Receipts. Creates a bank-verified
+                  payment on this PI.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>
+                  Payment Code <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  className="font-mono uppercase"
+                  placeholder="P8K4X2"
+                  value={linkPaymentCode}
+                  onChange={(event) => setLinkPaymentCode(event.target.value.toUpperCase())}
+                />
+              </div>
+              <div className="flex items-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={loading}
+                  onClick={handlePreviewLinkBank}
+                >
+                  Look Up
+                </Button>
+              </div>
+              {linkPreview ? (
+                <>
+                  <div className="space-y-2 md:col-span-3 lg:col-span-6">
+                    <p className="text-sm text-slate-600">
+                      {linkPreview.bankName} · {linkPreview.transactionDate}
+                      {linkPreview.description ? ` · ${linkPreview.description}` : ""}
+                    </p>
+                    <p className="text-sm text-slate-600">
+                      Available {formatCurrency(linkPreview.availableAmount)} · PI outstanding{" "}
+                      {formatCurrency(linkPreview.piOutstanding)} · Default{" "}
+                      {formatCurrency(linkPreview.defaultAllocation)}
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Allocate Amount</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={linkAmount}
+                      onChange={(event) => setLinkAmount(event.target.value)}
+                    />
+                  </div>
+                  <div className="flex items-end gap-2">
+                    <Button disabled={loading} onClick={handleConfirmLinkBank}>
+                      Confirm Link
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={loading}
+                      onClick={resetLinkBankForm}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <div className="flex items-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={loading}
+                    onClick={resetLinkBankForm}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              )}
+            </div>
+          ) : null}
 
           {showPaymentForm ? (
             <div className="grid gap-3 rounded-md border p-4 md:grid-cols-3 lg:grid-cols-6">
@@ -1266,7 +1614,14 @@ export function ProformaInvoiceDetail({
                 <div className="md:col-span-3 lg:col-span-6">
                   <p className="text-sm font-medium text-slate-700">Editing payment</p>
                 </div>
-              ) : null}
+              ) : (
+                <div className="md:col-span-3 lg:col-span-6">
+                  <p className="text-sm font-medium text-slate-700">Add Manual Payment</p>
+                  <p className="text-xs text-slate-500">
+                    Saved as Manual Unverified until matched with a bank transaction.
+                  </p>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>
                   Amount <span className="text-red-500">*</span>
@@ -1337,13 +1692,11 @@ export function ProformaInvoiceDetail({
               </div>
               <div className="flex items-end gap-2">
                 <Button disabled={loading} onClick={handleRecordPayment}>
-                  {editingPaymentId ? "Update Payment" : "Record Payment"}
+                  {editingPaymentId ? "Update Payment" : "Save Manual Payment"}
                 </Button>
-                {editingPaymentId ? (
-                  <Button type="button" variant="outline" disabled={loading} onClick={resetPaymentForm}>
-                    Cancel
-                  </Button>
-                ) : null}
+                <Button type="button" variant="outline" disabled={loading} onClick={resetPaymentForm}>
+                  Cancel
+                </Button>
               </div>
             </div>
           ) : null}

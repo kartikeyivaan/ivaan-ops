@@ -211,6 +211,16 @@ export const NAV_ITEMS: NavItem[] = [
     ],
   },
   {
+    label: "Banking",
+    href: "/banking",
+    roles: [ROLES.SUPER_ADMIN, ROLES.ACCOUNTS],
+  },
+  {
+    label: "Daily Receipts",
+    href: "/sales/daily-receipts",
+    roles: [ROLES.SUPER_ADMIN, ROLES.ACCOUNTS, ROLES.SALES_EXECUTIVE],
+  },
+  {
     label: "PI Payments",
     href: "/accounts/payments",
     roles: [ROLES.SUPER_ADMIN, ROLES.ACCOUNTS],

@@ -616,6 +616,46 @@ export const recordPaymentSchema = z.object({
   notes: z.string().optional(),
 });
 
+export const bankAccountCreateSchema = z.object({
+  companyId: z.string().uuid(),
+  bankName: z.string().trim().min(2).max(100),
+  accountName: z.string().trim().min(2).max(150),
+  accountNumber: z.string().trim().min(4).max(40),
+  ifscCode: z
+    .string()
+    .trim()
+    .max(20)
+    .optional()
+    .nullable()
+    .or(z.literal("")),
+  currency: z.string().trim().min(3).max(3).default("INR"),
+  receivedInAccount: z.enum(["SBI", "ICICI", "HDFC"]),
+  isActive: z.boolean().default(true),
+  visibleToSales: z.boolean().default(true),
+});
+
+export const bankAccountUpdateSchema = z.object({
+  bankName: z.string().trim().min(2).max(100).optional(),
+  accountName: z.string().trim().min(2).max(150).optional(),
+  accountNumber: z.string().trim().min(4).max(40).optional(),
+  ifscCode: z
+    .string()
+    .trim()
+    .max(20)
+    .optional()
+    .nullable()
+    .or(z.literal("")),
+  currency: z.string().trim().min(3).max(3).optional(),
+  receivedInAccount: z.enum(["SBI", "ICICI", "HDFC"]).optional(),
+  isActive: z.boolean().optional(),
+  visibleToSales: z.boolean().optional(),
+});
+
+export const bankReconciliationIssueUpdateSchema = z.object({
+  status: z.enum(["OPEN", "UNDER_REVIEW", "RESOLVED", "IGNORED"]),
+  reason: z.string().trim().max(1000).optional().nullable(),
+});
+
 export const updatePaymentSchema = recordPaymentSchema;
 
 export const requestBookingSchema = z.object({

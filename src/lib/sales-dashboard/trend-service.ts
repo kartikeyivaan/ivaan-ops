@@ -102,8 +102,14 @@ export async function getPerformanceTrend(
       lines: {
         select: {
           qty: true,
-          proformaInvoiceItem: { select: { rate: true } },
-          product: { select: { category: { select: { name: true } } } },
+          proformaInvoiceItem: { select: { rate: true, gstRate: true } },
+          product: {
+            select: {
+              pricingType: true,
+              capacity: true,
+              category: { select: { name: true } },
+            },
+          },
         },
       },
     },

@@ -93,6 +93,70 @@ async function main() {
     create: { code: "PCMV", ...pcmvProfile },
   });
 
+  function maskAccountNumber(accountNumber: string): string {
+    const digits = accountNumber.replace(/\D/g, "");
+    if (digits.length <= 4) return `****${digits}`;
+    return `${"*".repeat(Math.max(4, digits.length - 4))}${digits.slice(-4)}`;
+  }
+
+  const bankAccounts = [
+    {
+      companyId: pcmv.id,
+      bankName: "State Bank of India",
+      accountName: "PCM Ventures",
+      accountNumber: "44431999106",
+      ifscCode: "SBIN0018300",
+      receivedInAccount: ReceivedInAccount.SBI,
+    },
+    {
+      companyId: ise.id,
+      bankName: "ICICI Bank",
+      accountName: "Ivaan Solar Energy",
+      accountNumber: "037505012379",
+      ifscCode: "ICIC0000375",
+      receivedInAccount: ReceivedInAccount.ICICI,
+    },
+  ] as const;
+
+  // Retired seed placeholders (do not re-create). Real accounts are managed in Bank Account Master.
+  const retiredPlaceholderAccountNumbers = [
+    "50200000000001",
+    "00000000000001",
+    "50200000000002",
+  ] as const;
+
+  await prisma.bankAccount.updateMany({
+    where: { accountNumber: { in: [...retiredPlaceholderAccountNumbers] } },
+    data: { isActive: false, visibleToSales: false },
+  });
+
+  for (const account of bankAccounts) {
+    await prisma.bankAccount.upsert({
+      where: { accountNumber: account.accountNumber },
+      update: {
+        companyId: account.companyId,
+        bankName: account.bankName,
+        accountName: account.accountName,
+        accountNumberMasked: maskAccountNumber(account.accountNumber),
+        ifscCode: account.ifscCode,
+        receivedInAccount: account.receivedInAccount,
+        isActive: true,
+      },
+      create: {
+        companyId: account.companyId,
+        bankName: account.bankName,
+        accountName: account.accountName,
+        accountNumber: account.accountNumber,
+        accountNumberMasked: maskAccountNumber(account.accountNumber),
+        ifscCode: account.ifscCode,
+        receivedInAccount: account.receivedInAccount,
+        currency: "INR",
+        isActive: true,
+        visibleToSales: true,
+      },
+    });
+  }
+
   const warehouses = [
     { companyId: ise.id, name: "Jalgaon HO", code: "JAL-HO" },
     { companyId: ise.id, name: "Jalgaon Projects", code: "JAL-PRJ" },

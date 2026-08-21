@@ -26,6 +26,17 @@ export function isProductPriceEffectiveOn(
   );
 }
 
+export function calculateLineSubtotal(input: {
+  pricingType: PricingType;
+  capacity: number;
+  qty: number;
+  rate: number;
+}) {
+  return input.pricingType === PricingType.WP
+    ? input.qty * input.capacity * input.rate
+    : input.qty * input.rate;
+}
+
 export function calculateLineAmounts(input: {
   pricingType: PricingType;
   capacity: number;
@@ -33,10 +44,7 @@ export function calculateLineAmounts(input: {
   rate: number;
   gstRate: number;
 }) {
-  const subtotal =
-    input.pricingType === PricingType.WP
-      ? input.qty * input.capacity * input.rate
-      : input.qty * input.rate;
+  const subtotal = calculateLineSubtotal(input);
   const gstAmount = subtotal * (input.gstRate / 100);
   const lineTotal = subtotal + gstAmount;
 

@@ -1,11 +1,10 @@
 import {
   DocumentationStatus,
   InvoiceHandoverStatus,
-  PricingType,
   type PrismaClient,
 } from "@prisma/client";
 import { decimalToNumber } from "@/lib/inventory";
-import { roundMoney } from "@/lib/quotations";
+import { calculateLineSubtotal, roundMoney } from "@/lib/quotations";
 
 const PENDING_STATUSES: InvoiceHandoverStatus[] = [
   InvoiceHandoverStatus.PENDING_INVOICE,
@@ -53,7 +52,7 @@ const detailInclude = {
               capacity: true,
             },
           },
-          proformaInvoiceItem: { select: { rate: true } },
+          proformaInvoiceItem: { select: { rate: true, gstRate: true } },
           serials: {
             select: { serial: { select: { id: true, serialNumber: true } } },
           },
@@ -122,11 +121,15 @@ export async function getInvoiceHandoverDetail(
   const lines = handover.dispatch.lines.map((line) => {
     const qty = decimalToNumber(line.qty);
     const rate = decimalToNumber(line.proformaInvoiceItem.rate);
+    const gstRate = decimalToNumber(line.proformaInvoiceItem.gstRate);
     const capacity = decimalToNumber(line.product.capacity);
-    const amount =
-      line.product.pricingType === PricingType.WP
-        ? roundMoney(qty * capacity * rate)
-        : roundMoney(qty * rate);
+    const subtotal = calculateLineSubtotal({
+      pricingType: line.product.pricingType,
+      capacity,
+      qty,
+      rate,
+    });
+    const amount = roundMoney(subtotal * (1 + gstRate / 100));
     return {
       id: line.id,
       qty,

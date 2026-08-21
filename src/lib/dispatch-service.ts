@@ -37,7 +37,7 @@ import {
 import { calculateOutstanding } from "@/lib/proforma-invoices";
 import { clearExpiredDispatchTodayFlags } from "@/lib/pi-service";
 import { deductNonSerialStock } from "@/lib/transfer-service";
-import { roundMoney } from "@/lib/quotations";
+import { calculateLineSubtotal, roundMoney } from "@/lib/quotations";
 import { recalculateModuleMasteryForDispatch } from "@/lib/module-mastery-service";
 import { isKitCategory } from "@/lib/products";
 import { getKitComponentsForFulfillment } from "@/lib/product-service";
@@ -84,6 +84,8 @@ export const dispatchInclude = {
           displayName: true,
           serialTracking: true,
           hsn: true,
+          pricingType: true,
+          capacity: true,
         },
       },
       proformaInvoiceItem: {
@@ -92,6 +94,7 @@ export const dispatchInclude = {
           qty: true,
           dispatchedQty: true,
           rate: true,
+          gstRate: true,
         },
       },
       serials: {
@@ -151,8 +154,14 @@ function serializeDispatch(dispatch: DispatchRecord) {
     })),
     totalValue: roundMoney(
       dispatch.lines.reduce((sum, line) => {
-        const rate = decimalToNumber(line.proformaInvoiceItem.rate);
-        return sum + decimalToNumber(line.qty) * rate;
+        const subtotal = calculateLineSubtotal({
+          pricingType: line.product.pricingType,
+          capacity: decimalToNumber(line.product.capacity),
+          qty: decimalToNumber(line.qty),
+          rate: decimalToNumber(line.proformaInvoiceItem.rate),
+        });
+        const gstRate = decimalToNumber(line.proformaInvoiceItem.gstRate);
+        return sum + subtotal * (1 + gstRate / 100);
       }, 0),
     ),
   };
@@ -1576,7 +1585,8 @@ export async function getCustomerDispatchMetrics(
     include: {
       lines: {
         include: {
-          proformaInvoiceItem: { select: { rate: true } },
+          proformaInvoiceItem: { select: { rate: true, gstRate: true } },
+          product: { select: { pricingType: true, capacity: true } },
         },
       },
     },
@@ -1588,8 +1598,14 @@ export async function getCustomerDispatchMetrics(
   for (const dispatch of dispatches) {
     if (dispatch.dispatchedAt && dispatch.dispatchedAt >= yearStart) {
       for (const line of dispatch.lines) {
-        totalDispatchValueThisYear +=
-          decimalToNumber(line.qty) * decimalToNumber(line.proformaInvoiceItem.rate);
+        const subtotal = calculateLineSubtotal({
+          pricingType: line.product.pricingType,
+          capacity: decimalToNumber(line.product.capacity),
+          qty: decimalToNumber(line.qty),
+          rate: decimalToNumber(line.proformaInvoiceItem.rate),
+        });
+        const gstRate = decimalToNumber(line.proformaInvoiceItem.gstRate);
+        totalDispatchValueThisYear += subtotal * (1 + gstRate / 100);
       }
     }
   }

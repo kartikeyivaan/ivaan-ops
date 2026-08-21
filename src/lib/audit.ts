@@ -10,6 +10,7 @@ type AuditInput = {
   performedBy?: string | null;
   companyId?: string | null;
   reference?: string | null;
+  reason?: string | null;
 };
 
 export async function writeAuditLog(input: AuditInput) {
@@ -23,6 +24,7 @@ export async function writeAuditLog(input: AuditInput) {
       performedBy: input.performedBy ?? null,
       companyId: input.companyId ?? null,
       reference: input.reference ?? null,
+      reason: input.reason ?? null,
     },
   });
 }
@@ -41,6 +43,7 @@ export async function writeAuditLogTx(
       performedBy: input.performedBy ?? null,
       companyId: input.companyId ?? null,
       reference: input.reference ?? null,
+      reason: input.reason ?? null,
     },
   });
 }

@@ -38,6 +38,20 @@ function mapPaymentMutationError(error: unknown) {
       400,
     );
   }
+  if (error.message === "BANK_LINKED_EDIT_FORBIDDEN") {
+    return errorResponse(
+      "BANK_LINKED",
+      "Bank-verified payments cannot be edited. Use Remove Assignment first.",
+      400,
+    );
+  }
+  if (error.message === "BANK_LINKED_DELETE_FORBIDDEN") {
+    return errorResponse(
+      "BANK_LINKED",
+      "Bank-linked payments cannot be deleted. Use Remove Assignment instead.",
+      400,
+    );
+  }
   return null;
 }
 

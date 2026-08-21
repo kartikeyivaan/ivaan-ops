@@ -4,6 +4,7 @@ import {
   QUOTATION_VALIDITY_DAYS,
   addDays,
   calculateLineAmounts,
+  calculateLineSubtotal,
   formatRevisionQuotationNo,
   isProductPriceEffectiveOn,
   roundMoney,
@@ -36,6 +37,25 @@ describe("quotation calculations", () => {
 
     expect(result.subtotal).toBe(104000);
     expect(result.lineTotal).toBe(roundMoney(104000 * 1.12));
+  });
+
+  it("exposes pre-GST line subtotal for WP and UNIT pricing", () => {
+    expect(
+      calculateLineSubtotal({
+        pricingType: PricingType.WP,
+        capacity: 590,
+        qty: 100,
+        rate: 22,
+      }),
+    ).toBe(1298000);
+    expect(
+      calculateLineSubtotal({
+        pricingType: PricingType.UNIT,
+        capacity: 10,
+        qty: 2,
+        rate: 52000,
+      }),
+    ).toBe(104000);
   });
 
   it("uses a fixed 3-day validity window", () => {

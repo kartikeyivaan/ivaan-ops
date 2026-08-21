@@ -11,7 +11,7 @@ import {
   calculateAdvanceRequired,
   resolveBookingRequirement,
 } from "@/lib/proforma-invoices";
-import { calculateLineAmounts, roundMoney } from "@/lib/quotations";
+import { calculateLineAmounts, calculateLineSubtotal, roundMoney } from "@/lib/quotations";
 import {
   buildExecutiveKpiSummary,
   buildPaymentWhere,
@@ -659,8 +659,10 @@ export async function getDispatchReport(
       },
       lines: {
         include: {
-          product: { select: { displayName: true } },
-          proformaInvoiceItem: { select: { rate: true } },
+          product: {
+            select: { displayName: true, pricingType: true, capacity: true },
+          },
+          proformaInvoiceItem: { select: { rate: true, gstRate: true } },
         },
       },
     },
@@ -684,6 +686,13 @@ export async function getDispatchReport(
     for (const line of dispatch.lines) {
       const qty = decimalToNumber(line.qty);
       const rate = decimalToNumber(line.proformaInvoiceItem.rate);
+      const gstRate = decimalToNumber(line.proformaInvoiceItem.gstRate);
+      const subtotal = calculateLineSubtotal({
+        pricingType: line.product.pricingType,
+        capacity: decimalToNumber(line.product.capacity),
+        qty,
+        rate,
+      });
       rows.push({
         dcNo: dispatch.dcNo,
         piNo: dispatch.proformaInvoice.piNo,
@@ -694,7 +703,7 @@ export async function getDispatchReport(
         dispatchDate: dispatch.dispatchDate.toISOString().slice(0, 10),
         vehicleNo: dispatch.vehicleNo ?? "",
         warehouseName: dispatch.warehouse.name,
-        value: roundMoney(qty * rate),
+        value: roundMoney(subtotal * (1 + gstRate / 100)),
       });
     }
   }

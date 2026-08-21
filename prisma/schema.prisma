@@ -215,6 +215,55 @@ enum ReceivedInAccount {
   HDFC
 }
 
+enum PaymentVerificationStatus {
+  MANUAL_UNVERIFIED
+  BANK_VERIFIED
+}
+
+enum BankStatementParserType {
+  SBI
+  HDFC
+  ICICI
+  UNKNOWN
+}
+
+enum BankStatementImportStatus {
+  PENDING
+  PREVIEWED
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum BankTransactionAssignmentStatus {
+  UNASSIGNED
+  PARTIALLY_ASSIGNED
+  FULLY_ASSIGNED
+  MANUAL_REVIEW
+  NON_CUSTOMER_PAYMENT
+}
+
+enum BankTransactionIssueType {
+  EXISTING_DATA_MISMATCH
+  BALANCE_CONTINUITY_MISMATCH
+  POSSIBLE_MISSING_TRANSACTION
+  SEQUENCE_GAP
+  PARSER_ERROR
+  ACCOUNT_MAPPING_ERROR
+}
+
+enum BankTransactionIssueStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  IGNORED
+}
+
+enum BankPaymentAllocationStatus {
+  ACTIVE
+  RELEASED
+}
+
 enum ItemApprovalStatus {
   AUTO
   PENDING
@@ -548,6 +597,7 @@ model Company {
   moduleMasteryLevels   ModuleMasteryLevel[]
   moduleMasteryProgress ExecutiveModuleMasteryProgress[]
   moduleLevelAchievements ExecutiveModuleLevelAchievement[]
+  bankAccounts          BankAccount[]
 
   @@map("companies")
 }
@@ -651,6 +701,10 @@ model User {
   salesModuleTargetsUpdated         SalesModuleTarget[]            @relation("SalesModuleTargetUpdatedBy")
   moduleMasteryProgress             ExecutiveModuleMasteryProgress[] @relation("ModuleMasteryProgressExecutive")
   moduleLevelAchievements           ExecutiveModuleLevelAchievement[] @relation("ModuleLevelAchievementExecutive")
+  bankStatementImportsUploaded      BankStatementImport[]            @relation("BankStatementImportUploadedBy")
+  bankTransactionIssuesResolved     BankTransactionIssue[]           @relation("BankTransactionIssueResolvedBy")
+  bankTransactionIssuesIgnored      BankTransactionIssue[]           @relation("BankTransactionIssueIgnoredBy")
+  bankPaymentAllocationsCreated     BankPaymentAllocation[]          @relation("BankPaymentAllocationCreatedBy")
 
   @@map("users")
 }
@@ -744,6 +798,8 @@ model AuditLog {
   performedAt DateTime    @default(now()) @map("performed_at")
   companyId   String?     @map("company_id") @db.Uuid
   reference   String?
+  /// Optional free-text reason (e.g. banking ignore, PI cancellation release).
+  reason      String?
 
   performer User? @relation("AuditPerformedBy", fields: [performedBy], references: [id])
 
@@ -810,6 +866,7 @@ model Customer {
   dispatches        Dispatch[]
   invoiceHandovers  InvoiceHandover[]
   documentationRecords DocumentationRecord[]
+  bankPaymentAllocations BankPaymentAllocation[]
 
   @@index([customerName])
   @@index([city])
@@ -1483,6 +1540,7 @@ model ProformaInvoice {
   inventoryTransfers    InventoryTransfer[]
   crossCompanyPlans     PiCrossCompanyTransferPlan[]
   editRequests          ProformaInvoiceEditRequest[]
+  bankPaymentAllocations BankPaymentAllocation[]
 
   @@index([companyId, status])
   @@index([customerId])
@@ -1551,27 +1609,35 @@ model ProformaInvoiceSerial {
 }
 
 model Payment {
-  id                String             @id @default(uuid()) @db.Uuid
-  companyId         String             @map("company_id") @db.Uuid
-  customerId        String             @map("customer_id") @db.Uuid
-  proformaInvoiceId String             @map("proforma_invoice_id") @db.Uuid
-  amount            Decimal            @db.Decimal(14, 2)
-  paymentDate       DateTime           @map("payment_date") @db.Date
-  paymentMode       PaymentMode        @map("payment_mode")
-  receivedInAccount ReceivedInAccount? @map("received_in_account")
-  referenceNo       String?            @map("reference_no")
-  notes             String?
-  recordedById      String             @map("recorded_by") @db.Uuid
-  createdAt         DateTime           @default(now()) @map("created_at")
+  id                 String                    @id @default(uuid()) @db.Uuid
+  companyId          String                    @map("company_id") @db.Uuid
+  customerId         String                    @map("customer_id") @db.Uuid
+  proformaInvoiceId  String                    @map("proforma_invoice_id") @db.Uuid
+  amount             Decimal                   @db.Decimal(14, 2)
+  paymentDate        DateTime                  @map("payment_date") @db.Date
+  paymentMode        PaymentMode               @map("payment_mode")
+  receivedInAccount  ReceivedInAccount?        @map("received_in_account")
+  referenceNo        String?                   @map("reference_no")
+  notes              String?
+  /// Historical payments default to MANUAL_UNVERIFIED; bank-linked flows set BANK_VERIFIED.
+  verificationStatus PaymentVerificationStatus @default(MANUAL_UNVERIFIED) @map("verification_status")
+  bankTransactionId  String?                   @map("bank_transaction_id") @db.Uuid
+  recordedById       String                    @map("recorded_by") @db.Uuid
+  createdAt          DateTime                  @default(now()) @map("created_at")
+  updatedAt          DateTime                  @updatedAt @map("updated_at")
 
-  company         Company         @relation(fields: [companyId], references: [id])
-  customer        Customer        @relation(fields: [customerId], references: [id])
-  proformaInvoice ProformaInvoice @relation(fields: [proformaInvoiceId], references: [id])
-  recordedBy      User            @relation("PaymentRecordedBy", fields: [recordedById], references: [id])
+  company          Company                 @relation(fields: [companyId], references: [id])
+  customer         Customer                @relation(fields: [customerId], references: [id])
+  proformaInvoice  ProformaInvoice         @relation(fields: [proformaInvoiceId], references: [id])
+  recordedBy       User                    @relation("PaymentRecordedBy", fields: [recordedById], references: [id])
+  bankTransaction  BankTransaction?        @relation(fields: [bankTransactionId], references: [id], onDelete: SetNull)
+  bankAllocations  BankPaymentAllocation[]
 
   @@index([proformaInvoiceId])
   @@index([customerId])
   @@index([companyId, paymentDate])
+  @@index([bankTransactionId])
+  @@index([verificationStatus])
   @@map("payments")
 }
 
@@ -2604,4 +2670,164 @@ model ExecutiveModuleLevelAchievement {
   @@unique([companyId, executiveId, year, month, levelNumber, godLevelRank])
   @@index([executiveId, year, month])
   @@map("executive_module_level_achievements")
+}
+
+// ─── Banking & payment reconciliation ───────────────────────────────────────
+
+model BankAccount {
+  id                   String   @id @default(uuid()) @db.Uuid
+  companyId            String   @map("company_id") @db.Uuid
+  bankName             String   @map("bank_name")
+  accountName          String   @map("account_name")
+  accountNumber        String   @map("account_number")
+  accountNumberMasked  String   @map("account_number_masked")
+  ifscCode             String?  @map("ifsc_code")
+  currency             String   @default("INR")
+  /// Maps to ReceivedInAccount on PI payments (SBI / HDFC / ICICI).
+  receivedInAccount    ReceivedInAccount @map("received_in_account")
+  isActive             Boolean  @default(true) @map("is_active")
+  /// When true, credit receipts from this account appear in Sales Daily Receipts.
+  visibleToSales       Boolean  @default(true) @map("visible_to_sales")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  company      Company               @relation(fields: [companyId], references: [id])
+  imports      BankStatementImport[]
+  transactions BankTransaction[]
+  issues       BankTransactionIssue[]
+
+  @@unique([accountNumber])
+  @@index([companyId, isActive])
+  @@index([companyId, visibleToSales])
+  @@index([companyId, receivedInAccount])
+  @@map("bank_accounts")
+}
+
+model BankStatementImport {
+  id                      String                     @id @default(uuid()) @db.Uuid
+  bankAccountId           String?                    @map("bank_account_id") @db.Uuid
+  originalFilename        String                     @map("original_filename")
+  fileHash                String                     @map("file_hash")
+  parserType              BankStatementParserType    @map("parser_type")
+  statementStartDate      DateTime?                  @map("statement_start_date") @db.Date
+  statementEndDate        DateTime?                  @map("statement_end_date") @db.Date
+  transactionsDetected    Int                        @default(0) @map("transactions_detected")
+  newTransactions         Int                        @default(0) @map("new_transactions")
+  duplicatesDetected      Int                        @default(0) @map("duplicates_detected")
+  mismatchesDetected      Int                        @default(0) @map("mismatches_detected")
+  balanceIssuesDetected   Int                        @default(0) @map("balance_issues_detected")
+  processingStatus        BankStatementImportStatus  @default(PENDING) @map("processing_status")
+  errorMessage            String?                    @map("error_message")
+  /// Preview analysis JSON (normalized txns + classifications). No original file content.
+  analysisPayload         Json?                      @map("analysis_payload")
+  uploadedById            String                     @map("uploaded_by") @db.Uuid
+  uploadedAt              DateTime                   @default(now()) @map("uploaded_at")
+  /// Set when the temporary upload file is deleted (success or failure). Never store a permanent file path.
+  fileDeletedAt           DateTime?                  @map("file_deleted_at")
+  completedAt             DateTime?                  @map("completed_at")
+
+  bankAccount  BankAccount?           @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
+  uploadedBy   User                   @relation("BankStatementImportUploadedBy", fields: [uploadedById], references: [id])
+  transactions BankTransaction[]
+  issues       BankTransactionIssue[]
+
+  @@index([bankAccountId, uploadedAt])
+  @@index([fileHash])
+  @@index([processingStatus])
+  @@map("bank_statement_imports")
+}
+
+model BankTransaction {
+  id                    String                          @id @default(uuid()) @db.Uuid
+  bankAccountId         String                          @map("bank_account_id") @db.Uuid
+  sourceImportId        String?                         @map("source_import_id") @db.Uuid
+  transactionDate       DateTime                        @map("transaction_date") @db.Date
+  valueDate             DateTime?                       @map("value_date") @db.Date
+  description           String
+  referenceNumber       String?                         @map("reference_number")
+  debitAmount           Decimal                         @default(0) @map("debit_amount") @db.Decimal(14, 2)
+  creditAmount          Decimal                         @default(0) @map("credit_amount") @db.Decimal(14, 2)
+  runningBalance        Decimal                         @map("running_balance") @db.Decimal(14, 2)
+  statementSequence     Int                             @map("statement_sequence")
+  sourceRowNumber       Int?                            @map("source_row_number")
+  transactionFingerprint String                         @map("transaction_fingerprint")
+  /// Short unique copyable code for credit receipts (e.g. P8K4X2). Null for debits.
+  paymentCode           String?                         @unique @map("payment_code")
+  assignmentStatus      BankTransactionAssignmentStatus @default(UNASSIGNED) @map("assignment_status")
+  createdAt             DateTime                        @default(now()) @map("created_at")
+  updatedAt             DateTime                        @updatedAt @map("updated_at")
+
+  bankAccount   BankAccount             @relation(fields: [bankAccountId], references: [id])
+  sourceImport  BankStatementImport?    @relation(fields: [sourceImportId], references: [id], onDelete: SetNull)
+  payments      Payment[]
+  allocations   BankPaymentAllocation[]
+  issues        BankTransactionIssue[]
+
+  @@unique([bankAccountId, transactionFingerprint])
+  @@index([bankAccountId, transactionDate])
+  @@index([bankAccountId, referenceNumber])
+  @@index([bankAccountId, assignmentStatus])
+  @@index([sourceImportId])
+  @@map("bank_transactions")
+}
+
+model BankTransactionIssue {
+  id                String                      @id @default(uuid()) @db.Uuid
+  bankAccountId     String?                     @map("bank_account_id") @db.Uuid
+  bankTransactionId String?                     @map("bank_transaction_id") @db.Uuid
+  sourceImportId    String?                     @map("source_import_id") @db.Uuid
+  issueType         BankTransactionIssueType    @map("issue_type")
+  status            BankTransactionIssueStatus  @default(OPEN)
+  /// Field-level existing vs uploaded values for mismatch investigation.
+  existingValues    Json?                       @map("existing_values")
+  uploadedValues    Json?                       @map("uploaded_values")
+  details           Json?
+  resolutionReason  String?                     @map("resolution_reason")
+  resolvedById      String?                     @map("resolved_by") @db.Uuid
+  resolvedAt        DateTime?                   @map("resolved_at")
+  ignoredById       String?                     @map("ignored_by") @db.Uuid
+  ignoredAt         DateTime?                   @map("ignored_at")
+  createdAt         DateTime                    @default(now()) @map("created_at")
+  updatedAt         DateTime                    @updatedAt @map("updated_at")
+
+  bankAccount     BankAccount?          @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
+  bankTransaction BankTransaction?      @relation(fields: [bankTransactionId], references: [id], onDelete: SetNull)
+  sourceImport    BankStatementImport?  @relation(fields: [sourceImportId], references: [id], onDelete: SetNull)
+  resolvedBy      User?                 @relation("BankTransactionIssueResolvedBy", fields: [resolvedById], references: [id])
+  ignoredBy       User?                 @relation("BankTransactionIssueIgnoredBy", fields: [ignoredById], references: [id])
+
+  @@index([status, issueType])
+  @@index([bankAccountId, status])
+  @@index([sourceImportId])
+  @@index([bankTransactionId])
+  @@map("bank_transaction_issues")
+}
+
+model BankPaymentAllocation {
+  id                   String                      @id @default(uuid()) @db.Uuid
+  bankTransactionId    String                      @map("bank_transaction_id") @db.Uuid
+  piPaymentId          String                      @map("pi_payment_id") @db.Uuid
+  piId                 String                      @map("pi_id") @db.Uuid
+  customerId           String                      @map("customer_id") @db.Uuid
+  customerCompanyName  String                      @map("customer_company_name")
+  customerGstNumber    String                      @map("customer_gst_number")
+  allocatedAmount      Decimal                     @map("allocated_amount") @db.Decimal(14, 2)
+  allocationStatus     BankPaymentAllocationStatus @default(ACTIVE) @map("allocation_status")
+  createdById          String                      @map("created_by") @db.Uuid
+  createdAt            DateTime                    @default(now()) @map("created_at")
+  updatedAt            DateTime                    @updatedAt @map("updated_at")
+  releasedAt           DateTime?                   @map("released_at")
+  releaseReason        String?                     @map("release_reason")
+
+  bankTransaction BankTransaction @relation(fields: [bankTransactionId], references: [id])
+  piPayment       Payment         @relation(fields: [piPaymentId], references: [id])
+  proformaInvoice ProformaInvoice @relation(fields: [piId], references: [id])
+  customer        Customer        @relation(fields: [customerId], references: [id])
+  createdBy       User            @relation("BankPaymentAllocationCreatedBy", fields: [createdById], references: [id])
+
+  @@index([bankTransactionId, allocationStatus])
+  @@index([piPaymentId])
+  @@index([piId, allocationStatus])
+  @@index([customerId])
+  @@map("bank_payment_allocations")
 }

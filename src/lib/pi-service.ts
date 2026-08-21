@@ -15,6 +15,11 @@ import {
   type PrismaClient,
 } from "@prisma/client";
 import { writeAuditLogTx } from "@/lib/audit";
+import { releaseBankAllocationsForCancelledPi } from "@/lib/bank-allocation-service";
+import {
+  BANKING_AUDIT_EVENTS,
+  writeBankingAuditTx,
+} from "@/lib/banking-audit";
 import {
   createOrReplaceCrossCompanyPlan,
   getCompanyAvailableQty,
@@ -139,6 +144,18 @@ export const piInclude = {
   payments: {
     include: {
       recordedBy: { select: { id: true, name: true } },
+      bankTransaction: {
+        select: {
+          id: true,
+          paymentCode: true,
+          referenceNumber: true,
+          transactionDate: true,
+        },
+      },
+      bankAllocations: {
+        where: { allocationStatus: "ACTIVE" },
+        select: { id: true, allocatedAmount: true },
+      },
     },
     orderBy: { paymentDate: "desc" as const },
   },
@@ -335,6 +352,19 @@ function serializePi(
       receivedInAccount: payment.receivedInAccount,
       referenceNo: payment.referenceNo,
       notes: payment.notes,
+      verificationStatus: payment.verificationStatus,
+      bankTransactionId: payment.bankTransactionId,
+      bankTransaction: payment.bankTransaction
+        ? {
+            id: payment.bankTransaction.id,
+            paymentCode: payment.bankTransaction.paymentCode,
+            referenceNumber: payment.bankTransaction.referenceNumber,
+            transactionDate: payment.bankTransaction.transactionDate
+              .toISOString()
+              .slice(0, 10),
+          }
+        : null,
+      hasActiveBankAllocation: payment.bankAllocations.length > 0,
       recordedBy: payment.recordedBy,
     })),
     credit,
@@ -1495,15 +1525,21 @@ export async function recordPayment(
         receivedInAccount: input.receivedInAccount as never,
         referenceNo: input.referenceNo,
         notes: input.notes,
+        verificationStatus: "MANUAL_UNVERIFIED",
         recordedById: input.recordedById,
       },
     });
 
-    await writeAuditLogTx(tx, {
+    await writeBankingAuditTx(tx, {
+      eventType: BANKING_AUDIT_EVENTS.MANUAL_PAYMENT_CREATE,
       tableName: "payments",
       recordId: payment.id,
       action: "CREATE",
-      newValue: { amount: input.amount, piNo: pi.piNo },
+      newValue: {
+        amount: input.amount,
+        piNo: pi.piNo,
+        verificationStatus: "MANUAL_UNVERIFIED",
+      },
       performedBy: input.recordedById,
       companyId: input.companyId,
       reference: pi.piNo,
@@ -1572,6 +1608,10 @@ export async function updatePayment(
     input.piId,
     input.paymentId,
   );
+
+  if (payment.verificationStatus === "BANK_VERIFIED" || payment.bankTransactionId) {
+    throw new Error("BANK_LINKED_EDIT_FORBIDDEN");
+  }
 
   const totalPaid = pi.payments.reduce(
     (sum, row) => sum + decimalToNumber(row.amount),
@@ -1653,6 +1693,10 @@ export async function deletePayment(
     input.piId,
     input.paymentId,
   );
+
+  if (payment.verificationStatus === "BANK_VERIFIED" || payment.bankTransactionId) {
+    throw new Error("BANK_LINKED_DELETE_FORBIDDEN");
+  }
 
   return prisma.$transaction(async (tx) => {
     await tx.payment.delete({ where: { id: payment.id } });
@@ -3322,6 +3366,13 @@ export async function approvePiCancel(
 
   return prisma.$transaction(async (tx) => {
     await releasePiBookingReservations(tx, {
+      companyId: input.companyId,
+      piId: pi.id,
+      piNo: pi.piNo,
+      performedById: input.approvedById,
+    });
+
+    await releaseBankAllocationsForCancelledPi(tx, {
       companyId: input.companyId,
       piId: pi.id,
       piNo: pi.piNo,

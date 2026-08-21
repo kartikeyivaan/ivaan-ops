@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { buildDispatchWhatsappUrl } from "@/lib/dispatch-share";
 import { listPiDispatchedChallans } from "@/lib/dispatch-service";
+import { canAllocateBankPayments } from "@/lib/banking-permissions";
 import {
   canApproveBooking,
   canApproveDispatchToday,
@@ -87,6 +88,7 @@ export default async function ProformaInvoiceDetailPage({ params }: PageProps) {
       dispatchedChallans={dispatchedChallanDetails}
       canManage={canManageProformaInvoices(session.user.roles)}
       canRecordPayments={canRecordPayments(session.user.roles)}
+      canAllocateBankPayments={canAllocateBankPayments(session.user.roles)}
       canApproveBooking={canApproveBooking(session.user.roles)}
       canMarkDispatchToday={canMarkDispatchToday(session.user.roles)}
       canApproveDispatchToday={canApproveDispatchToday(session.user.roles)}

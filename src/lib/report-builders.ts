@@ -1,6 +1,7 @@
 import {
   CustomerType,
   DispatchStatus,
+  PricingType,
   QuotationStatus,
   type Prisma,
   type PrismaClient,
@@ -11,7 +12,7 @@ import {
   type DashboardPeriod,
 } from "@/lib/business-dates";
 import { decimalToNumber } from "@/lib/inventory";
-import { roundMoney } from "@/lib/quotations";
+import { calculateLineSubtotal, roundMoney } from "@/lib/quotations";
 import { ROLES } from "@/lib/rbac";
 
 export type SalesMetricFilters = {
@@ -171,15 +172,28 @@ export function sumDispatchedValueFromLines(
   dispatches: ReadonlyArray<{
     lines: ReadonlyArray<{
       qty: Prisma.Decimal | number | string;
-      proformaInvoiceItem: { rate: Prisma.Decimal | number | string };
+      proformaInvoiceItem: {
+        rate: Prisma.Decimal | number | string;
+        gstRate: Prisma.Decimal | number | string;
+      };
+      product: {
+        pricingType: PricingType;
+        capacity: Prisma.Decimal | number | string;
+      };
     }>;
   }>,
 ): number {
   return roundMoney(
     dispatches.reduce((sum, dispatch) => {
       const lineTotal = dispatch.lines.reduce((lineSum, line) => {
-        const rate = decimalToNumber(line.proformaInvoiceItem.rate);
-        return lineSum + decimalToNumber(line.qty) * rate;
+        const subtotal = calculateLineSubtotal({
+          pricingType: line.product.pricingType,
+          capacity: decimalToNumber(line.product.capacity),
+          qty: decimalToNumber(line.qty),
+          rate: decimalToNumber(line.proformaInvoiceItem.rate),
+        });
+        const gstRate = decimalToNumber(line.proformaInvoiceItem.gstRate);
+        return lineSum + subtotal * (1 + gstRate / 100);
       }, 0);
       return sum + lineTotal;
     }, 0),
@@ -277,8 +291,14 @@ export async function fetchDispatchesForMetrics(
       lines: {
         select: {
           qty: true,
-          proformaInvoiceItem: { select: { rate: true } },
-          product: { select: { category: { select: { name: true } } } },
+          proformaInvoiceItem: { select: { rate: true, gstRate: true } },
+          product: {
+            select: {
+              pricingType: true,
+              capacity: true,
+              category: { select: { name: true } },
+            },
+          },
         },
       },
     },

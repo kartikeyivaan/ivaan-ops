@@ -46,19 +46,23 @@ export async function detectBankStatementParserType(
     return "ICICI";
   }
 
-  // HDFC before SBI: both use Date/Value Dt style headers; SBI heuristics were matching HDFC files.
-  if (looksLikeHdfcStatement(rows) || sheetText.includes("hdfc bank")) {
-    return "HDFC";
-  }
+  // Prefer account IFSC / column structure over bank names in narrations
+  // (SBI statements often contain "HDFC BANK LTD" / NEFT*HDFC0… counterparties).
+  const hasSbinAccountIfsc = /ifs(?:c)?\s*code\s*:?\s*sbin0/i.test(sheetText);
+  const hasHdfcAccountIfsc = /rtgs\/neft\s*ifsc\s*:?\s*hdfc0/i.test(sheetText);
 
-  if (looksLikeSbiStatement(rows) || sheetText.includes("state bank of india")) {
+  if (hasSbinAccountIfsc || looksLikeSbiStatement(rows) || sheetText.includes("state bank of india")) {
     return "SBI";
   }
 
+  if (hasHdfcAccountIfsc || looksLikeHdfcStatement(rows)) {
+    return "HDFC";
+  }
+
   const haystack = `${lowerName}\n${sheetText}`;
-  // Filename / bank-name hints only (avoid matching counterparty IFSC like HDFC0 in narrations).
-  if (/\bhdfc\b/.test(haystack) || lowerName.includes("hdfc")) return "HDFC";
-  if (/\bsbi\b/.test(haystack) || haystack.includes("sbin") || lowerName.includes("sbi")) return "SBI";
+  // Filename hints only for ambiguous sheets (avoid narration "hdfc" / counterparty IFSC).
+  if (lowerName.includes("hdfc")) return "HDFC";
+  if (/\bsbi\b/.test(lowerName) || lowerName.includes("sbi")) return "SBI";
   if (/\bicici\b/.test(haystack) || lowerName.includes("icici")) return "ICICI";
   return "UNKNOWN";
 }

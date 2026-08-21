@@ -155,6 +155,68 @@ describe("SBIStatementParser", () => {
     }
   });
 
+  it("detects OnlineSBI export as SBI even when narrations mention HDFC BANK", async () => {
+    const rows = [
+      ["Account Name", "PCM VENTURES"],
+      ["Account Number", "_00000044431999106"],
+      ["IFS Code", "SBIN0018300"],
+      ["Start Date", "01-May-26"],
+      ["End Date", "31-May-26"],
+      [
+        "Txn Date",
+        "Value Date",
+        "Description",
+        "Ref No./Cheque No.",
+        "Branch Code",
+        "Debit",
+        "Credit",
+        "Balance",
+      ],
+      [
+        "02-May-26",
+        "02-May-26",
+        "TO CLEARING-Chq 078278 Sess 4 HDFC BANK LTD PCM VEN 0011982566--78278",
+        " / 78278",
+        "5076",
+        "50,000.00",
+        "",
+        "30,39,487.45",
+      ],
+      [
+        "02-May-26",
+        "02-May-26",
+        "BY TRANSFER-NEFT*HDFC0000001*HDFCH00969643526*DR VISION SOLAR*--",
+        "TRANSFER FROM 99509044300 /",
+        "4430",
+        "",
+        "1,00,000.00",
+        "31,39,487.45",
+      ],
+    ];
+    const sheet = XLSX.utils.aoa_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, "Sheet1");
+    const buffer = Buffer.from(XLSX.write(workbook, { type: "buffer", bookType: "xls" }));
+    const { tempPath } = await writeTempBankStatementFile(
+      "1787348956590NHxIBj5EyQ4ViwKq.xls",
+      buffer,
+    );
+    try {
+      const detected = await detectBankStatementParserType(
+        tempPath,
+        "1787348956590NHxIBj5EyQ4ViwKq.xls",
+      );
+      expect(detected).toBe("SBI");
+      const parsed = await new SBIStatementParser().parse(tempPath);
+      expect(parsed.parserType).toBe("SBI");
+      expect(parsed.transactions).toHaveLength(2);
+      expect(parsed.account.accountNumber).toBe("00000044431999106");
+      expect(parsed.account.ifscCode).toBe("SBIN0018300");
+    } finally {
+      await deleteTempBankStatementFile(tempPath);
+    }
+  });
+
   it("warns when account number is missing from metadata", async () => {
     const buffer = buildSbiWorkbookBuffer({ omitAccount: true });
     const { tempPath } = await writeTempBankStatementFile("sbi-no-account.xlsx", buffer);

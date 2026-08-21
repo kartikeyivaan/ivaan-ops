@@ -159,7 +159,8 @@ function extractMetadata(rows: unknown[][], headerIndex: number): {
       accountName = nameMatch[1]!.trim().slice(0, 150) || null;
     }
 
-    const ifscMatch = /\bIFSC\s*(?:code)?\s*[:.\-]?\s*([A-Z]{4}0[A-Z0-9]{6})\b/i.exec(joined);
+    const ifscMatch =
+      /\bIFS(?:C)?\s*(?:code)?\s*[:.\-]?\s*([A-Z]{4}0[A-Z0-9]{6})\b/i.exec(joined);
     if (ifscMatch && !ifscCode) {
       ifscCode = ifscMatch[1]!.toUpperCase();
     }
@@ -183,7 +184,7 @@ function extractMetadata(rows: unknown[][], headerIndex: number): {
       if ((key === "account name" || key.includes("account holder")) && !accountName) {
         accountName = value.slice(0, 150) || null;
       }
-      if (key.includes("ifsc") && !ifscCode) {
+      if ((key.includes("ifsc") || key === "ifs code" || key.includes("ifs code")) && !ifscCode) {
         const m = /([A-Z]{4}0[A-Z0-9]{6})/i.exec(value);
         ifscCode = m?.[1]?.toUpperCase() ?? null;
       }
@@ -307,10 +308,13 @@ export function looksLikeSbiStatement(rows: unknown[][]): boolean {
     .toLowerCase();
 
   // Do not claim HDFC NetBanking sheets (Withdrawal/Deposit Amt + Narration).
-  if (sample.includes("hdfc bank") || sample.includes("withdrawal amt")) {
+  // Do NOT reject on "hdfc bank" — that often appears in SBI clearing/NEFT narrations.
+  if (sample.includes("withdrawal amt") && sample.includes("deposit amt")) {
     return false;
   }
 
+  // OnlineSBI metadata: "IFS Code : SBIN0…" (also "IFSC Code").
+  if (/ifs(?:c)?\s*code\s*:?\s*sbin0/i.test(sample)) return true;
   if (sample.includes("state bank of india")) return true;
   if (/\bsbi\b/.test(sample) && sample.includes("balance")) return true;
   if (detectHeaderRow(rows) && (sample.includes("txn date") || sample.includes("value date"))) {

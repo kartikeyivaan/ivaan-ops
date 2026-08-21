@@ -313,7 +313,15 @@ export function looksLikeHdfcStatement(rows: unknown[][]): boolean {
     .join("\n")
     .toLowerCase();
 
-  if (sample.includes("hdfc bank")) return true;
+  // OnlineSBI / YONO exports use Txn Date + Debit/Credit — never treat as HDFC.
+  if (sample.includes("txn date") && sample.includes("debit") && sample.includes("credit")) {
+    return false;
+  }
+  // Account IFSC labeled SBIN… means this is an SBI statement (ignore HDFC in narrations).
+  if (/ifs(?:c)?\s*code\s*:?\s*sbin0/i.test(sample)) {
+    return false;
+  }
+
   if (
     sample.includes("withdrawal amt") &&
     sample.includes("deposit amt") &&
@@ -321,9 +329,11 @@ export function looksLikeHdfcStatement(rows: unknown[][]): boolean {
   ) {
     return true;
   }
-  // RTGS/NEFT IFSC :HDFC0… is in the statement header, not only a counterparty UTR.
+  // Statement-header IFSC only (not counterparty NEFT*HDFC0… / "HDFC BANK LTD" in narration).
   if (/rtgs\/neft\s*ifsc\s*:?\s*hdfc0/i.test(sample) && sample.includes("narration")) {
     return true;
   }
+  // Branding in the title block is OK only with classic HDFC columns already checked above,
+  // or when the HDFC header row detector succeeds (Narration / Withdrawal / Closing Balance).
   return Boolean(detectHeaderRow(rows));
 }

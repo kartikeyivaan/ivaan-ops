@@ -29,6 +29,11 @@ function mapLinkError(error: unknown) {
     INVALID_STATUS: ["INVALID_STATUS", "Payments cannot be linked on this PI status.", 400],
     INVALID_PAYMENT_CODE: ["VALIDATION_ERROR", "Invalid payment code format.", 400],
     PAYMENT_CODE_NOT_FOUND: ["NOT_FOUND", "No credit transaction found for that payment code.", 404],
+    BANK_COMPANY_MISMATCH: [
+      "VALIDATION_ERROR",
+      "This payment code belongs to a different firm. Use Daily Receipts for the same company as the PI.",
+      400,
+    ],
     BANK_FULLY_ALLOCATED: ["VALIDATION_ERROR", "This bank receipt is fully allocated.", 400],
     PI_FULLY_PAID: ["VALIDATION_ERROR", "This PI has no outstanding balance.", 400],
     DIFFERENT_CUSTOMER: [

@@ -1,5 +1,4 @@
 import type { DashboardPeriod } from "@/lib/business-dates";
-import { formatCurrency } from "@/lib/quotations";
 import type { AgeingBucket } from "@/lib/reports";
 
 export const PERIOD_LABELS: Record<DashboardPeriod, string> = {
@@ -52,7 +51,15 @@ export function formatCompactNumber(value: number): string {
   return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(value);
 }
 
-export { formatCurrency };
+/** Dashboard money display: amount in Lakh INR (1 Lakh = ₹1,00,000). */
+export function formatCurrency(value: number): string {
+  const lakhs = value / 100_000;
+  const formatted = new Intl.NumberFormat("en-IN", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(lakhs);
+  return `₹${formatted} Lakh`;
+}
 
 export function formatChangePercent(changePercent: number | null): string | null {
   if (changePercent === null) return null;

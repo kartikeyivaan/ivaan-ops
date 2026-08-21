@@ -8,6 +8,7 @@ import {
 import {
   buildDispatchedUnitTotals,
   buildKpiStrip,
+  toCompanyIdFilter,
   type SalesMetricFilters,
 } from "@/lib/report-builders";
 import { getDispatchTodaySummary } from "@/lib/sales-dashboard/dispatch-today-service";
@@ -21,9 +22,12 @@ import { getTeamScoreboard } from "@/lib/sales-dashboard/team-service";
 import { getPipelineRisks } from "@/lib/sales-dashboard/risk-service";
 import { getCurrentMonthModuleTargetProgress } from "@/lib/sales-target-service";
 import { getExecutiveModuleMastery } from "@/lib/module-mastery-service";
+import { roundMoney } from "@/lib/quotations";
 import type {
   ExecutiveDashboardDto,
   ManagerDashboardDto,
+  ModuleMasteryProgressDto,
+  ModuleTargetProgressDto,
   SalesDashboardDto,
   SalesDashboardScope,
 } from "@/lib/sales-dashboard/dashboard-types";
@@ -42,10 +46,59 @@ function buildMetricFilters(
   executiveId?: string,
 ): SalesMetricFilters {
   return {
-    companyId: scope.companyId,
+    companyId: toCompanyIdFilter(scope.companyIds),
     salesUserId: executiveId ?? scope.restrictToUserId ?? undefined,
     fromDate,
     toDate,
+  };
+}
+
+async function sumModuleTargetProgress(
+  prisma: PrismaClient,
+  companyIds: string[],
+  executiveId: string,
+): Promise<ModuleTargetProgressDto> {
+  const rows = await Promise.all(
+    companyIds.map((companyId) =>
+      getCurrentMonthModuleTargetProgress(prisma, companyId, executiveId),
+    ),
+  );
+  const first = rows[0]!;
+  const targetModules = rows.reduce((sum, row) => sum + row.targetModules, 0);
+  const achievedModules = rows.reduce((sum, row) => sum + row.achievedModules, 0);
+  const remainingModules = Math.max(0, targetModules - achievedModules);
+  const progressPercent =
+    targetModules > 0 ? Math.min(100, Math.round((achievedModules / targetModules) * 100)) : 0;
+
+  return {
+    year: first.year,
+    month: first.month,
+    targetModules,
+    achievedModules,
+    remainingModules,
+    progressPercent,
+    source: companyIds.length > 1 ? "COMPANY_DEFAULT" : first.source,
+  };
+}
+
+async function sumModuleMasteryProgress(
+  prisma: PrismaClient,
+  companyIds: string[],
+  executiveId: string,
+): Promise<ModuleMasteryProgressDto> {
+  const rows = await Promise.all(
+    companyIds.map((companyId) => getExecutiveModuleMastery(prisma, companyId, executiveId)),
+  );
+  if (rows.length === 1) return rows[0]!;
+
+  const modulesDispatched = rows.reduce((sum, row) => sum + row.modulesDispatched, 0);
+  // Prefer the highest-progress company for level display when aggregating.
+  const lead = rows.reduce((best, row) =>
+    row.modulesDispatched > best.modulesDispatched ? row : best,
+  );
+  return {
+    ...lead,
+    modulesDispatched: roundMoney(modulesDispatched),
   };
 }
 
@@ -63,6 +116,7 @@ export async function getExecutiveDashboard(
   const previousRange = getPreviousPeriodRange(range.fromDate, range.toDate);
   const executiveId = scope.restrictToUserId ?? scope.userId;
   const filters = buildMetricFilters(scope, range.fromDate, range.toDate, executiveId);
+  const companyFilter = toCompanyIdFilter(scope.companyIds);
 
   const [
     kpiStrip,
@@ -78,18 +132,18 @@ export async function getExecutiveDashboard(
   ] = await Promise.all([
     buildKpiStrip(prisma, filters, period, previousRange),
     getDispatchTodaySummary(prisma, {
-      companyId: scope.companyId,
+      companyId: companyFilter,
       salesUserId: executiveId,
       businessDate,
     }),
-    getWorkQueue(prisma, scope.companyId, executiveId),
-    getOutstandingAging(prisma, scope.companyId, executiveId),
-    getSalesStockWatch(prisma, scope.companyId, executiveId),
+    getWorkQueue(prisma, companyFilter, executiveId),
+    getOutstandingAging(prisma, scope.companyIds, executiveId),
+    getSalesStockWatch(prisma, companyFilter, executiveId),
     getSalesFunnel(prisma, filters),
     getPerformanceTrend(prisma, filters, query.trendMetric ?? "modules"),
     buildDispatchedUnitTotals(prisma, filters),
-    getCurrentMonthModuleTargetProgress(prisma, scope.companyId, executiveId),
-    getExecutiveModuleMastery(prisma, scope.companyId, executiveId),
+    sumModuleTargetProgress(prisma, scope.companyIds, executiveId),
+    sumModuleMasteryProgress(prisma, scope.companyIds, executiveId),
   ]);
 
   return {
@@ -128,6 +182,7 @@ export async function getManagerDashboard(
   });
   const previousRange = getPreviousPeriodRange(range.fromDate, range.toDate);
   const filters = buildMetricFilters(scope, range.fromDate, range.toDate);
+  const companyFilter = toCompanyIdFilter(scope.companyIds);
 
   const [
     kpiStrip,
@@ -141,20 +196,20 @@ export async function getManagerDashboard(
     unitTotals,
   ] = await Promise.all([
     buildKpiStrip(prisma, filters, period, previousRange),
-    getApprovalSummary(prisma, scope.companyId, scope.roles),
+    getApprovalSummary(prisma, scope.companyIds, scope.roles),
     getTeamScoreboard(
       prisma,
-      scope.companyId,
+      companyFilter,
       range.fromDate,
       range.toDate,
       period,
     ),
     getDispatchTodaySummary(prisma, {
-      companyId: scope.companyId,
+      companyId: companyFilter,
       businessDate,
     }),
-    getPipelineRisks(prisma, scope.companyId),
-    getStockConflicts(prisma, scope.companyId),
+    getPipelineRisks(prisma, companyFilter),
+    getStockConflicts(prisma, companyFilter),
     getSalesFunnel(prisma, filters),
     getPerformanceTrend(prisma, filters, query.trendMetric ?? "modules"),
     buildDispatchedUnitTotals(prisma, filters),

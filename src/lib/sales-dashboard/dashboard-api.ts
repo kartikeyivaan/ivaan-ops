@@ -1,5 +1,5 @@
 import type { Session } from "next-auth";
-import { requireActiveCompany } from "@/lib/session";
+import { resolveDashboardCompanyIds } from "@/lib/company-scope";
 import {
   canViewSalesDashboard,
   canViewTeamSalesDashboard,
@@ -21,11 +21,15 @@ export function resolveSalesDashboardScope(session: Session): SalesDashboardScop
     throw new SalesDashboardAccessError("You do not have permission for the sales dashboard.");
   }
 
-  const companyId = requireActiveCompany(session);
+  const companyIds = resolveDashboardCompanyIds(session);
+  if (companyIds.length === 0) {
+    throw new SalesDashboardAccessError("Select a company to continue.", "VALIDATION_ERROR");
+  }
+
   const restrictToUserId = resolveRestrictToUserId(session.user.roles, session.user.id);
 
   return {
-    companyId,
+    companyIds,
     restrictToUserId,
     canViewTeam: canViewTeamSalesDashboard(session.user.roles),
     userId: session.user.id,

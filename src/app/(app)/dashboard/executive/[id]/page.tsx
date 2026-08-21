@@ -1,7 +1,13 @@
 import { redirect, notFound } from "next/navigation";
+import type { Session } from "next-auth";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import type { DashboardPeriod } from "@/lib/business-dates";
+import {
+  formatAllCompaniesLabel,
+  isAllCompaniesScope,
+} from "@/lib/company-scope";
+import { operationalCompanies } from "@/lib/learning/mode";
 import {
   resolveSalesDashboardScope,
   SalesDashboardAccessError,
@@ -12,7 +18,6 @@ import {
 } from "@/lib/sales-dashboard/dashboard-permissions";
 import { getExecutiveDashboard } from "@/lib/sales-dashboard/dashboard-service";
 import { ExecutiveDashboardView } from "@/components/dashboard/executive-dashboard-view";
-import { requireActiveCompany } from "@/lib/session";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -31,6 +36,19 @@ const VALID_PERIODS = new Set<DashboardPeriod>([
   "quarter",
   "custom",
 ]);
+
+function resolveCompanyLabel(session: Session) {
+  const ops = operationalCompanies(session.user.companies ?? []);
+  if (isAllCompaniesScope(session.user.activeCompanyId) && ops.length > 1) {
+    return formatAllCompaniesLabel(ops);
+  }
+  const activeCompany = session.user.companies.find(
+    (company) => company.id === session.user.activeCompanyId,
+  );
+  return activeCompany
+    ? `${activeCompany.name} (${activeCompany.code})`
+    : undefined;
+}
 
 export default async function ExecutivePerformancePage({ params, searchParams }: PageProps) {
   const session = await auth();
@@ -58,11 +76,14 @@ export default async function ExecutivePerformancePage({ params, searchParams }:
     redirect("/dashboard");
   }
 
-  const companyId = requireActiveCompany(session);
   const executive = await prisma.user.findFirst({
     where: {
       id: executiveId,
-      companies: { some: { companyId } },
+      companies: {
+        some: {
+          companyId: { in: scope.companyIds },
+        },
+      },
     },
     select: { id: true, name: true, email: true },
   });
@@ -91,19 +112,12 @@ export default async function ExecutivePerformancePage({ params, searchParams }:
         : "modules",
   });
 
-  const activeCompany = session.user.companies.find(
-    (company) => company.id === session.user.activeCompanyId,
-  );
-  const companyLabel = activeCompany
-    ? `${activeCompany.name} (${activeCompany.code})`
-    : undefined;
-
   return (
     <ExecutiveDashboardView
       data={dashboard}
       userName={executive.name ?? executive.email}
       salesUserId={executiveId}
-      companyLabel={companyLabel}
+      companyLabel={resolveCompanyLabel(session)}
       backHref="/dashboard"
       pageHeading={`${executive.name ?? executive.email} · Performance`}
     />

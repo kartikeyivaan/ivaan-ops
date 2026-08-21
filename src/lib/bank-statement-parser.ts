@@ -1,6 +1,8 @@
 import type { BankStatementParserType } from "@prisma/client";
 import { readFile } from "fs/promises";
 import * as XLSX from "xlsx";
+import { looksLikeHdfcStatement, HDFCStatementParser } from "@/lib/bank-parsers/hdfc-statement-parser";
+import { looksLikeIciciStatement, ICICIStatementParser } from "@/lib/bank-parsers/icici-statement-parser";
 import { looksLikeSbiStatement, SBIStatementParser } from "@/lib/bank-parsers/sbi-statement-parser";
 import { parseStatementDate, sheetRowsFromWorkbook } from "@/lib/bank-parsers/parse-utils";
 import {
@@ -35,14 +37,29 @@ export async function detectBankStatementParserType(
     sheetText = "";
   }
 
+  // ICICI OpTransactionHistory exports often omit the word "ICICI" in sheet text.
+  if (
+    looksLikeIciciStatement(rows) ||
+    sheetText.includes("txn posted date") ||
+    lowerName.includes("optransactionhistory")
+  ) {
+    return "ICICI";
+  }
+
+  // HDFC before SBI: both use Date/Value Dt style headers; SBI heuristics were matching HDFC files.
+  if (looksLikeHdfcStatement(rows) || sheetText.includes("hdfc bank")) {
+    return "HDFC";
+  }
+
   if (looksLikeSbiStatement(rows) || sheetText.includes("state bank of india")) {
     return "SBI";
   }
 
   const haystack = `${lowerName}\n${sheetText}`;
-  if (/\bsbi\b/.test(haystack) || haystack.includes("sbin")) return "SBI";
-  if (haystack.includes("hdfc")) return "HDFC";
-  if (haystack.includes("icici")) return "ICICI";
+  // Filename / bank-name hints only (avoid matching counterparty IFSC like HDFC0 in narrations).
+  if (/\bhdfc\b/.test(haystack) || lowerName.includes("hdfc")) return "HDFC";
+  if (/\bsbi\b/.test(haystack) || haystack.includes("sbin") || lowerName.includes("sbi")) return "SBI";
+  if (/\bicici\b/.test(haystack) || lowerName.includes("icici")) return "ICICI";
   return "UNKNOWN";
 }
 
@@ -64,7 +81,9 @@ export function createBankStatementParser(
     case "SBI":
       return new SBIStatementParser();
     case "HDFC":
+      return new HDFCStatementParser();
     case "ICICI":
+      return new ICICIStatementParser();
     case "UNKNOWN":
     default:
       return new UnsupportedBankStatementParser(parserType);
@@ -136,3 +155,5 @@ export class FixtureCsvBankStatementParser implements BankStatementParser {
 }
 
 export { SBIStatementParser } from "@/lib/bank-parsers/sbi-statement-parser";
+export { HDFCStatementParser } from "@/lib/bank-parsers/hdfc-statement-parser";
+export { ICICIStatementParser } from "@/lib/bank-parsers/icici-statement-parser";

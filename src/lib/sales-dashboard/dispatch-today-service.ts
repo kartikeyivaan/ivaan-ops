@@ -6,11 +6,14 @@ import {
 } from "@prisma/client";
 import { parseBusinessDate, getBusinessToday } from "@/lib/business-dates";
 import { decimalToNumber } from "@/lib/inventory";
-import { sumDispatchedUnitsFromLines } from "@/lib/report-builders";
+import {
+  sumDispatchedUnitsFromLines,
+  type CompanyIdFilter,
+} from "@/lib/report-builders";
 import type { DispatchTodayHeroDto } from "@/lib/sales-dashboard/dashboard-types";
 
 type DispatchTodayOptions = {
-  companyId: string;
+  companyId: CompanyIdFilter;
   salesUserId?: string;
   businessDate?: string;
 };

@@ -24,56 +24,38 @@ type ColumnMap = {
   balance: number;
 };
 
-const TXN_DATE_KEYS = new Set([
-  "txn date",
-  "tran date",
-  "transaction date",
-  "txn dt",
-  "date",
-  "posting date",
-]);
+const TXN_DATE_KEYS = new Set(["date", "txn date", "tran date", "transaction date"]);
 
-const VALUE_DATE_KEYS = new Set(["value date", "value dt", "val date"]);
+const VALUE_DATE_KEYS = new Set(["value dt", "value date", "val date"]);
 
-const DESCRIPTION_KEYS = new Set([
-  "description",
-  "narration",
-  "particulars",
-  "details",
-  "transaction remarks",
-  "remarks",
-]);
+const DESCRIPTION_KEYS = new Set(["narration", "description", "particulars", "remarks"]);
 
 const REFERENCE_KEYS = new Set([
-  "ref no cheque no",
+  "chq ref no",
+  "chq no",
+  "cheque no",
   "ref no",
   "reference no",
   "reference number",
-  "cheque no",
-  "chq no",
-  "chq ref no",
-  "utr",
-  "utr number",
-  "transaction id",
 ]);
 
 const DEBIT_KEYS = new Set([
-  "debit",
-  "withdrawal",
   "withdrawal amt",
+  "withdrawal amount",
+  "withdrawal",
+  "debit",
   "debit amount",
-  "amount debited",
 ]);
 
 const CREDIT_KEYS = new Set([
-  "credit",
-  "deposit",
   "deposit amt",
+  "deposit amount",
+  "deposit",
+  "credit",
   "credit amount",
-  "amount credited",
 ]);
 
-const BALANCE_KEYS = new Set(["balance", "running balance", "closing balance"]);
+const BALANCE_KEYS = new Set(["closing balance", "balance", "running balance"]);
 
 function findColumn(headers: string[], keys: Set<string>): number | null {
   for (let i = 0; i < headers.length; i += 1) {
@@ -93,6 +75,14 @@ function detectHeaderRow(rows: unknown[][]): { headerIndex: number; columns: Col
 
     if (txnDate === null || description === null || balance === null) continue;
     if (debit === null && credit === null) continue;
+
+    // Prefer classic HDFC NetBanking headers.
+    const looksHdfc =
+      headers.includes("narration") ||
+      headers.includes("withdrawal amt") ||
+      headers.includes("deposit amt") ||
+      headers.includes("closing balance");
+    if (!looksHdfc) continue;
 
     return {
       headerIndex: r,
@@ -115,14 +105,36 @@ function cell(row: unknown[], index: number | null): unknown {
   return row[index] ?? "";
 }
 
+function isSeparatorOrJunkRow(row: unknown[]): boolean {
+  const joined = row.map((c) => String(c ?? "").trim()).join("");
+  if (!joined) return true;
+  // HDFC inserts a row of asterisks under the header.
+  if (/^\*+$/.test(joined.replace(/\s+/g, ""))) return true;
+  return false;
+}
+
 function isNonTransactionRow(description: string, debit: number, credit: number): boolean {
   const d = description.toLowerCase();
   if (!d && debit === 0 && credit === 0) return true;
   if (d.includes("opening balance")) return true;
   if (d.includes("closing balance") && debit === 0 && credit === 0) return true;
-  if (d.startsWith("brought forward")) return true;
-  if (d.startsWith("carried forward")) return true;
-  if (d.includes("total") && debit === 0 && credit === 0) return true;
+  if (d.startsWith("brought forward") || d.startsWith("carried forward")) return true;
+  if (d.includes("this is a computer generated") || d.includes("statement summary")) return true;
+  if ((d.includes("dr count") || d.includes("cr count")) && debit === 0 && credit === 0) return true;
+  // HDFC statement summary value row has both debit and credit totals populated.
+  if (debit > 0 && credit > 0) return true;
+  return false;
+}
+
+function isStatementEndMarker(row: unknown[]): boolean {
+  const joined = row
+    .map((c) => String(c ?? "").trim().toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+  if (!joined) return false;
+  if (joined.includes("statement summary")) return true;
+  if (joined.includes("end of statement")) return true;
+  if (joined.startsWith("generated on")) return true;
   return false;
 }
 
@@ -141,78 +153,64 @@ function extractMetadata(rows: unknown[][], headerIndex: number): {
 
   const metaRows = rows.slice(0, headerIndex);
   for (const row of metaRows) {
-    const joined = row.map((c) => String(c ?? "").trim()).filter(Boolean).join(" ");
-    if (!joined) continue;
-    const lower = joined.toLowerCase();
+    for (const rawCell of row) {
+      const joined = String(rawCell ?? "").trim();
+      if (!joined) continue;
 
-    const accountMatch =
-      /account\s*(?:no|number|#)\s*[:.\-]?\s*([0-9\s\-]+)/i.exec(joined) ??
-      /a\/c\s*(?:no|number)?\s*[:.\-]?\s*([0-9\s\-]+)/i.exec(joined);
-    if (accountMatch && !accountNumber) {
-      accountNumber = extractDigitsAccountNumber(accountMatch[1] ?? null);
-    }
-
-    const nameMatch =
-      /account\s*name\s*[:.\-]?\s*(.+)$/i.exec(joined) ??
-      /name\s*of\s*(?:the\s*)?account\s*holder\s*[:.\-]?\s*(.+)$/i.exec(joined);
-    if (nameMatch && !accountName) {
-      accountName = nameMatch[1]!.trim().slice(0, 150) || null;
-    }
-
-    const ifscMatch = /\bIFSC\s*(?:code)?\s*[:.\-]?\s*([A-Z]{4}0[A-Z0-9]{6})\b/i.exec(joined);
-    if (ifscMatch && !ifscCode) {
-      ifscCode = ifscMatch[1]!.toUpperCase();
-    }
-
-    const periodMatch =
-      /(?:statement\s*period|period|from)\s*[:.\-]?\s*([0-9A-Za-z\/\-\s]+?)\s+(?:to|-)\s+([0-9A-Za-z\/\-\s]+)/i.exec(
-        joined,
-      );
-    if (periodMatch) {
-      statementStartDate = parseStatementDate(periodMatch[1]);
-      statementEndDate = parseStatementDate(periodMatch[2]);
-    }
-
-    // Two-cell layouts: ["Account Number", "44431999106"]
-    if (row.length >= 2) {
-      const key = normalizeHeaderKey(row[0]);
-      const value = String(row[1] ?? "").trim();
-      if ((key.includes("account no") || key === "account number" || key === "a c no") && !accountNumber) {
-        accountNumber = extractDigitsAccountNumber(value);
+      const accountMatch =
+        /account\s*no\s*[:.\-]?\s*([0-9\s\-]+)/i.exec(joined) ??
+        /a\/c\s*(?:no|number)?\s*[:.\-]?\s*([0-9\s\-]+)/i.exec(joined);
+      if (accountMatch && !accountNumber) {
+        accountNumber = extractDigitsAccountNumber(accountMatch[1] ?? null);
       }
-      if ((key === "account name" || key.includes("account holder")) && !accountName) {
-        accountName = value.slice(0, 150) || null;
+
+      const ifscMatch =
+        /(?:RTGS\/NEFT\s*)?IFSC\s*[:.\-]?\s*([A-Z]{4}0[A-Z0-9]{6})/i.exec(joined) ??
+        /\b(HDFC0[A-Z0-9]{6})\b/i.exec(joined);
+      if (ifscMatch && !ifscCode) {
+        ifscCode = ifscMatch[1]!.toUpperCase();
       }
-      if (key.includes("ifsc") && !ifscCode) {
-        const m = /([A-Z]{4}0[A-Z0-9]{6})/i.exec(value);
-        ifscCode = m?.[1]?.toUpperCase() ?? null;
+
+      // "Statement From  :  01/04/2026         To  :  20/08/2026"
+      const periodMatch =
+        /statement\s*from\s*[:.\-]?\s*([0-9\/\-.]+)\s+to\s*[:.\-]?\s*([0-9\/\-.]+)/i.exec(joined) ??
+        /from\s*[:.\-]?\s*([0-9\/\-.]+)\s+to\s*[:.\-]?\s*([0-9\/\-.]+)/i.exec(joined);
+      if (periodMatch) {
+        statementStartDate = parseStatementDate(periodMatch[1]);
+        statementEndDate = parseStatementDate(periodMatch[2]);
+      }
+
+      // Account name often appears as "M/S.    IVAAN SOLAR ENERGY" in the left header block.
+      if (!accountName) {
+        const msMatch = /^M\/S\.?\s*(.+)$/i.exec(joined);
+        if (msMatch) {
+          accountName = msMatch[1]!.trim().slice(0, 150) || null;
+        }
       }
     }
-
-    void lower;
   }
 
   return { accountNumber, accountName, ifscCode, statementStartDate, statementEndDate };
 }
 
 /**
- * Parses State Bank of India OnlineSBI / YONO tabular statement exports (.xlsx/.xls/.csv).
- * Maps account from statement metadata (account number), not filename.
+ * Parses HDFC Bank NetBanking tabular statement exports (.xls/.xlsx).
+ * Typical headers: Date | Narration | Chq./Ref.No. | Value Dt | Withdrawal Amt. | Deposit Amt. | Closing Balance
  */
-export class SBIStatementParser implements BankStatementParser {
-  readonly parserType = "SBI" as const;
+export class HDFCStatementParser implements BankStatementParser {
+  readonly parserType = "HDFC" as const;
 
   async parse(tempFilePath: string): Promise<ParsedBankStatement> {
     const workbook = readWorkbookFromPath(tempFilePath);
     const { rows } = sheetRowsFromWorkbook(workbook);
     if (rows.length === 0) {
-      throw new BankStatementParseError("SBI statement is empty.", "EMPTY_STATEMENT");
+      throw new BankStatementParseError("HDFC statement is empty.", "EMPTY_STATEMENT");
     }
 
     const header = detectHeaderRow(rows);
     if (!header) {
       throw new BankStatementParseError(
-        "Could not find SBI transaction header row (Txn Date / Description / Debit-Credit / Balance).",
+        "Could not find HDFC transaction header row (Date / Narration / Withdrawal-Deposit / Closing Balance).",
         "PARSER_ERROR",
       );
     }
@@ -224,7 +222,8 @@ export class SBIStatementParser implements BankStatementParser {
 
     for (let r = header.headerIndex + 1; r < rows.length; r += 1) {
       const row = rows[r] ?? [];
-      if (row.every((c) => String(c ?? "").trim() === "")) continue;
+      if (isSeparatorOrJunkRow(row)) continue;
+      if (isStatementEndMarker(row)) break;
 
       const description = String(cell(row, header.columns.description) ?? "").trim();
       const debit = parseStatementAmount(cell(row, header.columns.debit));
@@ -233,7 +232,13 @@ export class SBIStatementParser implements BankStatementParser {
 
       if (isNonTransactionRow(description, debit, credit)) continue;
 
-      const transactionDate = parseStatementDate(cell(row, header.columns.txnDate));
+      // Real HDFC ledger rows always carry narration; footer value rows do not.
+      if (!description) continue;
+
+      const dateRaw = cell(row, header.columns.txnDate);
+      if (!String(dateRaw ?? "").trim()) continue;
+
+      const transactionDate = parseStatementDate(dateRaw);
       if (!transactionDate) {
         warnings.push(`Skipped row ${r + 1}: invalid transaction date.`);
         continue;
@@ -271,7 +276,7 @@ export class SBIStatementParser implements BankStatementParser {
     }
 
     if (transactions.length === 0) {
-      throw new BankStatementParseError("No SBI transactions found in statement.", "EMPTY_STATEMENT");
+      throw new BankStatementParseError("No HDFC transactions found in statement.", "EMPTY_STATEMENT");
     }
 
     const statementStartDate =
@@ -280,11 +285,13 @@ export class SBIStatementParser implements BankStatementParser {
       meta.statementEndDate ?? transactions[transactions.length - 1]!.transactionDate;
 
     if (!meta.accountNumber) {
-      warnings.push("Account number not found in statement metadata; mapping may require manual account selection.");
+      warnings.push(
+        "Account number not found in statement metadata; mapping may require manual account selection.",
+      );
     }
 
     return {
-      parserType: "SBI",
+      parserType: "HDFC",
       account: {
         accountNumber: meta.accountNumber,
         accountName: meta.accountName,
@@ -298,23 +305,25 @@ export class SBIStatementParser implements BankStatementParser {
   }
 }
 
-/** True when sheet content looks like an SBI tabular export. */
-export function looksLikeSbiStatement(rows: unknown[][]): boolean {
+/** True when sheet content looks like an HDFC NetBanking tabular export. */
+export function looksLikeHdfcStatement(rows: unknown[][]): boolean {
   const sample = rows
     .slice(0, 50)
     .map((row) => row.map((c) => String(c ?? "")).join(" "))
     .join("\n")
     .toLowerCase();
 
-  // Do not claim HDFC NetBanking sheets (Withdrawal/Deposit Amt + Narration).
-  if (sample.includes("hdfc bank") || sample.includes("withdrawal amt")) {
-    return false;
-  }
-
-  if (sample.includes("state bank of india")) return true;
-  if (/\bsbi\b/.test(sample) && sample.includes("balance")) return true;
-  if (detectHeaderRow(rows) && (sample.includes("txn date") || sample.includes("value date"))) {
+  if (sample.includes("hdfc bank")) return true;
+  if (
+    sample.includes("withdrawal amt") &&
+    sample.includes("deposit amt") &&
+    (sample.includes("narration") || sample.includes("closing balance"))
+  ) {
     return true;
   }
-  return Boolean(detectHeaderRow(rows) && sample.includes("ref no"));
+  // RTGS/NEFT IFSC :HDFC0… is in the statement header, not only a counterparty UTR.
+  if (/rtgs\/neft\s*ifsc\s*:?\s*hdfc0/i.test(sample) && sample.includes("narration")) {
+    return true;
+  }
+  return Boolean(detectHeaderRow(rows));
 }

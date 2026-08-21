@@ -3,7 +3,8 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 
 /** Uppercase alphanumeric alphabet excluding ambiguous 0/O/1/I. */
 const PAYMENT_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-const PAYMENT_CODE_LENGTH = 6;
+/** Long enough to discourage typing; paste/copy is the intended path. */
+const PAYMENT_CODE_LENGTH = 16;
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -16,7 +17,10 @@ export function generatePaymentCodeCandidate(length = PAYMENT_CODE_LENGTH): stri
 }
 
 export function isValidPaymentCodeFormat(code: string): boolean {
-  return /^P[A-HJ-NP-Z2-9]{5}$/.test(code);
+  // Accept current 16-char codes and legacy 6-char codes still stored on older credits.
+  return (
+    /^P[A-HJ-NP-Z2-9]{15}$/.test(code) || /^P[A-HJ-NP-Z2-9]{5}$/.test(code)
+  );
 }
 
 /**

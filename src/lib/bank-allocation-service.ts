@@ -27,6 +27,19 @@ export function normalizePaymentCodeInput(code: string): string {
   return code.trim().toUpperCase().replace(/\s+/g, "");
 }
 
+/**
+ * Bank credits are firm-scoped: a payment code may only be linked to a PI of the
+ * same company that owns the bank account.
+ */
+export function assertBankBelongsToPiCompany(
+  bankCompanyId: string,
+  piCompanyId: string,
+): void {
+  if (bankCompanyId !== piCompanyId) {
+    throw new Error("BANK_COMPANY_MISMATCH");
+  }
+}
+
 export async function findCreditTransactionByPaymentCode(
   db: Db,
   companyId: string,
@@ -41,13 +54,13 @@ export async function findCreditTransactionByPaymentCode(
     where: {
       paymentCode,
       creditAmount: { gt: 0 },
-      bankAccount: { companyId, isActive: true },
     },
     include: {
       bankAccount: {
         select: {
           id: true,
           companyId: true,
+          isActive: true,
           bankName: true,
           receivedInAccount: true,
           accountNumberMasked: true,
@@ -60,7 +73,13 @@ export async function findCreditTransactionByPaymentCode(
     },
   });
 
-  if (!txn) throw new Error("PAYMENT_CODE_NOT_FOUND");
+  if (!txn || !txn.bankAccount.isActive) {
+    throw new Error("PAYMENT_CODE_NOT_FOUND");
+  }
+
+  // Explicit firm check — do not silently treat other-company codes as "not found".
+  assertBankBelongsToPiCompany(txn.bankAccount.companyId, companyId);
+
   return txn;
 }
 
@@ -192,7 +211,9 @@ export async function previewBankPaymentLink(
     throw new Error("INVALID_STATUS");
   }
 
-  const txn = await findCreditTransactionByPaymentCode(db, input.companyId, input.paymentCode);
+  // Lookup uses the PI's company — bank receipts from another firm cannot match.
+  const txn = await findCreditTransactionByPaymentCode(db, pi.companyId, input.paymentCode);
+  assertBankBelongsToPiCompany(txn.bankAccount.companyId, pi.companyId);
   const available = availableBankCreditAmount(txn);
   if (available <= 0) throw new Error("BANK_FULLY_ALLOCATED");
 
@@ -255,10 +276,12 @@ export async function linkBankPaymentToPi(
       },
     });
 
-    const txn = await findCreditTransactionByPaymentCode(tx, input.companyId, input.paymentCode);
+    const txn = await findCreditTransactionByPaymentCode(tx, pi.companyId, input.paymentCode);
+    assertBankBelongsToPiCompany(txn.bankAccount.companyId, pi.companyId);
     await lockBankTransactionForAllocation(tx, txn.id);
     // Re-read allocations under the lock for a concurrency-safe available check.
-    const locked = await findCreditTransactionByPaymentCode(tx, input.companyId, input.paymentCode);
+    const locked = await findCreditTransactionByPaymentCode(tx, pi.companyId, input.paymentCode);
+    assertBankBelongsToPiCompany(locked.bankAccount.companyId, pi.companyId);
     const available = availableBankCreditAmount(locked);
     if (amount > available + 0.005) throw new Error("ALLOCATION_EXCEEDS_BANK");
 
@@ -273,7 +296,7 @@ export async function linkBankPaymentToPi(
 
     const payment = await tx.payment.create({
       data: {
-        companyId: input.companyId,
+        companyId: pi.companyId,
         customerId: pi.customerId,
         proformaInvoiceId: pi.id,
         amount,
@@ -304,7 +327,7 @@ export async function linkBankPaymentToPi(
     await recalculateBankAssignmentStatus(tx, locked.id);
 
     await clearPiCreditIfPaid(tx, {
-      companyId: input.companyId,
+      companyId: pi.companyId,
       piId: pi.id,
       performedById: input.recordedById,
     });
@@ -318,7 +341,7 @@ export async function linkBankPaymentToPi(
       recordId: payment.id,
       action: "CREATE",
       performedBy: input.recordedById,
-      companyId: input.companyId,
+      companyId: pi.companyId,
       reference: pi.piNo,
       newValue: {
         amount,
@@ -360,9 +383,11 @@ export async function matchManualPaymentWithBank(
       throw new Error("ALREADY_VERIFIED");
     }
 
-    const txn = await findCreditTransactionByPaymentCode(tx, input.companyId, input.paymentCode);
+    const txn = await findCreditTransactionByPaymentCode(tx, pi.companyId, input.paymentCode);
+    assertBankBelongsToPiCompany(txn.bankAccount.companyId, pi.companyId);
     await lockBankTransactionForAllocation(tx, txn.id);
-    const locked = await findCreditTransactionByPaymentCode(tx, input.companyId, input.paymentCode);
+    const locked = await findCreditTransactionByPaymentCode(tx, pi.companyId, input.paymentCode);
+    assertBankBelongsToPiCompany(locked.bankAccount.companyId, pi.companyId);
     const available = availableBankCreditAmount(locked);
     const amount = decimalToNumber(payment.amount);
 
@@ -413,7 +438,7 @@ export async function matchManualPaymentWithBank(
     await recalculateBankAssignmentStatus(tx, locked.id);
 
     await clearPiCreditIfPaid(tx, {
-      companyId: input.companyId,
+      companyId: pi.companyId,
       piId: pi.id,
       performedById: input.performedById,
     });
@@ -424,7 +449,7 @@ export async function matchManualPaymentWithBank(
       recordId: payment.id,
       action: "UPDATE",
       performedBy: input.performedById,
-      companyId: input.companyId,
+      companyId: pi.companyId,
       reference: pi.piNo,
       oldValue: { verificationStatus: PaymentVerificationStatus.MANUAL_UNVERIFIED },
       newValue: {

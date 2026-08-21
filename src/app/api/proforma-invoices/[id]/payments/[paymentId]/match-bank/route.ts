@@ -57,6 +57,11 @@ export async function POST(request: Request, context: RouteContext) {
       ALREADY_VERIFIED: ["VALIDATION_ERROR", "Payment is already bank verified.", 400],
       INVALID_PAYMENT_CODE: ["VALIDATION_ERROR", "Invalid payment code format.", 400],
       PAYMENT_CODE_NOT_FOUND: ["NOT_FOUND", "No credit transaction found for that payment code.", 404],
+      BANK_COMPANY_MISMATCH: [
+        "VALIDATION_ERROR",
+        "This payment code belongs to a different firm. Use Daily Receipts for the same company as the PI.",
+        400,
+      ],
       ALLOCATION_EXCEEDS_BANK: [
         "VALIDATION_ERROR",
         "Payment amount exceeds available bank amount.",

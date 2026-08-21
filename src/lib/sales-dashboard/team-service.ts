@@ -1,12 +1,15 @@
 import { ProformaInvoiceStatus, type PrismaClient } from "@prisma/client";
 import { getBusinessToday, parseBusinessDate } from "@/lib/business-dates";
-import { buildTeamKpiSummaries } from "@/lib/report-builders";
+import {
+  buildTeamKpiSummaries,
+  type CompanyIdFilter,
+} from "@/lib/report-builders";
 import type { DashboardPeriod } from "@/lib/business-dates";
 import type { TeamScoreboardDto } from "@/lib/sales-dashboard/dashboard-types";
 
 export async function getTeamScoreboard(
   prisma: PrismaClient,
-  companyId: string,
+  companyId: CompanyIdFilter,
   fromDate: string,
   toDate: string,
   period: DashboardPeriod,
@@ -31,7 +34,7 @@ export async function getTeamScoreboard(
 
 export async function getTeamKpiStripTotals(
   prisma: PrismaClient,
-  companyId: string,
+  companyId: CompanyIdFilter,
   fromDate: string,
   toDate: string,
 ) {
@@ -56,7 +59,7 @@ export async function getTeamKpiStripTotals(
 
 export async function getBookedNotDispatchedRisks(
   prisma: PrismaClient,
-  companyId: string,
+  companyId: CompanyIdFilter,
   salesUserId?: string,
 ) {
   const today = getBusinessToday();

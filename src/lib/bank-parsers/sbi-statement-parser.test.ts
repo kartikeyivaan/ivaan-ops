@@ -92,6 +92,7 @@ describe("parse utils", () => {
     expect(parseStatementAmount("1,250.50")).toBe(1250.5);
     expect(parseStatementDate("02 Aug 2026")?.toISOString().slice(0, 10)).toBe("2026-08-02");
     expect(parseStatementDate("05/08/2026")?.toISOString().slice(0, 10)).toBe("2026-08-05");
+    expect(parseStatementDate("13/04/26")?.toISOString().slice(0, 10)).toBe("2026-04-13");
   });
 
   it("extracts UTR-like references from narration", () => {

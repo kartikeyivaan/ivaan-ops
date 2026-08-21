@@ -8,16 +8,17 @@ import {
   isValidPaymentCodeFormat,
 } from "@/lib/bank-payment-code";
 import {
+  assertBankBelongsToPiCompany,
   availableBankCreditAmount,
   normalizePaymentCodeInput,
   releaseBankAllocationsForCancelledPi,
 } from "@/lib/bank-allocation-service";
 
 describe("bank payment codes", () => {
-  it("generates P-prefixed codes without ambiguous characters", () => {
+  it("generates P-prefixed 16-char codes without ambiguous characters", () => {
     for (let i = 0; i < 40; i += 1) {
       const code = generatePaymentCodeCandidate();
-      expect(code).toHaveLength(6);
+      expect(code).toHaveLength(16);
       expect(code.startsWith("P")).toBe(true);
       expect(isValidPaymentCodeFormat(code)).toBe(true);
       expect(code).not.toMatch(/[01IO]/);
@@ -25,17 +26,27 @@ describe("bank payment codes", () => {
   });
 
   it("rejects invalid payment code formats", () => {
-    expect(isValidPaymentCodeFormat("P8K4X2")).toBe(true);
+    expect(isValidPaymentCodeFormat("P8K4X2")).toBe(true); // legacy 6-char
+    expect(isValidPaymentCodeFormat("P8K4X2ABCD7EFGH9")).toBe(true); // 16-char
     expect(isValidPaymentCodeFormat("p8k4x2")).toBe(false);
     expect(isValidPaymentCodeFormat("P8K4O2")).toBe(false);
     expect(isValidPaymentCodeFormat("P8K41X")).toBe(false);
     expect(isValidPaymentCodeFormat("X8K4X2")).toBe(false);
     expect(isValidPaymentCodeFormat("P8K4X")).toBe(false);
+    expect(isValidPaymentCodeFormat("P8K4X2ABCD7EFGH")).toBe(false); // 15-char
   });
 
   it("normalizes pasted payment codes", () => {
     expect(normalizePaymentCodeInput(" p8k4x2 ")).toBe("P8K4X2");
     expect(normalizePaymentCodeInput("P8 K4 X2")).toBe("P8K4X2");
+    expect(normalizePaymentCodeInput(" p8k4x2abcd7efgh9 ")).toBe("P8K4X2ABCD7EFGH9");
+  });
+
+  it("rejects bank payments from a different firm than the PI", () => {
+    expect(() => assertBankBelongsToPiCompany("company-a", "company-a")).not.toThrow();
+    expect(() => assertBankBelongsToPiCompany("company-a", "company-b")).toThrow(
+      "BANK_COMPANY_MISMATCH",
+    );
   });
 });
 

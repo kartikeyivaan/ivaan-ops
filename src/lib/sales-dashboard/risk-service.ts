@@ -4,11 +4,12 @@ import { getBookedNotDispatchedRisks } from "@/lib/sales-dashboard/team-service"
 import { decimalToNumber } from "@/lib/inventory";
 import { calculateAgeingDays, calculateOutstanding } from "@/lib/reports";
 import { ProformaInvoiceStatus } from "@prisma/client";
+import type { CompanyIdFilter } from "@/lib/report-builders";
 import type { PipelineRiskDto } from "@/lib/sales-dashboard/dashboard-types";
 
 export async function getPipelineRisks(
   prisma: PrismaClient,
-  companyId: string,
+  companyId: CompanyIdFilter,
   salesUserId?: string,
 ): Promise<PipelineRiskDto> {
   const [workQueue, bookedNotDispatched, followupRows] = await Promise.all([

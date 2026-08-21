@@ -40,15 +40,21 @@ export function normalizeHeaderKey(value: unknown): string {
 }
 
 export function parseStatementAmount(value: unknown): number {
+  return Math.abs(parseStatementSignedAmount(value));
+}
+
+/** Like parseStatementAmount but preserves sign (needed for OD / negative available balance). */
+export function parseStatementSignedAmount(value: unknown): number {
   if (value === null || value === undefined || value === "") return 0;
-  if (typeof value === "number" && Number.isFinite(value)) return Math.abs(value);
+  if (typeof value === "number" && Number.isFinite(value)) return value;
   const raw = String(value).trim();
   if (!raw || raw === "-" || raw === "—") return 0;
+  const negative = /^\(.*\)$/.test(raw) || raw.startsWith("-");
   const cleaned = raw.replace(/[₹,\s()]/g, "").replace(/^-/, "");
   if (!cleaned) return 0;
   const num = Number(cleaned);
   if (!Number.isFinite(num)) return 0;
-  return Math.abs(num);
+  return negative ? -Math.abs(num) : num;
 }
 
 export function parseStatementDate(value: unknown): Date | null {
@@ -59,7 +65,10 @@ export function parseStatementDate(value: unknown): Date | null {
   }
 
   if (typeof value === "number" && Number.isFinite(value)) {
-    // Excel serial date (days since 1899-12-30)
+    // Excel serial date (days since 1899-12-30). Reject values that are clearly amounts, not dates.
+    if (!Number.isInteger(value) || value < 20000 || value > 80000) {
+      return null;
+    }
     const excelEpoch = Date.UTC(1899, 11, 30);
     const ms = excelEpoch + value * 24 * 60 * 60 * 1000;
     const d = new Date(ms);
@@ -74,9 +83,19 @@ export function parseStatementDate(value: unknown): Date | null {
     return new Date(Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3])));
   }
 
-  const dmy = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/.exec(text);
-  if (dmy) {
-    return new Date(Date.UTC(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1])));
+  // DD/MM/YYYY or DD-MM-YYYY (optional trailing time, e.g. ICICI Txn Posted Date)
+  const dmy4 = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})(?:\s+.+)?$/.exec(text);
+  if (dmy4) {
+    return utcDateFromParts(Number(dmy4[3]), Number(dmy4[2]), Number(dmy4[1]));
+  }
+
+  // DD/MM/YY (HDFC Excel exports use 2-digit years)
+  const dmy2 = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2})(?:\s+.+)?$/.exec(text);
+  if (dmy2) {
+    const yy = Number(dmy2[3]);
+    // Bank statements are modern; map 00-99 → 2000-2099.
+    const year = 2000 + yy;
+    return utcDateFromParts(year, Number(dmy2[2]), Number(dmy2[1]));
   }
 
   // DD Mon YYYY / DD-Mon-YYYY (SBI PDF/Excel style)
@@ -84,13 +103,31 @@ export function parseStatementDate(value: unknown): Date | null {
   if (mon) {
     const month = MONTHS[mon[2].toLowerCase()];
     if (month !== undefined) {
-      return new Date(Date.UTC(Number(mon[3]), month, Number(mon[1])));
+      return utcDateFromParts(Number(mon[3]), month + 1, Number(mon[1]));
     }
+  }
+
+  // Avoid Date.parse for slash-separated values — it is MM/DD biased and rejects day>12.
+  if (/^\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}$/.test(text)) {
+    return null;
   }
 
   const parsed = new Date(text);
   if (Number.isNaN(parsed.getTime())) return null;
   return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
+}
+
+function utcDateFromParts(year: number, month1to12: number, day: number): Date | null {
+  if (month1to12 < 1 || month1to12 > 12 || day < 1 || day > 31) return null;
+  const d = new Date(Date.UTC(year, month1to12 - 1, day));
+  if (
+    d.getUTCFullYear() !== year ||
+    d.getUTCMonth() !== month1to12 - 1 ||
+    d.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return d;
 }
 
 export function extractDigitsAccountNumber(value: string | null | undefined): string | null {

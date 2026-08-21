@@ -15,13 +15,30 @@ import { decimalToNumber } from "@/lib/inventory";
 import { calculateLineSubtotal, roundMoney } from "@/lib/quotations";
 import { ROLES } from "@/lib/rbac";
 
+export type CompanyIdFilter = string | { in: string[] };
+
 export type SalesMetricFilters = {
-  companyId: string;
+  companyId: CompanyIdFilter;
   salesUserId?: string;
   fromDate?: string;
   toDate?: string;
   customerType?: CustomerType;
 };
+
+/** Prisma-friendly company filter from one or many IDs. */
+export function toCompanyIdFilter(companyIds: string | string[]): CompanyIdFilter {
+  if (Array.isArray(companyIds)) {
+    if (companyIds.length === 0) {
+      throw new Error("COMPANY_REQUIRED");
+    }
+    return companyIds.length === 1 ? companyIds[0]! : { in: companyIds };
+  }
+  return companyIds;
+}
+
+export function toCompanyIdList(companyId: CompanyIdFilter): string[] {
+  return typeof companyId === "string" ? [companyId] : companyId.in;
+}
 
 export type ExecutiveKpiSummary = {
   executiveId: string;
@@ -227,7 +244,7 @@ export function sumDispatchedUnitsFromLines(
 
 export async function listSalesExecutivesForCompany(
   prisma: PrismaClient,
-  companyId: string,
+  companyId: CompanyIdFilter,
   salesUserId?: string,
 ) {
   return prisma.user.findMany({
@@ -330,7 +347,7 @@ export async function buildNewCustomersCount(
 
 export async function buildExecutiveKpiSummary(
   prisma: PrismaClient,
-  companyId: string,
+  companyId: CompanyIdFilter,
   executive: { id: string; name: string; email: string },
   filters: Omit<SalesMetricFilters, "companyId" | "salesUserId">,
 ): Promise<ExecutiveKpiSummary> {
@@ -376,7 +393,7 @@ export async function buildExecutiveKpiSummary(
 
 export async function buildTeamKpiSummaries(
   prisma: PrismaClient,
-  companyId: string,
+  companyId: CompanyIdFilter,
   filters: Omit<SalesMetricFilters, "companyId" | "salesUserId">,
   salesUserId?: string,
 ): Promise<ExecutiveKpiSummary[]> {

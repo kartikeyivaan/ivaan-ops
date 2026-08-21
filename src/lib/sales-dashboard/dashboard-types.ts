@@ -4,7 +4,8 @@ import type { ApprovalType } from "@/lib/approvals-service";
 import type { ExecutiveKpiSummary, KpiStripDto } from "@/lib/report-builders";
 
 export type SalesDashboardScope = {
-  companyId: string;
+  /** One or more company IDs included in this dashboard view. */
+  companyIds: string[];
   restrictToUserId: string | null;
   canViewTeam: boolean;
   userId: string;

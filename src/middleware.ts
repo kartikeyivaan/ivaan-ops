@@ -1,5 +1,6 @@
 import NextAuth from "next-auth";
 import { authConfig } from "@/lib/auth.config";
+import { isAllCompaniesScope } from "@/lib/company-scope";
 import { ROLES } from "@/lib/rbac";
 import { NextResponse } from "next/server";
 
@@ -66,7 +67,10 @@ export default auth((request) => {
     !isAuthApi
   ) {
     const companies = session.user.companies ?? [];
-    const active = companies.find((c) => c.id === session.user.activeCompanyId);
+    const activeId = session.user.activeCompanyId;
+    const active = isAllCompaniesScope(activeId)
+      ? undefined
+      : companies.find((c) => c.id === activeId);
     const isPractice =
       Boolean(active?.isPractice) || active?.code === "LEARN";
     const learningMode = Boolean(session.user.learningMode);

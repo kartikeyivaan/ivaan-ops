@@ -6,6 +6,10 @@ import {
 import { decimalToNumber } from "@/lib/inventory";
 import { getWarehouseStockForProduct } from "@/lib/inventory-service";
 import { calculateFreeQty } from "@/lib/reports";
+import {
+  toCompanyIdList,
+  type CompanyIdFilter,
+} from "@/lib/report-builders";
 import type {
   SalesStockWatchDto,
   SalesStockWatchItemDto,
@@ -26,7 +30,7 @@ function resolveStockStatus(
 
 export async function getSalesStockWatch(
   prisma: PrismaClient,
-  companyId: string,
+  companyId: CompanyIdFilter,
   salesUserId?: string,
 ): Promise<SalesStockWatchDto> {
   const [openQuotations, openPis] = await Promise.all([
@@ -38,7 +42,13 @@ export async function getSalesStockWatch(
       },
       include: {
         items: {
-          select: { productId: true, qty: true, product: { select: { displayName: true, brand: { select: { name: true } } } } },
+          select: {
+            productId: true,
+            qty: true,
+            product: {
+              select: { displayName: true, brand: { select: { name: true } } },
+            },
+          },
         },
       },
     }),
@@ -56,13 +66,15 @@ export async function getSalesStockWatch(
         },
       },
       include: {
-        warehouse: { select: { id: true, name: true } },
+        warehouse: { select: { id: true, name: true, companyId: true } },
         items: {
           select: {
             productId: true,
             qty: true,
             dispatchedQty: true,
-            product: { select: { displayName: true, brand: { select: { name: true } } } },
+            product: {
+              select: { displayName: true, brand: { select: { name: true } } },
+            },
           },
         },
       },
@@ -77,6 +89,7 @@ export async function getSalesStockWatch(
       openRequirement: number;
       warehouseId: string | null;
       warehouseName: string | null;
+      stockCompanyId: string | null;
     }
   >();
 
@@ -88,8 +101,10 @@ export async function getSalesStockWatch(
         openRequirement: 0,
         warehouseId: null,
         warehouseName: null,
+        stockCompanyId: quotation.companyId,
       };
       existing.openRequirement += decimalToNumber(item.qty);
+      if (!existing.stockCompanyId) existing.stockCompanyId = quotation.companyId;
       requirementByProduct.set(item.productId, existing);
     }
   }
@@ -107,11 +122,13 @@ export async function getSalesStockWatch(
         openRequirement: 0,
         warehouseId: pi.warehouseId,
         warehouseName: pi.warehouse?.name ?? null,
+        stockCompanyId: pi.warehouse?.companyId ?? pi.companyId,
       };
       existing.openRequirement += remaining;
       if (pi.warehouseId) {
         existing.warehouseId = pi.warehouseId;
         existing.warehouseName = pi.warehouse?.name ?? null;
+        existing.stockCompanyId = pi.warehouse?.companyId ?? pi.companyId;
       }
       requirementByProduct.set(item.productId, existing);
     }
@@ -119,20 +136,25 @@ export async function getSalesStockWatch(
 
   const warehouses = await prisma.warehouse.findMany({
     where: { companyId, isActive: true },
-    select: { id: true, name: true },
+    select: { id: true, name: true, companyId: true },
     orderBy: { name: "asc" },
   });
   const defaultWarehouse = warehouses[0] ?? null;
+  const fallbackCompanyId = toCompanyIdList(companyId)[0]!;
 
   const items: SalesStockWatchItemDto[] = [];
 
   for (const [productId, meta] of requirementByProduct) {
     const warehouseId = meta.warehouseId ?? defaultWarehouse?.id;
     if (!warehouseId) continue;
+    const stockCompanyId =
+      meta.stockCompanyId ??
+      defaultWarehouse?.companyId ??
+      fallbackCompanyId;
 
     const stock = await getWarehouseStockForProduct(
       prisma,
-      companyId,
+      stockCompanyId,
       productId,
       warehouseId,
     );
@@ -165,7 +187,7 @@ export async function getSalesStockWatch(
 
 export async function getStockConflicts(
   prisma: PrismaClient,
-  companyId: string,
+  companyId: CompanyIdFilter,
 ): Promise<
   Array<{
     productId: string;

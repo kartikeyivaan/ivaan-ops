@@ -10,6 +10,10 @@ import {
 import { decimalToNumber } from "@/lib/inventory";
 import { calculateOutstanding } from "@/lib/reports";
 import { refreshExpiredQuotations } from "@/lib/quotation-service";
+import {
+  toCompanyIdList,
+  type CompanyIdFilter,
+} from "@/lib/report-builders";
 import type { WorkQueueDto, WorkQueueItem } from "@/lib/sales-dashboard/dashboard-types";
 
 const QUIET_CUSTOMER_DAYS = 7;
@@ -25,11 +29,13 @@ function addDaysToDateStringLocal(value: string, days: number): string {
 
 export async function getWorkQueue(
   prisma: PrismaClient,
-  companyId: string,
+  companyId: CompanyIdFilter,
   salesUserId?: string,
 ): Promise<WorkQueueDto> {
   const today = getBusinessToday();
-  await refreshExpiredQuotations(prisma, companyId);
+  await Promise.all(
+    toCompanyIdList(companyId).map((id) => refreshExpiredQuotations(prisma, id)),
+  );
 
   const soonEnd = addDaysToDateStringLocal(today, EXPIRING_SOON_DAYS);
 

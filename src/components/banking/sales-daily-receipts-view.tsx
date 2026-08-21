@@ -144,8 +144,8 @@ export function SalesDailyReceiptsView() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Daily Receipts</h1>
         <p className="text-sm text-slate-500">
-          Credit receipts only. Copy the payment code into a PI — copying does not reserve or assign
-          the payment.
+          Credit receipts only for the selected firm. Copy into a PI of the same company — codes from
+          another firm will be rejected. Copying does not reserve or assign the payment.
         </p>
       </div>
 
@@ -238,18 +238,17 @@ export function SalesDailyReceiptsView() {
                     <TableHead>Bank</TableHead>
                     <TableHead className="text-right">Amount</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Payment code</TableHead>
                     <TableHead className="text-right">Copy</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {group.items.map((item) => (
                     <TableRow key={item.id}>
-                      <TableCell className="max-w-[280px]">
-                        <div className="truncate text-sm font-medium text-slate-800">
+                      <TableCell className="min-w-[16rem] max-w-xl whitespace-normal break-words">
+                        <div className="text-sm font-medium text-slate-800">
                           {item.referenceNumber || "—"}
                         </div>
-                        <div className="truncate text-xs text-slate-500">{item.description}</div>
+                        <div className="text-xs text-slate-500">{item.description}</div>
                       </TableCell>
                       <TableCell className="text-sm">
                         <div>{item.receivedInAccount}</div>
@@ -259,16 +258,13 @@ export function SalesDailyReceiptsView() {
                         {formatCurrency(item.amount)}
                       </TableCell>
                       <TableCell className="text-sm">{item.availabilityLabel}</TableCell>
-                      <TableCell className="font-mono text-sm tracking-wide">
-                        {item.paymentCode}
-                      </TableCell>
                       <TableCell className="text-right">
                         <Button
                           type="button"
                           size="sm"
                           variant="outline"
                           onClick={() => void handleCopy(item)}
-                          aria-label={`Copy payment code ${item.paymentCode}`}
+                          aria-label="Copy payment code"
                         >
                           {copiedId === item.id ? (
                             <>

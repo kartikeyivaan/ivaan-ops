@@ -4,6 +4,11 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Building2, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  ALL_COMPANIES_ID,
+  formatAllCompaniesLabel,
+  isAllCompaniesScope,
+} from "@/lib/company-scope";
 import { isPracticeCompany, operationalCompanies } from "@/lib/learning/mode";
 
 export function CompanySwitcher({ className }: { className?: string }) {
@@ -19,6 +24,9 @@ export function CompanySwitcher({ className }: { className?: string }) {
     ? session.user.companies.filter((c) => isPracticeCompany(c))
     : operationalCompanies(session.user.companies);
 
+  const showAllOption = !learningMode && companies.length > 1;
+  const allLabel = formatAllCompaniesLabel(companies);
+  const activeIsAll = isAllCompaniesScope(session.user.activeCompanyId);
   const activeCompany =
     session.user.companies.find((c) => c.id === session.user.activeCompanyId) ??
     companies[0];
@@ -52,6 +60,10 @@ export function CompanySwitcher({ className }: { className?: string }) {
     );
   }
 
+  const selectValue = activeIsAll
+    ? ALL_COMPANIES_ID
+    : (session.user.activeCompanyId ?? "");
+
   return (
     <div className={cn("relative w-full min-w-0", className)}>
       <label className="sr-only" htmlFor="company-switcher">
@@ -62,9 +74,12 @@ export function CompanySwitcher({ className }: { className?: string }) {
         <select
           id="company-switcher"
           className="h-10 w-full min-w-0 max-w-full appearance-none truncate rounded-md border border-slate-300 bg-white pl-9 pr-8 text-sm font-medium"
-          value={session.user.activeCompanyId ?? ""}
+          value={selectValue}
           onChange={(e) => handleChange(e.target.value)}
         >
+          {showAllOption ? (
+            <option value={ALL_COMPANIES_ID}>{allLabel}</option>
+          ) : null}
           {companies.map((company) => (
             <option key={company.id} value={company.id}>
               {company.name} ({company.code})

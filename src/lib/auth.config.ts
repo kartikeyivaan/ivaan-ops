@@ -1,4 +1,5 @@
 import type { NextAuthConfig } from "next-auth";
+import { ALL_COMPANIES_ID, isAllCompaniesScope } from "@/lib/company-scope";
 import { getPasswordChangeRequirement } from "@/lib/password-policy";
 import { PRACTICE_COMPANY_CODE } from "@/lib/learning/lessons";
 
@@ -54,7 +55,10 @@ export const authConfig = {
         if (session.activeCompanyId) {
           const companies = (token.companies as SessionCompany[]) ?? [];
           const companyIds = companies.map((c) => c.id);
-          if (companyIds.includes(session.activeCompanyId)) {
+          if (
+            session.activeCompanyId === ALL_COMPANIES_ID ||
+            companyIds.includes(session.activeCompanyId)
+          ) {
             token.activeCompanyId = session.activeCompanyId;
           }
         }
@@ -68,11 +72,15 @@ export const authConfig = {
       // Safety: never stay on Practice without Learning Mode.
       if (!token.learningMode) {
         const companies = (token.companies as SessionCompany[]) ?? [];
-        const active = companies.find((c) => c.id === token.activeCompanyId);
-        if (isPractice(active)) {
-          const fallback =
-            companies.find((c) => !isPractice(c))?.id ?? null;
-          token.activeCompanyId = fallback;
+        if (!isAllCompaniesScope(token.activeCompanyId as string | null)) {
+          const active = companies.find((c) => c.id === token.activeCompanyId);
+          if (isPractice(active)) {
+            const operational = companies.filter((c) => !isPractice(c));
+            token.activeCompanyId =
+              operational.length > 1
+                ? ALL_COMPANIES_ID
+                : (operational[0]?.id ?? null);
+          }
         }
       }
 

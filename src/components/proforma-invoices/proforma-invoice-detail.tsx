@@ -1488,8 +1488,8 @@ export function ProformaInvoiceDetail({
                           {matchingPaymentId === payment.id ? (
                             <div className="mt-2 flex flex-col items-end gap-2 sm:flex-row sm:justify-end">
                               <Input
-                                className="max-w-[160px] font-mono uppercase"
-                                placeholder="e.g. P8K4X2"
+                                className="max-w-[220px] font-mono uppercase"
+                                placeholder="Paste payment code"
                                 value={matchPaymentCode}
                                 onChange={(event) =>
                                   setMatchPaymentCode(event.target.value.toUpperCase())
@@ -1531,8 +1531,8 @@ export function ProformaInvoiceDetail({
               <div className="md:col-span-3 lg:col-span-6">
                 <p className="text-sm font-medium text-slate-700">Link Bank Payment</p>
                 <p className="text-xs text-slate-500">
-                  Paste the short payment code from Daily Receipts. Creates a bank-verified
-                  payment on this PI.
+                  Paste the payment code copied from Daily Receipts for this same firm. Codes from
+                  another company cannot be used. Creates a bank-verified payment on this PI.
                 </p>
               </div>
               <div className="space-y-2">
@@ -1541,7 +1541,7 @@ export function ProformaInvoiceDetail({
                 </Label>
                 <Input
                   className="font-mono uppercase"
-                  placeholder="P8K4X2"
+                  placeholder="Paste payment code"
                   value={linkPaymentCode}
                   onChange={(event) => setLinkPaymentCode(event.target.value.toUpperCase())}
                 />

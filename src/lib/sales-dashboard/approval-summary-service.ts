@@ -16,10 +16,14 @@ const SALES_APPROVAL_TYPES: ApprovalType[] = [
 
 export async function getApprovalSummary(
   prisma: PrismaClient,
-  companyId: string,
+  companyIds: string | string[],
   userRoles: string[],
 ): Promise<ApprovalSummaryDto> {
-  const pending = await listPendingApprovals(prisma, companyId, userRoles);
+  const ids = Array.isArray(companyIds) ? companyIds : [companyIds];
+  const pendingGroups = await Promise.all(
+    ids.map((companyId) => listPendingApprovals(prisma, companyId, userRoles)),
+  );
+  const pending = pendingGroups.flat();
   const salesPending = pending.filter((item) =>
     SALES_APPROVAL_TYPES.includes(item.type),
   );

@@ -20,6 +20,7 @@ import {
 import { prisma, isDatabaseConfigured } from "@/lib/prisma";
 import { loginSchema } from "@/lib/validations";
 import { writeAuditLog } from "@/lib/audit";
+import { ALL_COMPANIES_ID } from "@/lib/company-scope";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
@@ -220,7 +221,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             code: c.code,
             isPractice: c.isPractice,
           })),
-          activeCompanyId: activeCompanies[0]?.id ?? null,
+          activeCompanyId:
+            activeCompanies.length > 1
+              ? ALL_COMPANIES_ID
+              : (activeCompanies[0]?.id ?? null),
           mustChangePassword: user.mustChangePassword,
           passwordChangedAt: user.passwordChangedAt?.toISOString() ?? null,
           learningMode: false,

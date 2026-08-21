@@ -10,12 +10,18 @@ import type { OutstandingAgingDto } from "@/lib/sales-dashboard/dashboard-types"
 
 export async function getOutstandingAging(
   prisma: PrismaClient,
-  companyId: string,
+  companyIds: string | string[],
   salesUserId?: string,
 ): Promise<OutstandingAgingDto> {
-  const rows = await getPaymentFollowupReport(prisma, companyId, {
-    salesUserId,
-  });
+  const ids = Array.isArray(companyIds) ? companyIds : [companyIds];
+  const rowGroups = await Promise.all(
+    ids.map((companyId) =>
+      getPaymentFollowupReport(prisma, companyId, {
+        salesUserId,
+      }),
+    ),
+  );
+  const rows = rowGroups.flat();
 
   const bucketTotals = new Map<AgeingBucket, { total: number; count: number }>();
   const buckets: AgeingBucket[] = ["0-30", "31-60", "61-90", "90+"];

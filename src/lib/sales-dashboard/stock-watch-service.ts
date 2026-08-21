@@ -13,6 +13,7 @@ import {
 import type {
   SalesStockWatchDto,
   SalesStockWatchItemDto,
+  StockConflictDto,
 } from "@/lib/sales-dashboard/dashboard-types";
 
 const MAX_PRODUCTS = 10;
@@ -194,15 +195,7 @@ export async function getSalesStockWatch(
 export async function getStockConflicts(
   prisma: PrismaClient,
   companyId: CompanyIdFilter,
-): Promise<
-  Array<{
-    productId: string;
-    productName: string;
-    available: number;
-    required: number;
-    shortBy: number;
-  }>
-> {
+): Promise<StockConflictDto[]> {
   const watch = await getSalesStockWatch(prisma, companyId);
   return watch.items
     .filter((item) => item.status === "SHORT" || item.status === "CONFLICT")

@@ -19,7 +19,8 @@ export default async function CustomersPage() {
   }
 
   const companyId = requireActiveCompany(session);
-  const customers = await listCustomers(prisma, companyId, {});
+  const customersPage = await listCustomers(prisma, companyId, {});
+  const customers = customersPage.items;
 
   const salesExecutives = await prisma.user.findMany({
     where: {
@@ -43,6 +44,9 @@ export default async function CustomersPage() {
     <Suspense fallback={<div className="text-sm text-slate-500">Loading customers...</div>}>
       <CustomersList
         initialCustomers={customers}
+        initialTotal={customersPage.total}
+        initialPage={customersPage.page}
+        initialPageSize={customersPage.pageSize}
         salesExecutives={salesExecutives}
         canEdit={canEditCustomers(session.user.roles)}
         canReassign={canReassignCustomers(session.user.roles)}

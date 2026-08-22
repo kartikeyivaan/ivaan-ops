@@ -2,7 +2,7 @@ import {
   CustomerType,
   DispatchStatus,
   QuotationStatus,
-  type Prisma,
+  Prisma,
   type PrismaClient,
 } from "@prisma/client";
 import {
@@ -14,7 +14,6 @@ import {
   addDualMetric,
   applyIncentiveCredit,
   emptyDualMetric,
-  newCustomerCreditCount,
   roundDualMoney,
   roundDualUnits,
   type DualMetric,
@@ -191,6 +190,69 @@ export function buildNewCustomersWhere(
   };
 }
 
+/** SQL factor matching incentiveCreditFactor (null → 100, clamped 0–100). */
+const SQL_INCENTIVE_FACTOR = Prisma.sql`(LEAST(100::numeric, GREATEST(0::numeric, COALESCE(c.incentive_credit_percent, 100))) / 100)`;
+
+type DualSumRow = {
+  actual: Prisma.Decimal | number | string | null;
+  counted: Prisma.Decimal | number | string | null;
+};
+
+type ExecDualSumRow = DualSumRow & { salesUserId: string };
+
+type CategoryDualSumRow = DualSumRow & { category: string };
+
+type ExecCategoryDualSumRow = DualSumRow & { salesUserId: string; category: string };
+
+function dualFromSumRow(row: DualSumRow | undefined): DualMetric {
+  return roundDualMoney({
+    actual: decimalToNumber(row?.actual ?? 0),
+    counted: decimalToNumber(row?.counted ?? 0),
+  });
+}
+
+function sqlCompanyEquals(columnSql: Prisma.Sql, companyId: CompanyIdFilter): Prisma.Sql {
+  if (typeof companyId === "string") {
+    return Prisma.sql`${columnSql} = ${companyId}::uuid`;
+  }
+  return Prisma.sql`${columnSql} IN (${Prisma.join(
+    companyId.in.map((id) => Prisma.sql`${id}::uuid`),
+  )})`;
+}
+
+function sqlAndDateRange(
+  columnSql: Prisma.Sql,
+  fromDate?: Date,
+  toDate?: Date,
+): Prisma.Sql {
+  const parts: Prisma.Sql[] = [];
+  if (fromDate) parts.push(Prisma.sql`${columnSql} >= ${fromDate}`);
+  if (toDate) parts.push(Prisma.sql`${columnSql} <= ${toDate}`);
+  if (parts.length === 0) return Prisma.empty;
+  return Prisma.sql`AND ${Prisma.join(parts, " AND ")}`;
+}
+
+function sqlAndOptional(
+  condition: Prisma.Sql | null | undefined,
+): Prisma.Sql {
+  return condition ?? Prisma.empty;
+}
+
+function dualSumSelect(valueSql: Prisma.Sql): Prisma.Sql {
+  return Prisma.sql`
+    COALESCE(SUM(${valueSql}), 0) AS actual,
+    COALESCE(SUM(${valueSql} * ${SQL_INCENTIVE_FACTOR}), 0) AS counted
+  `;
+}
+
+function mapExecDualSums(rows: ExecDualSumRow[]): Map<string, DualMetric> {
+  const map = new Map<string, DualMetric>();
+  for (const row of rows) {
+    map.set(row.salesUserId, dualFromSumRow(row));
+  }
+  return map;
+}
+
 export function sumDocumentValues(
   rows: ReadonlyArray<{
     totalValue: Prisma.Decimal | number | string;
@@ -302,42 +364,77 @@ export async function buildQuotationValueAggregate(
   prisma: PrismaClient,
   filters: SalesMetricFilters,
 ): Promise<DualMetric> {
-  const rows = await prisma.quotation.findMany({
-    where: buildQuotationWhere(filters),
-    select: {
-      totalValue: true,
-      customer: incentivePercentSelect,
-    },
-  });
-  return sumDocumentValues(rows);
+  const { fromDate, toDate } = resolveDateBounds(filters);
+  const rows = await prisma.$queryRaw<DualSumRow[]>`
+    SELECT ${dualSumSelect(Prisma.sql`q.total_value`)}
+    FROM quotations q
+    INNER JOIN customers c ON c.id = q.customer_id
+    WHERE ${sqlCompanyEquals(Prisma.sql`q.company_id`, filters.companyId)}
+      AND q.status <> CAST(${QuotationStatus.DRAFT} AS "QuotationStatus")
+      ${sqlAndOptional(
+        filters.salesUserId
+          ? Prisma.sql`AND q.sales_user_id = ${filters.salesUserId}::uuid`
+          : null,
+      )}
+      ${sqlAndDateRange(Prisma.sql`q.quotation_date`, fromDate, toDate)}
+      ${sqlAndOptional(
+        filters.customerType
+          ? Prisma.sql`AND c.customer_type = CAST(${filters.customerType} AS "CustomerType")`
+          : null,
+      )}
+  `;
+  return dualFromSumRow(rows[0]);
 }
 
 export async function buildPiValueAggregate(
   prisma: PrismaClient,
   filters: SalesMetricFilters,
 ): Promise<DualMetric> {
-  const rows = await prisma.proformaInvoice.findMany({
-    where: buildPiWhere(filters),
-    select: {
-      totalValue: true,
-      customer: incentivePercentSelect,
-    },
-  });
-  return sumDocumentValues(rows);
+  const { fromDate, toDate } = resolveDateBounds(filters);
+  const rows = await prisma.$queryRaw<DualSumRow[]>`
+    SELECT ${dualSumSelect(Prisma.sql`pi.total_value`)}
+    FROM proforma_invoices pi
+    INNER JOIN customers c ON c.id = pi.customer_id
+    WHERE ${sqlCompanyEquals(Prisma.sql`pi.company_id`, filters.companyId)}
+      ${sqlAndOptional(
+        filters.salesUserId
+          ? Prisma.sql`AND pi.sales_user_id = ${filters.salesUserId}::uuid`
+          : null,
+      )}
+      ${sqlAndDateRange(Prisma.sql`pi.pi_date`, fromDate, toDate)}
+      ${sqlAndOptional(
+        filters.customerType
+          ? Prisma.sql`AND c.customer_type = CAST(${filters.customerType} AS "CustomerType")`
+          : null,
+      )}
+  `;
+  return dualFromSumRow(rows[0]);
 }
 
 export async function buildCollectionValueAggregate(
   prisma: PrismaClient,
   filters: SalesMetricFilters,
 ): Promise<DualMetric> {
-  const rows = await prisma.payment.findMany({
-    where: buildPaymentWhere(filters),
-    select: {
-      amount: true,
-      customer: incentivePercentSelect,
-    },
-  });
-  return sumPaymentAmounts(rows);
+  const { fromDate, toDate } = resolveDateBounds(filters);
+  const rows = await prisma.$queryRaw<DualSumRow[]>`
+    SELECT ${dualSumSelect(Prisma.sql`p.amount`)}
+    FROM payments p
+    INNER JOIN customers c ON c.id = p.customer_id
+    INNER JOIN proforma_invoices pi ON pi.id = p.proforma_invoice_id
+    WHERE ${sqlCompanyEquals(Prisma.sql`pi.company_id`, filters.companyId)}
+      ${sqlAndOptional(
+        filters.salesUserId
+          ? Prisma.sql`AND pi.sales_user_id = ${filters.salesUserId}::uuid`
+          : null,
+      )}
+      ${sqlAndDateRange(Prisma.sql`p.payment_date`, fromDate, toDate)}
+      ${sqlAndOptional(
+        filters.customerType
+          ? Prisma.sql`AND c.customer_type = CAST(${filters.customerType} AS "CustomerType")`
+          : null,
+      )}
+  `;
+  return dualFromSumRow(rows[0]);
 }
 
 export async function fetchDispatchesForMetrics(
@@ -395,22 +492,85 @@ export async function buildDispatchedUnitTotals(
   prisma: PrismaClient,
   filters: SalesMetricFilters,
 ): Promise<DispatchedUnitTotals> {
-  const dispatches = await fetchDispatchesForMetrics(prisma, filters);
-  return sumDispatchedUnitsFromLines(dispatches);
+  const { fromDate, toDate } = resolveDateBounds(filters);
+  const rows = await prisma.$queryRaw<CategoryDualSumRow[]>`
+    SELECT
+      pc.name AS category,
+      COALESCE(SUM(dl.qty), 0) AS actual,
+      COALESCE(SUM(dl.qty * ${SQL_INCENTIVE_FACTOR}), 0) AS counted
+    FROM dispatch_lines dl
+    INNER JOIN dispatches d ON d.id = dl.dispatch_id
+    INNER JOIN customers c ON c.id = d.customer_id
+    INNER JOIN products p ON p.id = dl.product_id
+    INNER JOIN product_categories pc ON pc.id = p.category_id
+    INNER JOIN proforma_invoices pi ON pi.id = d.proforma_invoice_id
+    WHERE ${sqlCompanyEquals(Prisma.sql`d.company_id`, filters.companyId)}
+      AND d.status = CAST(${DispatchStatus.DISPATCHED} AS "DispatchStatus")
+      ${sqlAndOptional(
+        filters.salesUserId
+          ? Prisma.sql`AND pi.sales_user_id = ${filters.salesUserId}::uuid`
+          : null,
+      )}
+      ${sqlAndDateRange(Prisma.sql`d.dispatch_date`, fromDate, toDate)}
+      ${sqlAndOptional(
+        filters.customerType
+          ? Prisma.sql`AND c.customer_type = CAST(${filters.customerType} AS "CustomerType")`
+          : null,
+      )}
+      AND pc.name IN ('Modules', 'Inverters', 'Other')
+    GROUP BY pc.name
+  `;
+
+  const totals: DispatchedUnitTotals = {
+    modules: emptyDualMetric(),
+    inverters: emptyDualMetric(),
+    other: emptyDualMetric(),
+  };
+  for (const row of rows) {
+    const dual = {
+      actual: decimalToNumber(row.actual ?? 0),
+      counted: decimalToNumber(row.counted ?? 0),
+    };
+    if (row.category === "Modules") totals.modules = dual;
+    else if (row.category === "Inverters") totals.inverters = dual;
+    else if (row.category === "Other") totals.other = dual;
+  }
+  return {
+    modules: roundDualUnits(totals.modules),
+    inverters: roundDualUnits(totals.inverters),
+    other: roundDualUnits(totals.other),
+  };
 }
 
 export async function buildNewCustomersCount(
   prisma: PrismaClient,
   filters: SalesMetricFilters,
 ): Promise<DualMetric> {
-  const customers = await prisma.customer.findMany({
-    where: buildNewCustomersWhere(filters),
-    select: { incentiveCreditPercent: true },
-  });
-  return customers.reduce(
-    (sum, customer) => addDualMetric(sum, newCustomerCreditCount(customer.incentiveCreditPercent)),
-    emptyDualMetric(),
-  );
+  const { fromDate, toDate } = resolveDateBounds(filters);
+  const rows = await prisma.$queryRaw<DualSumRow[]>`
+    SELECT
+      COUNT(*)::numeric AS actual,
+      COUNT(*) FILTER (
+        WHERE LEAST(100::numeric, GREATEST(0::numeric, COALESCE(c.incentive_credit_percent, 100))) > 0
+      )::numeric AS counted
+    FROM customers c
+    WHERE TRUE
+      ${sqlAndOptional(
+        filters.salesUserId
+          ? Prisma.sql`AND c.assigned_sales_user_id = ${filters.salesUserId}::uuid`
+          : null,
+      )}
+      ${sqlAndOptional(
+        filters.customerType
+          ? Prisma.sql`AND c.customer_type = CAST(${filters.customerType} AS "CustomerType")`
+          : null,
+      )}
+      ${sqlAndDateRange(Prisma.sql`c.created_at`, fromDate, toDate)}
+  `;
+  return {
+    actual: decimalToNumber(rows[0]?.actual ?? 0),
+    counted: decimalToNumber(rows[0]?.counted ?? 0),
+  };
 }
 
 function emptyExecutiveKpi(
@@ -467,39 +627,180 @@ export async function buildExecutiveKpiSummary(
     ...filters,
   };
 
-  const [quotations, pis, payments, dispatches, newCustomers] = await Promise.all([
-    prisma.quotation.findMany({
-      where: buildQuotationWhere(scoped),
-      select: { totalValue: true, customer: incentivePercentSelect },
-    }),
-    prisma.proformaInvoice.findMany({
-      where: buildPiWhere(scoped),
-      select: { totalValue: true, customer: incentivePercentSelect },
-    }),
-    prisma.payment.findMany({
-      where: buildPaymentWhere(scoped),
-      select: { amount: true, customer: incentivePercentSelect },
-    }),
-    fetchDispatchesForMetrics(prisma, scoped),
-    buildNewCustomersCount(prisma, scoped),
-  ]);
-
-  const kitBomMap = await loadKitBomMapForDispatches(prisma, dispatches);
-  const units = sumDispatchedUnitsFromLines(dispatches);
+  const [quotationValue, piValue, collectionValue, dispatchedValue, units, newCustomers] =
+    await Promise.all([
+      buildQuotationValueAggregate(prisma, scoped),
+      buildPiValueAggregate(prisma, scoped),
+      buildCollectionValueAggregate(prisma, scoped),
+      buildDispatchedValueAggregate(prisma, scoped),
+      buildDispatchedUnitTotals(prisma, scoped),
+      buildNewCustomersCount(prisma, scoped),
+    ]);
 
   return finalizeExecutiveKpi({
     executiveId: executive.id,
     executiveName: executive.name,
     executiveEmail: executive.email,
-    quotationValue: sumDocumentValues(quotations),
-    piValue: sumDocumentValues(pis),
-    collectionValue: sumPaymentAmounts(payments),
-    dispatchedValue: sumDispatchedValueFromLines(dispatches, kitBomMap),
+    quotationValue,
+    piValue,
+    collectionValue,
+    dispatchedValue,
     moduleUnits: units.modules,
     inverterUnits: units.inverters,
     otherUnits: units.other,
     newCustomers,
   });
+}
+
+async function groupQuotationValueByExecutive(
+  prisma: PrismaClient,
+  filters: SalesMetricFilters,
+): Promise<Map<string, DualMetric>> {
+  const { fromDate, toDate } = resolveDateBounds(filters);
+  const rows = await prisma.$queryRaw<ExecDualSumRow[]>`
+    SELECT
+      q.sales_user_id AS "salesUserId",
+      ${dualSumSelect(Prisma.sql`q.total_value`)}
+    FROM quotations q
+    INNER JOIN customers c ON c.id = q.customer_id
+    WHERE ${sqlCompanyEquals(Prisma.sql`q.company_id`, filters.companyId)}
+      AND q.status <> CAST(${QuotationStatus.DRAFT} AS "QuotationStatus")
+      ${sqlAndDateRange(Prisma.sql`q.quotation_date`, fromDate, toDate)}
+      ${sqlAndOptional(
+        filters.customerType
+          ? Prisma.sql`AND c.customer_type = CAST(${filters.customerType} AS "CustomerType")`
+          : null,
+      )}
+    GROUP BY q.sales_user_id
+  `;
+  return mapExecDualSums(rows);
+}
+
+async function groupPiValueByExecutive(
+  prisma: PrismaClient,
+  filters: SalesMetricFilters,
+): Promise<Map<string, DualMetric>> {
+  const { fromDate, toDate } = resolveDateBounds(filters);
+  const rows = await prisma.$queryRaw<ExecDualSumRow[]>`
+    SELECT
+      pi.sales_user_id AS "salesUserId",
+      ${dualSumSelect(Prisma.sql`pi.total_value`)}
+    FROM proforma_invoices pi
+    INNER JOIN customers c ON c.id = pi.customer_id
+    WHERE ${sqlCompanyEquals(Prisma.sql`pi.company_id`, filters.companyId)}
+      ${sqlAndDateRange(Prisma.sql`pi.pi_date`, fromDate, toDate)}
+      ${sqlAndOptional(
+        filters.customerType
+          ? Prisma.sql`AND c.customer_type = CAST(${filters.customerType} AS "CustomerType")`
+          : null,
+      )}
+    GROUP BY pi.sales_user_id
+  `;
+  return mapExecDualSums(rows);
+}
+
+async function groupCollectionValueByExecutive(
+  prisma: PrismaClient,
+  filters: SalesMetricFilters,
+): Promise<Map<string, DualMetric>> {
+  const { fromDate, toDate } = resolveDateBounds(filters);
+  const rows = await prisma.$queryRaw<ExecDualSumRow[]>`
+    SELECT
+      pi.sales_user_id AS "salesUserId",
+      ${dualSumSelect(Prisma.sql`p.amount`)}
+    FROM payments p
+    INNER JOIN customers c ON c.id = p.customer_id
+    INNER JOIN proforma_invoices pi ON pi.id = p.proforma_invoice_id
+    WHERE ${sqlCompanyEquals(Prisma.sql`pi.company_id`, filters.companyId)}
+      ${sqlAndDateRange(Prisma.sql`p.payment_date`, fromDate, toDate)}
+      ${sqlAndOptional(
+        filters.customerType
+          ? Prisma.sql`AND c.customer_type = CAST(${filters.customerType} AS "CustomerType")`
+          : null,
+      )}
+    GROUP BY pi.sales_user_id
+  `;
+  return mapExecDualSums(rows);
+}
+
+async function groupNewCustomersByExecutive(
+  prisma: PrismaClient,
+  filters: SalesMetricFilters,
+): Promise<Map<string, DualMetric>> {
+  const { fromDate, toDate } = resolveDateBounds(filters);
+  const rows = await prisma.$queryRaw<ExecDualSumRow[]>`
+    SELECT
+      c.assigned_sales_user_id AS "salesUserId",
+      COUNT(*)::numeric AS actual,
+      COUNT(*) FILTER (
+        WHERE LEAST(100::numeric, GREATEST(0::numeric, COALESCE(c.incentive_credit_percent, 100))) > 0
+      )::numeric AS counted
+    FROM customers c
+    WHERE TRUE
+      ${sqlAndOptional(
+        filters.customerType
+          ? Prisma.sql`AND c.customer_type = CAST(${filters.customerType} AS "CustomerType")`
+          : null,
+      )}
+      ${sqlAndDateRange(Prisma.sql`c.created_at`, fromDate, toDate)}
+    GROUP BY c.assigned_sales_user_id
+  `;
+  return mapExecDualSums(rows);
+}
+
+async function groupDispatchedUnitsByExecutive(
+  prisma: PrismaClient,
+  filters: SalesMetricFilters,
+): Promise<Map<string, DispatchedUnitTotals>> {
+  const { fromDate, toDate } = resolveDateBounds(filters);
+  const rows = await prisma.$queryRaw<ExecCategoryDualSumRow[]>`
+    SELECT
+      pi.sales_user_id AS "salesUserId",
+      pc.name AS category,
+      COALESCE(SUM(dl.qty), 0) AS actual,
+      COALESCE(SUM(dl.qty * ${SQL_INCENTIVE_FACTOR}), 0) AS counted
+    FROM dispatch_lines dl
+    INNER JOIN dispatches d ON d.id = dl.dispatch_id
+    INNER JOIN customers c ON c.id = d.customer_id
+    INNER JOIN products p ON p.id = dl.product_id
+    INNER JOIN product_categories pc ON pc.id = p.category_id
+    INNER JOIN proforma_invoices pi ON pi.id = d.proforma_invoice_id
+    WHERE ${sqlCompanyEquals(Prisma.sql`d.company_id`, filters.companyId)}
+      AND d.status = CAST(${DispatchStatus.DISPATCHED} AS "DispatchStatus")
+      ${sqlAndDateRange(Prisma.sql`d.dispatch_date`, fromDate, toDate)}
+      ${sqlAndOptional(
+        filters.customerType
+          ? Prisma.sql`AND c.customer_type = CAST(${filters.customerType} AS "CustomerType")`
+          : null,
+      )}
+      AND pc.name IN ('Modules', 'Inverters', 'Other')
+    GROUP BY pi.sales_user_id, pc.name
+  `;
+
+  const map = new Map<string, DispatchedUnitTotals>();
+  for (const row of rows) {
+    const entry = map.get(row.salesUserId) ?? {
+      modules: emptyDualMetric(),
+      inverters: emptyDualMetric(),
+      other: emptyDualMetric(),
+    };
+    const dual = {
+      actual: decimalToNumber(row.actual ?? 0),
+      counted: decimalToNumber(row.counted ?? 0),
+    };
+    if (row.category === "Modules") entry.modules = dual;
+    else if (row.category === "Inverters") entry.inverters = dual;
+    else if (row.category === "Other") entry.other = dual;
+    map.set(row.salesUserId, entry);
+  }
+  for (const [id, units] of map) {
+    map.set(id, {
+      modules: roundDualUnits(units.modules),
+      inverters: roundDualUnits(units.inverters),
+      other: roundDualUnits(units.other),
+    });
+  }
+  return map;
 }
 
 export async function buildTeamKpiSummaries(
@@ -513,77 +814,43 @@ export async function buildTeamKpiSummaries(
 
   const base: SalesMetricFilters = { companyId, ...filters };
 
-  const [quotations, pis, payments, dispatches, customers] = await Promise.all([
-    prisma.quotation.findMany({
-      where: buildQuotationWhere(base),
-      select: {
-        salesUserId: true,
-        totalValue: true,
-        customer: incentivePercentSelect,
-      },
-    }),
-    prisma.proformaInvoice.findMany({
-      where: buildPiWhere(base),
-      select: {
-        salesUserId: true,
-        totalValue: true,
-        customer: incentivePercentSelect,
-      },
-    }),
-    prisma.payment.findMany({
-      where: buildPaymentWhere(base),
-      select: {
-        amount: true,
-        customer: incentivePercentSelect,
-        proformaInvoice: { select: { salesUserId: true } },
-      },
-    }),
+  const [
+    quotationByExec,
+    piByExec,
+    collectionByExec,
+    newCustomersByExec,
+    unitsByExec,
+    dispatches,
+  ] = await Promise.all([
+    groupQuotationValueByExecutive(prisma, base),
+    groupPiValueByExecutive(prisma, base),
+    groupCollectionValueByExecutive(prisma, base),
+    groupNewCustomersByExecutive(prisma, base),
+    groupDispatchedUnitsByExecutive(prisma, base),
     fetchDispatchesForMetrics(prisma, base),
-    prisma.customer.findMany({
-      where: buildNewCustomersWhere(base),
-      select: { assignedSalesUserId: true, incentiveCreditPercent: true },
-    }),
   ]);
 
+  const kitBomMap = await loadKitBomMapForDispatches(prisma, dispatches);
   const byExec = new Map<string, ExecutiveKpiSummary>();
 
   for (const executive of executives) {
-    byExec.set(executive.id, emptyExecutiveKpi(executive));
+    const units = unitsByExec.get(executive.id) ?? {
+      modules: emptyDualMetric(),
+      inverters: emptyDualMetric(),
+      other: emptyDualMetric(),
+    };
+    byExec.set(executive.id, {
+      ...emptyExecutiveKpi(executive),
+      quotationValue: quotationByExec.get(executive.id) ?? emptyDualMetric(),
+      piValue: piByExec.get(executive.id) ?? emptyDualMetric(),
+      collectionValue: collectionByExec.get(executive.id) ?? emptyDualMetric(),
+      newCustomers: newCustomersByExec.get(executive.id) ?? emptyDualMetric(),
+      moduleUnits: units.modules,
+      inverterUnits: units.inverters,
+      otherUnits: units.other,
+    });
   }
 
-  for (const row of quotations) {
-    const entry = byExec.get(row.salesUserId);
-    if (!entry) continue;
-    entry.quotationValue = addDualMetric(
-      entry.quotationValue,
-      applyIncentiveCredit(decimalToNumber(row.totalValue), row.customer.incentiveCreditPercent),
-    );
-  }
-  for (const row of pis) {
-    const entry = byExec.get(row.salesUserId);
-    if (!entry) continue;
-    entry.piValue = addDualMetric(
-      entry.piValue,
-      applyIncentiveCredit(decimalToNumber(row.totalValue), row.customer.incentiveCreditPercent),
-    );
-  }
-  for (const row of payments) {
-    const entry = byExec.get(row.proformaInvoice.salesUserId);
-    if (!entry) continue;
-    entry.collectionValue = addDualMetric(
-      entry.collectionValue,
-      applyIncentiveCredit(decimalToNumber(row.amount), row.customer.incentiveCreditPercent),
-    );
-  }
-  for (const row of customers) {
-    const entry = byExec.get(row.assignedSalesUserId);
-    if (!entry) continue;
-    entry.newCustomers = addDualMetric(
-      entry.newCustomers,
-      newCustomerCreditCount(row.incentiveCreditPercent),
-    );
-  }
-  const kitBomMap = await loadKitBomMapForDispatches(prisma, dispatches);
   for (const dispatch of dispatches) {
     const execId = dispatch.proformaInvoice.salesUserId;
     const entry = byExec.get(execId);
@@ -592,10 +859,6 @@ export async function buildTeamKpiSummaries(
       entry.dispatchedValue,
       sumDispatchedValueFromLines([dispatch], kitBomMap),
     );
-    const units = sumDispatchedUnitsFromLines([dispatch]);
-    entry.moduleUnits = addDualMetric(entry.moduleUnits, units.modules);
-    entry.inverterUnits = addDualMetric(entry.inverterUnits, units.inverters);
-    entry.otherUnits = addDualMetric(entry.otherUnits, units.other);
   }
 
   return [...byExec.values()]
@@ -648,6 +911,12 @@ export type KpiStripDto = {
   collectionValue: PeriodComparison;
   dispatchedValue: PeriodComparison;
   moduleUnits: PeriodComparison;
+  /** Current-period unit actuals (avoids a second dispatch/unit query on dashboards). */
+  unitComposition: {
+    modules: number;
+    inverters: number;
+    other: number;
+  };
   period: DashboardPeriod;
   fromDate: string;
   toDate: string;
@@ -696,6 +965,11 @@ export async function buildKpiStrip(
     collectionValue: computePeriodComparison(collectionValue, prevCollection),
     dispatchedValue: computePeriodComparison(dispatchedValue, prevDispatched),
     moduleUnits: computePeriodComparison(units.modules, prevUnits.modules),
+    unitComposition: {
+      modules: units.modules.actual,
+      inverters: units.inverters.actual,
+      other: units.other.actual,
+    },
     period,
     fromDate: filters.fromDate ?? "",
     toDate: filters.toDate ?? "",

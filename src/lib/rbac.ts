@@ -138,6 +138,12 @@ export const NAV_ITEMS: NavItem[] = [
     roles: [ROLES.SUPER_ADMIN],
   },
   {
+    label: "Available Serials",
+    href: "/inventory/available-serials",
+    group: "Inventory",
+    roles: [ROLES.SUPER_ADMIN],
+  },
+  {
     label: "Inventory Audit",
     href: "/inventory/audits",
     group: "Inventory",

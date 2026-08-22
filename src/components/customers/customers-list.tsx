@@ -10,6 +10,7 @@ import { CollapsibleFilterCard } from "@/components/ui/collapsible-filter-card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { ListPaginationControls } from "@/components/ui/list-pagination-controls";
 import {
   Table,
   TableBody,
@@ -27,11 +28,17 @@ type SalesExecutive = { id: string; name: string; email: string };
 
 export function CustomersList({
   initialCustomers,
+  initialTotal,
+  initialPage = 1,
+  initialPageSize = 50,
   salesExecutives,
   canEdit,
   canReassign,
 }: {
   initialCustomers: CustomerListItem[];
+  initialTotal?: number;
+  initialPage?: number;
+  initialPageSize?: number;
   salesExecutives: SalesExecutive[];
   canEdit: boolean;
   canReassign: boolean;
@@ -39,6 +46,9 @@ export function CustomersList({
   const router = useRouter();
   const searchParams = useSearchParams();
   const [customers, setCustomers] = useState(initialCustomers);
+  const [total, setTotal] = useState(initialTotal ?? initialCustomers.length);
+  const [page, setPage] = useState(initialPage);
+  const [pageSize] = useState(initialPageSize);
   const [q, setQ] = useState("");
   const [city, setCity] = useState("");
   const [customerType, setCustomerType] = useState("");
@@ -51,7 +61,9 @@ export function CustomersList({
 
   useEffect(() => {
     setCustomers(initialCustomers);
-  }, [initialCustomers]);
+    setTotal(initialTotal ?? initialCustomers.length);
+    setPage(initialPage);
+  }, [initialCustomers, initialTotal, initialPage]);
 
   useEffect(() => {
     if (searchParams.get("updated") !== "1") return;
@@ -59,20 +71,30 @@ export function CustomersList({
     router.replace("/sales/customers", { scroll: false });
   }, [searchParams, router]);
 
-  async function applyFilters() {
+  async function fetchCustomers(nextPage: number) {
     setLoading(true);
     const params = new URLSearchParams();
     if (q) params.set("q", q);
     if (city) params.set("city", city);
     if (customerType) params.set("customerType", customerType);
     if (assignedSalesUserId) params.set("assignedSalesUserId", assignedSalesUserId);
+    params.set("page", String(nextPage));
+    params.set("pageSize", String(pageSize));
 
     const response = await fetch(`/api/customers?${params.toString()}`);
     const data = await response.json();
     setLoading(false);
     if (response.ok) {
-      setCustomers(data);
+      const nextItems = data.items ?? data;
+      setCustomers(nextItems);
+      setTotal(data.total ?? (Array.isArray(nextItems) ? nextItems.length : 0));
+      setPage(data.page ?? nextPage);
     }
+  }
+
+  async function applyFilters() {
+    setPage(1);
+    await fetchCustomers(1);
   }
 
   function toggleSelection(id: string) {
@@ -240,6 +262,16 @@ export function CustomersList({
               ) : null}
             </TableBody>
           </Table>
+          <ListPaginationControls
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            loading={loading}
+            onPageChange={(nextPage) => {
+              setPage(nextPage);
+              void fetchCustomers(nextPage);
+            }}
+          />
         </CardContent>
       </Card>
 

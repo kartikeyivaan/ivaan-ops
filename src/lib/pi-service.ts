@@ -71,6 +71,11 @@ import {
 } from "@/lib/proforma-invoices";
 import { calculateLineAmounts, roundMoney } from "@/lib/quotations";
 import { endOfBusinessDay, parseBusinessDate } from "@/lib/business-dates";
+import {
+  resolveListPagination,
+  toPaginatedList,
+  type ListPaginationInput,
+} from "@/lib/list-pagination";
 import { addCalendarDays } from "@/lib/working-days";
 import { createWorkingDaysService } from "@/lib/working-days-service";
 
@@ -785,43 +790,93 @@ export async function listProformaInvoices(
     fromDate?: string;
     toDate?: string;
     outstandingOnly?: boolean;
-  },
+  } & ListPaginationInput,
 ) {
   await clearExpiredDispatchTodayFlags(prisma, companyId);
 
   const fromDate = filters.fromDate ? parseBusinessDate(filters.fromDate) : undefined;
   const toDate = filters.toDate ? endOfBusinessDay(filters.toDate) : undefined;
 
-  const rows = await prisma.proformaInvoice.findMany({
-    where: {
-      companyId,
-      ...(filters.status ? { status: filters.status } : {}),
-      ...(filters.customerId ? { customerId: filters.customerId } : {}),
-      ...(filters.salesUserId ? { salesUserId: filters.salesUserId } : {}),
-      ...(fromDate || toDate
-        ? {
-            piDate: {
-              ...(fromDate ? { gte: fromDate } : {}),
-              ...(toDate ? { lte: toDate } : {}),
-            },
-          }
-        : {}),
-      ...(filters.q
-        ? {
-            OR: [
-              { piNo: { contains: filters.q, mode: "insensitive" } },
-              { customer: { customerName: { contains: filters.q, mode: "insensitive" } } },
-            ],
-          }
-        : {}),
-    },
-    include: piInclude,
-    orderBy: { createdAt: "desc" },
-  });
+  const where: Prisma.ProformaInvoiceWhereInput = {
+    companyId,
+    ...(filters.status ? { status: filters.status } : {}),
+    ...(filters.customerId ? { customerId: filters.customerId } : {}),
+    ...(filters.salesUserId ? { salesUserId: filters.salesUserId } : {}),
+    ...(fromDate || toDate
+      ? {
+          piDate: {
+            ...(fromDate ? { gte: fromDate } : {}),
+            ...(toDate ? { lte: toDate } : {}),
+          },
+        }
+      : {}),
+    ...(filters.q
+      ? {
+          OR: [
+            { piNo: { contains: filters.q, mode: "insensitive" } },
+            { customer: { customerName: { contains: filters.q, mode: "insensitive" } } },
+          ],
+        }
+      : {}),
+  };
 
-  const serialized = rows.map((row) => serializePi(row));
-  if (!filters.outstandingOnly) return serialized;
-  return serialized.filter((row) => row.paymentSummary.outstanding > 0);
+  const { page, pageSize, skip, take, unpaged } = resolveListPagination(filters);
+
+  if (filters.outstandingOnly) {
+    const leanRows = await prisma.proformaInvoice.findMany({
+      where,
+      select: {
+        id: true,
+        totalValue: true,
+        createdAt: true,
+        payments: { select: { amount: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    const outstandingIds = leanRows
+      .filter((row) => {
+        const paid = roundMoney(
+          row.payments.reduce((sum, payment) => sum + decimalToNumber(payment.amount), 0),
+        );
+        return calculateOutstanding(decimalToNumber(row.totalValue), paid) > 0;
+      })
+      .map((row) => row.id);
+
+    const total = outstandingIds.length;
+    const pageIds = unpaged ? outstandingIds : outstandingIds.slice(skip, skip + (take ?? total));
+    if (pageIds.length === 0) {
+      return toPaginatedList([], total, page, unpaged ? Math.max(total, 1) : pageSize);
+    }
+
+    const rows = await prisma.proformaInvoice.findMany({
+      where: { id: { in: pageIds } },
+      include: piInclude,
+      orderBy: { createdAt: "desc" },
+    });
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    const items = pageIds
+      .map((id) => byId.get(id))
+      .filter((row): row is NonNullable<typeof row> => Boolean(row))
+      .map((row) => serializePi(row));
+    return toPaginatedList(items, total, page, unpaged ? total : pageSize);
+  }
+
+  const [total, rows] = await Promise.all([
+    prisma.proformaInvoice.count({ where }),
+    prisma.proformaInvoice.findMany({
+      where,
+      include: piInclude,
+      orderBy: { createdAt: "desc" },
+      ...(unpaged ? {} : { skip, take }),
+    }),
+  ]);
+
+  return toPaginatedList(
+    rows.map((row) => serializePi(row)),
+    total,
+    page,
+    unpaged ? total : pageSize,
+  );
 }
 
 export async function getProformaInvoiceById(

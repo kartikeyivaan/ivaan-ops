@@ -41,7 +41,7 @@ export default async function ReviseQuotationPage({ params }: PageProps) {
   }
 
   const [customers, products, salesExecutives] = await Promise.all([
-    listCustomers(prisma, companyId, { status: "ACTIVE" }),
+    listCustomers(prisma, companyId, { status: "ACTIVE", unpaged: true }),
     listProducts(prisma, companyId, { isActive: true }),
     prisma.user.findMany({
       where: {
@@ -62,7 +62,7 @@ export default async function ReviseQuotationPage({ params }: PageProps) {
     }),
   ]);
 
-  const customerOptions = customers.map((customer) => ({
+  const customerOptions = customers.items.map((customer) => ({
     id: customer.id,
     customerName: customer.customerName,
     gstNumber: customer.gstNumber,

@@ -32,8 +32,12 @@ export default async function IncomingMaterialPage({ searchParams }: PageProps) 
   const canEditHistory = canEditClosedIncomingLot(session.user.roles);
   const companyIds = getSessionCompanyIds(session);
 
-  const [lots, products, warehouses, vendors] = await Promise.all([
-    listIncomingLots(prisma, companyId, {}),
+  const [lotsPage, products, warehouses, vendors] = await Promise.all([
+    listIncomingLots(prisma, companyId, {
+      status: showHistory ? "CLOSED" : "INCOMING",
+      page: 1,
+      pageSize: 50,
+    }),
     canEditHistory
       ? prisma.product.findMany({
           where: { isActive: true },
@@ -54,7 +58,7 @@ export default async function IncomingMaterialPage({ searchParams }: PageProps) 
     canEditHistory ? listVendors(prisma) : Promise.resolve([]),
   ]);
 
-  const sanitizedLots = lots.map((lot) => serializeLotForRole(lot, includeSerials));
+  const sanitizedLots = lotsPage.items.map((lot) => serializeLotForRole(lot, includeSerials));
   const serializedProducts = products.map((product) => ({
     id: product.id,
     displayName: product.displayName,
@@ -64,6 +68,9 @@ export default async function IncomingMaterialPage({ searchParams }: PageProps) 
   return (
     <IncomingReceiptList
       initialLots={sanitizedLots}
+      initialTotal={lotsPage.total}
+      initialPage={lotsPage.page}
+      initialPageSize={lotsPage.pageSize}
       canInward={canInwardMaterial(session.user.roles)}
       showHistory={showHistory}
       canExportSerials={includeSerials}

@@ -97,13 +97,400 @@ function toIso(value: Date): string {
   return value.toISOString();
 }
 
+type PendingCountBucket = {
+  type: ApprovalType;
+  count: number;
+  oldestAt: Date | null;
+};
+
+function emptyCount(type: ApprovalType): PendingCountBucket {
+  return { type, count: 0, oldestAt: null };
+}
+
+async function countJoinedPendingApprovals(
+  prisma: PrismaClient,
+  type: ApprovalType,
+  moduleType: ApprovalModuleType,
+  matchModuleIds: (moduleIds: string[]) => Promise<Set<string>>,
+): Promise<PendingCountBucket> {
+  const approvals = await prisma.approvalRequest.findMany({
+    where: {
+      moduleType,
+      status: ApprovalRequestStatus.PENDING,
+    },
+    select: { moduleId: true, createdAt: true },
+  });
+  if (approvals.length === 0) return emptyCount(type);
+
+  const matched = await matchModuleIds(approvals.map((row) => row.moduleId));
+  let count = 0;
+  let oldestAt: Date | null = null;
+  for (const approval of approvals) {
+    if (!matched.has(approval.moduleId)) continue;
+    count += 1;
+    if (!oldestAt || approval.createdAt < oldestAt) oldestAt = approval.createdAt;
+  }
+  return { type, count, oldestAt };
+}
+
+async function countPendingQuotationApprovals(
+  prisma: PrismaClient,
+  companyId: string,
+): Promise<PendingCountBucket> {
+  return countJoinedPendingApprovals(
+    prisma,
+    "QUOTATION_PRICE",
+    ApprovalModuleType.QUOTATION,
+    async (moduleIds) => {
+      const rows = await prisma.quotation.findMany({
+        where: {
+          companyId,
+          id: { in: moduleIds },
+          items: { some: { approvalStatus: ItemApprovalStatus.PENDING } },
+        },
+        select: { id: true },
+      });
+      return new Set(rows.map((row) => row.id));
+    },
+  );
+}
+
+async function countPendingBookingApprovals(
+  prisma: PrismaClient,
+  companyId: string,
+): Promise<PendingCountBucket> {
+  return countJoinedPendingApprovals(
+    prisma,
+    "PI_BOOKING",
+    ApprovalModuleType.BOOKING,
+    async (moduleIds) => {
+      const rows = await prisma.proformaInvoice.findMany({
+        where: {
+          companyId,
+          status: ProformaInvoiceStatus.PENDING_BOOKING,
+          id: { in: moduleIds },
+        },
+        select: { id: true },
+      });
+      return new Set(rows.map((row) => row.id));
+    },
+  );
+}
+
+async function countPendingDispatchTodayApprovals(
+  prisma: PrismaClient,
+  companyId: string,
+): Promise<PendingCountBucket> {
+  return countJoinedPendingApprovals(
+    prisma,
+    "DISPATCH_TODAY",
+    ApprovalModuleType.DISPATCH_TODAY,
+    async (moduleIds) => {
+      const rows = await prisma.proformaInvoice.findMany({
+        where: { companyId, id: { in: moduleIds } },
+        select: { id: true },
+      });
+      return new Set(rows.map((row) => row.id));
+    },
+  );
+}
+
+async function countPendingCrossCompanyTransferApprovals(
+  prisma: PrismaClient,
+  companyId: string,
+): Promise<PendingCountBucket> {
+  const approvals = await prisma.approvalRequest.findMany({
+    where: {
+      moduleType: ApprovalModuleType.CROSS_COMPANY_TRANSFER,
+      status: ApprovalRequestStatus.PENDING,
+    },
+    select: { moduleId: true, createdAt: true },
+  });
+  if (approvals.length === 0) return emptyCount("CROSS_COMPANY_TRANSFER");
+
+  const plans = await prisma.piCrossCompanyTransferPlan.findMany({
+    where: {
+      toCompanyId: companyId,
+      id: { in: approvals.map((row) => row.moduleId) },
+    },
+    select: { id: true, piId: true },
+  });
+  if (plans.length === 0) return emptyCount("CROSS_COMPANY_TRANSFER");
+
+  const piIds = [...new Set(plans.map((plan) => plan.piId))];
+  const coveredByDispatchToday = new Set(
+    (
+      await prisma.approvalRequest.findMany({
+        where: {
+          moduleType: ApprovalModuleType.DISPATCH_TODAY,
+          moduleId: { in: piIds },
+          status: ApprovalRequestStatus.PENDING,
+        },
+        select: { moduleId: true },
+      })
+    ).map((row) => row.moduleId),
+  );
+
+  const visiblePlanIds = new Set(
+    plans.filter((plan) => !coveredByDispatchToday.has(plan.piId)).map((plan) => plan.id),
+  );
+
+  let count = 0;
+  let oldestAt: Date | null = null;
+  for (const approval of approvals) {
+    if (!visiblePlanIds.has(approval.moduleId)) continue;
+    count += 1;
+    if (!oldestAt || approval.createdAt < oldestAt) oldestAt = approval.createdAt;
+  }
+  return { type: "CROSS_COMPANY_TRANSFER", count, oldestAt };
+}
+
+async function countPendingDcCancelApprovals(
+  prisma: PrismaClient,
+  companyId: string,
+): Promise<PendingCountBucket> {
+  return countJoinedPendingApprovals(
+    prisma,
+    "DC_CANCEL",
+    ApprovalModuleType.DC_CANCEL,
+    async (moduleIds) => {
+      const rows = await prisma.dispatch.findMany({
+        where: {
+          companyId,
+          status: DispatchStatus.CANCEL_PENDING,
+          id: { in: moduleIds },
+        },
+        select: { id: true },
+      });
+      return new Set(rows.map((row) => row.id));
+    },
+  );
+}
+
+async function countPendingPiCancelApprovals(
+  prisma: PrismaClient,
+  companyId: string,
+): Promise<PendingCountBucket> {
+  return countJoinedPendingApprovals(
+    prisma,
+    "PI_CANCEL",
+    ApprovalModuleType.PI_CANCEL,
+    async (moduleIds) => {
+      const rows = await prisma.proformaInvoice.findMany({
+        where: {
+          companyId,
+          status: ProformaInvoiceStatus.CANCEL_PENDING,
+          id: { in: moduleIds },
+        },
+        select: { id: true },
+      });
+      return new Set(rows.map((row) => row.id));
+    },
+  );
+}
+
+async function countPendingPiEditApprovals(
+  prisma: PrismaClient,
+  companyId: string,
+): Promise<PendingCountBucket> {
+  const aggregate = await prisma.proformaInvoiceEditRequest.aggregate({
+    where: { companyId, status: PiEditRequestStatus.PENDING },
+    _count: { _all: true },
+    _min: { createdAt: true },
+  });
+  return {
+    type: "PI_EDIT",
+    count: aggregate._count._all,
+    oldestAt: aggregate._min.createdAt,
+  };
+}
+
+async function countPendingPiCreditApprovals(
+  prisma: PrismaClient,
+  companyId: string,
+  type: "PI_CREDIT" | "PI_CREDIT_ACCOUNTS",
+  moduleType:
+    | typeof ApprovalModuleType.PI_CREDIT
+    | typeof ApprovalModuleType.PI_CREDIT_ACCOUNTS,
+): Promise<PendingCountBucket> {
+  return countJoinedPendingApprovals(prisma, type, moduleType, async (moduleIds) => {
+    const rows = await prisma.proformaInvoice.findMany({
+      where: { companyId, id: { in: moduleIds } },
+      select: { id: true },
+    });
+    return new Set(rows.map((row) => row.id));
+  });
+}
+
+async function countPendingProposalApprovals(
+  prisma: PrismaClient,
+  companyId: string,
+): Promise<PendingCountBucket> {
+  const aggregate = await prisma.projectProposal.aggregate({
+    where: { companyId, status: ProjectProposalStatus.PENDING_APPROVAL },
+    _count: { _all: true },
+    _min: { updatedAt: true },
+  });
+  return {
+    type: "PROJECT_PROPOSAL",
+    count: aggregate._count._all,
+    oldestAt: aggregate._min.updatedAt,
+  };
+}
+
+async function countPendingProjectMaterialApprovals(
+  prisma: PrismaClient,
+  companyId: string,
+): Promise<PendingCountBucket> {
+  return countJoinedPendingApprovals(
+    prisma,
+    "PROJECT_MATERIAL",
+    ApprovalModuleType.PROJECT_MATERIAL,
+    async (moduleIds) => {
+      const rows = await prisma.project.findMany({
+        where: { companyId, id: { in: moduleIds } },
+        select: { id: true },
+      });
+      return new Set(rows.map((row) => row.id));
+    },
+  );
+}
+
+async function countPendingOpeningStockApprovals(
+  prisma: PrismaClient,
+  companyId: string,
+): Promise<PendingCountBucket> {
+  const aggregate = await prisma.inventoryOpeningAudit.aggregate({
+    where: { companyId, status: OpeningAuditStatus.SUBMITTED },
+    _count: { _all: true },
+    _min: { submittedAt: true },
+  });
+  return {
+    type: "OPENING_STOCK",
+    count: aggregate._count._all,
+    oldestAt: aggregate._min.submittedAt,
+  };
+}
+
+async function countPendingPanelDamageApprovals(
+  prisma: PrismaClient,
+  companyId: string,
+): Promise<PendingCountBucket> {
+  const aggregate = await prisma.inventoryDamageReport.aggregate({
+    where: { companyId, status: DamageReportStatus.PENDING },
+    _count: { _all: true },
+    _min: { createdAt: true },
+  });
+  return {
+    type: "PANEL_DAMAGE",
+    count: aggregate._count._all,
+    oldestAt: aggregate._min.createdAt,
+  };
+}
+
+async function countPendingIncomingLotEditApprovals(
+  prisma: PrismaClient,
+  companyId: string,
+): Promise<PendingCountBucket> {
+  const aggregate = await prisma.incomingLotChangeRequest.aggregate({
+    where: { companyId, status: IncomingLotChangeStatus.PENDING },
+    _count: { _all: true },
+    _min: { createdAt: true },
+  });
+  return {
+    type: "INCOMING_LOT_EDIT",
+    count: aggregate._count._all,
+    oldestAt: aggregate._min.createdAt,
+  };
+}
+
+/** Role-gated pending counts without hydrating approval row payloads. */
+export async function listPendingApprovalCounts(
+  prisma: PrismaClient,
+  companyId: string,
+  userRoles: string[],
+  types?: readonly ApprovalType[],
+): Promise<Array<{ type: ApprovalType; count: number; oldestAt: string | null }>> {
+  const allow = types ? new Set(types) : null;
+  const include = (type: ApprovalType) => !allow || allow.has(type);
+  const buckets: Promise<PendingCountBucket>[] = [];
+
+  if (include("QUOTATION_PRICE") && canApproveQuotationPricing(userRoles)) {
+    buckets.push(countPendingQuotationApprovals(prisma, companyId));
+  }
+  if (include("PI_BOOKING") && canApproveBooking(userRoles)) {
+    buckets.push(countPendingBookingApprovals(prisma, companyId));
+  }
+  if (canApproveDispatchToday(userRoles)) {
+    if (include("DISPATCH_TODAY")) {
+      buckets.push(countPendingDispatchTodayApprovals(prisma, companyId));
+    }
+    if (include("CROSS_COMPANY_TRANSFER")) {
+      buckets.push(countPendingCrossCompanyTransferApprovals(prisma, companyId));
+    }
+  }
+  if (include("DC_CANCEL") && canApproveDispatchCancel(userRoles)) {
+    buckets.push(countPendingDcCancelApprovals(prisma, companyId));
+  }
+  if (canApprovePiCancel(userRoles)) {
+    if (include("PI_CANCEL")) {
+      buckets.push(countPendingPiCancelApprovals(prisma, companyId));
+    }
+    if (include("PI_EDIT")) {
+      buckets.push(countPendingPiEditApprovals(prisma, companyId));
+    }
+  }
+  if (include("PI_CREDIT") && canApprovePiCreditSm(userRoles)) {
+    buckets.push(
+      countPendingPiCreditApprovals(
+        prisma,
+        companyId,
+        "PI_CREDIT",
+        ApprovalModuleType.PI_CREDIT,
+      ),
+    );
+  }
+  if (include("PI_CREDIT_ACCOUNTS") && canApprovePiCreditAccounts(userRoles)) {
+    buckets.push(
+      countPendingPiCreditApprovals(
+        prisma,
+        companyId,
+        "PI_CREDIT_ACCOUNTS",
+        ApprovalModuleType.PI_CREDIT_ACCOUNTS,
+      ),
+    );
+  }
+  if (include("PROJECT_PROPOSAL") && canApproveProjectProposals(userRoles)) {
+    buckets.push(countPendingProposalApprovals(prisma, companyId));
+  }
+  if (include("PROJECT_MATERIAL") && canEditProjectMaterial(userRoles)) {
+    buckets.push(countPendingProjectMaterialApprovals(prisma, companyId));
+  }
+  if (include("OPENING_STOCK") && canApproveOpeningStock(userRoles)) {
+    buckets.push(countPendingOpeningStockApprovals(prisma, companyId));
+  }
+  if (include("PANEL_DAMAGE") && canApprovePanelDamage(userRoles)) {
+    buckets.push(countPendingPanelDamageApprovals(prisma, companyId));
+  }
+  if (include("INCOMING_LOT_EDIT") && canApproveIncomingLotEdit(userRoles)) {
+    buckets.push(countPendingIncomingLotEditApprovals(prisma, companyId));
+  }
+
+  const rows = await Promise.all(buckets);
+  return rows.map((row) => ({
+    type: row.type,
+    count: row.count,
+    oldestAt: row.oldestAt ? toIso(row.oldestAt) : null,
+  }));
+}
+
 export async function countPendingApprovalsForUser(
   prisma: PrismaClient,
   companyId: string,
   userRoles: string[],
 ): Promise<number> {
-  const items = await listPendingApprovals(prisma, companyId, userRoles);
-  return items.length;
+  const buckets = await listPendingApprovalCounts(prisma, companyId, userRoles);
+  return buckets.reduce((sum, row) => sum + row.count, 0);
 }
 
 export async function listPendingApprovals(

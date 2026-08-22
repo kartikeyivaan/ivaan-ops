@@ -120,6 +120,8 @@ export const customerSearchSchema = z.object({
   customerType: z.enum(["DEALER", "PROJECT"]).optional(),
   assignedSalesUserId: z.string().uuid().optional(),
   status: z.enum(["ACTIVE", "INACTIVE"]).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(200).default(50),
 });
 
 export const customerReassignSchema = z.object({
@@ -448,6 +450,8 @@ export const inventorySearchSchema = z.object({
   transactionType: z
     .enum(["INWARD", "BOOK", "DISPATCH", "DAMAGE", "TRANSFER", "ADJUST"])
     .optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(200).default(50),
 });
 
 export const transferLineSchema = z.object({
@@ -585,6 +589,8 @@ export const quotationSearchSchema = z.object({
   fromDate: z.string().optional(),
   toDate: z.string().optional(),
   expiry: z.enum(["soon"]).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(200).default(50),
 });
 
 export const createProformaInvoiceSchema = z.object({
@@ -727,6 +733,8 @@ export const proformaInvoiceSearchSchema = z.object({
       if (typeof value === "boolean") return value;
       return value === "true" || value === "1";
     }),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(200).default(50),
 });
 
 export const dispatchLineSchema = z.object({

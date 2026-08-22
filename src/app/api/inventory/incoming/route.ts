@@ -38,18 +38,21 @@ export async function GET(request: Request) {
   const parsed = inventorySearchSchema.safeParse({
     warehouseId: searchParams.get("warehouseId") ?? undefined,
     status: searchParams.get("status") ?? undefined,
+    page: searchParams.get("page") ?? undefined,
+    pageSize: searchParams.get("pageSize") ?? undefined,
   });
 
   if (!parsed.success) {
     return errorResponse("VALIDATION_ERROR", "Invalid filters.", 400, parsed.error.flatten());
   }
 
-  const lots = await listIncomingLots(prisma, companyId, parsed.data);
+  const result = await listIncomingLots(prisma, companyId, parsed.data);
   const includeSerials = canViewSerialNumbers(session.user.roles);
 
-  return NextResponse.json(
-    lots.map((lot) => serializeLotForRole(lot, includeSerials)),
-  );
+  return NextResponse.json({
+    ...result,
+    items: result.items.map((lot) => serializeLotForRole(lot, includeSerials)),
+  });
 }
 
 export async function POST(request: Request) {

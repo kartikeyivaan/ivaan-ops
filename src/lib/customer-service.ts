@@ -13,6 +13,12 @@ import {
   type CustomerImportRow,
 } from "@/lib/customers";
 import { decimalToNumber } from "@/lib/inventory";
+import {
+  resolveListPagination,
+  toPaginatedList,
+  type ListPaginationInput,
+  type PaginatedList,
+} from "@/lib/list-pagination";
 
 const customerInclude = {
   assignedSalesUser: { select: { id: true, name: true, email: true } },
@@ -74,8 +80,8 @@ export async function listCustomers(
     customerType?: CustomerType;
     assignedSalesUserId?: string;
     status?: CustomerStatus;
-  },
-) {
+  } & ListPaginationInput,
+): Promise<PaginatedList<CustomerListItem>> {
   const where: Prisma.CustomerWhereInput = {
     ...(filters.status ? { status: filters.status } : {}),
     ...(filters.customerType ? { customerType: filters.customerType } : {}),
@@ -97,13 +103,22 @@ export async function listCustomers(
       : {}),
   };
 
-  const customers = await prisma.customer.findMany({
-    where,
-    include: customerInclude,
-    orderBy: { customerName: "asc" },
-  });
+  const { page, pageSize, skip, take, unpaged } = resolveListPagination(filters);
 
-  return Promise.all(customers.map((customer) => serializeCustomer(prisma, customer, companyId)));
+  const [total, customers] = await Promise.all([
+    prisma.customer.count({ where }),
+    prisma.customer.findMany({
+      where,
+      include: customerInclude,
+      orderBy: { customerName: "asc" },
+      ...(unpaged ? {} : { skip, take }),
+    }),
+  ]);
+
+  const items = await Promise.all(
+    customers.map((customer) => serializeCustomer(prisma, customer, companyId)),
+  );
+  return toPaginatedList(items, total, page, unpaged ? total : pageSize);
 }
 
 export async function getCustomerById(

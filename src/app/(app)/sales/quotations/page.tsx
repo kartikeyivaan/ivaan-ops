@@ -54,9 +54,11 @@ export default async function QuotationsPage({ searchParams }: PageProps) {
     fromDate: first(params.fromDate),
     toDate: first(params.toDate),
     expiry: first(params.expiry),
+    page: first(params.page),
+    pageSize: first(params.pageSize),
   });
 
-  const filters = parsed.success ? parsed.data : {};
+  const filters = parsed.success ? parsed.data : quotationSearchSchema.parse({});
   const salesUserId = restrictSalesUserId(
     session.user.roles,
     session.user.id,
@@ -67,7 +69,7 @@ export default async function QuotationsPage({ searchParams }: PageProps) {
     !canFilterByExecutive &&
     session.user.roles.includes(ROLES.SALES_EXECUTIVE);
 
-  const [quotations, salesExecutives] = await Promise.all([
+  const [quotationsPage, salesExecutives] = await Promise.all([
     listQuotations(prisma, companyId, {
       ...filters,
       salesUserId,
@@ -79,7 +81,10 @@ export default async function QuotationsPage({ searchParams }: PageProps) {
 
   return (
     <QuotationsList
-      initialQuotations={JSON.parse(JSON.stringify(quotations))}
+      initialQuotations={JSON.parse(JSON.stringify(quotationsPage.items))}
+      initialTotal={quotationsPage.total}
+      initialPage={quotationsPage.page}
+      initialPageSize={quotationsPage.pageSize}
       salesExecutives={salesExecutives}
       canManage={canManageQuotations(session.user.roles)}
       canFilterByExecutive={canFilterByExecutive}
@@ -93,6 +98,7 @@ export default async function QuotationsPage({ searchParams }: PageProps) {
           ? FIRM_SALES_SCOPE
           : (salesUserId ?? ""),
         expiry: filters.expiry ?? "",
+        page: quotationsPage.page,
       }}
     />
   );

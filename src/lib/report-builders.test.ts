@@ -302,3 +302,61 @@ describe("incentive-credit", () => {
     expect(applyIncentiveCredit(100, 100)).toEqual({ actual: 100, counted: 100 });
   });
 });
+
+describe("funnelFromKpiStrip", () => {
+  it("derives funnel from KPI strip actuals without extra aggregates", async () => {
+    const { funnelFromKpiStrip } = await import("@/lib/sales-dashboard/funnel-service");
+    const funnel = funnelFromKpiStrip({
+      quotationValue: {
+        current: 50,
+        previous: 40,
+        changePercent: 25,
+        actualCurrent: 100,
+        actualPrevious: 80,
+      },
+      piValue: {
+        current: 40,
+        previous: 30,
+        changePercent: 33.33,
+        actualCurrent: 80,
+        actualPrevious: 60,
+      },
+      collectionValue: {
+        current: 20,
+        previous: 10,
+        changePercent: 100,
+        actualCurrent: 40,
+        actualPrevious: 20,
+      },
+      dispatchedValue: {
+        current: 10,
+        previous: 5,
+        changePercent: 100,
+        actualCurrent: 20,
+        actualPrevious: 10,
+      },
+      moduleUnits: {
+        current: 1,
+        previous: 1,
+        changePercent: 0,
+        actualCurrent: 1,
+        actualPrevious: 1,
+      },
+      unitComposition: { modules: 1, inverters: 0, other: 0 },
+      period: "month",
+      fromDate: "2026-08-01",
+      toDate: "2026-08-22",
+    });
+    expect(funnel).toEqual({
+      quotationValue: 100,
+      piValue: 80,
+      collectionValue: 40,
+      dispatchedValue: 20,
+      conversion: {
+        quotationToPi: 80,
+        piToCollection: 50,
+        collectionToDispatch: 50,
+      },
+    });
+  });
+});

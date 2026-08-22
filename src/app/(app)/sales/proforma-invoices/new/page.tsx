@@ -26,13 +26,13 @@ export default async function NewProformaInvoicePage({ searchParams }: PageProps
 
   const params = await searchParams;
   const [customers, products] = await Promise.all([
-    listCustomers(prisma, companyId, { status: "ACTIVE" }),
+    listCustomers(prisma, companyId, { status: "ACTIVE", unpaged: true }),
     listProducts(prisma, companyId, { isActive: true }),
   ]);
 
   return (
     <ProformaInvoiceForm
-      customers={customers.map((customer) => ({
+      customers={customers.items.map((customer) => ({
         id: customer.id,
         customerName: customer.customerName,
         gstNumber: customer.gstNumber,

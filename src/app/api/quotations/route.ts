@@ -49,6 +49,8 @@ export async function GET(request: Request) {
     fromDate: searchParams.get("fromDate") ?? undefined,
     toDate: searchParams.get("toDate") ?? undefined,
     expiry: searchParams.get("expiry") ?? undefined,
+    page: searchParams.get("page") ?? undefined,
+    pageSize: searchParams.get("pageSize") ?? undefined,
   });
 
   if (!parsed.success) {

@@ -6,7 +6,6 @@ import {
   type DashboardPeriod,
 } from "@/lib/business-dates";
 import {
-  buildDispatchedUnitTotals,
   buildKpiStrip,
   toCompanyIdFilter,
   type SalesMetricFilters,
@@ -15,7 +14,7 @@ import { getDispatchTodaySummary } from "@/lib/sales-dashboard/dispatch-today-se
 import { getWorkQueue } from "@/lib/sales-dashboard/work-queue-service";
 import { getOutstandingAging } from "@/lib/sales-dashboard/outstanding-service";
 import { getSalesStockWatch, getStockConflicts } from "@/lib/sales-dashboard/stock-watch-service";
-import { getSalesFunnel } from "@/lib/sales-dashboard/funnel-service";
+import { funnelFromKpiStrip } from "@/lib/sales-dashboard/funnel-service";
 import { getPerformanceTrend } from "@/lib/sales-dashboard/trend-service";
 import { getApprovalSummary } from "@/lib/sales-dashboard/approval-summary-service";
 import { getTeamScoreboard } from "@/lib/sales-dashboard/team-service";
@@ -124,9 +123,7 @@ export async function getExecutiveDashboard(
     workQueue,
     outstandingAging,
     stockWatch,
-    funnel,
     trend,
-    unitTotals,
     moduleTarget,
     moduleMastery,
   ] = await Promise.all([
@@ -139,9 +136,7 @@ export async function getExecutiveDashboard(
     getWorkQueue(prisma, companyFilter, executiveId),
     getOutstandingAging(prisma, scope.companyIds, executiveId),
     getSalesStockWatch(prisma, companyFilter, executiveId),
-    getSalesFunnel(prisma, filters),
     getPerformanceTrend(prisma, filters, query.trendMetric ?? "modules"),
-    buildDispatchedUnitTotals(prisma, filters),
     sumModuleTargetProgress(prisma, scope.companyIds, executiveId),
     sumModuleMasteryProgress(prisma, scope.companyIds, executiveId),
   ]);
@@ -157,13 +152,9 @@ export async function getExecutiveDashboard(
     workQueue,
     outstandingAging,
     stockWatch,
-    funnel,
+    funnel: funnelFromKpiStrip(kpiStrip),
     trend,
-    unitComposition: {
-      modules: unitTotals.modules.actual,
-      inverters: unitTotals.inverters.actual,
-      other: unitTotals.other.actual,
-    },
+    unitComposition: kpiStrip.unitComposition,
     moduleTarget,
     moduleMastery,
   };
@@ -191,9 +182,7 @@ export async function getManagerDashboard(
     dispatchOperations,
     pipelineRisks,
     stockConflicts,
-    funnel,
     trend,
-    unitTotals,
   ] = await Promise.all([
     buildKpiStrip(prisma, filters, period, previousRange),
     getApprovalSummary(prisma, scope.companyIds, scope.roles),
@@ -210,9 +199,7 @@ export async function getManagerDashboard(
     }),
     getPipelineRisks(prisma, companyFilter),
     getStockConflicts(prisma, companyFilter),
-    getSalesFunnel(prisma, filters),
     getPerformanceTrend(prisma, filters, query.trendMetric ?? "modules"),
-    buildDispatchedUnitTotals(prisma, filters),
   ]);
 
   return {
@@ -227,13 +214,9 @@ export async function getManagerDashboard(
     dispatchOperations,
     pipelineRisks,
     stockConflicts,
-    funnel,
+    funnel: funnelFromKpiStrip(kpiStrip),
     trend,
-    unitComposition: {
-      modules: unitTotals.modules.actual,
-      inverters: unitTotals.inverters.actual,
-      other: unitTotals.other.actual,
-    },
+    unitComposition: kpiStrip.unitComposition,
   };
 }
 

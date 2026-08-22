@@ -36,6 +36,12 @@ import {
   getBusinessToday,
   parseBusinessDate,
 } from "@/lib/business-dates";
+import {
+  resolveListPagination,
+  toPaginatedList,
+  type ListPaginationInput,
+  type PaginatedList,
+} from "@/lib/list-pagination";
 
 function addDaysToBusinessDate(value: string, days: number): string {
   const date = parseBusinessDate(value);
@@ -348,7 +354,7 @@ export async function listQuotations(
     fromDate?: string;
     toDate?: string;
     expiry?: "soon";
-  },
+  } & ListPaginationInput,
 ) {
   await refreshExpiredQuotations(prisma, companyId);
 
@@ -409,13 +415,24 @@ export async function listQuotations(
     where.AND = andFilters;
   }
 
-  const quotations = await prisma.quotation.findMany({
-    where,
-    include: quotationInclude,
-    orderBy: { createdAt: "desc" },
-  });
+  const { page, pageSize, skip, take, unpaged } = resolveListPagination(filters);
 
-  return quotations.map(serializeQuotation);
+  const [total, quotations] = await Promise.all([
+    prisma.quotation.count({ where }),
+    prisma.quotation.findMany({
+      where,
+      include: quotationInclude,
+      orderBy: { createdAt: "desc" },
+      ...(unpaged ? {} : { skip, take }),
+    }),
+  ]);
+
+  return toPaginatedList(
+    quotations.map(serializeQuotation),
+    total,
+    page,
+    unpaged ? total : pageSize,
+  );
 }
 
 export async function getQuotationById(

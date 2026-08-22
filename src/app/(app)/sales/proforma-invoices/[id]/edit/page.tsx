@@ -38,11 +38,11 @@ export default async function EditProformaInvoicePage({ params }: PageProps) {
   }
 
   const [customers, products] = await Promise.all([
-    listCustomers(prisma, companyId, { status: "ACTIVE" }),
+    listCustomers(prisma, companyId, { status: "ACTIVE", unpaged: true }),
     listProducts(prisma, companyId, { isActive: true }),
   ]);
 
-  const customerOptions = customers.map((customer) => ({
+  const customerOptions = customers.items.map((customer) => ({
     id: customer.id,
     customerName: customer.customerName,
     gstNumber: customer.gstNumber,

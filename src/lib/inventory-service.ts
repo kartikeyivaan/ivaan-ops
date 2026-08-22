@@ -21,6 +21,12 @@ import {
 } from "@/lib/inventory";
 import { writeAuditLogTx } from "@/lib/audit";
 import { toSignedInventoryQuantity } from "@/lib/inventory-events";
+import {
+  resolveListPagination,
+  toPaginatedList,
+  type ListPaginationInput,
+  type PaginatedList,
+} from "@/lib/list-pagination";
 import { applyIncomingFulfillment } from "@/lib/purchase-request-service";
 import { fulfillProjectMaterialFromIncoming } from "@/lib/project-service";
 
@@ -36,6 +42,26 @@ const lotInclude = {
   vendor: true,
   createdBy: { select: { id: true, name: true, email: true } },
   serials: true,
+  transactions: {
+    where: { transactionType: InventoryTransactionType.INWARD },
+    orderBy: { createdAt: "desc" as const },
+    take: 1,
+    select: { createdAt: true },
+  },
+} satisfies Prisma.InventoryLotInclude;
+
+/** List views omit serial rows (loaded on lot detail / export). */
+const lotListInclude = {
+  company: true,
+  product: {
+    include: {
+      category: true,
+      brand: true,
+    },
+  },
+  warehouse: true,
+  vendor: true,
+  createdBy: { select: { id: true, name: true, email: true } },
   transactions: {
     where: { transactionType: InventoryTransactionType.INWARD },
     orderBy: { createdAt: "desc" as const },
@@ -249,17 +275,32 @@ export async function listStockSummary(
 export async function listIncomingLots(
   prisma: PrismaClient,
   companyId: string,
-  filters: { status?: LotStatus; warehouseId?: string },
-) {
-  return prisma.inventoryLot.findMany({
-    where: {
-      companyId,
-      ...(filters.status ? { status: filters.status } : {}),
-      ...(filters.warehouseId ? { warehouseId: filters.warehouseId } : {}),
-    },
-    include: lotInclude,
-    orderBy: { createdAt: "desc" },
-  });
+  filters: { status?: LotStatus; warehouseId?: string } & ListPaginationInput,
+): Promise<PaginatedList<InventoryLotRecord>> {
+  const where: Prisma.InventoryLotWhereInput = {
+    companyId,
+    ...(filters.status ? { status: filters.status } : {}),
+    ...(filters.warehouseId ? { warehouseId: filters.warehouseId } : {}),
+  };
+
+  const { page, pageSize, skip, take, unpaged } = resolveListPagination(filters);
+
+  const [total, lots] = await Promise.all([
+    prisma.inventoryLot.count({ where }),
+    prisma.inventoryLot.findMany({
+      where,
+      include: lotListInclude,
+      orderBy: { createdAt: "desc" },
+      ...(unpaged ? {} : { skip, take }),
+    }),
+  ]);
+
+  const items: InventoryLotRecord[] = lots.map((lot) => ({
+    ...lot,
+    serials: [],
+  }));
+
+  return toPaginatedList(items, total, page, unpaged ? total : pageSize);
 }
 
 export async function getLotById(prisma: PrismaClient, lotId: string, companyId: string) {
@@ -1544,3 +1585,31 @@ export function serializeLotForRole(
 }
 
 export type SerializedInventoryLot = ReturnType<typeof serializeLotForRole>;
+
+export async function listAvailableProductSerials(
+  prisma: PrismaClient,
+  input: {
+    companyId: string;
+    productId: string;
+    warehouseId?: string;
+  },
+) {
+  return prisma.inventorySerial.findMany({
+    where: {
+      productId: input.productId,
+      status: SerialStatus.AVAILABLE,
+      ...(input.warehouseId ? { currentWarehouseId: input.warehouseId } : {}),
+      lot: { companyId: input.companyId },
+    },
+    select: {
+      id: true,
+      serialNumber: true,
+      status: true,
+      createdAt: true,
+      currentWarehouse: { select: { id: true, name: true } },
+      lot: { select: { id: true, lotNumber: true } },
+      product: { select: { id: true, displayName: true } },
+    },
+    orderBy: [{ currentWarehouse: { name: "asc" } }, { serialNumber: "asc" }],
+  });
+}

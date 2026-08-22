@@ -1,10 +1,11 @@
 "use client";
 
 import { parseApiJson } from "@/lib/api-response";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { ListPaginationControls } from "@/components/ui/list-pagination-controls";
 import {
   Table,
   TableBody,
@@ -26,6 +27,13 @@ type Product = { id: string; displayName: string; gstRate: number };
 type Warehouse = { id: string; name: string; companyId: string };
 type Vendor = { id: string; vendorName: string };
 
+type IncomingLotsPage = {
+  items?: SerializedInventoryLot[];
+  total?: number;
+  page?: number;
+  pageSize?: number;
+};
+
 function formatCurrency(value: number) {
   return value.toLocaleString("en-IN", {
     style: "currency",
@@ -36,6 +44,9 @@ function formatCurrency(value: number) {
 
 export function PurchaseIncomingList({
   initialLots,
+  initialTotal,
+  initialPage = 1,
+  initialPageSize = 50,
   companies,
   products,
   warehouses,
@@ -47,6 +58,9 @@ export function PurchaseIncomingList({
   createDefaults,
 }: {
   initialLots: SerializedInventoryLot[];
+  initialTotal?: number;
+  initialPage?: number;
+  initialPageSize?: number;
   companies: Company[];
   products: Product[];
   warehouses: Warehouse[];
@@ -65,14 +79,35 @@ export function PurchaseIncomingList({
   };
 }) {
   const [lots, setLots] = useState(initialLots);
+  const [total, setTotal] = useState(initialTotal ?? initialLots.length);
+  const [page, setPage] = useState(initialPage);
+  const [pageSize] = useState(initialPageSize);
+  const [loading, setLoading] = useState(false);
   const [editingLot, setEditingLot] = useState<SerializedInventoryLot | null>(null);
 
-  async function refreshLots() {
-    const response = await fetch("/api/inventory/incoming");
-    if (response.ok) {
-      const data = await parseApiJson<SerializedInventoryLot[]>(response);
-      setLots(data);
-    }
+  useEffect(() => {
+    setLots(initialLots);
+    setTotal(initialTotal ?? initialLots.length);
+    setPage(initialPage);
+  }, [initialLots, initialTotal, initialPage]);
+
+  async function refreshLots(nextPage = page) {
+    setLoading(true);
+    const params = new URLSearchParams();
+    params.set("status", "INCOMING");
+    params.set("page", String(nextPage));
+    params.set("pageSize", String(pageSize));
+
+    const response = await fetch(`/api/inventory/incoming?${params.toString()}`);
+    setLoading(false);
+    if (!response.ok) return;
+
+    const data = await parseApiJson<IncomingLotsPage | SerializedInventoryLot[]>(response);
+    const nextItems = Array.isArray(data) ? data : (data.items ?? data);
+    const items = Array.isArray(nextItems) ? nextItems : [];
+    setLots(items);
+    setTotal(Array.isArray(data) ? data.length : (data.total ?? items.length));
+    setPage(Array.isArray(data) ? nextPage : (data.page ?? nextPage));
   }
 
   return (
@@ -92,7 +127,10 @@ export function PurchaseIncomingList({
           vendors={vendors}
           defaultCompanyId={defaultCompanyId}
           defaults={createDefaults}
-          onCreated={refreshLots}
+          onCreated={() => {
+            setPage(1);
+            void refreshLots(1);
+          }}
         />
       ) : null}
 
@@ -162,6 +200,18 @@ export function PurchaseIncomingList({
               )}
             </TableBody>
           </Table>
+          <div className="px-4 pb-4">
+            <ListPaginationControls
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              loading={loading}
+              onPageChange={(nextPage) => {
+                setPage(nextPage);
+                void refreshLots(nextPage);
+              }}
+            />
+          </div>
         </CardContent>
       </Card>
 
@@ -172,8 +222,8 @@ export function PurchaseIncomingList({
           warehouses={warehouses}
           vendors={vendors}
           onClose={() => setEditingLot(null)}
-          onSaved={refreshLots}
-          onDeleted={refreshLots}
+          onSaved={() => void refreshLots()}
+          onDeleted={() => void refreshLots()}
           allowDelete={editingLot.status === "INCOMING"}
         />
       ) : null}

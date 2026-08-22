@@ -96,3 +96,8 @@ export function canViewSerialNumbers(userRoles: string[]): boolean {
 export function canViewQrHistory(userRoles: string[]): boolean {
   return hasRole(userRoles, [...QR_HISTORY_ROLES]);
 }
+
+/** Super Admin only: list all in-stock serials for a selected product. */
+export function canViewAvailableSerials(userRoles: string[]): boolean {
+  return isSuperAdmin(userRoles);
+}

@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { CollapsibleFilterCard } from "@/components/ui/collapsible-filter-card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ListPaginationControls } from "@/components/ui/list-pagination-controls";
 import {
   Table,
   TableBody,
@@ -52,6 +53,9 @@ function statusVariant(status: string): "default" | "success" | "warning" | "dan
 
 export function ProformaInvoicesList({
   initialProformaInvoices,
+  initialTotal,
+  initialPage = 1,
+  initialPageSize = 50,
   salesExecutives = [],
   canManage,
   canFilterByExecutive = false,
@@ -59,6 +63,9 @@ export function ProformaInvoicesList({
   initialFilters,
 }: {
   initialProformaInvoices: ProformaInvoiceListItem[];
+  initialTotal?: number;
+  initialPage?: number;
+  initialPageSize?: number;
   salesExecutives?: SalesExecutive[];
   canManage: boolean;
   canFilterByExecutive?: boolean;
@@ -70,10 +77,14 @@ export function ProformaInvoicesList({
     toDate: string;
     salesUserId: string;
     outstandingOnly: boolean;
+    page?: number;
   };
 }) {
   const router = useRouter();
   const [rows, setRows] = useState(initialProformaInvoices);
+  const [total, setTotal] = useState(initialTotal ?? initialProformaInvoices.length);
+  const [page, setPage] = useState(initialPage);
+  const [pageSize] = useState(initialPageSize);
   const [q, setQ] = useState(initialFilters?.q ?? "");
   const [status, setStatus] = useState(initialFilters?.status ?? "");
   const [fromDate, setFromDate] = useState(initialFilters?.fromDate ?? "");
@@ -86,7 +97,7 @@ export function ProformaInvoicesList({
   const [actionError, setActionError] = useState("");
   const viewingFirmWide = canViewFirmWide && isFirmSalesScope(salesUserId);
 
-  async function applyFilters(nextSalesUserId = salesUserId) {
+  async function fetchRows(nextPage: number, nextSalesUserId = salesUserId) {
     setLoading(true);
     const params = new URLSearchParams();
     if (q) params.set("q", q);
@@ -95,6 +106,8 @@ export function ProformaInvoicesList({
     if (toDate) params.set("toDate", toDate);
     if (nextSalesUserId) params.set("salesUserId", nextSalesUserId);
     if (outstandingOnly) params.set("outstandingOnly", "true");
+    params.set("page", String(nextPage));
+    params.set("pageSize", String(pageSize));
 
     const query = params.toString();
     router.replace(
@@ -105,8 +118,16 @@ export function ProformaInvoicesList({
     const data = await response.json();
     setLoading(false);
     if (response.ok) {
-      setRows(data);
+      const nextItems = data.items ?? data;
+      setRows(nextItems);
+      setTotal(data.total ?? (Array.isArray(nextItems) ? nextItems.length : 0));
+      setPage(data.page ?? nextPage);
     }
+  }
+
+  async function applyFilters(nextSalesUserId = salesUserId) {
+    setPage(1);
+    await fetchRows(1, nextSalesUserId);
   }
 
   function toggleFirmWide() {
@@ -326,6 +347,16 @@ export function ProformaInvoicesList({
               </TableBody>
             </Table>
           )}
+          <ListPaginationControls
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            loading={loading}
+            onPageChange={(nextPage) => {
+              setPage(nextPage);
+              void fetchRows(nextPage);
+            }}
+          />
         </CardContent>
       </Card>
     </div>

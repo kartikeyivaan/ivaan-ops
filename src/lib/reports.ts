@@ -33,6 +33,35 @@ export function matchesAgeingBucket(days: number, bucket?: string): boolean {
   return getAgeingBucket(days) === bucket;
 }
 
+/** Prisma `piDate` window matching `calculateAgeingDays` / `getAgeingBucket` vs `asOf`. */
+export function ageingBucketToPiDateFilter(
+  bucket: AgeingBucket | string | undefined,
+  asOf = new Date(),
+): { gte?: Date; lt?: Date; lte?: Date } | undefined {
+  if (!bucket) return undefined;
+  const asOfDay = new Date(
+    Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), asOf.getUTCDate()),
+  );
+  const daysAgo = (days: number) => {
+    const date = new Date(asOfDay);
+    date.setUTCDate(date.getUTCDate() - days);
+    return date;
+  };
+
+  switch (bucket) {
+    case "0-30":
+      return { gte: daysAgo(30) };
+    case "31-60":
+      return { gte: daysAgo(60), lt: daysAgo(30) };
+    case "61-90":
+      return { gte: daysAgo(90), lt: daysAgo(60) };
+    case "90+":
+      return { lt: daysAgo(90) };
+    default:
+      return undefined;
+  }
+}
+
 export function parseReportDate(value?: string): Date | undefined {
   if (!value) return undefined;
   const date = new Date(`${value}T00:00:00.000Z`);

@@ -47,6 +47,8 @@ export async function GET(request: Request) {
     customerType: searchParams.get("customerType") ?? undefined,
     assignedSalesUserId: searchParams.get("assignedSalesUserId") ?? undefined,
     status: searchParams.get("status") ?? undefined,
+    page: searchParams.get("page") ?? undefined,
+    pageSize: searchParams.get("pageSize") ?? undefined,
   });
 
   if (!parsed.success) {
@@ -59,6 +61,8 @@ export async function GET(request: Request) {
     customerType: parsed.data.customerType as CustomerType | undefined,
     assignedSalesUserId: parsed.data.assignedSalesUserId,
     status: parsed.data.status as CustomerStatus | undefined,
+    page: parsed.data.page,
+    pageSize: parsed.data.pageSize,
   });
 
   return NextResponse.json(customers);

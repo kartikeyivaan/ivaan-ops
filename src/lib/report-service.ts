@@ -31,6 +31,7 @@ import {
   calculateAgeingDays,
   calculateFreeQty,
   calculateOutstanding,
+  ageingBucketToPiDateFilter,
   endOfReportDay,
   getAgeingBucket,
   matchesAgeingBucket,
@@ -206,6 +207,25 @@ export async function getPaymentFollowupReport(
   companyId: string,
   filters: PaymentFollowupFilters,
 ) {
+  const fromDate = parseReportDate(filters.fromDate);
+  const toDate = endOfReportDay(filters.toDate);
+  const ageingPiDate = ageingBucketToPiDateFilter(filters.ageingBucket);
+
+  let piDateGte = fromDate;
+  let piDateLte = toDate;
+  let piDateLt: Date | undefined;
+  if (ageingPiDate?.gte) {
+    piDateGte =
+      !piDateGte || ageingPiDate.gte > piDateGte ? ageingPiDate.gte : piDateGte;
+  }
+  if (ageingPiDate?.lt) {
+    piDateLt = ageingPiDate.lt;
+  }
+  if (ageingPiDate?.lte) {
+    piDateLte =
+      !piDateLte || ageingPiDate.lte < piDateLte ? ageingPiDate.lte : piDateLte;
+  }
+
   const pis = await prisma.proformaInvoice.findMany({
     where: {
       companyId,
@@ -220,6 +240,15 @@ export async function getPaymentFollowupReport(
       },
       ...(filters.salesUserId ? { salesUserId: filters.salesUserId } : {}),
       ...(filters.customerId ? { customerId: filters.customerId } : {}),
+      ...(piDateGte || piDateLte || piDateLt
+        ? {
+            piDate: {
+              ...(piDateGte ? { gte: piDateGte } : {}),
+              ...(piDateLte ? { lte: piDateLte } : {}),
+              ...(piDateLt ? { lt: piDateLt } : {}),
+            },
+          }
+        : {}),
     },
     include: {
       customer: { select: { id: true, customerName: true } },
@@ -308,6 +337,8 @@ export async function getProductMovementReport(
             ],
           }
         : {}),
+      // Keep txs before fromDate for opening balance; drop only those after toDate.
+      ...(toDate ? { createdAt: { lte: toDate } } : {}),
     },
     select: {
       productId: true,

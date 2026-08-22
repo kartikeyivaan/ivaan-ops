@@ -48,6 +48,8 @@ export async function GET(request: Request) {
     fromDate: searchParams.get("fromDate") ?? undefined,
     toDate: searchParams.get("toDate") ?? undefined,
     outstandingOnly: searchParams.get("outstandingOnly") ?? undefined,
+    page: searchParams.get("page") ?? undefined,
+    pageSize: searchParams.get("pageSize") ?? undefined,
   });
 
   if (!parsed.success) {

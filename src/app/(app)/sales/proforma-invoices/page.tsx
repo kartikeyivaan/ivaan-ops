@@ -49,9 +49,11 @@ export default async function ProformaInvoicesPage({ searchParams }: PageProps) 
     fromDate: first(params.fromDate),
     toDate: first(params.toDate),
     outstandingOnly: first(params.outstandingOnly),
+    page: first(params.page),
+    pageSize: first(params.pageSize),
   });
 
-  const filters = parsed.success ? parsed.data : {};
+  const filters = parsed.success ? parsed.data : proformaInvoiceSearchSchema.parse({});
   const salesUserId = restrictSalesUserId(
     session.user.roles,
     session.user.id,
@@ -62,7 +64,7 @@ export default async function ProformaInvoicesPage({ searchParams }: PageProps) 
     !canFilterByExecutive &&
     session.user.roles.includes(ROLES.SALES_EXECUTIVE);
 
-  const [rows, salesExecutives] = await Promise.all([
+  const [rowsPage, salesExecutives] = await Promise.all([
     listProformaInvoices(prisma, companyId, {
       ...filters,
       salesUserId,
@@ -74,7 +76,10 @@ export default async function ProformaInvoicesPage({ searchParams }: PageProps) 
 
   return (
     <ProformaInvoicesList
-      initialProformaInvoices={JSON.parse(JSON.stringify(rows))}
+      initialProformaInvoices={JSON.parse(JSON.stringify(rowsPage.items))}
+      initialTotal={rowsPage.total}
+      initialPage={rowsPage.page}
+      initialPageSize={rowsPage.pageSize}
       salesExecutives={salesExecutives}
       canManage={canManageProformaInvoices(session.user.roles)}
       canFilterByExecutive={canFilterByExecutive}
@@ -88,6 +93,7 @@ export default async function ProformaInvoicesPage({ searchParams }: PageProps) 
           ? FIRM_SALES_SCOPE
           : (salesUserId ?? ""),
         outstandingOnly: Boolean(filters.outstandingOnly),
+        page: rowsPage.page,
       }}
     />
   );

@@ -30,8 +30,8 @@ export default async function PurchaseIncomingPage({ searchParams }: PageProps) 
   const companyIds = getSessionCompanyIds(session);
   const params = await searchParams;
 
-  const [lots, products, warehouses, vendors, companies] = await Promise.all([
-    listIncomingLots(prisma, companyId, {}),
+  const [lotsPage, products, warehouses, vendors, companies] = await Promise.all([
+    listIncomingLots(prisma, companyId, { status: "INCOMING", page: 1, pageSize: 50 }),
     prisma.product.findMany({
       where: { isActive: true },
       orderBy: { displayName: "asc" },
@@ -53,7 +53,7 @@ export default async function PurchaseIncomingPage({ searchParams }: PageProps) 
     }),
   ]);
 
-  const sanitizedLots = lots.map((lot) => serializeLotForRole(lot, includeSerials));
+  const sanitizedLots = lotsPage.items.map((lot) => serializeLotForRole(lot, includeSerials));
   const serializedProducts = products.map((product) => ({
     id: product.id,
     displayName: product.displayName,
@@ -63,6 +63,9 @@ export default async function PurchaseIncomingPage({ searchParams }: PageProps) 
   return (
     <PurchaseIncomingList
       initialLots={sanitizedLots}
+      initialTotal={lotsPage.total}
+      initialPage={lotsPage.page}
+      initialPageSize={lotsPage.pageSize}
       companies={companies}
       products={serializedProducts}
       warehouses={warehouses}

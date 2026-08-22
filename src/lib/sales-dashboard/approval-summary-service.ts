@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import {
-  listPendingApprovals,
+  listPendingApprovalCounts,
   type ApprovalType,
 } from "@/lib/approvals-service";
 import { getBusinessToday, parseBusinessDate } from "@/lib/business-dates";
@@ -21,21 +21,25 @@ export async function getApprovalSummary(
 ): Promise<ApprovalSummaryDto> {
   const ids = Array.isArray(companyIds) ? companyIds : [companyIds];
   const pendingGroups = await Promise.all(
-    ids.map((companyId) => listPendingApprovals(prisma, companyId, userRoles)),
+    ids.map((companyId) =>
+      listPendingApprovalCounts(prisma, companyId, userRoles, SALES_APPROVAL_TYPES),
+    ),
   );
   const pending = pendingGroups.flat();
-  const salesPending = pending.filter((item) =>
-    SALES_APPROVAL_TYPES.includes(item.type),
-  );
 
   const byType: Partial<Record<ApprovalType, number>> = {};
   let oldestMs: number | null = null;
+  let total = 0;
 
-  for (const item of salesPending) {
-    byType[item.type] = (byType[item.type] ?? 0) + 1;
-    const ts = Date.parse(item.requestedAt);
-    if (!Number.isNaN(ts)) {
-      oldestMs = oldestMs == null ? ts : Math.min(oldestMs, ts);
+  for (const item of pending) {
+    if (item.count <= 0) continue;
+    byType[item.type] = (byType[item.type] ?? 0) + item.count;
+    total += item.count;
+    if (item.oldestAt) {
+      const ts = Date.parse(item.oldestAt);
+      if (!Number.isNaN(ts)) {
+        oldestMs = oldestMs == null ? ts : Math.min(oldestMs, ts);
+      }
     }
   }
 
@@ -52,7 +56,7 @@ export async function getApprovalSummary(
         );
 
   return {
-    total: salesPending.length,
+    total,
     oldestWaitingDays,
     byType,
   };

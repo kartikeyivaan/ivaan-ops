@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { CollapsibleFilterCard } from "@/components/ui/collapsible-filter-card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ListPaginationControls } from "@/components/ui/list-pagination-controls";
 import {
   Table,
   TableBody,
@@ -43,6 +44,7 @@ type InitialFilters = {
   toDate?: string;
   salesUserId?: string;
   expiry?: string;
+  page?: number;
 };
 
 function statusVariant(status: string): "default" | "success" | "warning" | "danger" {
@@ -54,6 +56,9 @@ function statusVariant(status: string): "default" | "success" | "warning" | "dan
 
 export function QuotationsList({
   initialQuotations,
+  initialTotal,
+  initialPage = 1,
+  initialPageSize = 50,
   salesExecutives = [],
   canManage,
   canFilterByExecutive = false,
@@ -61,6 +66,9 @@ export function QuotationsList({
   initialFilters,
 }: {
   initialQuotations: QuotationListItem[];
+  initialTotal?: number;
+  initialPage?: number;
+  initialPageSize?: number;
   salesExecutives?: SalesExecutive[];
   canManage: boolean;
   canFilterByExecutive?: boolean;
@@ -69,6 +77,9 @@ export function QuotationsList({
 }) {
   const router = useRouter();
   const [quotations, setQuotations] = useState(initialQuotations);
+  const [total, setTotal] = useState(initialTotal ?? initialQuotations.length);
+  const [page, setPage] = useState(initialPage);
+  const [pageSize] = useState(initialPageSize);
   const [q, setQ] = useState(initialFilters?.q ?? "");
   const [status, setStatus] = useState(initialFilters?.status ?? "");
   const [fromDate, setFromDate] = useState(initialFilters?.fromDate ?? "");
@@ -78,7 +89,7 @@ export function QuotationsList({
   const [loading, setLoading] = useState(false);
   const viewingFirmWide = canViewFirmWide && isFirmSalesScope(salesUserId);
 
-  async function applyFilters(nextSalesUserId = salesUserId) {
+  async function fetchQuotations(nextPage: number, nextSalesUserId = salesUserId) {
     setLoading(true);
     const params = new URLSearchParams();
     if (q) params.set("q", q);
@@ -87,6 +98,8 @@ export function QuotationsList({
     if (toDate) params.set("toDate", toDate);
     if (nextSalesUserId) params.set("salesUserId", nextSalesUserId);
     if (expiry) params.set("expiry", expiry);
+    params.set("page", String(nextPage));
+    params.set("pageSize", String(pageSize));
 
     const query = params.toString();
     router.replace(query ? `/sales/quotations?${query}` : "/sales/quotations");
@@ -95,8 +108,16 @@ export function QuotationsList({
     const data = await response.json();
     setLoading(false);
     if (response.ok) {
-      setQuotations(data);
+      const nextItems = data.items ?? data;
+      setQuotations(nextItems);
+      setTotal(data.total ?? (Array.isArray(nextItems) ? nextItems.length : 0));
+      setPage(data.page ?? nextPage);
     }
+  }
+
+  async function applyFilters(nextSalesUserId = salesUserId) {
+    setPage(1);
+    await fetchQuotations(1, nextSalesUserId);
   }
 
   function toggleFirmWide() {
@@ -276,6 +297,16 @@ export function QuotationsList({
               )}
             </TableBody>
           </Table>
+          <ListPaginationControls
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            loading={loading}
+            onPageChange={(nextPage) => {
+              setPage(nextPage);
+              void fetchQuotations(nextPage);
+            }}
+          />
         </CardContent>
       </Card>
     </div>

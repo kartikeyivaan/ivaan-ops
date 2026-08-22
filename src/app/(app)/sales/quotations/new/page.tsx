@@ -33,7 +33,7 @@ export default async function NewQuotationPage({ searchParams }: PageProps) {
 
   const [customers, products, salesExecutives] = companyId
     ? await Promise.all([
-        listCustomers(prisma, companyId, { status: "ACTIVE" }),
+        listCustomers(prisma, companyId, { status: "ACTIVE", unpaged: true }),
         listProducts(prisma, companyId, { isActive: true }),
         prisma.user.findMany({
           where: {
@@ -53,7 +53,7 @@ export default async function NewQuotationPage({ searchParams }: PageProps) {
           orderBy: { name: "asc" },
         }),
       ])
-    : [[], [], []];
+    : [{ items: [] as Awaited<ReturnType<typeof listCustomers>>["items"] }, [], []];
 
   const currentUserInList = salesExecutives.some((user) => user.id === session.user.id);
   const salesExecutiveOptions = currentUserInList
@@ -77,7 +77,7 @@ export default async function NewQuotationPage({ searchParams }: PageProps) {
         code: company.code,
       }))}
       selectedCompanyId={companyId}
-      customers={customers.map((customer) => ({
+      customers={customers.items.map((customer) => ({
         id: customer.id,
         customerName: customer.customerName,
         gstNumber: customer.gstNumber,

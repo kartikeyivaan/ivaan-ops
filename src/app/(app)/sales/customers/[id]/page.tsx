@@ -41,8 +41,8 @@ export default async function CustomerDetailPage({ params }: PageProps) {
       select: { id: true, name: true, email: true },
       orderBy: { name: "asc" },
     }),
-    listQuotations(prisma, companyId, { customerId: id }),
-    listProformaInvoices(prisma, companyId, { customerId: id }),
+    listQuotations(prisma, companyId, { customerId: id, unpaged: true }),
+    listProformaInvoices(prisma, companyId, { customerId: id, unpaged: true }),
     prisma.payment.findMany({
       where: { companyId, customerId: id },
       include: { proformaInvoice: { select: { piNo: true } } },
@@ -58,8 +58,8 @@ export default async function CustomerDetailPage({ params }: PageProps) {
     <CustomerProfile
       customer={customer}
       salesExecutives={salesExecutives}
-      customerQuotations={JSON.parse(JSON.stringify(customerQuotations))}
-      customerProformaInvoices={JSON.parse(JSON.stringify(customerProformaInvoices))}
+      customerQuotations={JSON.parse(JSON.stringify(customerQuotations.items))}
+      customerProformaInvoices={JSON.parse(JSON.stringify(customerProformaInvoices.items))}
       customerPayments={JSON.parse(
         JSON.stringify(
           customerPayments.map((payment) => ({

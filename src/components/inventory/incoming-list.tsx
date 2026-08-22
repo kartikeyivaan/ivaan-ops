@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, History } from "lucide-react";
 import { parseApiJson } from "@/lib/api-response";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ListPaginationControls } from "@/components/ui/list-pagination-controls";
 import {
   Table,
   TableBody,
@@ -25,10 +26,20 @@ type Product = { id: string; displayName: string; gstRate: number };
 type Warehouse = { id: string; name: string; companyId: string };
 type Vendor = { id: string; vendorName: string };
 
+type IncomingLotsPage = {
+  items?: SerializedInventoryLot[];
+  total?: number;
+  page?: number;
+  pageSize?: number;
+};
+
 const wrapCell = "max-w-[14rem] whitespace-normal break-words align-top";
 
 export function IncomingReceiptList({
   initialLots,
+  initialTotal,
+  initialPage = 1,
+  initialPageSize = 50,
   canInward,
   showHistory,
   canExportSerials,
@@ -38,6 +49,9 @@ export function IncomingReceiptList({
   vendors = [],
 }: {
   initialLots: SerializedInventoryLot[];
+  initialTotal?: number;
+  initialPage?: number;
+  initialPageSize?: number;
   canInward: boolean;
   showHistory: boolean;
   canExportSerials: boolean;
@@ -47,11 +61,20 @@ export function IncomingReceiptList({
   vendors?: Vendor[];
 }) {
   const [lots, setLots] = useState(initialLots);
+  const [total, setTotal] = useState(initialTotal ?? initialLots.length);
+  const [page, setPage] = useState(initialPage);
+  const [pageSize] = useState(initialPageSize);
+  const [loading, setLoading] = useState(false);
   const [editingLot, setEditingLot] = useState<SerializedInventoryLot | null>(null);
   const [showInternalTransfers, setShowInternalTransfers] = useState(false);
 
+  useEffect(() => {
+    setLots(initialLots);
+    setTotal(initialTotal ?? initialLots.length);
+    setPage(initialPage);
+  }, [initialLots, initialTotal, initialPage]);
+
   const visibleLots = lots
-    .filter((lot) => (showHistory ? Number(lot.receivedQuantity) > 0 : lot.status === "INCOMING"))
     .filter(
       (lot) => showInternalTransfers || !isInternalTransferLot(lot.purchaseInvoiceNo),
     )
@@ -62,12 +85,23 @@ export function IncomingReceiptList({
       return new Date(bReceived).getTime() - new Date(aReceived).getTime();
     });
 
-  async function refreshLots() {
-    const response = await fetch("/api/inventory/incoming");
-    if (response.ok) {
-      const data = await parseApiJson<SerializedInventoryLot[]>(response);
-      setLots(data);
-    }
+  async function refreshLots(nextPage = page) {
+    setLoading(true);
+    const params = new URLSearchParams();
+    params.set("status", showHistory ? "CLOSED" : "INCOMING");
+    params.set("page", String(nextPage));
+    params.set("pageSize", String(pageSize));
+
+    const response = await fetch(`/api/inventory/incoming?${params.toString()}`);
+    setLoading(false);
+    if (!response.ok) return;
+
+    const data = await parseApiJson<IncomingLotsPage | SerializedInventoryLot[]>(response);
+    const nextItems = Array.isArray(data) ? data : (data.items ?? data);
+    const items = Array.isArray(nextItems) ? nextItems : [];
+    setLots(items);
+    setTotal(Array.isArray(data) ? data.length : (data.total ?? items.length));
+    setPage(Array.isArray(data) ? nextPage : (data.page ?? nextPage));
   }
 
   return (
@@ -190,6 +224,18 @@ export function IncomingReceiptList({
               )}
             </TableBody>
           </Table>
+          <div className="px-4 pb-4">
+            <ListPaginationControls
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              loading={loading}
+              onPageChange={(nextPage) => {
+                setPage(nextPage);
+                void refreshLots(nextPage);
+              }}
+            />
+          </div>
         </CardContent>
       </Card>
 
@@ -201,7 +247,7 @@ export function IncomingReceiptList({
           vendors={vendors}
           allowDelete={false}
           onClose={() => setEditingLot(null)}
-          onSaved={refreshLots}
+          onSaved={() => void refreshLots()}
         />
       ) : null}
     </div>

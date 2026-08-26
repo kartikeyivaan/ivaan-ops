@@ -84,7 +84,6 @@ export async function parseReportRequest(request: Request) {
     parsed.data.salesUserId,
   );
 
-  let salesUserIds: string[] | undefined;
   const parsedSalesUserIds = parseCommaSeparatedUuids(
     parsed.data.salesUserIds,
     "sales executive ids",
@@ -92,14 +91,13 @@ export async function parseReportRequest(request: Request) {
   if (parsedSalesUserIds.error) {
     return { error: parsedSalesUserIds.error };
   }
-  salesUserIds = parsedSalesUserIds.ids;
+  const salesUserIds = parsedSalesUserIds.ids;
 
-  let companyIds: string[] | undefined;
   const parsedCompanyIds = parseCommaSeparatedUuids(parsed.data.companyIds, "company ids");
   if (parsedCompanyIds.error) {
     return { error: parsedCompanyIds.error };
   }
-  companyIds = parsedCompanyIds.ids;
+  const companyIds = parsedCompanyIds.ids;
 
   const restrictedSalesUserIds = restrictSalesUserIds(
     session.user.roles,

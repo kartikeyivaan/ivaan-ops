@@ -103,7 +103,7 @@ export function QuotationForm({
   );
   const [notes, setNotes] = useState(initialNotes ?? "");
   const [deliveryTermMode, setDeliveryTermMode] = useState<DeliveryTermMode>(
-    initialDeliveryTermMode ?? "SUBJECT_TO_AVAILABILITY",
+    initialDeliveryTermMode === "READY_STOCK" ? "READY_STOCK" : "ADVANCE_BOOKING",
   );
   const [requiredPaymentPercent, setRequiredPaymentPercent] = useState(
     String(initialRequiredPaymentPercent ?? 30),
@@ -621,7 +621,7 @@ export function QuotationForm({
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="grid gap-3 md:grid-cols-2">
             {[
               {
                 value: "ADVANCE_BOOKING" as const,
@@ -632,11 +632,6 @@ export function QuotationForm({
                 value: "READY_STOCK" as const,
                 title: "Ready Stock",
                 description: "100% payment required. Offered from ready stock.",
-              },
-              {
-                value: "SUBJECT_TO_AVAILABILITY" as const,
-                title: "Subject to Availability",
-                description: "No booking commitment until material availability is confirmed.",
               },
             ].map((option) => (
               <label
@@ -708,13 +703,6 @@ export function QuotationForm({
             <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800">
               Payment required for booking: 100% (fixed)
             </p>
-          ) : null}
-
-          {deliveryTermMode === "SUBJECT_TO_AVAILABILITY" ? (
-            <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              <p>Booking is disabled for this quotation until availability is confirmed.</p>
-            </div>
           ) : null}
 
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">

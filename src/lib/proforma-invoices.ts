@@ -72,8 +72,10 @@ export function canRequestBooking(
     allowed: true,
     requiredPaymentPercent: BOOKING_ADVANCE_PERCENT,
   },
+  options?: { hasApprovedCredit?: boolean },
 ): boolean {
   if (!requirement.allowed) return false;
+  if (options?.hasApprovedCredit) return true;
   if (isOutstandingWithinTolerance(calculateOutstanding(totalValue, totalPaid))) {
     return true;
   }

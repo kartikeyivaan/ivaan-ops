@@ -7,6 +7,7 @@ import {
   canViewCollectionReport,
   canViewDispatchReport,
   canViewExecutivePerformanceReport,
+  canViewExecutiveSalesReport,
   canViewPaymentFollowupReport,
   canViewProductMovementReport,
   canViewReservedQtyReport,
@@ -16,6 +17,7 @@ import {
 } from "@/lib/report-permissions";
 import { prisma } from "@/lib/prisma";
 import { ROLES, isSuperAdmin } from "@/lib/rbac";
+import { operationalCompanies } from "@/lib/learning/mode";
 import { requireActiveCompany } from "@/lib/session";
 import { ReportsHub } from "@/components/reports/reports-hub";
 
@@ -29,6 +31,15 @@ export default async function ReportsPage() {
   const roles = session.user.roles;
   const isAdmin = isSuperAdmin(roles);
 
+  const reportCompanies = isAdmin
+    ? await prisma.company.findMany({
+        where: { isActive: true, isPractice: false },
+        select: { id: true, name: true, code: true },
+        orderBy: { code: "asc" },
+      })
+    : operationalCompanies(session.user.companies ?? []);
+  const reportCompanyIds = reportCompanies.map((company) => company.id);
+
   const allowedReports = [
     canViewSalesExecutiveReport(roles) ? "sales-executive" : null,
     canViewSalesPerformanceReport(roles) ? "sales-performance" : null,
@@ -40,6 +51,7 @@ export default async function ReportsPage() {
     canViewBookedAvailableReport(roles) ? "booked-available" : null,
     canViewReservedQtyReport(roles) ? "reserved-qty" : null,
     canViewDispatchReport(roles) ? "dispatch" : null,
+    canViewExecutiveSalesReport(roles) ? "executive-sales" : null,
   ].filter(Boolean) as Array<
     | "sales-executive"
     | "sales-performance"
@@ -51,6 +63,7 @@ export default async function ReportsPage() {
     | "booked-available"
     | "reserved-qty"
     | "dispatch"
+    | "executive-sales"
   >;
 
   const [warehouses, products, salesExecutives] = await Promise.all([
@@ -67,7 +80,7 @@ export default async function ReportsPage() {
     prisma.user.findMany({
       where: {
         status: "ACTIVE",
-        companies: { some: { companyId } },
+        companies: { some: { companyId: { in: reportCompanyIds } } },
         roles: {
           some: {
             role: {
@@ -78,6 +91,7 @@ export default async function ReportsPage() {
           },
         },
       },
+      distinct: ["id"],
       select: { id: true, name: true },
       orderBy: { name: "asc" },
     }),
@@ -87,6 +101,7 @@ export default async function ReportsPage() {
     <Suspense fallback={<div className="p-6 text-sm text-slate-500">Loading reports…</div>}>
       <ReportsHub
         allowedReports={allowedReports}
+        companies={reportCompanies}
         warehouses={warehouses}
         products={products}
         salesExecutives={salesExecutives}

@@ -32,12 +32,14 @@ type Warehouse = { id: string; name: string };
 export function StockOverview({
   initialStock,
   warehouses,
+  scopeLabel,
   canReceiveIncoming,
   canViewDamaged,
   canManualStock,
 }: {
   initialStock: ProductStockSummary[];
   warehouses: Warehouse[];
+  scopeLabel?: string;
   canReceiveIncoming: boolean;
   canViewDamaged?: boolean;
   canManualStock?: boolean;
@@ -75,7 +77,9 @@ export function StockOverview({
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Inventory</h1>
           <p className="text-sm text-slate-500">
-            Lot-based stock with warehouse split and consolidated totals.
+            {scopeLabel
+              ? `Combined stock across ${scopeLabel}. Warehouse columns are prefixed by company code.`
+              : "Lot-based stock with warehouse split and consolidated totals."}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

@@ -383,7 +383,9 @@ function serializePi(
         totalValue,
         requirement.requiredPaymentPercent,
       ),
-      canRequestBooking: canRequestBooking(totalValue, totalPaid, requirement),
+      canRequestBooking: canRequestBooking(totalValue, totalPaid, requirement, {
+        hasApprovedCredit: creditApproved,
+      }),
       bookingBlockedReason: requirement.reason ?? null,
       readyForDispatch,
       canMarkDispatchToday: readyForDispatch && !dispatchTodayActive,
@@ -2108,7 +2110,11 @@ export async function requestBooking(
   if (!requirement.allowed) {
     throw new Error("BOOKING_NOT_ALLOWED");
   }
-  if (!canRequestBooking(decimalToNumber(pi.totalValue), totalPaid, requirement)) {
+  if (
+    !canRequestBooking(decimalToNumber(pi.totalValue), totalPaid, requirement, {
+      hasApprovedCredit: hasApprovedPiCredit(pi.creditStatus),
+    })
+  ) {
     throw new Error("ADVANCE_NOT_MET");
   }
 
@@ -2222,7 +2228,11 @@ export async function approveBooking(
     (sum, payment) => sum + decimalToNumber(payment.amount),
     0,
   );
-  if (!canRequestBooking(decimalToNumber(pi.totalValue), totalPaid, requirement)) {
+  if (
+    !canRequestBooking(decimalToNumber(pi.totalValue), totalPaid, requirement, {
+      hasApprovedCredit: hasApprovedPiCredit(pi.creditStatus),
+    })
+  ) {
     throw new Error("ADVANCE_NOT_MET");
   }
 

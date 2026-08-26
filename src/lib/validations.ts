@@ -842,6 +842,10 @@ export const reportSearchSchema = z.object({
   fromDate: z.string().optional(),
   toDate: z.string().optional(),
   salesUserId: z.string().uuid().optional(),
+  /** Comma-separated sales executive user ids (multi-select reports). */
+  salesUserIds: z.string().optional(),
+  /** Comma-separated company ids (multi-select reports). */
+  companyIds: z.string().optional(),
   warehouseId: z.string().uuid().optional(),
   productId: z.string().uuid().optional(),
   customerId: z.string().uuid().optional(),

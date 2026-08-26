@@ -211,16 +211,26 @@ export async function getProductStockSummary(
 
 export async function listStockSummary(
   prisma: PrismaClient,
-  companyId: string,
+  companyIds: string | string[],
   filters: { q?: string; warehouseId?: string },
 ): Promise<ProductStockSummary[]> {
+  const scopedCompanyIds = (Array.isArray(companyIds) ? companyIds : [companyIds]).filter(
+    Boolean,
+  );
+  if (scopedCompanyIds.length === 0) return [];
+
+  const combined = scopedCompanyIds.length > 1;
+
   const warehouses = await prisma.warehouse.findMany({
     where: {
-      companyId,
+      companyId: { in: scopedCompanyIds },
       isActive: true,
       ...(filters.warehouseId ? { id: filters.warehouseId } : {}),
     },
-    orderBy: { name: "asc" },
+    include: { company: { select: { code: true } } },
+    orderBy: combined
+      ? [{ company: { code: "asc" } }, { name: "asc" }]
+      : { name: "asc" },
   });
 
   const products = await prisma.product.findMany({
@@ -247,14 +257,16 @@ export async function listStockSummary(
     for (const warehouse of warehouses) {
       const stock = await getWarehouseStockForProduct(
         prisma,
-        companyId,
+        warehouse.companyId,
         product.id,
         warehouse.id,
       );
       warehouseRows.push({
         ...stock,
         warehouseId: warehouse.id,
-        warehouseName: warehouse.name,
+        warehouseName: combined
+          ? `${warehouse.company.code} — ${warehouse.name}`
+          : warehouse.name,
       });
     }
 

@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Session } from "next-auth";
 import { canAccessApprovalsInbox } from "@/lib/approvals-permissions";
 import { countPendingApprovalsForUser } from "@/lib/approvals-service";
+import { resolveDashboardCompanyIds } from "@/lib/company-scope";
 import { ROLES } from "@/lib/rbac";
 import { countOpenQuotations } from "@/lib/quotation-service";
 import { countBookedOrders, countPendingPayments } from "@/lib/pi-service";
@@ -26,6 +27,7 @@ export async function LegacyRoleDashboard({ session }: { session: Session }) {
 
   if (session.user.activeCompanyId) {
     const companyId = requireActiveCompany(session);
+    const approvalCompanyIds = resolveDashboardCompanyIds(session);
 
     const isWarehouse = roles.includes(ROLES.WAREHOUSE);
     const isSalesish =
@@ -54,7 +56,7 @@ export async function LegacyRoleDashboard({ session }: { session: Session }) {
           )
         : Promise.resolve(null),
       canSeeApprovals
-        ? countPendingApprovalsForUser(prisma, companyId, roles)
+        ? countPendingApprovalsForUser(prisma, approvalCompanyIds, roles)
         : Promise.resolve(null),
       isSalesish ? countBookedOrders(prisma, companyId) : Promise.resolve(null),
       isAccountsish ? countPendingPayments(prisma, companyId) : Promise.resolve(null),

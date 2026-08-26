@@ -147,6 +147,17 @@ describe("proforma invoice calculations", () => {
     expect(isReadyForDispatch("ISSUED", 50000, { hasApprovedCredit: true })).toBe(false);
   });
 
+  it("allows booking with approved credit when advance is not met", () => {
+    expect(canRequestBooking(100000, 0, undefined, { hasApprovedCredit: true })).toBe(true);
+    expect(canRequestBooking(100000, 10000, undefined, { hasApprovedCredit: true })).toBe(true);
+    expect(canRequestBooking(100000, 0, undefined, { hasApprovedCredit: false })).toBe(false);
+    expect(
+      canRequestBooking(100000, 0, { allowed: false, requiredPaymentPercent: 50 }, {
+        hasApprovedCredit: true,
+      }),
+    ).toBe(false);
+  });
+
   it("computes days until committed dispatch and early-approval need", () => {
     expect(daysUntilCommittedDispatch("2026-08-05", "2026-07-30")).toBe(6);
     expect(daysUntilCommittedDispatch("2026-07-30", "2026-07-30")).toBe(0);

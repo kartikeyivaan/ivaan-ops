@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Search } from "lucide-react";
 import { InvoiceHandoverDetailDialog } from "@/components/accounts/invoice-handover-detail-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -27,8 +28,27 @@ type CompletedRow = {
   recordedBy: { name: string } | null;
 };
 
+function matchesSearch(row: CompletedRow, query: string) {
+  const haystack = [
+    row.customer.customerName,
+    row.dispatch.dcNo,
+    row.dispatch.proformaInvoice.piNo,
+    row.invoiceNumber ?? "",
+  ]
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(query);
+}
+
 export function CompletedInvoicesList({ rows }: { rows: CompletedRow[] }) {
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+
+  const filteredRows = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return rows;
+    return rows.filter((row) => matchesSearch(row, query));
+  }, [rows, search]);
 
   return (
     <div className="space-y-5">
@@ -45,9 +65,21 @@ export function CompletedInvoicesList({ rows }: { rows: CompletedRow[] }) {
         </Button>
       </div>
 
+      <div className="relative max-w-md">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <Input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search customer, DC, PI, or invoice number…"
+          className="pl-9"
+        />
+      </div>
+
       <Card>
         <CardContent className="pt-6">
           {rows.length ? (
+            filteredRows.length ? (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -61,7 +93,7 @@ export function CompletedInvoicesList({ rows }: { rows: CompletedRow[] }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((row) => (
+                {filteredRows.map((row) => (
                   <TableRow key={row.id}>
                     <TableCell className="font-medium text-slate-900">
                       <button
@@ -89,6 +121,9 @@ export function CompletedInvoicesList({ rows }: { rows: CompletedRow[] }) {
                 ))}
               </TableBody>
             </Table>
+            ) : (
+              <p className="py-8 text-center text-slate-500">No matches for your search.</p>
+            )
           ) : (
             <p className="py-8 text-center text-slate-500">No completed invoices.</p>
           )}

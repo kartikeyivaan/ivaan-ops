@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { resolveDashboardCompanyIds } from "@/lib/company-scope";
 import { canViewInventory } from "@/lib/inventory-permissions";
 import { listStockSummary } from "@/lib/inventory-service";
 import { prisma } from "@/lib/prisma";
-import { requireActiveCompany } from "@/lib/session";
 import { inventorySearchSchema } from "@/lib/validations";
 
 function errorResponse(code: string, message: string, status: number, details?: unknown) {
@@ -16,10 +16,8 @@ export async function GET(request: Request) {
     return errorResponse("FORBIDDEN", "You do not have permission for this action.", 403);
   }
 
-  let companyId: string;
-  try {
-    companyId = requireActiveCompany(session);
-  } catch {
+  const companyIds = resolveDashboardCompanyIds(session);
+  if (companyIds.length === 0) {
     return errorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
   }
 
@@ -33,6 +31,6 @@ export async function GET(request: Request) {
     return errorResponse("VALIDATION_ERROR", "Invalid filters.", 400, parsed.error.flatten());
   }
 
-  const stock = await listStockSummary(prisma, companyId, parsed.data);
+  const stock = await listStockSummary(prisma, companyIds, parsed.data);
   return NextResponse.json(stock);
 }

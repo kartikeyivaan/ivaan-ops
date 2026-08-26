@@ -239,6 +239,99 @@ export async function listTransfers(
   });
 }
 
+export type InterCompanyTransferSummaryRow = {
+  productId: string;
+  productName: string;
+  iseToPcmv: number;
+  pcmvToIse: number;
+};
+
+const INTER_COMPANY_PAIR_CODES = ["ISE", "PCMV"] as const;
+
+type InterCompanyTransferSummaryLine = {
+  productId: string;
+  productName: string;
+  pendingQty: number;
+  fromCompanyId: string;
+  toCompanyId: string;
+};
+
+export function aggregateInterCompanyTransferSummary(
+  lines: InterCompanyTransferSummaryLine[],
+  iseCompanyId: string,
+  pcmvCompanyId: string,
+): InterCompanyTransferSummaryRow[] {
+  const summary = new Map<string, InterCompanyTransferSummaryRow>();
+
+  for (const line of lines) {
+    if (line.pendingQty <= 0) continue;
+
+    const existing = summary.get(line.productId) ?? {
+      productId: line.productId,
+      productName: line.productName,
+      iseToPcmv: 0,
+      pcmvToIse: 0,
+    };
+
+    if (line.fromCompanyId === iseCompanyId && line.toCompanyId === pcmvCompanyId) {
+      existing.iseToPcmv += line.pendingQty;
+    } else if (line.fromCompanyId === pcmvCompanyId && line.toCompanyId === iseCompanyId) {
+      existing.pcmvToIse += line.pendingQty;
+    }
+
+    summary.set(line.productId, existing);
+  }
+
+  return Array.from(summary.values()).sort((left, right) =>
+    left.productName.localeCompare(right.productName),
+  );
+}
+
+export async function getInterCompanyTransferSummary(
+  prisma: PrismaClient,
+): Promise<InterCompanyTransferSummaryRow[]> {
+  const companies = await prisma.company.findMany({
+    where: { code: { in: [...INTER_COMPANY_PAIR_CODES] } },
+    select: { id: true, code: true },
+  });
+
+  const ise = companies.find((company) => company.code === "ISE");
+  const pcmv = companies.find((company) => company.code === "PCMV");
+  if (!ise || !pcmv) return [];
+
+  const lines = await prisma.inventoryTransferLine.findMany({
+    where: {
+      transfer: {
+        origin: TransferOrigin.MANUAL,
+        status: { in: [TransferStatus.DISPATCHED, TransferStatus.PARTIALLY_RECEIVED] },
+        OR: [
+          { fromCompanyId: ise.id, toCompanyId: pcmv.id },
+          { fromCompanyId: pcmv.id, toCompanyId: ise.id },
+        ],
+      },
+    },
+    select: {
+      productId: true,
+      qty: true,
+      receivedQty: true,
+      product: { select: { displayName: true } },
+      transfer: { select: { fromCompanyId: true, toCompanyId: true } },
+    },
+  });
+
+  return aggregateInterCompanyTransferSummary(
+    lines.map((line) => ({
+      productId: line.productId,
+      productName: line.product.displayName,
+      pendingQty: decimalToNumber(line.qty) - decimalToNumber(line.receivedQty),
+      fromCompanyId: line.transfer.fromCompanyId,
+      toCompanyId: line.transfer.toCompanyId,
+    })),
+    ise.id,
+    pcmv.id,
+  );
+}
+
 export async function countPendingIncomingTransfers(
   prisma: PrismaClient,
   companyId: string,

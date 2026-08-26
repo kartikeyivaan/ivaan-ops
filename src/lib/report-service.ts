@@ -18,6 +18,7 @@ import {
   buildPaymentWhere,
   buildTeamKpiSummaries,
   listSalesExecutivesForCompany,
+  toCompanyIdFilter,
   type SalesMetricFilters,
 } from "@/lib/report-builders";
 import { getBusinessMonthRange } from "@/lib/business-dates";
@@ -85,6 +86,10 @@ export type DispatchReportFilters = ReportDateFilters & {
   warehouseId?: string;
   customerId?: string;
   q?: string;
+};
+
+export type ExecutiveSalesReportFilters = ReportDateFilters & {
+  salesUserIds?: string[];
 };
 
 type MovementBucket = {
@@ -818,6 +823,78 @@ export async function getDispatchReport(
         vehicleNo: dispatch.vehicleNo ?? "",
         warehouseName: dispatch.warehouse.name,
         value: roundMoney(lineValues[index] ?? 0),
+      });
+    }
+  }
+
+  return rows;
+}
+
+export async function getExecutiveSalesReport(
+  prisma: PrismaClient,
+  companyIds: string[],
+  filters: ExecutiveSalesReportFilters,
+) {
+  const fromDate = parseReportDate(filters.fromDate);
+  const toDate = endOfReportDay(filters.toDate);
+
+  const dispatches = await prisma.dispatch.findMany({
+    where: {
+      companyId: toCompanyIdFilter(companyIds),
+      status: DispatchStatus.DISPATCHED,
+      ...(filters.salesUserIds?.length
+        ? { proformaInvoice: { salesUserId: { in: filters.salesUserIds } } }
+        : {}),
+      ...(fromDate || toDate
+        ? {
+            dispatchDate: {
+              ...(fromDate ? { gte: fromDate } : {}),
+              ...(toDate ? { lte: toDate } : {}),
+            },
+          }
+        : {}),
+    },
+    include: {
+      customer: { select: { customerName: true } },
+      proformaInvoice: {
+        select: {
+          piNo: true,
+          salesUser: { select: { name: true } },
+        },
+      },
+      lines: {
+        include: {
+          product: { select: { displayName: true } },
+        },
+      },
+    },
+    orderBy: [{ dispatchDate: "asc" }, { dcNo: "asc" }],
+  });
+
+  const rows: Array<{
+    srNo: number;
+    date: string;
+    seName: string;
+    companyName: string;
+    productName: string;
+    qty: number;
+    piNumber: string;
+    dcNumber: string;
+  }> = [];
+
+  let srNo = 0;
+  for (const dispatch of dispatches) {
+    for (const line of dispatch.lines) {
+      srNo += 1;
+      rows.push({
+        srNo,
+        date: dispatch.dispatchDate.toISOString().slice(0, 10),
+        seName: dispatch.proformaInvoice.salesUser.name,
+        companyName: dispatch.customer.customerName,
+        productName: line.product.displayName,
+        qty: decimalToNumber(line.qty),
+        piNumber: dispatch.proformaInvoice.piNo,
+        dcNumber: dispatch.dcNo,
       });
     }
   }

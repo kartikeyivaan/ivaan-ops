@@ -484,16 +484,23 @@ export async function listPendingApprovalCounts(
   }));
 }
 
-export async function countPendingApprovalsForUser(
-  prisma: PrismaClient,
-  companyId: string,
-  userRoles: string[],
-): Promise<number> {
-  const buckets = await listPendingApprovalCounts(prisma, companyId, userRoles);
-  return buckets.reduce((sum, row) => sum + row.count, 0);
+function resolveCompanyIds(companyIds: string | string[]): string[] {
+  return Array.isArray(companyIds) ? companyIds : [companyIds];
 }
 
-export async function listPendingApprovals(
+export async function countPendingApprovalsForUser(
+  prisma: PrismaClient,
+  companyIds: string | string[],
+  userRoles: string[],
+): Promise<number> {
+  const ids = resolveCompanyIds(companyIds);
+  const buckets = await Promise.all(
+    ids.map((companyId) => listPendingApprovalCounts(prisma, companyId, userRoles)),
+  );
+  return buckets.flat().reduce((sum, row) => sum + row.count, 0);
+}
+
+async function listPendingApprovalsForCompany(
   prisma: PrismaClient,
   companyId: string,
   userRoles: string[],
@@ -543,11 +550,23 @@ export async function listPendingApprovals(
   return groups.flat().sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
 }
 
-export async function listApprovalHistory(
+export async function listPendingApprovals(
+  prisma: PrismaClient,
+  companyIds: string | string[],
+  userRoles: string[],
+): Promise<PendingApprovalItem[]> {
+  const ids = resolveCompanyIds(companyIds);
+  const groups = await Promise.all(
+    ids.map((companyId) => listPendingApprovalsForCompany(prisma, companyId, userRoles)),
+  );
+  return groups.flat().sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
+}
+
+async function listApprovalHistoryForCompany(
   prisma: PrismaClient,
   companyId: string,
   userRoles: string[],
-  limit = 100,
+  limit: number,
 ): Promise<ApprovalHistoryItem[]> {
   const buckets: Promise<ApprovalHistoryItem[]>[] = [];
 
@@ -588,6 +607,24 @@ export async function listApprovalHistory(
   }
 
   const groups = await Promise.all(buckets);
+  return groups
+    .flat()
+    .sort((a, b) => b.decidedAt.localeCompare(a.decidedAt))
+    .slice(0, limit);
+}
+
+export async function listApprovalHistory(
+  prisma: PrismaClient,
+  companyIds: string | string[],
+  userRoles: string[],
+  limit = 100,
+): Promise<ApprovalHistoryItem[]> {
+  const ids = resolveCompanyIds(companyIds);
+  const groups = await Promise.all(
+    ids.map((companyId) =>
+      listApprovalHistoryForCompany(prisma, companyId, userRoles, limit),
+    ),
+  );
   return groups
     .flat()
     .sort((a, b) => b.decidedAt.localeCompare(a.decidedAt))

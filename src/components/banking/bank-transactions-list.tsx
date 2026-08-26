@@ -266,87 +266,84 @@ export function BankTransactionsList() {
 
       <Card>
         <CardContent className="overflow-x-auto pt-6">
-          <Table>
+          <Table className="table-fixed">
             <TableHeader>
               <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Value date</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Reference</TableHead>
-                <TableHead className="text-right">Debit</TableHead>
-                <TableHead className="text-right">Credit</TableHead>
-                <TableHead className="text-right">Balance</TableHead>
-                <TableHead>Bank / Account</TableHead>
-                <TableHead>Assignment</TableHead>
-                <TableHead>Customer / GST</TableHead>
-                <TableHead className="text-right">Allocated</TableHead>
-                <TableHead className="text-right">Available</TableHead>
-                <TableHead>Recon</TableHead>
+                <TableHead className="w-[4.5rem] px-2">Date</TableHead>
+                <TableHead className="min-w-[10rem] px-2">Description / Reference</TableHead>
+                <TableHead className="w-[4.75rem] px-2 text-right">Debit</TableHead>
+                <TableHead className="w-[4.75rem] px-2 text-right">Credit</TableHead>
+                <TableHead className="w-[5.25rem] px-2 text-right">Balance</TableHead>
+                <TableHead className="w-[7.5rem] px-2">Bank / Account</TableHead>
+                <TableHead className="w-[5.5rem] px-2">Assignment</TableHead>
+                <TableHead className="w-[8rem] px-2">Customer / GST</TableHead>
+                <TableHead className="w-[4.75rem] px-2 text-right">Allocated</TableHead>
+                <TableHead className="w-[4.75rem] px-2 text-right">Available</TableHead>
+                <TableHead className="w-[3.75rem] px-2">Recon</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={13} className="text-center text-slate-500">
+                  <TableCell colSpan={11} className="text-center text-slate-500">
                     Loading…
                   </TableCell>
                 </TableRow>
               ) : rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={13} className="text-center text-slate-500">
+                  <TableCell colSpan={11} className="text-center text-slate-500">
                     No transactions for these filters.
                   </TableCell>
                 </TableRow>
               ) : (
                 rows.map((row) => (
                   <TableRow key={row.id}>
-                    <TableCell className="whitespace-nowrap text-sm">
+                    <TableCell className="whitespace-nowrap px-2 py-2 align-top text-xs">
                       {row.transactionDate}
                     </TableCell>
-                    <TableCell className="whitespace-nowrap text-sm">
-                      {row.valueDate ?? "—"}
+                    <TableCell className="whitespace-normal break-words px-2 py-2 align-top text-sm">
+                      <div>{row.description}</div>
+                      {row.referenceNumber ? (
+                        <div className="mt-0.5 font-mono text-xs text-slate-500">
+                          {row.referenceNumber}
+                        </div>
+                      ) : null}
                     </TableCell>
-                    <TableCell className="max-w-[220px] truncate text-sm">
-                      {row.description}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {row.referenceNumber ?? "—"}
-                    </TableCell>
-                    <TableCell className="text-right text-sm">
+                    <TableCell className="whitespace-nowrap px-2 py-2 align-top text-right text-xs">
                       {row.debitAmount ? formatCurrency(row.debitAmount) : "—"}
                     </TableCell>
-                    <TableCell className="text-right text-sm">
+                    <TableCell className="whitespace-nowrap px-2 py-2 align-top text-right text-xs">
                       {row.creditAmount ? formatCurrency(row.creditAmount) : "—"}
                     </TableCell>
-                    <TableCell className="text-right text-sm">
+                    <TableCell className="whitespace-nowrap px-2 py-2 align-top text-right text-xs">
                       {formatCurrency(row.runningBalance)}
                     </TableCell>
-                    <TableCell className="text-sm">
+                    <TableCell className="whitespace-normal break-words px-2 py-2 align-top text-xs">
                       <div>{row.bankAccount.bankName}</div>
-                      <div className="text-xs text-slate-500">
+                      <div className="text-slate-500">
                         {row.bankAccount.accountNumberMasked} · {row.bankAccount.receivedInAccount}
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm">
+                    <TableCell className="whitespace-normal break-words px-2 py-2 align-top text-xs">
                       {assignmentLabel(row.assignmentStatus)}
                     </TableCell>
-                    <TableCell className="max-w-[180px] text-xs">
+                    <TableCell className="whitespace-normal break-words px-2 py-2 align-top text-xs">
                       {row.customers.length === 0
                         ? "—"
                         : row.customers.map((c) => (
                             <div key={`${c.name}-${c.gst}`}>
-                              <div className="truncate font-medium text-slate-800">{c.name}</div>
-                              <div className="truncate text-slate-500">{c.gst}</div>
+                              <div className="font-medium text-slate-800">{c.name}</div>
+                              <div className="text-slate-500">{c.gst}</div>
                             </div>
                           ))}
                     </TableCell>
-                    <TableCell className="text-right text-sm">
+                    <TableCell className="whitespace-nowrap px-2 py-2 align-top text-right text-xs">
                       {row.creditAmount ? formatCurrency(row.allocatedAmount) : "—"}
                     </TableCell>
-                    <TableCell className="text-right text-sm">
+                    <TableCell className="whitespace-nowrap px-2 py-2 align-top text-right text-xs">
                       {row.creditAmount ? formatCurrency(row.availableAmount) : "—"}
                     </TableCell>
-                    <TableCell className="text-sm">
+                    <TableCell className="whitespace-nowrap px-2 py-2 align-top text-xs">
                       {row.reconciliationStatus === "ISSUE" ? (
                         <Link
                           href="/banking/issues"

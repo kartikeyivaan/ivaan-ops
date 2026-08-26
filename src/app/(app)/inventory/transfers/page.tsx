@@ -3,12 +3,10 @@ import { auth } from "@/lib/auth";
 import {
   canCreateTransfer,
   canViewTransfers,
-  canViewTransferSerials,
 } from "@/lib/transfer-permissions";
-import { listTransfers, serializeTransferForRole } from "@/lib/transfer-service";
+import { getInterCompanyTransferSummary } from "@/lib/transfer-service";
 import { prisma } from "@/lib/prisma";
-import { requireActiveCompany } from "@/lib/session";
-import { TransferList } from "@/components/inventory/transfer-list";
+import { TransferSummary } from "@/components/inventory/transfer-summary";
 
 export default async function TransfersPage() {
   const session = await auth();
@@ -16,17 +14,11 @@ export default async function TransfersPage() {
     redirect("/dashboard");
   }
 
-  const companyId = requireActiveCompany(session);
-  const includeSerials = canViewTransferSerials(session.user.roles);
-
-  const transfers = await listTransfers(prisma, companyId, {});
+  const summary = await getInterCompanyTransferSummary(prisma);
 
   return (
-    <TransferList
-      initialTransfers={transfers.map((transfer) =>
-        serializeTransferForRole(transfer, includeSerials),
-      )}
-      activeCompanyId={companyId}
+    <TransferSummary
+      rows={JSON.parse(JSON.stringify(summary))}
       canCreate={canCreateTransfer(session.user.roles)}
     />
   );

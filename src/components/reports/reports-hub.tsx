@@ -32,7 +32,8 @@ type ReportKey =
   | "product-movement"
   | "booked-available"
   | "reserved-qty"
-  | "dispatch";
+  | "dispatch"
+  | "executive-sales";
 
 type ReportDefinition = {
   key: ReportKey;
@@ -44,6 +45,7 @@ type ReportDefinition = {
 type WarehouseOption = { id: string; name: string };
 type SalesExecutiveOption = { id: string; name: string };
 type ProductOption = { id: string; displayName: string };
+type CompanyOption = { id: string; name: string; code: string };
 
 const REPORTS: ReportDefinition[] = [
   {
@@ -109,6 +111,13 @@ const REPORTS: ReportDefinition[] = [
     description:
       "Continuous listing of confirmed dispatches for the selected day — PI, firm details, product, qty, and serial numbers.",
   },
+  {
+    key: "executive-sales",
+    label: "Sales Executive Report",
+    endpoint: "/api/reports/executive-sales",
+    description:
+      "Dispatched sales by executive for the selected period — customer firm, product, qty, PI and DC numbers.",
+  },
 ];
 
 const RESERVED_QTY_COLUMNS = [
@@ -122,6 +131,17 @@ const RESERVED_QTY_COLUMNS = [
   "bookingAmount",
 ] as const;
 
+const EXECUTIVE_SALES_COLUMNS = [
+  "srNo",
+  "date",
+  "seName",
+  "companyName",
+  "productName",
+  "qty",
+  "piNumber",
+  "dcNumber",
+] as const;
+
 function isMoneyColumn(key: string): boolean {
   return /value|paid|outstanding|amount|ratePerWp|collectionAmount/i.test(key);
 }
@@ -133,6 +153,12 @@ function isUnitColumn(key: string): boolean {
 }
 
 function formatHeader(key: string) {
+  if (key === "srNo") return "Sr Number";
+  if (key === "date") return "Date";
+  if (key === "seName") return "SE Name";
+  if (key === "companyName") return "Company Name";
+  if (key === "piNumber") return "PI Number";
+  if (key === "dcNumber") return "DC Number";
   if (key === "ratePerWp") return "Rate (per Wp)";
   if (key === "piNo") return "PI No";
   if (key === "piDate") return "PI Date";
@@ -157,6 +183,7 @@ function formatHeader(key: string) {
 
 export function ReportsHub({
   allowedReports,
+  companies,
   warehouses,
   products,
   salesExecutives,
@@ -164,6 +191,7 @@ export function ReportsHub({
   reportShortcuts,
 }: {
   allowedReports: ReportKey[];
+  companies: CompanyOption[];
   warehouses: WarehouseOption[];
   products: ProductOption[];
   salesExecutives: SalesExecutiveOption[];
@@ -198,6 +226,16 @@ export function ReportsHub({
     return defaults.toDate;
   });
   const [salesUserId, setSalesUserId] = useState(searchParams.get("salesUserId") ?? "");
+  const [selectedSalesUserIds, setSelectedSalesUserIds] = useState<string[]>(() => {
+    const raw = searchParams.get("salesUserIds");
+    if (!raw) return [];
+    return raw.split(",").map((entry) => entry.trim()).filter(Boolean);
+  });
+  const [selectedCompanyIds, setSelectedCompanyIds] = useState<string[]>(() => {
+    const raw = searchParams.get("companyIds");
+    if (!raw) return [];
+    return raw.split(",").map((entry) => entry.trim()).filter(Boolean);
+  });
   const [warehouseId, setWarehouseId] = useState(
     searchParams.get("warehouseId") ?? "",
   );
@@ -210,6 +248,9 @@ export function ReportsHub({
   const currentReport = visibleReports.find((report) => report.key === activeReport)!;
 
   const columns = useMemo(() => {
+    if (activeReport === "executive-sales") {
+      return [...EXECUTIVE_SALES_COLUMNS];
+    }
     if (activeReport === "reserved-qty" && rows.length > 0) {
       return [...RESERVED_QTY_COLUMNS];
     }
@@ -225,6 +266,12 @@ export function ReportsHub({
     if (fromDate) params.set("fromDate", fromDate);
     if (toDate) params.set("toDate", toDate);
     if (salesUserId) params.set("salesUserId", salesUserId);
+    if (activeReport === "executive-sales" && selectedSalesUserIds.length) {
+      params.set("salesUserIds", selectedSalesUserIds.join(","));
+    }
+    if (activeReport === "executive-sales" && selectedCompanyIds.length) {
+      params.set("companyIds", selectedCompanyIds.join(","));
+    }
     if (warehouseId) params.set("warehouseId", warehouseId);
     if (productId) params.set("productId", productId);
     if (customerType) params.set("customerType", customerType);
@@ -269,6 +316,34 @@ export function ReportsHub({
       return value.toLocaleString("en-IN", { maximumFractionDigits: key.includes("Percent") ? 1 : 0 });
     }
     return String(value ?? "—");
+  }
+
+  function toggleSalesExecutive(id: string) {
+    setSelectedSalesUserIds((current) =>
+      current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id],
+    );
+  }
+
+  function selectAllSalesExecutives() {
+    setSelectedSalesUserIds(salesExecutives.map((executive) => executive.id));
+  }
+
+  function clearSalesExecutives() {
+    setSelectedSalesUserIds([]);
+  }
+
+  function toggleCompany(id: string) {
+    setSelectedCompanyIds((current) =>
+      current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id],
+    );
+  }
+
+  function selectAllCompanies() {
+    setSelectedCompanyIds(companies.map((company) => company.id));
+  }
+
+  function clearCompanies() {
+    setSelectedCompanyIds([]);
   }
 
   const salesKpiReports = new Set<ReportKey>([
@@ -378,7 +453,100 @@ export function ReportsHub({
               </>
             ) : null}
 
-            {canFilterByExecutive && executiveFilterReports.has(activeReport) ? (
+            {activeReport === "executive-sales" && companies.length > 0 ? (
+              <div className="space-y-2 md:col-span-2 xl:col-span-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Label>Companies</Label>
+                  {companies.length > 1 ? (
+                    <div className="flex gap-2 text-xs">
+                      <button
+                        type="button"
+                        className="text-blue-600 hover:underline"
+                        onClick={selectAllCompanies}
+                      >
+                        Select all
+                      </button>
+                      <button
+                        type="button"
+                        className="text-blue-600 hover:underline"
+                        onClick={clearCompanies}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+                <p className="text-xs text-slate-500">
+                  {companies.length > 1
+                    ? "Leave none selected to include ISE and PCMV."
+                    : "Report runs for your company."}
+                </p>
+                <div className="grid max-h-40 gap-2 overflow-y-auto rounded-md border border-slate-200 p-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {companies.map((company) => (
+                    <label
+                      key={company.id}
+                      className="flex items-center gap-2 text-sm text-slate-700"
+                    >
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-slate-300"
+                        checked={selectedCompanyIds.includes(company.id)}
+                        onChange={() => toggleCompany(company.id)}
+                        disabled={companies.length === 1}
+                      />
+                      {company.code}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {activeReport === "executive-sales" && canFilterByExecutive ? (
+              <div className="space-y-2 md:col-span-2 xl:col-span-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Label>Sales Executives</Label>
+                  <div className="flex gap-2 text-xs">
+                    <button
+                      type="button"
+                      className="text-blue-600 hover:underline"
+                      onClick={selectAllSalesExecutives}
+                    >
+                      Select all
+                    </button>
+                    <button
+                      type="button"
+                      className="text-blue-600 hover:underline"
+                      onClick={clearSalesExecutives}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500">
+                  Leave none selected to include all executives.
+                </p>
+                <div className="grid max-h-40 gap-2 overflow-y-auto rounded-md border border-slate-200 p-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {salesExecutives.map((executive) => (
+                    <label
+                      key={executive.id}
+                      className="flex items-center gap-2 text-sm text-slate-700"
+                    >
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-slate-300"
+                        checked={selectedSalesUserIds.includes(executive.id)}
+                        onChange={() => toggleSalesExecutive(executive.id)}
+                      />
+                      {executive.name}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {canFilterByExecutive &&
+            executiveFilterReports.has(activeReport) &&
+            activeReport !== "executive-sales" ? (
               <div className="space-y-2">
                 <Label htmlFor="salesUserId">Sales Executive</Label>
                 <select
@@ -534,7 +702,9 @@ export function ReportsHub({
             <p className="text-sm text-slate-500">
               {loading
                 ? "Loading results…"
-                : "Run a report to see results. Export works even before previewing."}
+                : activeReport === "executive-sales"
+                  ? "Run the report to preview results. Export Excel or PDF anytime."
+                  : "Run a report to see results. Export works even before previewing."}
             </p>
           ) : (
             <div className="overflow-x-auto">

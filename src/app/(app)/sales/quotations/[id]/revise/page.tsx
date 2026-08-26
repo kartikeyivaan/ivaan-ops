@@ -125,9 +125,7 @@ export default async function ReviseQuotationPage({ params }: PageProps) {
       initialLines={initialLines}
       initialNotes={quotation.notes ?? ""}
       initialDeliveryTermMode={
-        quotation.deliveryTermMode === "LEGACY"
-          ? "SUBJECT_TO_AVAILABILITY"
-          : quotation.deliveryTermMode
+        quotation.deliveryTermMode === "READY_STOCK" ? "READY_STOCK" : "ADVANCE_BOOKING"
       }
       initialRequiredPaymentPercent={
         quotation.requiredPaymentPercent == null

@@ -8,6 +8,7 @@ import {
   canViewTransferSerials,
   canViewTransfers,
 } from "@/lib/transfer-permissions";
+import { aggregateInterCompanyTransferSummary } from "@/lib/transfer-service";
 import { ROLES } from "@/lib/rbac";
 
 describe("transfer permissions", () => {
@@ -44,5 +45,73 @@ describe("transfer numbering", () => {
   it("pads sequence to 5 digits like existing transfers", () => {
     const fy = getFinancialYear(new Date("2026-08-08"));
     expect(`TRF-${fy}-${String(18).padStart(5, "0")}`).toBe("TRF-26-27-00018");
+  });
+});
+
+describe("inter-company transfer summary", () => {
+  const iseId = "ise-company-id";
+  const pcmvId = "pcmv-company-id";
+
+  it("aggregates pending qty by product and direction", () => {
+    const rows = aggregateInterCompanyTransferSummary(
+      [
+        {
+          productId: "p1",
+          productName: "Inverter A",
+          pendingQty: 3,
+          fromCompanyId: iseId,
+          toCompanyId: pcmvId,
+        },
+        {
+          productId: "p1",
+          productName: "Inverter A",
+          pendingQty: 2,
+          fromCompanyId: iseId,
+          toCompanyId: pcmvId,
+        },
+        {
+          productId: "p2",
+          productName: "Battery B",
+          pendingQty: 4,
+          fromCompanyId: pcmvId,
+          toCompanyId: iseId,
+        },
+      ],
+      iseId,
+      pcmvId,
+    );
+
+    expect(rows).toEqual([
+      {
+        productId: "p2",
+        productName: "Battery B",
+        iseToPcmv: 0,
+        pcmvToIse: 4,
+      },
+      {
+        productId: "p1",
+        productName: "Inverter A",
+        iseToPcmv: 5,
+        pcmvToIse: 0,
+      },
+    ]);
+  });
+
+  it("ignores fully received lines", () => {
+    expect(
+      aggregateInterCompanyTransferSummary(
+        [
+          {
+            productId: "p1",
+            productName: "Inverter A",
+            pendingQty: 0,
+            fromCompanyId: iseId,
+            toCompanyId: pcmvId,
+          },
+        ],
+        iseId,
+        pcmvId,
+      ),
+    ).toEqual([]);
   });
 });

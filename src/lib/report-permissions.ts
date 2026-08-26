@@ -94,7 +94,8 @@ export function canViewAnyReport(userRoles: string[]): boolean {
     canViewSalesPerformanceReport(userRoles) ||
     canViewSalesFunnelReport(userRoles) ||
     canViewCollectionReport(userRoles) ||
-    canViewExecutivePerformanceReport(userRoles)
+    canViewExecutivePerformanceReport(userRoles) ||
+    canViewExecutiveSalesReport(userRoles)
   );
 }
 
@@ -128,6 +129,32 @@ export function restrictSalesUserId(
     return userId;
   }
   return isFirmSalesScope(requestedSalesUserId) ? undefined : requestedSalesUserId;
+}
+
+/**
+ * Multi-executive report filter. Managers may select any subset; sales executives
+ * are always scoped to their own id regardless of the request.
+ */
+export function restrictSalesUserIds(
+  userRoles: string[],
+  userId: string,
+  requestedSalesUserIds?: string[],
+): string[] | undefined {
+  if (isSuperAdmin(userRoles) || userRoles.includes(ROLES.SALES_MANAGER)) {
+    return requestedSalesUserIds?.length ? requestedSalesUserIds : undefined;
+  }
+  if (userRoles.includes(ROLES.SALES_EXECUTIVE)) {
+    if (!requestedSalesUserIds?.length) {
+      return [userId];
+    }
+    const allowed = requestedSalesUserIds.filter((id) => id === userId);
+    return allowed.length ? allowed : [userId];
+  }
+  return requestedSalesUserIds?.length ? requestedSalesUserIds : undefined;
+}
+
+export function canViewExecutiveSalesReport(userRoles: string[]): boolean {
+  return canViewSalesExecutiveReport(userRoles);
 }
 
 /**

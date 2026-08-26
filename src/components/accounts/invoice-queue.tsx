@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FileCheck } from "lucide-react";
+import { FileCheck, Search } from "lucide-react";
 import { InvoiceHandoverDetailDialog } from "@/components/accounts/invoice-handover-detail-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,13 +23,32 @@ type QueueRow = {
   customer: { customerName: string };
 };
 
+function matchesSearch(row: QueueRow, query: string) {
+  const haystack = [
+    row.customer.customerName,
+    row.dispatch.dcNo,
+    row.dispatch.proformaInvoice.piNo,
+    row.invoiceNumber ?? "",
+  ]
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(query);
+}
+
 export function InvoiceQueue({ rows }: { rows: QueueRow[] }) {
   const router = useRouter();
   const [editing, setEditing] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
+  const [search, setSearch] = useState("");
   const [error, setError] = useState("");
+
+  const filteredRows = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return rows;
+    return rows.filter((row) => matchesSearch(row, query));
+  }, [rows, search]);
 
   async function save() {
     if (!editing) return;
@@ -59,8 +78,18 @@ export function InvoiceQueue({ rows }: { rows: QueueRow[] }) {
           </Link>
         </Button>
       </div>
+      <div className="relative max-w-md">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <Input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search customer, DC, or PI number…"
+          className="pl-9"
+        />
+      </div>
       <div className="grid gap-3">
-        {rows.map((row) => (
+        {filteredRows.map((row) => (
           <Card key={row.id}>
             <CardHeader className="pb-3">
               <CardTitle className="flex flex-wrap justify-between gap-2 text-base">
@@ -98,7 +127,11 @@ export function InvoiceQueue({ rows }: { rows: QueueRow[] }) {
             </CardContent>
           </Card>
         ))}
-        {!rows.length ? <p className="rounded-lg border border-dashed p-8 text-center text-slate-500">No pending invoice handovers.</p> : null}
+        {!rows.length ? (
+          <p className="rounded-lg border border-dashed p-8 text-center text-slate-500">No pending invoice handovers.</p>
+        ) : !filteredRows.length ? (
+          <p className="rounded-lg border border-dashed p-8 text-center text-slate-500">No matches for your search.</p>
+        ) : null}
       </div>
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
       {detailId ? (

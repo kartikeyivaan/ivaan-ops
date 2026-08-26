@@ -58,14 +58,14 @@ export function TransferList({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <Button variant="ghost" size="sm" asChild className="mb-2 px-0">
-            <Link href="/inventory">
+            <Link href="/inventory/transfers">
               <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to inventory
+              Back to transfer summary
             </Link>
           </Button>
-          <h1 className="text-2xl font-bold text-slate-900">Stock Transfers</h1>
+          <h1 className="text-2xl font-bold text-slate-900">All Stock Transfers</h1>
           <p className="text-sm text-slate-500">
-            Inter-warehouse and inter-company transfers with receive confirmation.
+            Full transfer history with outgoing and incoming filters.
           </p>
         </div>
         {canCreate ? (

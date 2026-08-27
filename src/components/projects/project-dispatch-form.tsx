@@ -361,7 +361,7 @@ export function ProjectDispatchForm({ defaultProjectId }: { defaultProjectId?: s
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="font-medium text-slate-900">{line.productName}</p>
-                  <p className="text-sm text-slate-500">Balance in Projects WH: {line.remainingQty}</p>
+                  <p className="text-sm text-slate-500">Qty reserved for project: {line.remainingQty}</p>
                 </div>
                 {!line.serialTracking ? (
                   <div className="space-y-1">

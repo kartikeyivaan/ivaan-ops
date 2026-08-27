@@ -8,8 +8,8 @@ import {
 } from "@/lib/project-proposal-pdf";
 import { assertProjectProposalAccess } from "@/lib/project-proposal-service";
 import { canViewProjectProposals } from "@/lib/project-proposal-permissions";
+import { pdfContentVersion, pdfInlineResponse, resolveStoredPdf } from "@/lib/pdf-cache";
 import { prisma } from "@/lib/prisma";
-import { PROJECT_PROPOSAL_PDF_CACHE_HEADERS } from "@/lib/project-proposals";
 import { requireActiveCompany } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -54,7 +54,18 @@ export async function GET(request: Request, context: RouteContext) {
 
     assertProjectProposalAccess(session.user.roles, session.user.id, proposal);
 
-    const pdf = await generateProjectProposalPdfByFormat(proposal, format);
+    const pdf = await resolveStoredPdf(prisma, {
+      documentType: "PROJECT_PROPOSAL",
+      documentId: proposal.id,
+      variant: format,
+      contentVersion: pdfContentVersion([
+        proposal.updatedAt.toISOString(),
+        proposal.status,
+        proposal.currentRevisionNo,
+        format,
+      ]),
+      generate: () => generateProjectProposalPdfByFormat(proposal, format),
+    });
     const revision =
       proposal.revisions.find((entry) => entry.revisionNo === proposal.currentRevisionNo) ??
       proposal.revisions[proposal.revisions.length - 1];
@@ -62,16 +73,9 @@ export async function GET(request: Request, context: RouteContext) {
     const suffix = format === "card" ? " Quote Card" : " Proposal";
     const rawName = `${proposal.proposalNo}${suffix} - ${customerName}`;
     const safeName = rawName.replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim();
-    const asciiName = safeName.replace(/[^\x20-\x7E]/g, "_");
 
-    return new NextResponse(new Uint8Array(pdf), {
-      headers: {
-        "Content-Type": "application/pdf",
-        ...PROJECT_PROPOSAL_PDF_CACHE_HEADERS,
-        "Content-Disposition": `attachment; filename="${asciiName}.pdf"; filename*=UTF-8''${encodeURIComponent(
-          `${safeName}.pdf`,
-        )}`,
-      },
+    return pdfInlineResponse(pdf, safeName, {
+      asciiName: safeName.replace(/[^\x20-\x7E]/g, "_"),
     });
   } catch (error) {
     const mapped = mapProjectProposalError(error);

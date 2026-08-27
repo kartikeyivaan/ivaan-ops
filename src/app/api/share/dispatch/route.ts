@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { generateDispatchPdf } from "@/lib/dispatch-pdf";
 import { dispatchInclude } from "@/lib/dispatch-service";
+import { pdfContentVersion, pdfInlineResponse, resolveStoredPdf } from "@/lib/pdf-cache";
 import { prisma } from "@/lib/prisma";
 import { verifyDispatchShareToken } from "@/lib/share-token";
 
@@ -36,20 +37,20 @@ export async function GET(request: Request) {
     return invalidLinkResponse("This delivery challan is no longer available.");
   }
 
-  const pdf = await generateDispatchPdf(dispatch);
+  const pdf = await resolveStoredPdf(prisma, {
+    documentType: "DISPATCH",
+    documentId: dispatch.id,
+    contentVersion: pdfContentVersion([dispatch.updatedAt.toISOString(), dispatch.status]),
+    generate: () => generateDispatchPdf(dispatch),
+  });
 
   const rawName = `${dispatch.dcNo} - ${dispatch.customer.customerName}`;
   const safeName = rawName.replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim();
-  const asciiName = safeName.replace(/[^\x20-\x7E]/g, "_");
 
-  return new NextResponse(new Uint8Array(pdf), {
-    headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="${asciiName}.pdf"; filename*=UTF-8''${encodeURIComponent(
-        `${safeName}.pdf`,
-      )}`,
-      "Cache-Control": "private, no-store",
-      "X-Robots-Tag": "noindex, nofollow",
-    },
+  const response = pdfInlineResponse(pdf, safeName, {
+    asciiName: safeName.replace(/[^\x20-\x7E]/g, "_"),
+    privateCache: false,
   });
+  response.headers.set("X-Robots-Tag", "noindex, nofollow");
+  return response;
 }

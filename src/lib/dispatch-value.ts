@@ -116,6 +116,58 @@ export function commercialValuesByDispatchLine(
   return values;
 }
 
+/** Commercial subtotal (ex-GST) per dispatch line — mirrors {@link commercialValuesByDispatchLine} without GST. */
+export function commercialSubtotalsExGstByDispatchLine(
+  lines: ReadonlyArray<DispatchCommercialValueLine>,
+  kitBomMap: ReadonlyMap<string, KitBomComponent[]> = new Map(),
+): number[] {
+  const values = lines.map(() => 0);
+  const groups = new Map<string, number[]>();
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const piItemId = lines[index]!.proformaInvoiceItem.id;
+    const group = groups.get(piItemId) ?? [];
+    group.push(index);
+    groups.set(piItemId, group);
+  }
+
+  for (const indices of groups.values()) {
+    const sample = lines[indices[0]!]!;
+    const piProduct = sample.proformaInvoiceItem.product;
+    const rate = decimalToNumber(sample.proformaInvoiceItem.rate);
+
+    if (isKitCategory(piProduct.category.name)) {
+      const bom = kitBomMap.get(piProduct.id) ?? [];
+      const kitLines = indices.map((index) => ({
+        productId: lines[index]!.productId,
+        qty: decimalToNumber(lines[index]!.qty),
+      }));
+      let kitQty = 0;
+      try {
+        kitQty = kitQtyFromComponentLines(bom, kitLines);
+      } catch {
+        kitQty = 0;
+      }
+      const total = kitQty * rate;
+      const share = indices.length > 0 ? total / indices.length : 0;
+      for (const index of indices) values[index] = share;
+      continue;
+    }
+
+    for (const index of indices) {
+      const line = lines[index]!;
+      values[index] = calculateLineSubtotal({
+        pricingType: line.product.pricingType,
+        capacity: decimalToNumber(line.product.capacity),
+        qty: decimalToNumber(line.qty),
+        rate,
+      });
+    }
+  }
+
+  return values;
+}
+
 export function sumCommercialValueFromDispatchLines(
   lines: ReadonlyArray<DispatchCommercialValueLine>,
   kitBomMap: ReadonlyMap<string, KitBomComponent[]> = new Map(),

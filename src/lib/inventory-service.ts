@@ -29,6 +29,11 @@ import {
 } from "@/lib/list-pagination";
 import { applyIncomingFulfillment } from "@/lib/purchase-request-service";
 import { fulfillProjectMaterialFromIncoming } from "@/lib/project-service";
+import {
+  getProjectCommittedQtyAtWarehouse,
+  getProjectReservedQtyAtWarehouse,
+} from "@/lib/project-stock-service";
+import { getPhysicalWarehouseStockForProduct } from "@/lib/inventory-stock";
 
 const lotInclude = {
   company: true,
@@ -106,6 +111,7 @@ function sumStock(rows: StockSummary[]): StockSummary {
       incomingStock: acc.incomingStock + row.incomingStock,
       bookedStock: acc.bookedStock + row.bookedStock,
       damagedStock: acc.damagedStock + row.damagedStock,
+      committedStock: acc.committedStock + row.committedStock,
     }),
     emptyStockSummary(),
   );
@@ -117,78 +123,44 @@ export async function getWarehouseStockForProduct(
   productId: string,
   warehouseId: string,
 ): Promise<StockSummary> {
-  const product = await prisma.product.findUnique({ where: { id: productId } });
-  if (!product) return emptyStockSummary();
-
-  const lots = await prisma.inventoryLot.findMany({
-    where: { companyId, warehouseId, productId },
+  const warehouse = await prisma.warehouse.findUnique({
+    where: { id: warehouseId },
+    select: { code: true },
   });
 
-  let incomingStock = 0;
-  let nonSerialAvailable = 0;
-  let nonSerialDamaged = 0;
+  const physical = await getPhysicalWarehouseStockForProduct(
+    prisma,
+    companyId,
+    productId,
+    warehouseId,
+  );
 
-  for (const lot of lots) {
-    const quantity = decimalToNumber(lot.quantity);
-    const received = decimalToNumber(lot.receivedQuantity);
-    const damaged = decimalToNumber(lot.damagedQuantity);
-
-    if (lot.status === LotStatus.INCOMING) {
-      incomingStock += pendingIncomingQuantity({
-        quantity,
-        receivedQuantity: received,
-        damagedQuantity: damaged,
-      });
-    }
-
-    if (!product.serialTracking) {
-      nonSerialAvailable += Math.max(0, received - damaged);
-      nonSerialDamaged += damaged;
-    }
-  }
-
-  if (product.serialTracking) {
-    const [availableCount, bookedCount, damagedCount] = await Promise.all([
-      prisma.inventorySerial.count({
-        where: {
-          productId,
-          currentWarehouseId: warehouseId,
-          status: SerialStatus.AVAILABLE,
-          lot: { companyId },
-        },
-      }),
-      prisma.inventorySerial.count({
-        where: {
-          productId,
-          currentWarehouseId: warehouseId,
-          status: SerialStatus.BOOKED,
-          lot: { companyId },
-        },
-      }),
-      prisma.inventorySerial.count({
-        where: {
-          productId,
-          currentWarehouseId: warehouseId,
-          status: SerialStatus.DAMAGED,
-          lot: { companyId },
-        },
-      }),
-    ]);
-
+  if (warehouse?.code === "JAL-HO") {
+    const reserved = await getProjectReservedQtyAtWarehouse(
+      prisma,
+      companyId,
+      warehouseId,
+      productId,
+    );
     return {
-      availableStock: availableCount,
-      incomingStock,
-      bookedStock: bookedCount,
-      damagedStock: damagedCount,
+      ...physical,
+      availableStock: Math.max(0, physical.availableStock - reserved),
     };
   }
 
-  return {
-    availableStock: nonSerialAvailable,
-    incomingStock,
-    bookedStock: 0,
-    damagedStock: nonSerialDamaged,
-  };
+  if (warehouse?.code === "JAL-PRJ") {
+    const committed = await getProjectCommittedQtyAtWarehouse(
+      prisma,
+      warehouseId,
+      productId,
+    );
+    return {
+      ...physical,
+      committedStock: committed,
+    };
+  }
+
+  return physical;
 }
 
 export async function getProductStockSummary(

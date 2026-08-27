@@ -205,6 +205,7 @@ export function StockOverview({
                 <TableHead>Available</TableHead>
                 <TableHead>Incoming</TableHead>
                 <TableHead>Booked</TableHead>
+                <TableHead>Committed</TableHead>
                 <TableHead>Damaged</TableHead>
                 {warehouses.map((warehouse) => (
                   <TableHead key={warehouse.id}>{warehouse.name}</TableHead>
@@ -219,12 +220,17 @@ export function StockOverview({
                   <TableCell>{row.consolidated.availableStock}</TableCell>
                   <TableCell>{row.consolidated.incomingStock}</TableCell>
                   <TableCell>{row.consolidated.bookedStock}</TableCell>
+                  <TableCell>{row.consolidated.committedStock}</TableCell>
                   <TableCell>{row.consolidated.damagedStock}</TableCell>
                   {warehouses.map((warehouse) => {
                     const wh = row.warehouses.find((w) => w.warehouseId === warehouse.id);
                     return (
                       <TableCell key={warehouse.id}>
-                        {wh ? wh.availableStock : 0}
+                        {wh
+                          ? wh.committedStock > 0
+                            ? `${wh.availableStock} (${wh.committedStock} committed)`
+                            : wh.availableStock
+                          : 0}
                       </TableCell>
                     );
                   })}

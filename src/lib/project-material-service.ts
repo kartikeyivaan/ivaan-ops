@@ -13,12 +13,9 @@ import { loadProjectOrThrow, getProjectById } from "@/lib/project-service";
 import { isProjectReadOnly, canEditProjectMaterial } from "@/lib/project-permissions";
 import {
   allocateLineStock,
-  executeTransferBatches,
   mergeStockSourceLog,
-  mergeTransferBatches,
   resolveStockCompanies,
   type StockSourceLogEntry,
-  type TransferBatch,
 } from "@/lib/project-stock-service";
 export async function addMaterialLine(
   prisma: PrismaClient,
@@ -387,7 +384,6 @@ export async function approveProjectMaterialAssignment(
 
   const stockCompanies = await resolveStockCompanies(prisma, project.companyId);
   const lineMap = new Map(project.assignment!.lines.map((line) => [line.id, line]));
-  const batchesToRun: TransferBatch[] = [];
 
   const lineUpdates: Array<{
     lineId: string;
@@ -406,9 +402,8 @@ export async function approveProjectMaterialAssignment(
     const currentAssigned = decimalToNumber(line.assignedQty);
     const qtyNeeded = Math.max(0, requiredQty - currentAssigned);
 
-    let transferredQty = 0;
+    let reservedQty = 0;
     let sourceEntries: StockSourceLogEntry[] = [];
-    let transferBatches: Parameters<typeof mergeTransferBatches>[0] = [];
 
     if (qtyNeeded > 0) {
       const allocation = await allocateLineStock(prisma, {
@@ -417,16 +412,13 @@ export async function approveProjectMaterialAssignment(
         pcmCompanyId: stockCompanies.pcmCompanyId,
         pcmHoWarehouseId: stockCompanies.pcmHoWarehouseId,
         productId: line.productId,
-        serialTracking: line.product.serialTracking,
         qtyNeeded,
       });
-      transferredQty = allocation.transferredQty;
+      reservedQty = allocation.reservedQty;
       sourceEntries = allocation.sourceEntries;
-      transferBatches = allocation.transferBatches;
-      batchesToRun.push(...transferBatches);
     }
 
-    const newAssignedQty = currentAssigned + transferredQty;
+    const newAssignedQty = currentAssigned + reservedQty;
     const shortfallQty = Math.max(0, requiredQty - newAssignedQty);
     const mergedLog = mergeStockSourceLog(line.stockSourceLog, sourceEntries);
 
@@ -453,17 +445,6 @@ export async function approveProjectMaterialAssignment(
       lineStatus: resolveLineStatusAfterApproval(newAssignedQty, requiredQty),
       stockSourceLog: mergedLog,
       lastApprovedQty: requiredQty,
-    });
-  }
-
-  const mergedBatches = mergeTransferBatches(batchesToRun);
-  if (mergedBatches.length > 0) {
-    await executeTransferBatches(prisma, {
-      batches: mergedBatches,
-      toCompanyId: project.companyId,
-      toWarehouseId: project.warehouseId,
-      performedById: input.performedById,
-      referenceNote: `Project material transfer for ${project.projectNo}`,
     });
   }
 
@@ -524,7 +505,6 @@ export async function approveProjectMaterialAssignment(
       newValue: {
         action: "approve_material",
         lineCount: lineUpdates.length,
-        transferBatchCount: mergedBatches.length,
       },
       reference: project.projectNo,
     });

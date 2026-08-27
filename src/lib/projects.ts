@@ -22,7 +22,7 @@ export const PROJECT_LINE_STATUS_LABELS: Record<string, string> = {
   PENDING_APPROVAL: "Pending Approval",
   APPROVED: "Approved",
   PENDING_STOCK: "Pending Stock",
-  ASSIGNED: "In Projects WH",
+  ASSIGNED: "Qty Reserved",
   PARTIALLY_DISPATCHED: "Partial Dispatch",
   FULLY_DISPATCHED: "Fully Dispatched",
 };

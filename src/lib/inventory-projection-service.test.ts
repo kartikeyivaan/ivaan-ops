@@ -39,6 +39,7 @@ describe("inventory projection service", () => {
       incomingStock: 0,
       bookedStock: 0,
       damagedStock: 0,
+        committedStock: 0,
     }));
 
     const projection = await createInventoryProjectionService(
@@ -85,6 +86,7 @@ describe("inventory projection service", () => {
         incomingStock: 0,
         bookedStock: 0,
         damagedStock: 0,
+        committedStock: 0,
       }),
     ).projectInventory({
       companyId: "company-1",
@@ -146,6 +148,7 @@ describe("inventory projection service", () => {
         incomingStock: 648,
         bookedStock: 0,
         damagedStock: 0,
+        committedStock: 0,
       }),
     ).projectInventory({
       companyId: "company-1",
@@ -231,6 +234,7 @@ describe("inventory projection service", () => {
         incomingStock: 0,
         bookedStock: 0,
         damagedStock: 0,
+        committedStock: 0,
       }),
     ).projectInventory({
       companyId: "company-1",
@@ -300,6 +304,7 @@ describe("inventory projection service", () => {
         incomingStock: 0,
         bookedStock: 0,
         damagedStock: 0,
+        committedStock: 0,
       }),
     ).projectInventory({
       companyId: "company-1",

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { generateProformaInvoicePdf } from "@/lib/pi-pdf";
 import { piInclude } from "@/lib/pi-service";
+import { pdfContentVersion, pdfInlineResponse, resolveStoredPdf } from "@/lib/pdf-cache";
 import { prisma } from "@/lib/prisma";
 import { verifyProformaInvoiceShareToken } from "@/lib/share-token";
 
@@ -36,20 +37,22 @@ export async function GET(request: Request) {
     return invalidLinkResponse("This proforma invoice is no longer available.");
   }
 
-  const pdf = await generateProformaInvoicePdf(pi);
+  const pdf = await resolveStoredPdf(prisma, {
+    documentType: "PROFORMA_INVOICE",
+    documentId: pi.id,
+    contentVersion: pdfContentVersion([
+      pi.updatedAt.toISOString(),
+      pi.status,
+      pi.totalValue.toString(),
+    ]),
+    generate: () => generateProformaInvoicePdf(pi),
+  });
 
   const rawName = `${pi.piNo} - ${pi.customer.customerName}`;
   const safeName = rawName.replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim();
-  const asciiName = safeName.replace(/[^\x20-\x7E]/g, "_");
 
-  return new NextResponse(new Uint8Array(pdf), {
-    headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="${asciiName}.pdf"; filename*=UTF-8''${encodeURIComponent(
-        `${safeName}.pdf`,
-      )}`,
-      "Cache-Control": "private, no-store",
-      "X-Robots-Tag": "noindex, nofollow",
-    },
+  return pdfInlineResponse(pdf, safeName, {
+    asciiName: safeName.replace(/[^\x20-\x7E]/g, "_"),
+    privateCache: false,
   });
 }

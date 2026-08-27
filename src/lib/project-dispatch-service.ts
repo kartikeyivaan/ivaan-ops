@@ -22,7 +22,10 @@ import {
 } from "@/lib/kit-fulfillment";
 import { getKitComponentsForFulfillment } from "@/lib/product-service";
 import { generateProjectDispatchNumber } from "@/lib/projects";
-import { deductNonSerialStock } from "@/lib/transfer-service";
+import {
+  executeProjectDispatchStockMove,
+  listHoWarehousePools,
+} from "@/lib/project-stock-service";
 
 export const DISPATCHABLE_PROJECT_STATUSES: ProjectStatus[] = [
   ProjectStatus.MATERIAL_ASSIGNED,
@@ -555,12 +558,14 @@ async function validateProjectDispatchLines(
     const uniqueIds = [...new Set(allSerialIds)];
     if (uniqueIds.length !== allSerialIds.length) throw new Error("INVALID_SERIAL_SELECTION");
 
+    const hoPools = await listHoWarehousePools(prisma, input.companyId);
+    const hoWarehouseIds = hoPools.map((pool) => pool.warehouseId);
+
     const selectable = await prisma.inventorySerial.findMany({
       where: {
         id: { in: uniqueIds },
-        currentWarehouseId: input.warehouseId,
+        currentWarehouseId: { in: hoWarehouseIds },
         status: SerialStatus.AVAILABLE,
-        lot: { companyId: input.companyId },
       },
       include: { product: { select: { id: true, serialTracking: true } } },
     });
@@ -752,30 +757,19 @@ async function confirmProjectDispatchTx(
 
   for (const line of dispatch.lines) {
     const qty = decimalToNumber(line.qty);
+    const materialLine = line.materialLine;
 
-    if (line.product.serialTracking) {
-      const serialIds = line.serials.map((entry) => entry.serialId);
-      const available = await tx.inventorySerial.findMany({
-        where: {
-          id: { in: serialIds },
-          currentWarehouseId: dispatch.warehouseId,
-          status: SerialStatus.AVAILABLE,
-        },
-      });
-      if (available.length !== serialIds.length) throw new Error("INVALID_SERIAL_SELECTION");
-
-      await tx.inventorySerial.updateMany({
-        where: { id: { in: serialIds } },
-        data: { status: SerialStatus.DISPATCHED },
-      });
-    } else {
-      await deductNonSerialStock(tx, {
-        companyId: input.companyId,
-        warehouseId: dispatch.warehouseId,
-        productId: line.productId,
-        qty,
-      });
-    }
+    await executeProjectDispatchStockMove(tx, {
+      projectCompanyId: input.companyId,
+      projectsWarehouseId: dispatch.warehouseId,
+      productId: line.productId,
+      serialTracking: line.product.serialTracking,
+      qty,
+      serialIds: line.serials.map((entry) => entry.serialId),
+      stockSourceLog: materialLine.stockSourceLog,
+      performedById: input.performedById,
+      referenceNote: `Project dispatch staging for ${dispatch.dispatchNo}`,
+    });
 
     await tx.inventoryTransaction.create({
       data: {
@@ -897,12 +891,13 @@ export async function listAvailableSerialsForProjectDispatch(
   });
   if (!project) throw new Error("NOT_FOUND");
 
+  const hoPools = await listHoWarehousePools(prisma, input.companyId);
+
   return prisma.inventorySerial.findMany({
     where: {
       productId: input.productId,
-      currentWarehouseId: project.warehouseId,
+      currentWarehouseId: { in: hoPools.map((pool) => pool.warehouseId) },
       status: SerialStatus.AVAILABLE,
-      lot: { companyId: input.companyId },
     },
     select: { id: true, serialNumber: true, status: true },
     orderBy: { serialNumber: "asc" },
@@ -941,9 +936,12 @@ export async function lookupSerialsForProjectDispatch(
 ) {
   const project = await prisma.project.findFirst({
     where: { id: input.projectId, companyId: input.companyId },
-    select: { warehouseId: true },
+    select: { id: true },
   });
   if (!project) throw new Error("NOT_FOUND");
+
+  const hoPools = await listHoWarehousePools(prisma, input.companyId);
+  const hoWarehouseIds = hoPools.map((pool) => pool.warehouseId);
 
   const valid: Array<{
     id: string;
@@ -966,9 +964,8 @@ export async function lookupSerialsForProjectDispatch(
     const serial = await prisma.inventorySerial.findFirst({
       where: {
         serialNumber,
-        currentWarehouseId: project.warehouseId,
+        currentWarehouseId: { in: hoWarehouseIds },
         status: SerialStatus.AVAILABLE,
-        lot: { companyId: input.companyId },
         ...(input.productId ? { productId: input.productId } : {}),
       },
       include: {
@@ -979,7 +976,7 @@ export async function lookupSerialsForProjectDispatch(
     });
 
     if (!serial) {
-      invalid.push({ serialNumber, reason: "Serial not found or not available in Projects WH." });
+      invalid.push({ serialNumber, reason: "Serial not found or not available at HO." });
       continue;
     }
 

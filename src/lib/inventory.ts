@@ -6,6 +6,8 @@ export type StockSummary = {
   incomingStock: number;
   bookedStock: number;
   damagedStock: number;
+  /** Qty reserved for open projects (Jalgaon Projects committed bucket). */
+  committedStock: number;
 };
 
 export function emptyStockSummary(): StockSummary {
@@ -14,6 +16,7 @@ export function emptyStockSummary(): StockSummary {
     incomingStock: 0,
     bookedStock: 0,
     damagedStock: 0,
+    committedStock: 0,
   };
 }
 

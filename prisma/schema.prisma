@@ -200,6 +200,21 @@ enum DispatchStatus {
   CANCELLED
 }
 
+enum PdfDocumentType {
+  PROFORMA_INVOICE
+  QUOTATION
+  DISPATCH
+  PROJECT_DISPATCH
+  PROJECT_PROPOSAL
+}
+
+enum DispatchLineCostSource {
+  SERIAL_LOT
+  LANDING_COST
+  MIXED
+  UNKNOWN
+}
+
 enum PaymentMode {
   BANK_TRANSFER
   CHEQUE
@@ -1684,11 +1699,17 @@ model Dispatch {
 }
 
 model DispatchLine {
-  id                    String  @id @default(uuid()) @db.Uuid
-  dispatchId            String  @map("dispatch_id") @db.Uuid
-  proformaInvoiceItemId String  @map("proforma_invoice_item_id") @db.Uuid
-  productId             String  @map("product_id") @db.Uuid
-  qty                   Decimal @db.Decimal(12, 3)
+  id                    String                  @id @default(uuid()) @db.Uuid
+  dispatchId            String                  @map("dispatch_id") @db.Uuid
+  proformaInvoiceItemId String                  @map("proforma_invoice_item_id") @db.Uuid
+  productId             String                  @map("product_id") @db.Uuid
+  qty                   Decimal                 @db.Decimal(12, 3)
+  revenueExGst          Decimal?                @map("revenue_ex_gst") @db.Decimal(14, 2)
+  cogsExGst             Decimal?                @map("cogs_ex_gst") @db.Decimal(14, 2)
+  profitExGst           Decimal?                @map("profit_ex_gst") @db.Decimal(14, 2)
+  marginPercent         Decimal?                @map("margin_percent") @db.Decimal(8, 4)
+  costSource            DispatchLineCostSource? @map("cost_source")
+  profitSnapshottedAt   DateTime?               @map("profit_snapshotted_at")
 
   dispatch            Dispatch             @relation(fields: [dispatchId], references: [id], onDelete: Cascade)
   proformaInvoiceItem ProformaInvoiceItem  @relation(fields: [proformaInvoiceItemId], references: [id])
@@ -2832,4 +2853,18 @@ model BankPaymentAllocation {
   @@index([piId, allocationStatus])
   @@index([customerId])
   @@map("bank_payment_allocations")
+}
+
+model StoredPdf {
+  id             String          @id @default(uuid()) @db.Uuid
+  documentType   PdfDocumentType @map("document_type")
+  documentId     String          @map("document_id") @db.Uuid
+  variant        String          @default("")
+  contentVersion String          @map("content_version")
+  pdfData        Bytes           @map("pdf_data")
+  generatedAt    DateTime        @default(now()) @map("generated_at")
+
+  @@unique([documentType, documentId, variant])
+  @@index([documentType, documentId])
+  @@map("stored_pdfs")
 }

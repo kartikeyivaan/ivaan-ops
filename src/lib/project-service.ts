@@ -11,10 +11,7 @@ import { assertProjectsCompany } from "@/lib/company-scope";
 import { decimalToNumber } from "@/lib/inventory";
 import {
   mergeStockSourceLog,
-  parseStockSourceLog,
-  resolveStockCompanies,
-  returnMaterialLineStock,
-  transferReceivedStockToProjectWarehouse,
+  reduceStockSourceLog,
   type StockSourceLogEntry,
 } from "@/lib/project-stock-service";
 import { notifyProjectMaterialStockReceived } from "@/lib/notification-service";
@@ -404,12 +401,8 @@ export async function listLinkedPurchaseRequests(
 async function returnLineBalance(
   tx: Prisma.TransactionClient,
   input: {
-    project: Awaited<ReturnType<typeof loadProjectOrThrow>>;
     line: NonNullable<Awaited<ReturnType<typeof loadProjectOrThrow>>["assignment"]>["lines"][number];
     returnQty: number;
-    performedById: string;
-    referenceNote: string;
-    fallbackHo?: StockSourceLogEntry;
   },
 ) {
   const balance = Math.max(
@@ -419,23 +412,12 @@ async function returnLineBalance(
   const qty = Math.min(input.returnQty, balance);
   if (qty <= 0) return 0;
 
-  await returnMaterialLineStock(tx, {
-    projectCompanyId: input.project.companyId,
-    projectWarehouseId: input.project.warehouseId,
-    productId: input.line.productId,
-    serialTracking: input.line.product.serialTracking,
-    stockSourceLog: input.line.stockSourceLog,
-    returnQty: qty,
-    performedById: input.performedById,
-    referenceNote: input.referenceNote,
-    fallbackHo: input.fallbackHo,
-  });
-
   const newAssigned = decimalToNumber(input.line.assignedQty) - qty;
   await tx.projectMaterialLine.update({
     where: { id: input.line.id },
     data: {
       assignedQty: newAssigned,
+      stockSourceLog: reduceStockSourceLog(input.line.stockSourceLog, qty),
       lineStatus: resolveLineStatusAfterAssignment(
         newAssigned,
         decimalToNumber(input.line.requiredQty),
@@ -472,21 +454,10 @@ export async function returnProjectStock(
   );
   if (input.qty > balance) throw new Error("EXCEEDS_RETURN_BALANCE");
 
-  const stockCompanies = await resolveStockCompanies(prisma, project.companyId);
-  const fallbackHo: StockSourceLogEntry = {
-    companyId: stockCompanies.iseCompanyId,
-    warehouseId: stockCompanies.iseHoWarehouseId,
-    qty: input.qty,
-  };
-
   await prisma.$transaction(async (tx) => {
     const returnedQty = await returnLineBalance(tx, {
-      project,
       line,
       returnQty: input.qty,
-      performedById: input.performedById,
-      referenceNote: `Manual project stock return for ${project.projectNo}${input.remarks ? `: ${input.remarks}` : ""}`,
-      fallbackHo,
     });
 
     await writeAuditLogTx(tx, {
@@ -519,13 +490,6 @@ export async function closeProject(
   const project = await loadProjectOrThrow(prisma, input.companyId, input.projectId);
   if (project.status === ProjectStatus.CLOSED) throw new Error("ALREADY_CLOSED");
 
-  const stockCompanies = await resolveStockCompanies(prisma, project.companyId);
-  const fallbackHo: StockSourceLogEntry = {
-    companyId: stockCompanies.iseCompanyId,
-    warehouseId: stockCompanies.iseHoWarehouseId,
-    qty: 0,
-  };
-
   const returnSummary: Array<{ productId: string; productName: string; qty: number }> = [];
 
   await prisma.$transaction(async (tx) => {
@@ -545,16 +509,9 @@ export async function closeProject(
         );
         if (balance <= 0) continue;
 
-        const sources = parseStockSourceLog(line.stockSourceLog);
-        const usedFallback = sources.length === 0;
-
         const returnedQty = await returnLineBalance(tx, {
-          project,
           line,
           returnQty: balance,
-          performedById: input.performedById,
-          referenceNote: `Auto-return on project close ${project.projectNo}`,
-          fallbackHo: usedFallback ? { ...fallbackHo, qty: balance } : undefined,
         });
 
         if (returnedQty > 0) {
@@ -562,22 +519,6 @@ export async function closeProject(
             productId: line.productId,
             productName: line.product.displayName,
             qty: returnedQty,
-          });
-        }
-
-        if (usedFallback && returnedQty > 0) {
-          await writeAuditLogTx(tx, {
-            tableName: "projects",
-            recordId: project.id,
-            action: "UPDATE",
-            performedBy: input.performedById,
-            companyId: input.companyId,
-            newValue: {
-              action: "return_fallback_ise_ho",
-              lineId: line.id,
-              returnedQty,
-            },
-            reference: project.projectNo,
           });
         }
       }
@@ -651,25 +592,14 @@ export async function fulfillProjectMaterialFromIncoming(
   const requiredQty = decimalToNumber(materialLine.requiredQty);
   const assignedQty = decimalToNumber(materialLine.assignedQty);
   const needQty = Math.max(0, requiredQty - assignedQty);
-  const qtyToTransfer = Math.min(input.receivedQty, needQty);
-  if (qtyToTransfer <= 0) return;
+  const qtyToReserve = Math.min(input.receivedQty, needQty);
+  if (qtyToReserve <= 0) return;
 
-  await transferReceivedStockToProjectWarehouse(tx, {
-    fromCompanyId: project.companyId,
-    fromWarehouseId: input.fromWarehouseId,
-    toWarehouseId: project.warehouseId,
-    productId: materialLine.productId,
-    serialTracking: materialLine.product.serialTracking,
-    qty: qtyToTransfer,
-    performedById: input.performedById,
-    referenceNote: `PR fulfillment transfer for ${project.projectNo}`,
-  });
-
-  const newAssignedQty = assignedQty + qtyToTransfer;
+  const newAssignedQty = assignedQty + qtyToReserve;
   const sourceEntry: StockSourceLogEntry = {
     companyId: project.companyId,
     warehouseId: input.fromWarehouseId,
-    qty: qtyToTransfer,
+    qty: qtyToReserve,
   };
 
   await tx.projectMaterialLine.update({
@@ -710,9 +640,9 @@ export async function fulfillProjectMaterialFromIncoming(
     performedBy: input.performedById,
     companyId: input.companyId,
     newValue: {
-      action: "pr_fulfillment_transfer",
+      action: "pr_fulfillment_reserve",
       materialLineId: materialLine.id,
-      qty: qtyToTransfer,
+      qty: qtyToReserve,
       purchaseRequestLineId: prLine.id,
     },
     reference: project.projectNo,
@@ -722,6 +652,6 @@ export async function fulfillProjectMaterialFromIncoming(
     companyId: project.companyId,
     projectNo: project.projectNo,
     productName: materialLine.product.displayName,
-    qty: qtyToTransfer,
+    qty: qtyToReserve,
   });
 }

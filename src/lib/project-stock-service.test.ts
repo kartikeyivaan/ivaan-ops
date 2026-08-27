@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   computeProRataReturnAllocations,
   parseStockSourceLog,
+  reduceStockSourceLog,
 } from "@/lib/project-stock-service";
 
 describe("parseStockSourceLog", () => {
@@ -44,5 +45,25 @@ describe("computeProRataReturnAllocations", () => {
     });
 
     expect(allocations).toEqual([{ companyId: "ise", warehouseId: "ise-ho", qty: 5 }]);
+  });
+});
+
+describe("reduceStockSourceLog", () => {
+  it("reduces source entries proportionally", () => {
+    const next = reduceStockSourceLog(
+      [
+        { companyId: "ise", warehouseId: "ise-ho", qty: 6 },
+        { companyId: "pcm", warehouseId: "pcm-ho", qty: 4 },
+      ],
+      5,
+    );
+
+    expect(next.reduce((sum, row) => sum + row.qty, 0)).toBeCloseTo(5, 3);
+  });
+
+  it("clears log when fully released", () => {
+    expect(
+      reduceStockSourceLog([{ companyId: "ise", warehouseId: "ise-ho", qty: 3 }], 3),
+    ).toEqual([]);
   });
 });

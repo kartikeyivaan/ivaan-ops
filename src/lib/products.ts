@@ -128,6 +128,7 @@ export function getStockPlaceholder() {
     incomingStock: 0,
     bookedStock: 0,
     damagedStock: 0,
+    committedStock: 0,
   };
 }
 

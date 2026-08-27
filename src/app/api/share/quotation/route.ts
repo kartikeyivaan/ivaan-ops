@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { generateQuotationPdf } from "@/lib/quotation-pdf";
+import { pdfContentVersion, pdfInlineResponse, resolveStoredPdf } from "@/lib/pdf-cache";
 import { prisma } from "@/lib/prisma";
 import { quotationInclude } from "@/lib/quotation-service";
 import { verifyQuotationShareToken } from "@/lib/share-token";
@@ -38,20 +39,24 @@ export async function GET(request: Request) {
     return invalidLinkResponse("This quotation is no longer available.");
   }
 
-  const pdf = await generateQuotationPdf(quotation);
+  const pdf = await resolveStoredPdf(prisma, {
+    documentType: "QUOTATION",
+    documentId: quotation.id,
+    contentVersion: pdfContentVersion([
+      quotation.updatedAt.toISOString(),
+      quotation.status,
+      quotation.revisionNo,
+    ]),
+    generate: () => generateQuotationPdf(quotation),
+  });
 
   const rawName = `${quotation.quotationNo} - ${quotation.customer.customerName}`;
   const safeName = rawName.replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim();
-  const asciiName = safeName.replace(/[^\x20-\x7E]/g, "_");
 
-  return new NextResponse(new Uint8Array(pdf), {
-    headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="${asciiName}.pdf"; filename*=UTF-8''${encodeURIComponent(
-        `${safeName}.pdf`,
-      )}`,
-      "Cache-Control": "private, no-store",
-      "X-Robots-Tag": "noindex, nofollow",
-    },
+  const response = pdfInlineResponse(pdf, safeName, {
+    asciiName: safeName.replace(/[^\x20-\x7E]/g, "_"),
+    privateCache: false,
   });
+  response.headers.set("X-Robots-Tag", "noindex, nofollow");
+  return response;
 }

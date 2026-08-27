@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { canViewDispatches } from "@/lib/dispatch-permissions";
 import { generateDispatchPdf } from "@/lib/dispatch-pdf";
 import { getDispatchRecord } from "@/lib/dispatch-service";
+import { pdfContentVersion, pdfInlineResponse, resolveStoredPdf } from "@/lib/pdf-cache";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
 
@@ -34,11 +35,12 @@ export async function GET(_request: Request, context: RouteContext) {
     return errorResponse("INVALID_STATUS", "Confirm dispatch before generating DC PDF.", 400);
   }
 
-  const pdf = await generateDispatchPdf(dispatch);
-  return new NextResponse(new Uint8Array(pdf), {
-    headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="${dispatch.dcNo}.pdf"`,
-    },
+  const pdf = await resolveStoredPdf(prisma, {
+    documentType: "DISPATCH",
+    documentId: dispatch.id,
+    contentVersion: pdfContentVersion([dispatch.updatedAt.toISOString(), dispatch.status]),
+    generate: () => generateDispatchPdf(dispatch),
   });
+
+  return pdfInlineResponse(pdf, dispatch.dcNo);
 }

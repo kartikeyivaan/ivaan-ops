@@ -121,7 +121,7 @@ function serializeProductRecord(
     currentPrice: currentPrice ? serializeProductPrice(currentPrice) : null,
     kitComponents: product.kitComponents.map(serializeKitComponent),
     stock: isKit
-      ? { availableStock: 0, incomingStock: 0, bookedStock: 0, damagedStock: 0 }
+      ? { availableStock: 0, incomingStock: 0, bookedStock: 0, damagedStock: 0, committedStock: 0 }
       : stock,
   };
 }
@@ -145,7 +145,7 @@ export async function serializeProduct(
   return serializeProductRecord(
     product,
     isKit
-      ? { availableStock: 0, incomingStock: 0, bookedStock: 0, damagedStock: 0 }
+      ? { availableStock: 0, incomingStock: 0, bookedStock: 0, damagedStock: 0, committedStock: 0 }
       : (stock ?? (await getProductStockSummary(prisma, companyId, product.id))),
   );
 }

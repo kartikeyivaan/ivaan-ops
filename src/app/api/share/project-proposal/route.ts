@@ -2,10 +2,8 @@ import { NextResponse } from "next/server";
 import { generateProjectProposalPdf, projectProposalPdfInclude } from "@/lib/project-proposal-pdf";
 import { assertProjectProposalShareable } from "@/lib/project-proposal-service";
 import { verifyProjectProposalShareToken } from "@/lib/share-token";
+import { pdfContentVersion, pdfInlineResponse, resolveStoredPdf } from "@/lib/pdf-cache";
 import { prisma } from "@/lib/prisma";
-import {
-  PROJECT_PROPOSAL_PDF_CACHE_HEADERS,
-} from "@/lib/project-proposals";
 
 export const dynamic = "force-dynamic";
 
@@ -42,22 +40,27 @@ export async function GET(request: Request) {
     );
   }
 
-  const pdf = await generateProjectProposalPdf(proposal);
+  const pdf = await resolveStoredPdf(prisma, {
+    documentType: "PROJECT_PROPOSAL",
+    documentId: proposal.id,
+    variant: "full",
+    contentVersion: pdfContentVersion([
+      proposal.updatedAt.toISOString(),
+      proposal.status,
+      proposal.currentRevisionNo,
+      "full",
+    ]),
+    generate: () => generateProjectProposalPdf(proposal),
+  });
   const revision =
     proposal.revisions.find((entry) => entry.revisionNo === proposal.currentRevisionNo) ??
     proposal.revisions[proposal.revisions.length - 1];
   const customerName = revision?.customerName ?? "Customer";
   const rawName = `${proposal.proposalNo} - ${customerName}`;
   const safeName = rawName.replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim();
-  const asciiName = safeName.replace(/[^\x20-\x7E]/g, "_");
 
-  return new NextResponse(new Uint8Array(pdf), {
-    headers: {
-      "Content-Type": "application/pdf",
-      ...PROJECT_PROPOSAL_PDF_CACHE_HEADERS,
-      "Content-Disposition": `inline; filename="${asciiName}.pdf"; filename*=UTF-8''${encodeURIComponent(
-        `${safeName}.pdf`,
-      )}`,
-    },
+  return pdfInlineResponse(pdf, safeName, {
+    asciiName: safeName.replace(/[^\x20-\x7E]/g, "_"),
+    privateCache: false,
   });
 }

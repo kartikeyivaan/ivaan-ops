@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { canViewProformaInvoices } from "@/lib/pi-permissions";
 import { generateProformaInvoicePdf } from "@/lib/pi-pdf";
 import { getProformaInvoiceRecord } from "@/lib/pi-service";
+import { pdfContentVersion, pdfInlineResponse, resolveStoredPdf } from "@/lib/pdf-cache";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
 
@@ -34,11 +35,16 @@ export async function GET(_request: Request, context: RouteContext) {
     return errorResponse("INVALID_STATUS", "PDF is not available for this PI status.", 400);
   }
 
-  const pdf = await generateProformaInvoicePdf(pi);
-  return new NextResponse(new Uint8Array(pdf), {
-    headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="${pi.piNo}.pdf"`,
-    },
+  const pdf = await resolveStoredPdf(prisma, {
+    documentType: "PROFORMA_INVOICE",
+    documentId: pi.id,
+    contentVersion: pdfContentVersion([
+      pi.updatedAt.toISOString(),
+      pi.status,
+      pi.totalValue.toString(),
+    ]),
+    generate: () => generateProformaInvoicePdf(pi),
   });
+
+  return pdfInlineResponse(pdf, pi.piNo);
 }

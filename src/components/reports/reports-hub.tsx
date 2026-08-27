@@ -33,6 +33,7 @@ type ReportKey =
   | "booked-available"
   | "reserved-qty"
   | "dispatch"
+  | "dispatch-profit"
   | "executive-sales";
 
 type ReportDefinition = {
@@ -112,6 +113,13 @@ const REPORTS: ReportDefinition[] = [
       "Continuous listing of confirmed dispatches for the selected day — PI, firm details, product, qty, and serial numbers.",
   },
   {
+    key: "dispatch-profit",
+    label: "Dispatch Profit",
+    endpoint: "/api/reports/dispatch-profit",
+    description:
+      "Per-line dispatch profit (ex-GST) from snapshotted revenue, COGS, margin, and cost source.",
+  },
+  {
     key: "executive-sales",
     label: "Sales Executive Report",
     endpoint: "/api/reports/executive-sales",
@@ -143,7 +151,9 @@ const EXECUTIVE_SALES_COLUMNS = [
 ] as const;
 
 function isMoneyColumn(key: string): boolean {
-  return /value|paid|outstanding|amount|ratePerWp|collectionAmount/i.test(key);
+  return /value|paid|outstanding|amount|ratePerWp|collectionAmount|revenueExGst|cogsExGst|profitExGst/i.test(
+    key,
+  );
 }
 
 function isUnitColumn(key: string): boolean {
@@ -311,6 +321,12 @@ export function ReportsHub({
     }
     if (typeof value === "number" && key === "conversionPercent") {
       return `${value}%`;
+    }
+    if (typeof value === "number" && key === "marginPercent") {
+      return `${value.toFixed(2)}%`;
+    }
+    if (value === null || value === undefined) {
+      return "—";
     }
     if (typeof value === "number" && (key === "targetProgressPercent" || isUnitColumn(key))) {
       return value.toLocaleString("en-IN", { maximumFractionDigits: key.includes("Percent") ? 1 : 0 });

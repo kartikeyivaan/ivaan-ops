@@ -6,6 +6,7 @@ import {
   type PrismaClient,
 } from "@prisma/client";
 import { commercialValuesByDispatchLine, loadKitBomMapForDispatches } from "@/lib/dispatch-value";
+import { formatCostSource } from "@/lib/dispatch-profit";
 import { decimalToNumber } from "@/lib/inventory";
 import { getWarehouseStockForProduct } from "@/lib/inventory-service";
 import {
@@ -823,6 +824,110 @@ export async function getDispatchReport(
         vehicleNo: dispatch.vehicleNo ?? "",
         warehouseName: dispatch.warehouse.name,
         value: roundMoney(lineValues[index] ?? 0),
+      });
+    }
+  }
+
+  return rows;
+}
+
+export async function getDispatchProfitReport(
+  prisma: PrismaClient,
+  companyId: string,
+  filters: DispatchReportFilters,
+) {
+  const fromDate = parseReportDate(filters.fromDate);
+  const toDate = endOfReportDay(filters.toDate);
+
+  const dispatches = await prisma.dispatch.findMany({
+    where: {
+      companyId,
+      status: DispatchStatus.DISPATCHED,
+      ...(filters.customerId ? { customerId: filters.customerId } : {}),
+      ...(filters.warehouseId ? { warehouseId: filters.warehouseId } : {}),
+      ...(filters.salesUserId
+        ? { proformaInvoice: { salesUserId: filters.salesUserId } }
+        : {}),
+      ...(fromDate || toDate
+        ? {
+            dispatchDate: {
+              ...(fromDate ? { gte: fromDate } : {}),
+              ...(toDate ? { lte: toDate } : {}),
+            },
+          }
+        : {}),
+      ...(filters.q
+        ? {
+            OR: [
+              { dcNo: { contains: filters.q, mode: "insensitive" } },
+              { customer: { customerName: { contains: filters.q, mode: "insensitive" } } },
+              { proformaInvoice: { piNo: { contains: filters.q, mode: "insensitive" } } },
+            ],
+          }
+        : {}),
+    },
+    include: {
+      customer: { select: { customerName: true } },
+      warehouse: { select: { name: true } },
+      proformaInvoice: {
+        select: {
+          piNo: true,
+          salesUser: { select: { name: true } },
+        },
+      },
+      lines: {
+        include: {
+          product: { select: { displayName: true } },
+          serials: {
+            include: {
+              serial: { select: { serialNumber: true } },
+            },
+          },
+        },
+      },
+    },
+    orderBy: [{ dispatchDate: "asc" }, { dcNo: "asc" }],
+  });
+
+  const rows: Array<{
+    dispatchDate: string;
+    dcNo: string;
+    piNo: string;
+    executiveName: string;
+    customerName: string;
+    productName: string;
+    qty: number;
+    serialNumbers: string;
+    warehouseName: string;
+    revenueExGst: number | null;
+    cogsExGst: number | null;
+    profitExGst: number | null;
+    marginPercent: number | null;
+    costSource: string;
+  }> = [];
+
+  for (const dispatch of dispatches) {
+    for (const line of dispatch.lines) {
+      rows.push({
+        dispatchDate: dispatch.dispatchDate.toISOString().slice(0, 10),
+        dcNo: dispatch.dcNo,
+        piNo: dispatch.proformaInvoice.piNo,
+        executiveName: dispatch.proformaInvoice.salesUser.name,
+        customerName: dispatch.customer.customerName,
+        productName: line.product.displayName,
+        qty: decimalToNumber(line.qty),
+        serialNumbers: line.serials
+          .map((entry) => entry.serial.serialNumber)
+          .sort((a, b) => a.localeCompare(b))
+          .join(", "),
+        warehouseName: dispatch.warehouse.name,
+        revenueExGst:
+          line.revenueExGst !== null ? roundMoney(decimalToNumber(line.revenueExGst)) : null,
+        cogsExGst: line.cogsExGst !== null ? roundMoney(decimalToNumber(line.cogsExGst)) : null,
+        profitExGst: line.profitExGst !== null ? roundMoney(decimalToNumber(line.profitExGst)) : null,
+        marginPercent:
+          line.marginPercent !== null ? roundMoney(decimalToNumber(line.marginPercent)) : null,
+        costSource: formatCostSource(line.costSource),
       });
     }
   }

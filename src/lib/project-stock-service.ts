@@ -1,12 +1,14 @@
 import {
   Prisma,
+  ProjectStatus,
   SerialStatus,
   type PrismaClient,
 } from "@prisma/client";
 import { decimalToNumber } from "@/lib/inventory";
-import { getWarehouseStockForProduct } from "@/lib/inventory-service";
+import { getPhysicalWarehouseStockForProduct } from "@/lib/inventory-stock";
 import {
   createTransfer,
+  deductNonSerialStock,
   dispatchTransfer,
   receiveTransfer,
 } from "@/lib/transfer-service";
@@ -31,6 +33,17 @@ type TransferBatch = {
 
 export type { TransferBatch };
 
+/** Open projects that still hold qty reservations. */
+export const OPEN_PROJECT_RESERVATION_STATUSES: ProjectStatus[] = [
+  ProjectStatus.OPEN,
+  ProjectStatus.MATERIAL_DRAFT,
+  ProjectStatus.MATERIAL_PENDING_APPROVAL,
+  ProjectStatus.MATERIAL_ASSIGNED,
+  ProjectStatus.READY_FOR_DISPATCH,
+  ProjectStatus.PARTIALLY_DISPATCHED,
+  ProjectStatus.FULLY_DISPATCHED,
+];
+
 export async function findCompanyByCode(
   prisma: PrismaClient | Prisma.TransactionClient,
   code: string,
@@ -49,284 +62,6 @@ export async function findHoWarehouse(
     where: { companyId, code: "JAL-HO", isActive: true },
     select: { id: true, name: true, companyId: true },
   });
-}
-
-async function pickAvailableSerials(
-  prisma: PrismaClient,
-  input: {
-    companyId: string;
-    warehouseId: string;
-    productId: string;
-    qty: number;
-  },
-): Promise<string[]> {
-  if (input.qty <= 0) return [];
-
-  const serials = await prisma.inventorySerial.findMany({
-    where: {
-      productId: input.productId,
-      currentWarehouseId: input.warehouseId,
-      status: SerialStatus.AVAILABLE,
-      lot: { companyId: input.companyId },
-    },
-    orderBy: { createdAt: "asc" },
-    take: input.qty,
-    select: { id: true },
-  });
-
-  return serials.map((row) => row.id);
-}
-
-export async function getAvailableQtyAtWarehouse(
-  prisma: PrismaClient,
-  companyId: string,
-  warehouseId: string,
-  productId: string,
-): Promise<number> {
-  const summary = await getWarehouseStockForProduct(
-    prisma,
-    companyId,
-    productId,
-    warehouseId,
-  );
-  return summary.availableStock;
-}
-
-export type LineAllocationResult = {
-  transferredQty: number;
-  shortfallQty: number;
-  sourceEntries: StockSourceLogEntry[];
-  transferBatches: TransferBatch[];
-};
-
-export async function allocateLineStock(
-  prisma: PrismaClient,
-  input: {
-    iseCompanyId: string;
-    iseHoWarehouseId: string;
-    pcmCompanyId: string | null;
-    pcmHoWarehouseId: string | null;
-    productId: string;
-    serialTracking: boolean;
-    qtyNeeded: number;
-  },
-): Promise<LineAllocationResult> {
-  let remaining = input.qtyNeeded;
-  const sourceEntries: StockSourceLogEntry[] = [];
-  const batchMap = new Map<string, TransferBatch>();
-
-  const addToBatch = (
-    fromCompanyId: string,
-    fromWarehouseId: string,
-    line: TransferLineBatch,
-  ) => {
-    const key = `${fromCompanyId}:${fromWarehouseId}`;
-    const existing = batchMap.get(key);
-    if (existing) {
-      existing.lines.push(line);
-    } else {
-      batchMap.set(key, {
-        fromCompanyId,
-        fromWarehouseId,
-        lines: [line],
-      });
-    }
-  };
-
-  if (remaining > 0) {
-    const availIse = await getAvailableQtyAtWarehouse(
-      prisma,
-      input.iseCompanyId,
-      input.iseHoWarehouseId,
-      input.productId,
-    );
-    const takeIse = Math.min(remaining, availIse);
-    if (takeIse > 0) {
-      if (input.serialTracking) {
-        const serialIds = await pickAvailableSerials(prisma, {
-          companyId: input.iseCompanyId,
-          warehouseId: input.iseHoWarehouseId,
-          productId: input.productId,
-          qty: takeIse,
-        });
-        if (serialIds.length > 0) {
-          const serialQty = serialIds.length;
-          sourceEntries.push({
-            companyId: input.iseCompanyId,
-            warehouseId: input.iseHoWarehouseId,
-            qty: serialQty,
-          });
-          addToBatch(input.iseCompanyId, input.iseHoWarehouseId, {
-            productId: input.productId,
-            qty: serialQty,
-            serialIds,
-          });
-          remaining -= serialQty;
-        }
-      } else {
-        sourceEntries.push({
-          companyId: input.iseCompanyId,
-          warehouseId: input.iseHoWarehouseId,
-          qty: takeIse,
-        });
-        addToBatch(input.iseCompanyId, input.iseHoWarehouseId, {
-          productId: input.productId,
-          qty: takeIse,
-        });
-        remaining -= takeIse;
-      }
-    }
-  }
-
-  if (remaining > 0 && input.pcmCompanyId && input.pcmHoWarehouseId) {
-    const availPcm = await getAvailableQtyAtWarehouse(
-      prisma,
-      input.pcmCompanyId,
-      input.pcmHoWarehouseId,
-      input.productId,
-    );
-    const takePcm = Math.min(remaining, availPcm);
-    if (takePcm > 0) {
-      if (input.serialTracking) {
-        const serialIds = await pickAvailableSerials(prisma, {
-          companyId: input.pcmCompanyId,
-          warehouseId: input.pcmHoWarehouseId,
-          productId: input.productId,
-          qty: takePcm,
-        });
-        if (serialIds.length > 0) {
-          const serialQty = serialIds.length;
-          sourceEntries.push({
-            companyId: input.pcmCompanyId,
-            warehouseId: input.pcmHoWarehouseId,
-            qty: serialQty,
-          });
-          addToBatch(input.pcmCompanyId, input.pcmHoWarehouseId, {
-            productId: input.productId,
-            qty: serialQty,
-            serialIds,
-          });
-          remaining -= serialQty;
-        }
-      } else {
-        sourceEntries.push({
-          companyId: input.pcmCompanyId,
-          warehouseId: input.pcmHoWarehouseId,
-          qty: takePcm,
-        });
-        addToBatch(input.pcmCompanyId, input.pcmHoWarehouseId, {
-          productId: input.productId,
-          qty: takePcm,
-        });
-        remaining -= takePcm;
-      }
-    }
-  }
-
-  const transferredQty = input.qtyNeeded - remaining;
-  return {
-    transferredQty,
-    shortfallQty: remaining,
-    sourceEntries,
-    transferBatches: [...batchMap.values()],
-  };
-}
-
-export function mergeStockSourceLog(
-  existing: unknown,
-  additions: StockSourceLogEntry[],
-): StockSourceLogEntry[] {
-  const prior = Array.isArray(existing)
-    ? (existing as StockSourceLogEntry[])
-    : [];
-  return [...prior, ...additions];
-}
-
-export async function executeTransferBatches(
-  prisma: PrismaClient,
-  input: {
-    batches: TransferBatch[];
-    toCompanyId: string;
-    toWarehouseId: string;
-    performedById: string;
-    referenceNote: string;
-  },
-) {
-  for (const batch of input.batches) {
-    if (batch.lines.length === 0) continue;
-
-    const transfer = await createTransfer(prisma, {
-      fromCompanyId: batch.fromCompanyId,
-      fromWarehouseId: batch.fromWarehouseId,
-      toWarehouseId: input.toWarehouseId,
-      notes: input.referenceNote,
-      lines: batch.lines,
-      createdById: input.performedById,
-    });
-
-    await dispatchTransfer(prisma, {
-      transferId: transfer.id,
-      companyId: batch.fromCompanyId,
-      dispatchedById: input.performedById,
-    });
-
-    const refreshed = await prisma.inventoryTransfer.findUniqueOrThrow({
-      where: { id: transfer.id },
-      include: { lines: true },
-    });
-
-    await receiveTransfer(prisma, {
-      transferId: transfer.id,
-      companyId: input.toCompanyId,
-      receivedById: input.performedById,
-      lines: refreshed.lines.map((line) => ({
-        lineId: line.id,
-        receivedQty: decimalToNumber(line.qty),
-      })),
-    });
-  }
-}
-
-export async function resolveStockCompanies(prisma: PrismaClient, projectCompanyId: string) {
-  const iseCompany = await findCompanyByCode(prisma, "ISE");
-  if (!iseCompany) throw new Error("ISE_COMPANY_NOT_FOUND");
-
-  const iseHo = await findHoWarehouse(prisma, iseCompany.id);
-  if (!iseHo) throw new Error("ISE_HO_NOT_FOUND");
-
-  const pcmCompany = await findCompanyByCode(prisma, "PCMV");
-  const pcmHo = pcmCompany ? await findHoWarehouse(prisma, pcmCompany.id) : null;
-
-  if (projectCompanyId !== iseCompany.id) {
-    throw new Error("PROJECT_COMPANY_MISMATCH");
-  }
-
-  return {
-    iseCompanyId: iseCompany.id,
-    iseHoWarehouseId: iseHo.id,
-    pcmCompanyId: pcmCompany?.id ?? null,
-    pcmHoWarehouseId: pcmHo?.id ?? null,
-  };
-}
-
-export function mergeTransferBatches(batches: TransferBatch[]): TransferBatch[] {
-  const map = new Map<string, TransferBatch>();
-
-  for (const batch of batches) {
-    const key = `${batch.fromCompanyId}:${batch.fromWarehouseId}`;
-    const existing = map.get(key);
-    if (existing) {
-      existing.lines.push(...batch.lines);
-    } else {
-      map.set(key, {
-        fromCompanyId: batch.fromCompanyId,
-        fromWarehouseId: batch.fromWarehouseId,
-        lines: [...batch.lines],
-      });
-    }
-  }
-
-  return [...map.values()];
 }
 
 export function parseStockSourceLog(raw: unknown): StockSourceLogEntry[] {
@@ -385,58 +120,238 @@ export function computeProRataReturnAllocations(
   return allocations;
 }
 
-export async function executeReturnTransferBatches(
+/** Reduce stockSourceLog after reservation release (return / close). */
+export function reduceStockSourceLog(
+  existing: unknown,
+  releaseQty: number,
+): StockSourceLogEntry[] {
+  const sources = parseStockSourceLog(existing);
+  if (releaseQty <= 0 || sources.length === 0) return sources;
+
+  const total = sources.reduce((sum, entry) => sum + entry.qty, 0);
+  if (releaseQty >= total) return [];
+
+  const reductions = computeProRataReturnAllocations(releaseQty, sources);
+  const next = sources.map((entry) => ({ ...entry }));
+
+  for (const reduction of reductions) {
+    const entry = next.find(
+      (row) =>
+        row.companyId === reduction.companyId &&
+        row.warehouseId === reduction.warehouseId,
+    );
+    if (entry) {
+      entry.qty = Math.max(0, entry.qty - reduction.qty);
+    }
+  }
+
+  return next.filter((entry) => entry.qty > 0);
+}
+
+export async function getProjectReservedQtyAtWarehouse(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  companyId: string,
+  warehouseId: string,
+  productId: string,
+): Promise<number> {
+  const lines = await prisma.projectMaterialLine.findMany({
+    where: {
+      productId,
+      assignment: {
+        project: { status: { in: OPEN_PROJECT_RESERVATION_STATUSES } },
+      },
+    },
+    select: {
+      assignedQty: true,
+      dispatchedQty: true,
+      stockSourceLog: true,
+    },
+  });
+
+  let total = 0;
+  for (const line of lines) {
+    const balance = Math.max(
+      0,
+      decimalToNumber(line.assignedQty) - decimalToNumber(line.dispatchedQty),
+    );
+    if (balance <= 0) continue;
+
+    const allocations = computeProRataReturnAllocations(
+      balance,
+      parseStockSourceLog(line.stockSourceLog),
+    );
+    for (const allocation of allocations) {
+      if (
+        allocation.companyId === companyId &&
+        allocation.warehouseId === warehouseId
+      ) {
+        total += allocation.qty;
+      }
+    }
+  }
+
+  return total;
+}
+
+export async function getProjectCommittedQtyAtWarehouse(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  warehouseId: string,
+  productId: string,
+): Promise<number> {
+  const lines = await prisma.projectMaterialLine.findMany({
+    where: {
+      productId,
+      assignment: {
+        project: {
+          status: { in: OPEN_PROJECT_RESERVATION_STATUSES },
+          warehouseId,
+        },
+      },
+    },
+    select: { assignedQty: true, dispatchedQty: true },
+  });
+
+  return lines.reduce(
+    (sum, line) =>
+      sum +
+      Math.max(
+        0,
+        decimalToNumber(line.assignedQty) - decimalToNumber(line.dispatchedQty),
+      ),
+    0,
+  );
+}
+
+export async function getPhysicalAvailableQtyAtWarehouse(
+  prisma: PrismaClient,
+  companyId: string,
+  warehouseId: string,
+  productId: string,
+): Promise<number> {
+  const summary = await getPhysicalWarehouseStockForProduct(
+    prisma,
+    companyId,
+    productId,
+    warehouseId,
+  );
+  return summary.availableStock;
+}
+
+/** B2B sales available = physical HO stock minus open project qty reservations. */
+export async function getB2bAvailableQtyAtWarehouse(
+  prisma: PrismaClient,
+  companyId: string,
+  warehouseId: string,
+  productId: string,
+): Promise<number> {
+  const [physical, reserved] = await Promise.all([
+    getPhysicalAvailableQtyAtWarehouse(prisma, companyId, warehouseId, productId),
+    getProjectReservedQtyAtWarehouse(prisma, companyId, warehouseId, productId),
+  ]);
+  return Math.max(0, physical - reserved);
+}
+
+export type LineAllocationResult = {
+  reservedQty: number;
+  shortfallQty: number;
+  sourceEntries: StockSourceLogEntry[];
+};
+
+/** Qty-only reservation at HO — no physical transfer or serial assignment. */
+export async function allocateLineStock(
+  prisma: PrismaClient,
+  input: {
+    iseCompanyId: string;
+    iseHoWarehouseId: string;
+    pcmCompanyId: string | null;
+    pcmHoWarehouseId: string | null;
+    productId: string;
+    qtyNeeded: number;
+  },
+): Promise<LineAllocationResult> {
+  let remaining = input.qtyNeeded;
+  const sourceEntries: StockSourceLogEntry[] = [];
+
+  if (remaining > 0) {
+    const availIse = await getB2bAvailableQtyAtWarehouse(
+      prisma,
+      input.iseCompanyId,
+      input.iseHoWarehouseId,
+      input.productId,
+    );
+    const takeIse = Math.min(remaining, availIse);
+    if (takeIse > 0) {
+      sourceEntries.push({
+        companyId: input.iseCompanyId,
+        warehouseId: input.iseHoWarehouseId,
+        qty: takeIse,
+      });
+      remaining -= takeIse;
+    }
+  }
+
+  if (remaining > 0 && input.pcmCompanyId && input.pcmHoWarehouseId) {
+    const availPcm = await getB2bAvailableQtyAtWarehouse(
+      prisma,
+      input.pcmCompanyId,
+      input.pcmHoWarehouseId,
+      input.productId,
+    );
+    const takePcm = Math.min(remaining, availPcm);
+    if (takePcm > 0) {
+      sourceEntries.push({
+        companyId: input.pcmCompanyId,
+        warehouseId: input.pcmHoWarehouseId,
+        qty: takePcm,
+      });
+      remaining -= takePcm;
+    }
+  }
+
+  const reservedQty = input.qtyNeeded - remaining;
+  return {
+    reservedQty,
+    shortfallQty: remaining,
+    sourceEntries,
+  };
+}
+
+export function mergeStockSourceLog(
+  existing: unknown,
+  additions: StockSourceLogEntry[],
+): StockSourceLogEntry[] {
+  const prior = Array.isArray(existing)
+    ? (existing as StockSourceLogEntry[])
+    : [];
+  return [...prior, ...additions];
+}
+
+export async function executeTransferBatches(
   prisma: PrismaClient | Prisma.TransactionClient,
   input: {
-    fromCompanyId: string;
-    fromWarehouseId: string;
-    productId: string;
-    serialTracking: boolean;
-    allocations: StockSourceLogEntry[];
+    batches: TransferBatch[];
+    toCompanyId: string;
+    toWarehouseId: string;
     performedById: string;
     referenceNote: string;
   },
 ) {
-  for (const allocation of input.allocations) {
-    if (allocation.qty <= 0) continue;
-
-    let serialIds: string[] | undefined;
-    if (input.serialTracking) {
-      serialIds = await pickAvailableSerials(prisma as PrismaClient, {
-        companyId: input.fromCompanyId,
-        warehouseId: input.fromWarehouseId,
-        productId: input.productId,
-        qty: allocation.qty,
-      });
-      if (serialIds.length < allocation.qty) {
-        throw new Error("INSUFFICIENT_STOCK");
-      }
-    }
+  for (const batch of input.batches) {
+    if (batch.lines.length === 0) continue;
 
     const transfer = await createTransfer(prisma as PrismaClient, {
-      fromCompanyId: input.fromCompanyId,
-      fromWarehouseId: input.fromWarehouseId,
-      toWarehouseId: allocation.warehouseId,
+      fromCompanyId: batch.fromCompanyId,
+      fromWarehouseId: batch.fromWarehouseId,
+      toWarehouseId: input.toWarehouseId,
       notes: input.referenceNote,
-      lines: [
-        {
-          productId: input.productId,
-          qty: allocation.qty,
-          serialIds,
-        },
-      ],
+      lines: batch.lines,
       createdById: input.performedById,
     });
 
     await dispatchTransfer(prisma as PrismaClient, {
       transferId: transfer.id,
-      companyId: input.fromCompanyId,
+      companyId: batch.fromCompanyId,
       dispatchedById: input.performedById,
-    });
-
-    const destination = await prisma.warehouse.findUniqueOrThrow({
-      where: { id: allocation.warehouseId },
-      select: { companyId: true },
     });
 
     const refreshed = await prisma.inventoryTransfer.findUniqueOrThrow({
@@ -446,7 +361,7 @@ export async function executeReturnTransferBatches(
 
     await receiveTransfer(prisma as PrismaClient, {
       transferId: transfer.id,
-      companyId: destination.companyId,
+      companyId: input.toCompanyId,
       receivedById: input.performedById,
       lines: refreshed.lines.map((line) => ({
         lineId: line.id,
@@ -456,90 +371,246 @@ export async function executeReturnTransferBatches(
   }
 }
 
-export async function returnMaterialLineStock(
+export function mergeTransferBatches(batches: TransferBatch[]): TransferBatch[] {
+  const map = new Map<string, TransferBatch>();
+
+  for (const batch of batches) {
+    const key = `${batch.fromCompanyId}:${batch.fromWarehouseId}`;
+    const existing = map.get(key);
+    if (existing) {
+      existing.lines.push(...batch.lines);
+    } else {
+      map.set(key, {
+        fromCompanyId: batch.fromCompanyId,
+        fromWarehouseId: batch.fromWarehouseId,
+        lines: [...batch.lines],
+      });
+    }
+  }
+
+  return [...map.values()];
+}
+
+export async function resolveStockCompanies(prisma: PrismaClient, projectCompanyId: string) {
+  const iseCompany = await findCompanyByCode(prisma, "ISE");
+  if (!iseCompany) throw new Error("ISE_COMPANY_NOT_FOUND");
+
+  const iseHo = await findHoWarehouse(prisma, iseCompany.id);
+  if (!iseHo) throw new Error("ISE_HO_NOT_FOUND");
+
+  const pcmCompany = await findCompanyByCode(prisma, "PCMV");
+  const pcmHo = pcmCompany ? await findHoWarehouse(prisma, pcmCompany.id) : null;
+
+  if (projectCompanyId !== iseCompany.id) {
+    throw new Error("PROJECT_COMPANY_MISMATCH");
+  }
+
+  return {
+    iseCompanyId: iseCompany.id,
+    iseHoWarehouseId: iseHo.id,
+    pcmCompanyId: pcmCompany?.id ?? null,
+    pcmHoWarehouseId: pcmHo?.id ?? null,
+  };
+}
+
+export type HoWarehousePool = {
+  companyId: string;
+  warehouseId: string;
+};
+
+/** HO pools in priority order: ISE first, then PCM. */
+export async function listHoWarehousePools(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  projectCompanyId: string,
+): Promise<HoWarehousePool[]> {
+  const companies = await resolveStockCompanies(prisma as PrismaClient, projectCompanyId);
+  const pools: HoWarehousePool[] = [
+    { companyId: companies.iseCompanyId, warehouseId: companies.iseHoWarehouseId },
+  ];
+  if (companies.pcmCompanyId && companies.pcmHoWarehouseId) {
+    pools.push({
+      companyId: companies.pcmCompanyId,
+      warehouseId: companies.pcmHoWarehouseId,
+    });
+  }
+  return pools;
+}
+
+type DispatchStockPool = HoWarehousePool & { serialIds?: string[]; qty: number };
+
+function groupSerialsForDispatch(
+  serials: Array<{ id: string; productId: string; lot: { companyId: string }; currentWarehouseId: string | null }>,
+): DispatchStockPool[] {
+  const map = new Map<string, DispatchStockPool>();
+
+  for (const serial of serials) {
+    if (!serial.currentWarehouseId) continue;
+    const key = `${serial.lot.companyId}:${serial.currentWarehouseId}`;
+    const existing = map.get(key);
+    if (existing) {
+      existing.serialIds!.push(serial.id);
+      existing.qty += 1;
+    } else {
+      map.set(key, {
+        companyId: serial.lot.companyId,
+        warehouseId: serial.currentWarehouseId,
+        serialIds: [serial.id],
+        qty: 1,
+      });
+    }
+  }
+
+  return [...map.values()];
+}
+
+/** Move dispatch stock HO → Projects WH, then out to site (serials → DISPATCHED). */
+export async function executeProjectDispatchStockMove(
   prisma: PrismaClient | Prisma.TransactionClient,
   input: {
     projectCompanyId: string;
-    projectWarehouseId: string;
-    productId: string;
-    serialTracking: boolean;
-    stockSourceLog: unknown;
-    returnQty: number;
-    performedById: string;
-    referenceNote: string;
-    fallbackHo?: StockSourceLogEntry;
-  },
-): Promise<number> {
-  if (input.returnQty <= 0) return 0;
-
-  const sources = parseStockSourceLog(input.stockSourceLog);
-  const allocations = computeProRataReturnAllocations(
-    input.returnQty,
-    sources,
-    input.fallbackHo,
-  );
-  if (allocations.length === 0) {
-    throw new Error("RETURN_SOURCE_UNKNOWN");
-  }
-
-  await executeReturnTransferBatches(prisma, {
-    fromCompanyId: input.projectCompanyId,
-    fromWarehouseId: input.projectWarehouseId,
-    productId: input.productId,
-    serialTracking: input.serialTracking,
-    allocations,
-    performedById: input.performedById,
-    referenceNote: input.referenceNote,
-  });
-
-  return allocations.reduce((sum, row) => sum + row.qty, 0);
-}
-
-export async function transferReceivedStockToProjectWarehouse(
-  prisma: PrismaClient | Prisma.TransactionClient,
-  input: {
-    fromCompanyId: string;
-    fromWarehouseId: string;
-    toWarehouseId: string;
+    projectsWarehouseId: string;
     productId: string;
     serialTracking: boolean;
     qty: number;
+    serialIds?: string[];
+    stockSourceLog: unknown;
     performedById: string;
     referenceNote: string;
   },
 ) {
   if (input.qty <= 0) return;
 
-  let serialIds: string[] | undefined;
+  const pools = await listHoWarehousePools(prisma, input.projectCompanyId);
+  const batches: TransferBatch[] = [];
+
   if (input.serialTracking) {
-    serialIds = await pickAvailableSerials(prisma as PrismaClient, {
-      companyId: input.fromCompanyId,
-      warehouseId: input.fromWarehouseId,
-      productId: input.productId,
-      qty: input.qty,
+    if (!input.serialIds?.length || input.serialIds.length !== input.qty) {
+      throw new Error("SERIAL_REQUIRED");
+    }
+
+    const serials = await prisma.inventorySerial.findMany({
+      where: { id: { in: input.serialIds } },
+      select: {
+        id: true,
+        productId: true,
+        currentWarehouseId: true,
+        lot: { select: { companyId: true } },
+      },
     });
-    if (serialIds.length < input.qty) {
+    if (serials.length !== input.serialIds.length) {
+      throw new Error("INVALID_SERIAL_SELECTION");
+    }
+    if (serials.some((serial) => serial.productId !== input.productId)) {
+      throw new Error("INVALID_SERIAL_SELECTION");
+    }
+
+    const hoWarehouseIds = new Set(pools.map((pool) => pool.warehouseId));
+    if (serials.some((serial) => !serial.currentWarehouseId || !hoWarehouseIds.has(serial.currentWarehouseId))) {
+      throw new Error("INVALID_SERIAL_SELECTION");
+    }
+
+    for (const group of groupSerialsForDispatch(serials)) {
+      batches.push({
+        fromCompanyId: group.companyId,
+        fromWarehouseId: group.warehouseId,
+        lines: [
+          {
+            productId: input.productId,
+            qty: group.qty,
+            serialIds: group.serialIds,
+          },
+        ],
+      });
+    }
+  } else {
+    let remaining = input.qty;
+    const preferredSources = parseStockSourceLog(input.stockSourceLog);
+    const orderedPools: HoWarehousePool[] = [];
+
+    for (const source of preferredSources) {
+      if (!orderedPools.some((pool) => pool.warehouseId === source.warehouseId)) {
+        orderedPools.push({
+          companyId: source.companyId,
+          warehouseId: source.warehouseId,
+        });
+      }
+    }
+    for (const pool of pools) {
+      if (!orderedPools.some((row) => row.warehouseId === pool.warehouseId)) {
+        orderedPools.push(pool);
+      }
+    }
+
+    for (const pool of orderedPools) {
+      if (remaining <= 0) break;
+      const physical = await getPhysicalAvailableQtyAtWarehouse(
+        prisma as PrismaClient,
+        pool.companyId,
+        pool.warehouseId,
+        input.productId,
+      );
+      const take = Math.min(remaining, physical);
+      if (take <= 0) continue;
+
+      const existing = batches.find(
+        (batch) =>
+          batch.fromCompanyId === pool.companyId &&
+          batch.fromWarehouseId === pool.warehouseId,
+      );
+      if (existing) {
+        existing.lines.push({ productId: input.productId, qty: take });
+      } else {
+        batches.push({
+          fromCompanyId: pool.companyId,
+          fromWarehouseId: pool.warehouseId,
+          lines: [{ productId: input.productId, qty: take }],
+        });
+      }
+      remaining -= take;
+    }
+
+    if (remaining > 0) {
       throw new Error("INSUFFICIENT_STOCK");
     }
   }
 
-  await executeTransferBatches(prisma as PrismaClient, {
-    batches: [
-      {
-        fromCompanyId: input.fromCompanyId,
-        fromWarehouseId: input.fromWarehouseId,
-        lines: [
-          {
-            productId: input.productId,
-            qty: input.qty,
-            serialIds,
-          },
-        ],
-      },
-    ],
-    toCompanyId: input.fromCompanyId,
-    toWarehouseId: input.toWarehouseId,
-    performedById: input.performedById,
-    referenceNote: input.referenceNote,
-  });
+  if (batches.length > 0) {
+    await executeTransferBatches(prisma as PrismaClient, {
+      batches,
+      toCompanyId: input.projectCompanyId,
+      toWarehouseId: input.projectsWarehouseId,
+      performedById: input.performedById,
+      referenceNote: input.referenceNote,
+    });
+  }
+
+  if (input.serialTracking && input.serialIds?.length) {
+    await prisma.inventorySerial.updateMany({
+      where: { id: { in: input.serialIds } },
+      data: { status: SerialStatus.DISPATCHED },
+    });
+  } else if (!input.serialTracking) {
+    await deductNonSerialStock(prisma as PrismaClient, {
+      companyId: input.projectCompanyId,
+      warehouseId: input.projectsWarehouseId,
+      productId: input.productId,
+      qty: input.qty,
+    });
+  }
+}
+
+/** @deprecated Use qty-only reservation release via reduceStockSourceLog + assignedQty update. */
+export async function returnMaterialLineStock(
+  _prisma: PrismaClient | Prisma.TransactionClient,
+  input: { returnQty: number },
+): Promise<number> {
+  return input.returnQty;
+}
+
+/** @deprecated PR fulfillment now reserves qty at HO without physical transfer. */
+export async function transferReceivedStockToProjectWarehouse(
+  _prisma: PrismaClient | Prisma.TransactionClient,
+  _input: { qty: number },
+) {
+  return;
 }

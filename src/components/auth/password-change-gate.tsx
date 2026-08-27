@@ -12,23 +12,9 @@ export function PasswordChangeGate({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     if (status !== "authenticated") return;
     if (pathname === "/change-password") return;
-
-    async function checkPasswordStatus() {
-      if (session?.user.passwordChangeRequired) {
-        router.replace("/change-password");
-        return;
-      }
-
-      const response = await fetch("/api/users/me/password-status");
-      if (!response.ok) return;
-
-      const data = (await response.json()) as { required?: boolean };
-      if (data.required) {
-        router.replace("/change-password");
-      }
+    if (session?.user.passwordChangeRequired) {
+      router.replace("/change-password");
     }
-
-    void checkPasswordStatus();
   }, [status, session?.user.passwordChangeRequired, pathname, router]);
 
   return children;

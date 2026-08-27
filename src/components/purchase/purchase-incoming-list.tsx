@@ -34,13 +34,8 @@ type IncomingLotsPage = {
   pageSize?: number;
 };
 
-function formatCurrency(value: number) {
-  return value.toLocaleString("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 2,
-  });
-}
+const wrapCell = "max-w-[10rem] whitespace-normal break-words align-top";
+const wrapHead = "whitespace-normal break-words align-top";
 
 export function PurchaseIncomingList({
   initialLots,
@@ -135,20 +130,20 @@ export function PurchaseIncomingList({
       ) : null}
 
       <Card>
-        <CardContent className="overflow-x-auto p-0">
-          <Table>
+        <CardContent className="p-0">
+          <Table className="table-fixed">
             <TableHeader>
               <TableRow>
-                <TableHead>Lot</TableHead>
-                <TableHead>Company</TableHead>
-                <TableHead>Product</TableHead>
-                <TableHead>Warehouse</TableHead>
-                <TableHead>Expected</TableHead>
-                <TableHead>Unit Rate</TableHead>
-                <TableHead>Total Cost</TableHead>
-                <TableHead>Received</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Actions</TableHead>
+                <TableHead className={wrapHead}>Lot</TableHead>
+                <TableHead className={wrapHead}>Vendor</TableHead>
+                <TableHead className={wrapHead}>Invoice #</TableHead>
+                <TableHead className={wrapHead}>Company</TableHead>
+                <TableHead className={wrapHead}>Product</TableHead>
+                <TableHead className={wrapHead}>Warehouse</TableHead>
+                <TableHead className={wrapHead}>Expected</TableHead>
+                <TableHead className={wrapHead}>Received</TableHead>
+                <TableHead className={wrapHead}>Status</TableHead>
+                <TableHead className={wrapHead}>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -161,12 +156,12 @@ export function PurchaseIncomingList({
               ) : (
                 lots.map((lot) => (
                   <TableRow key={lot.id}>
-                    <TableCell className="font-medium">
+                    <TableCell className={`font-medium ${wrapCell}`}>
                       {isEditableIncomingLot(lot, canEditClosedLots) ? (
                         <Button
                           type="button"
                           variant="ghost"
-                          className="h-auto p-0 font-medium text-slate-900 hover:bg-transparent hover:underline"
+                          className="h-auto whitespace-normal p-0 text-left font-medium text-slate-900 hover:bg-transparent hover:underline"
                           onClick={() => setEditingLot(lot)}
                         >
                           {lot.lotNumber}
@@ -175,19 +170,25 @@ export function PurchaseIncomingList({
                         lot.lotNumber
                       )}
                     </TableCell>
-                    <TableCell>{lot.company.code}</TableCell>
-                    <TableCell>{lot.product.displayName}</TableCell>
-                    <TableCell>{lot.warehouse.name}</TableCell>
-                    <TableCell>{Number(lot.quantity)}</TableCell>
-                    <TableCell>{formatCurrency(Number(lot.unitPurchaseRate))}</TableCell>
-                    <TableCell>{formatCurrency(Number(lot.totalPurchaseCost))}</TableCell>
-                    <TableCell>{Number(lot.receivedQuantity)}</TableCell>
-                    <TableCell>
+                    <TableCell className={wrapCell}>
+                      {lot.vendor?.vendorName ?? "—"}
+                    </TableCell>
+                    <TableCell className={wrapCell}>
+                      {lot.purchaseInvoiceNo ?? "—"}
+                    </TableCell>
+                    <TableCell className={wrapCell}>{lot.company.code}</TableCell>
+                    <TableCell className={`min-w-0 ${wrapCell}`}>
+                      {lot.product.displayName}
+                    </TableCell>
+                    <TableCell className={wrapCell}>{lot.warehouse.name}</TableCell>
+                    <TableCell className="align-top">{Number(lot.quantity)}</TableCell>
+                    <TableCell className="align-top">{Number(lot.receivedQuantity)}</TableCell>
+                    <TableCell className="align-top">
                       <Badge variant={lot.status === "INCOMING" ? "warning" : "success"}>
                         {lot.status}
                       </Badge>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="align-top">
                       <IncomingSerialExportButton
                         lotId={lot.id}
                         serialTracking={lot.product.serialTracking}

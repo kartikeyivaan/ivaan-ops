@@ -23,16 +23,16 @@ The objective is to give the Projects team a single operational path from won pr
 ## 2. Goals
 
 1. Create a **Project** entity when an approved proposal is converted — not just a status flag.
-2. Default **Material Assignment** lines from the confirmed proposal revision (package BOM + extras).
+2. **Manual material assignment** — PM adds/edits lines (no auto-populate from proposal BOM).
 3. Allow **Add Row** for additional catalogue products (same UX pattern as Quotation Add Row).
-4. Require **Projects Manager approval** for changed and new assignment lines before stock moves.
-5. **Auto-transfer** available stock from **ISE Jalgaon HO** first, then **PCM Jalgaon HO** if short — no separate Sales Manager approval for cross-company use when PM has approved material.
-6. Stage assigned stock at **Jalgaon Projects (JAL-PRJ)** warehouse.
-7. **Auto-create Purchase Requests** for quantities that cannot be fulfilled at approval time; link PR lines back to project material lines.
+4. Require **Projects Manager approval** for changed and new assignment lines before qty is reserved.
+5. **Qty-only reservation** on PM approval from **ISE Jalgaon HO** first, then **PCM Jalgaon HO** — no physical transfer and no serial assignment at approval; no separate Sales Manager approval for cross-company PCM use.
+6. Reserved qty appears as **committed** at **Jalgaon Projects (JAL-PRJ)** and reduces **B2B available** at source HO warehouses.
+7. **Auto-create Purchase Requests** for quantities that cannot be reserved at approval time; PR fulfillment reserves qty at HO when stock arrives.
 8. Provide **Projects Dispatch** tab under Inventory → Dispatches with unified search (proposal no., customer name, site name, project no.).
-9. Support **partial dispatch** to customer site with serial scan for panels/inverters and qty-only for bulk items.
-10. **Kit/BOM products** explode to components on assignment derivation and dispatch (same rules as retail dispatch).
-11. Allow **PM-only project close** that blocks new dispatches and auto-returns unused qty to source warehouses.
+9. Support **partial dispatch** — serials scanned from HO at dispatch time; HO → JAL-PRJ → site in one confirm step; PCM → ISE serial transfer automatic without SM approval.
+10. **Kit/BOM products** explode to components at dispatch only (same rules as retail dispatch).
+11. Allow **PM-only project close** that blocks new dispatches and releases unused qty reservations (no physical return).
 12. Preserve existing design system, RBAC, audit logging, and mobile responsiveness.
 
 ---
@@ -61,16 +61,16 @@ The pre-sale EPC/rooftop document (`ProjectProposal` + `ProjectProposalRevision`
 A new operational entity created on convert. Tracks material assignment, stock staging, dispatch, and closure. Has its own lifecycle status distinct from proposal status.
 
 ### 4.3 Material Assignment
-The set of product lines and quantities promised for a project. Defaults from proposal BOM; may include PM-added lines. Requires PM approval for **changed and new lines only**.
+The set of product lines and quantities promised for a project. PM adds lines manually; may include PM-added rows. Requires PM approval for **changed and new lines only**.
 
-### 4.4 Jalgaon Projects (Projects WO)
-The existing ISE warehouse **Jalgaon Projects** (`JAL-PRJ`). Staging location for project material before site dispatch.
+### 4.4 Jalgaon Projects (Projects WH)
+The existing ISE warehouse **Jalgaon Projects** (`JAL-PRJ`). Shows **committed** project qty (logical staging). Physical stock moves through JAL-PRJ only at dispatch confirm.
 
 ### 4.5 Stock Source Priority
-On PM approval, system allocates from **ISE Jalgaon HO** first. If insufficient, falls back to **PCM Jalgaon HO**. Allocation is recorded per line for return-on-close.
+On PM approval, system **reserves qty** from **ISE Jalgaon HO** first. If insufficient B2B-available stock, falls back to **PCM Jalgaon HO**. Reservation is recorded per line in `stockSourceLog` for dispatch routing and release-on-close.
 
 ### 4.6 Pending Stock
-Assignment line qty that PM approved but could not be transferred because stock was unavailable. Triggers auto Purchase Request; fulfilled when stock arrives.
+Assignment line qty that PM approved but could not be reserved because stock was unavailable. Triggers auto Purchase Request; fulfilled when stock arrives at HO (qty reserved immediately on receipt).
 
 ### 4.7 Project Dispatch
 Delivery challan from Jalgaon Projects to customer site. Same operational fields as retail DC (vehicle, receiver, signature, PDF) with header **"Project Dispatch"**.
@@ -364,7 +364,7 @@ All create/update/approve/transfer/dispatch/close actions write `AuditLog` entri
 |-----------------|-------------|
 | `project-proposal-service.ts` | Extend convert to create Project |
 | `proposal-bom.ts` | Derive default material lines |
-| `transfer-service.ts` | HO → JAL-PRJ auto transfers |
+| `transfer-service.ts` | HO → JAL-PRJ at dispatch confirm only |
 | `cross-company-transfer-service.ts` | PCM fallback without SM approval when PM material approved |
 | `purchase-request-service.ts` | Auto-create PR from short lines |
 | `kit-fulfillment.ts` | Kit explosion on dispatch |
@@ -380,21 +380,21 @@ All create/update/approve/transfer/dispatch/close actions write `AuditLog` entri
 | R1 | Only `APPROVED` proposals can convert |
 | R2 | Convert creates Project; proposal becomes `CONVERTED` |
 | R3 | Material assignment is a separate step after convert |
-| R4 | Default lines from proposal revision BOM |
+| R4 | Material lines added manually by PM (no BOM auto-populate) |
 | R5 | Add Row allowed; any catalogue product |
 | R6 | Delta approval only (changed + new lines) |
-| R7 | Stock priority: ISE HO → PCM HO |
+| R7 | Reservation priority: ISE HO → PCM HO (B2B available reduced) |
 | R8 | PM material approval covers cross-company PCM use |
 | R9 | Short stock: PM can approve; auto PR; Pending Stock until arrival |
-| R10 | Assigned stock stages at Jalgaon Projects |
+| R10 | Assigned qty staged logically at Jalgaon Projects (committed bucket) |
 | R11 | Partial dispatch allowed |
-| R12 | Kits explode to components |
-| R13 | Serial scan: panels/inverters; bulk qty-only |
+| R12 | Kits explode to components at dispatch |
+| R13 | Serial scan at dispatch from HO; bulk qty-only |
 | R14 | Project DC PDF header: "Project Dispatch" |
 | R15 | Warehouse + PM can dispatch |
 | R16 | Only PM can close project |
 | R17 | Close blocks new dispatch immediately |
-| R18 | Close auto-returns unused qty to source HO |
+| R18 | Close releases unused qty reservations (no physical return) |
 | R19 | Assignment open until close — multiple add/approve cycles |
 | R20 | No payment logic in this flow |
 
@@ -408,16 +408,17 @@ All create/update/approve/transfer/dispatch/close actions write `AuditLog` entri
 - [ ] Non-approved proposal cannot convert
 
 ### 13.2 Material Assignment
-- [ ] Default lines match proposal BOM/products
+- [ ] PM adds material lines manually
 - [ ] Add Row works like quotation Add Row
 - [ ] Submit sends only delta lines to approval
 - [ ] Unchanged approved lines skip re-approval
 
 ### 13.3 Stock & PR
-- [ ] ISE HO allocated first, PCM HO second
-- [ ] Auto transfer to Jalgaon Projects on approval
+- [ ] ISE HO reserved first, PCM HO second (qty-only)
+- [ ] B2B available at HO reduced by open project reservations
+- [ ] JAL-PRJ shows committed qty bucket
 - [ ] Short qty creates linked PR with project + proposal ref
-- [ ] Stock arrival triggers transfer to Jalgaon Projects
+- [ ] Stock arrival at HO triggers qty reservation (not physical transfer)
 
 ### 13.4 Dispatch
 - [ ] Projects Dispatch tab visible under Dispatches

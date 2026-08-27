@@ -6,6 +6,7 @@ import {
   canViewBookedAvailableReport,
   canViewCollectionReport,
   canViewDispatchReport,
+  canViewDispatchProfitReport,
   canViewExecutivePerformanceReport,
   canViewExecutiveSalesReport,
   canViewPaymentFollowupReport,
@@ -51,6 +52,7 @@ export default async function ReportsPage() {
     canViewBookedAvailableReport(roles) ? "booked-available" : null,
     canViewReservedQtyReport(roles) ? "reserved-qty" : null,
     canViewDispatchReport(roles) ? "dispatch" : null,
+    canViewDispatchProfitReport(roles) ? "dispatch-profit" : null,
     canViewExecutiveSalesReport(roles) ? "executive-sales" : null,
   ].filter(Boolean) as Array<
     | "sales-executive"
@@ -63,6 +65,7 @@ export default async function ReportsPage() {
     | "booked-available"
     | "reserved-qty"
     | "dispatch"
+    | "dispatch-profit"
     | "executive-sales"
   >;
 

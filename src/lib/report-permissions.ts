@@ -67,6 +67,16 @@ export function canViewDispatchReport(userRoles: string[]): boolean {
   return hasRole(userRoles, [...DISPATCH_REPORT_ROLES]);
 }
 
+const DISPATCH_PROFIT_REPORT_ROLES = [
+  ROLES.SUPER_ADMIN,
+  ROLES.SALES_MANAGER,
+  ROLES.ACCOUNTS,
+] as const;
+
+export function canViewDispatchProfitReport(userRoles: string[]): boolean {
+  return hasRole(userRoles, [...DISPATCH_PROFIT_REPORT_ROLES]);
+}
+
 export function canViewSalesPerformanceReport(userRoles: string[]): boolean {
   return canViewSalesExecutiveReport(userRoles);
 }
@@ -91,6 +101,7 @@ export function canViewAnyReport(userRoles: string[]): boolean {
     canViewBookedAvailableReport(userRoles) ||
     canViewReservedQtyReport(userRoles) ||
     canViewDispatchReport(userRoles) ||
+    canViewDispatchProfitReport(userRoles) ||
     canViewSalesPerformanceReport(userRoles) ||
     canViewSalesFunnelReport(userRoles) ||
     canViewCollectionReport(userRoles) ||

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { canViewQuotations } from "@/lib/quotation-permissions";
 import { generateQuotationPdf } from "@/lib/quotation-pdf";
+import { pdfContentVersion, pdfInlineResponse, resolveStoredPdf } from "@/lib/pdf-cache";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
 
@@ -98,21 +99,21 @@ export async function GET(_request: Request, context: RouteContext) {
     return errorResponse("NOT_FOUND", "Quotation not found.", 404);
   }
 
-  const pdf = await generateQuotationPdf(quotation);
+  const pdf = await resolveStoredPdf(prisma, {
+    documentType: "QUOTATION",
+    documentId: quotation.id,
+    contentVersion: pdfContentVersion([
+      quotation.updatedAt.toISOString(),
+      quotation.status,
+      quotation.revisionNo,
+    ]),
+    generate: () => generateQuotationPdf(quotation),
+  });
 
   const rawName = `${quotation.quotationNo} - ${quotation.customer.customerName}`;
-  // Strip characters that are illegal in file names on common OSes, then build
-  // both an ASCII-safe `filename` and a UTF-8 `filename*` (RFC 5987) so the
-  // download keeps the "<Quotation No> - <Customer Name>.pdf" name everywhere.
   const safeName = rawName.replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim();
-  const asciiName = safeName.replace(/[^\x20-\x7E]/g, "_");
 
-  return new NextResponse(new Uint8Array(pdf), {
-    headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="${asciiName}.pdf"; filename*=UTF-8''${encodeURIComponent(
-        `${safeName}.pdf`,
-      )}`,
-    },
+  return pdfInlineResponse(pdf, safeName, {
+    asciiName: safeName.replace(/[^\x20-\x7E]/g, "_"),
   });
 }

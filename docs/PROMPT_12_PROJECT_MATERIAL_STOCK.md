@@ -9,7 +9,7 @@ Implements Phase 2 of `PRD-PROJECT-MATERIAL-DISPATCH.md`: delta PM approval, sto
 
 ## Objective
 
-When Projects Manager approves material assignment (delta lines only), automatically move stock to **Jalgaon Projects** and raise **Purchase Requests** for any short qty — with full traceability back to project and proposal.
+When Projects Manager approves material assignment (delta lines only), **reserve qty** at HO (ISE first, PCM fallback) — no physical transfer or serial assignment — and raise **Purchase Requests** for any short qty.
 
 ---
 
@@ -19,9 +19,8 @@ When Projects Manager approves material assignment (delta lines only), automatic
 - Submit for approval: detects **changed + new lines only**
 - Approvals hub + project detail approval UI
 - On approve:
-  - Allocate ISE Jalgaon HO first, PCM Jalgaon HO fallback
-  - Auto-create `InventoryTransfer`(s) with dispatch + receive to JAL-PRJ
-  - Record `stockSourceLog` JSON on each line
+  - Reserve qty from ISE Jalgaon HO first, PCM Jalgaon HO fallback (reduces B2B available)
+  - Record `stockSourceLog` JSON on each line; show committed qty at JAL-PRJ
   - Short qty → line status `PENDING_STOCK` + auto PR line
 - PR line links: `projectId`, `projectMaterialLineId`; remarks include `proposalNo`, `projectNo`
 - PR priority `HIGH` for project-linked lines

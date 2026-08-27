@@ -17,6 +17,7 @@ import {
   completeCrossCompanyTransferOnDispatch,
   completeInterchangeableSerialSwapOnDispatch,
 } from "@/lib/cross-company-transfer-service";
+import { persistDispatchLineProfitSnapshots } from "@/lib/dispatch-profit-snapshot";
 import {
   generateDispatchNumber,
   getRemainingQty,
@@ -1046,7 +1047,21 @@ async function confirmDispatchTx(
           proformaInvoiceItem: {
             include: { product: { include: { category: true } } },
           },
-          serials: true,
+          serials: {
+            include: {
+              serial: {
+                select: {
+                  lot: {
+                    select: {
+                      unitPurchaseRate: true,
+                      totalPurchaseCost: true,
+                      quantity: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
         },
       },
     },
@@ -1287,6 +1302,12 @@ async function confirmDispatchTx(
       dcNo: dispatch.dcNo,
     }),
   ]);
+
+  await persistDispatchLineProfitSnapshots(tx, {
+    id: dispatch.id,
+    dispatchDate: dispatch.dispatchDate,
+    lines: dispatch.lines,
+  });
 
   return serializeDispatchWithKits(tx, updated);
 }

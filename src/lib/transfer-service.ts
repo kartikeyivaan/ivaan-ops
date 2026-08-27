@@ -345,6 +345,21 @@ export async function countPendingIncomingTransfers(
   });
 }
 
+export async function listPendingIncomingTransfers(
+  prisma: PrismaClient,
+  companyId: string,
+) {
+  return prisma.inventoryTransfer.findMany({
+    where: {
+      toCompanyId: companyId,
+      origin: TransferOrigin.MANUAL,
+      status: { in: [TransferStatus.DISPATCHED, TransferStatus.PARTIALLY_RECEIVED] },
+    },
+    include: transferInclude,
+    orderBy: [{ dispatchedAt: "desc" }, { createdAt: "desc" }],
+  });
+}
+
 export async function getTransferById(
   prisma: PrismaClient,
   transferId: string,

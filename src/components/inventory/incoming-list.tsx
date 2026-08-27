@@ -18,13 +18,27 @@ import {
 } from "@/components/ui/table";
 import { isInternalTransferLot } from "@/lib/inventory";
 import type { SerializedInventoryLot } from "@/lib/inventory-service";
+import type { TransferRecord } from "@/lib/transfer-service";
 import { IncomingSerialExportButton } from "@/components/inventory/incoming-serial-export-button";
+import { IncomingTransferReceiveDialog } from "@/components/inventory/incoming-transfer-receive-dialog";
 import { IncomingLotEditDialog } from "@/components/purchase/incoming-lot-edit-dialog";
 import { formatDate } from "@/lib/utils";
 
 type Product = { id: string; displayName: string; gstRate: number };
 type Warehouse = { id: string; name: string; companyId: string };
 type Vendor = { id: string; vendorName: string };
+
+type IncomingTransferRow = {
+  transfer: TransferRecord;
+  fromWarehouseName: string;
+  toWarehouseName: string;
+  pendingQty: number;
+};
+
+type IncomingTransfersPayload = {
+  items?: IncomingTransferRow[];
+  canReceive?: boolean;
+};
 
 type IncomingLotsPage = {
   items?: SerializedInventoryLot[];
@@ -47,6 +61,8 @@ export function IncomingReceiptList({
   products = [],
   warehouses = [],
   vendors = [],
+  initialTransfers = [],
+  canReceiveTransfers = false,
 }: {
   initialLots: SerializedInventoryLot[];
   initialTotal?: number;
@@ -59,6 +75,8 @@ export function IncomingReceiptList({
   products?: Product[];
   warehouses?: Warehouse[];
   vendors?: Vendor[];
+  initialTransfers?: IncomingTransferRow[];
+  canReceiveTransfers?: boolean;
 }) {
   const [lots, setLots] = useState(initialLots);
   const [total, setTotal] = useState(initialTotal ?? initialLots.length);
@@ -67,12 +85,19 @@ export function IncomingReceiptList({
   const [loading, setLoading] = useState(false);
   const [editingLot, setEditingLot] = useState<SerializedInventoryLot | null>(null);
   const [showInternalTransfers, setShowInternalTransfers] = useState(false);
+  const [transfers, setTransfers] = useState(initialTransfers);
+  const [receivingTransfer, setReceivingTransfer] = useState<IncomingTransferRow | null>(null);
+  const [transfersLoading, setTransfersLoading] = useState(false);
 
   useEffect(() => {
     setLots(initialLots);
     setTotal(initialTotal ?? initialLots.length);
     setPage(initialPage);
   }, [initialLots, initialTotal, initialPage]);
+
+  useEffect(() => {
+    setTransfers(initialTransfers);
+  }, [initialTransfers]);
 
   const visibleLots = lots
     .filter(
@@ -104,6 +129,16 @@ export function IncomingReceiptList({
     setPage(Array.isArray(data) ? nextPage : (data.page ?? nextPage));
   }
 
+  async function refreshTransfers() {
+    setTransfersLoading(true);
+    const response = await fetch("/api/inventory/incoming/transfers");
+    setTransfersLoading(false);
+    if (!response.ok) return;
+
+    const data = await parseApiJson<IncomingTransfersPayload>(response);
+    setTransfers(data.items ?? []);
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -116,7 +151,8 @@ export function IncomingReceiptList({
           </Button>
           <h1 className="text-2xl font-bold text-slate-900">Receive Incoming Material</h1>
           <p className="text-sm text-slate-500">
-            Record physical receipt of purchase lots created by the Purchase team.
+            Record physical receipt of purchase lots and internal stock transfers dispatched to
+            this company.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -137,6 +173,98 @@ export function IncomingReceiptList({
           </Button>
         </div>
       </div>
+
+      {!showHistory ? (
+        <Card>
+          <CardContent className="space-y-3 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="text-base font-semibold text-slate-900">
+                  Internal transfers awaiting receipt
+                </h2>
+                <p className="text-sm text-slate-500">
+                  Material dispatched from another warehouse via a manual stock transfer.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={transfersLoading}
+                onClick={() => void refreshTransfers()}
+              >
+                {transfersLoading ? "Refreshing..." : "Refresh"}
+              </Button>
+            </div>
+
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Transfer</TableHead>
+                  <TableHead>From → To</TableHead>
+                  <TableHead>Products</TableHead>
+                  <TableHead>Pending</TableHead>
+                  <TableHead>Dispatched</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {transfers.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center text-slate-500">
+                      No internal transfers awaiting receipt.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  transfers.map((row) => {
+                    const productSummary = row.transfer.lines
+                      .map((line) => line.product.displayName)
+                      .join(", ");
+                    const dispatchedAt =
+                      row.transfer.dispatchedAt ?? row.transfer.updatedAt ?? row.transfer.createdAt;
+
+                    return (
+                      <TableRow key={row.transfer.id}>
+                        <TableCell className="font-medium">{row.transfer.transferNumber}</TableCell>
+                        <TableCell className={wrapCell}>
+                          <div>
+                            {row.transfer.fromCompany.code} ({row.fromWarehouseName})
+                          </div>
+                          <div className="text-xs text-slate-500">
+                            → {row.transfer.toCompany.code} ({row.toWarehouseName})
+                          </div>
+                        </TableCell>
+                        <TableCell className={`min-w-[12rem] max-w-[22rem] ${wrapCell}`}>
+                          {productSummary}
+                        </TableCell>
+                        <TableCell className="align-top">{row.pendingQty}</TableCell>
+                        <TableCell className={`align-top ${wrapCell}`}>
+                          {formatDate(dispatchedAt)}
+                        </TableCell>
+                        <TableCell className="align-top">
+                          <Badge variant="warning">{row.transfer.status}</Badge>
+                        </TableCell>
+                        <TableCell className="align-top">
+                          {canReceiveTransfers ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setReceivingTransfer(row)}
+                            >
+                              Receive
+                            </Button>
+                          ) : null}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardContent className="p-0">
@@ -248,6 +376,15 @@ export function IncomingReceiptList({
           allowDelete={false}
           onClose={() => setEditingLot(null)}
           onSaved={() => void refreshLots()}
+        />
+      ) : null}
+
+      {receivingTransfer ? (
+        <IncomingTransferReceiveDialog
+          row={receivingTransfer}
+          canViewSerials={canExportSerials}
+          onClose={() => setReceivingTransfer(null)}
+          onReceived={() => void refreshTransfers()}
         />
       ) : null}
     </div>

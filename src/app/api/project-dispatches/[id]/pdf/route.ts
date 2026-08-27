@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { canViewProjectDispatches } from "@/lib/project-permissions";
 import { generateProjectDispatchPdf } from "@/lib/project-dispatch-pdf";

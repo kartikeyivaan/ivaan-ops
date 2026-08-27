@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { mapProjectProposalError, projectProposalErrorResponse } from "@/lib/project-proposal-api";
 import {

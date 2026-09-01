@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -8,7 +8,6 @@ import {
   Clock,
   Download,
   FileText,
-  MoreHorizontal,
   Pencil,
   Plus,
   RefreshCw,
@@ -85,6 +84,10 @@ function statusVariant(status: string): "default" | "success" | "warning" | "dan
 function formatMoney(value: number) {
   return `₹${value.toLocaleString("en-IN")}`;
 }
+
+/** Data stays on one line; headers may wrap so they never dictate column width. */
+const headCell = "px-3";
+const bodyCell = "whitespace-nowrap px-3 py-3";
 
 export function ProjectProposalsList({
   initialProposals,
@@ -340,21 +343,11 @@ export function ProjectProposalsList({
     );
   }
 
-  function renderProposalActions(proposal: ProposalListItem) {
+  function renderProposalActions(proposal: ProposalListItem, trigger: ReactNode) {
     return (
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={actionLoading === proposal.id}
-            className="h-8 w-8 shrink-0 p-0"
-            aria-label="Proposal actions"
-          >
-            <MoreHorizontal className="h-4 w-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-56">
           <DropdownMenuItem onClick={() => router.push(`/projects/proposals/${proposal.id}`)}>
             <FileText className="mr-2 h-4 w-4" />
             View
@@ -428,6 +421,20 @@ export function ProjectProposalsList({
           ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
+    );
+  }
+
+  function renderProposalNoMenu(proposal: ProposalListItem) {
+    return renderProposalActions(
+      proposal,
+      <button
+        type="button"
+        disabled={actionLoading === proposal.id}
+        aria-label={`Actions for proposal ${proposal.proposalNo}`}
+        className="text-left font-semibold text-emerald-700 underline-offset-2 hover:underline disabled:opacity-60"
+      >
+        {proposal.proposalNo}
+      </button>,
     );
   }
 
@@ -572,24 +579,15 @@ export function ProjectProposalsList({
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <button
-                          type="button"
-                          onClick={() => router.push(`/projects/proposals/${proposal.id}`)}
-                          className="text-left font-semibold text-slate-900 hover:text-emerald-700"
-                        >
-                          {proposal.proposalNo}
-                        </button>
+                        {renderProposalNoMenu(proposal)}
                         <p className="text-xs text-slate-500">
                           {formatRevisionProposalLabel(proposal.currentRevisionNo)} ·{" "}
                           {revision ? formatDocumentDate(revision.proposalDate) : "—"}
                         </p>
                       </div>
-                      <div className="flex shrink-0 items-center gap-1">
-                        <Badge variant={statusVariant(proposal.status)}>
-                          {formatProjectProposalStatus(proposal.status)}
-                        </Badge>
-                        {renderProposalActions(proposal)}
-                      </div>
+                      <Badge variant={statusVariant(proposal.status)}>
+                        {formatProjectProposalStatus(proposal.status)}
+                      </Badge>
                     </div>
                     <dl className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
                       <div>
@@ -637,23 +635,22 @@ export function ProjectProposalsList({
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Proposal No</TableHead>
-                  <TableHead>Revision</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Customer Name</TableHead>
-                  <TableHead>Mobile Number</TableHead>
-                  <TableHead>Sales Executive</TableHead>
-                  <TableHead>Package</TableHead>
-                  <TableHead className="text-right">Final Amount</TableHead>
-                  <TableHead className="text-right">Discount</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="w-10" />
+                  <TableHead className={headCell}>Proposal No</TableHead>
+                  <TableHead className={`${headCell} w-12 text-center`}>Rev</TableHead>
+                  <TableHead className={headCell}>Date</TableHead>
+                  <TableHead className={headCell}>Customer Name</TableHead>
+                  <TableHead className={`${headCell} w-24`}>Mobile</TableHead>
+                  <TableHead className={`${headCell} w-24`}>Sales Exec.</TableHead>
+                  <TableHead className={headCell}>Package</TableHead>
+                  <TableHead className={`${headCell} text-right`}>Final Amount</TableHead>
+                  <TableHead className={`${headCell} text-right`}>Discount</TableHead>
+                  <TableHead className={headCell}>Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {proposals.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center text-slate-500">
+                    <TableCell colSpan={10} className="text-center text-slate-500">
                       No proposals found.
                     </TableCell>
                   </TableRow>
@@ -662,30 +659,52 @@ export function ProjectProposalsList({
                     const revision = proposal.currentRevision;
                     return (
                       <TableRow key={proposal.id}>
-                        <TableCell className="font-medium">{proposal.proposalNo}</TableCell>
-                        <TableCell>
+                        <TableCell className={bodyCell}>
+                          {renderProposalNoMenu(proposal)}
+                        </TableCell>
+                        <TableCell className={`${bodyCell} text-center`}>
                           {formatRevisionProposalLabel(proposal.currentRevisionNo)}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className={bodyCell}>
                           {revision ? formatDocumentDate(revision.proposalDate) : "—"}
                         </TableCell>
-                        <TableCell>{revision?.customerName ?? "—"}</TableCell>
-                        <TableCell>{revision?.customerMobile ?? "—"}</TableCell>
-                        <TableCell>{proposal.salesUser.name}</TableCell>
-                        <TableCell>{revision?.package.name ?? "—"}</TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className={bodyCell}>
+                          <span
+                            className="block max-w-[12rem] truncate"
+                            title={revision?.customerName ?? undefined}
+                          >
+                            {revision?.customerName ?? "—"}
+                          </span>
+                        </TableCell>
+                        <TableCell className={bodyCell}>
+                          {revision?.customerMobile ?? "—"}
+                        </TableCell>
+                        <TableCell className={bodyCell}>
+                          <span
+                            className="block max-w-[7.5rem] truncate"
+                            title={proposal.salesUser.name}
+                          >
+                            {proposal.salesUser.name}
+                          </span>
+                        </TableCell>
+                        <TableCell className={bodyCell}>
+                          <span
+                            className="block max-w-[11rem] truncate"
+                            title={revision?.package.name ?? undefined}
+                          >
+                            {revision?.package.name ?? "—"}
+                          </span>
+                        </TableCell>
+                        <TableCell className={`${bodyCell} text-right`}>
                           {revision ? formatMoney(revision.finalAmount) : "—"}
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className={`${bodyCell} text-right`}>
                           {revision ? formatMoney(revision.discountAmount) : "—"}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className={bodyCell}>
                           <Badge variant={statusVariant(proposal.status)}>
                             {formatProjectProposalStatus(proposal.status)}
                           </Badge>
-                        </TableCell>
-                        <TableCell className="w-10 px-2 text-center">
-                          {renderProposalActions(proposal)}
                         </TableCell>
                       </TableRow>
                     );

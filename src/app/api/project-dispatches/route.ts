@@ -109,6 +109,11 @@ export async function POST(request: Request) {
         504,
       );
     }
-    throw error;
+    console.error("Project dispatch create failed:", error);
+    return projectDispatchErrorResponse(
+      "INTERNAL_ERROR",
+      "Unable to create project dispatch. Please retry or contact support if this continues.",
+      500,
+    );
   }
 }

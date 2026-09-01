@@ -15,6 +15,18 @@ import {
   systemPurchaseInvoiceNo,
 } from "@/lib/inventory";
 
+type TransferDbClient = PrismaClient | Prisma.TransactionClient;
+
+async function runTransferTransaction<T>(
+  client: TransferDbClient,
+  fn: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+  if ("$transaction" in client && typeof client.$transaction === "function") {
+    return client.$transaction(fn);
+  }
+  return fn(client);
+}
+
 const transferInclude = {
   fromCompany: { select: { id: true, name: true, code: true } },
   toCompany: { select: { id: true, name: true, code: true } },
@@ -375,7 +387,7 @@ export async function getTransferById(
 }
 
 export async function createTransfer(
-  prisma: PrismaClient,
+  prisma: TransferDbClient,
   input: {
     fromCompanyId: string;
     fromWarehouseId: string;
@@ -411,7 +423,7 @@ export async function createTransfer(
 
   const transferNumber = await generateTransferNumber(prisma, input.fromCompanyId);
 
-  return prisma.$transaction(async (tx) => {
+  return runTransferTransaction(prisma, async (tx) => {
     const transfer = await tx.inventoryTransfer.create({
       data: {
         transferNumber,
@@ -457,7 +469,7 @@ export async function createTransfer(
 }
 
 export async function dispatchTransfer(
-  prisma: PrismaClient,
+  prisma: TransferDbClient,
   input: {
     transferId: string;
     companyId: string;
@@ -495,7 +507,7 @@ export async function dispatchTransfer(
     });
   }
 
-  return prisma.$transaction(async (tx) => {
+  return runTransferTransaction(prisma, async (tx) => {
     for (const line of transfer.lines) {
       const qty = decimalToNumber(line.qty);
 
@@ -561,7 +573,7 @@ export async function dispatchTransfer(
 }
 
 export async function receiveTransfer(
-  prisma: PrismaClient,
+  prisma: TransferDbClient,
   input: {
     transferId: string;
     companyId: string;
@@ -614,7 +626,7 @@ export async function receiveTransfer(
 
   const isInterCompany = transfer.fromCompanyId !== transfer.toCompanyId;
 
-  return prisma.$transaction(async (tx) => {
+  return runTransferTransaction(prisma, async (tx) => {
     for (const item of input.lines) {
       const line = lineMap.get(item.lineId)!;
       const qty = item.receivedQty;
@@ -730,7 +742,7 @@ export async function receiveTransfer(
 }
 
 export async function cancelTransfer(
-  prisma: PrismaClient,
+  prisma: TransferDbClient,
   input: {
     transferId: string;
     companyId: string;
@@ -747,7 +759,7 @@ export async function cancelTransfer(
 
   if (!transfer) throw new Error("NOT_FOUND");
 
-  return prisma.$transaction(async (tx) => {
+  return runTransferTransaction(prisma, async (tx) => {
     const updated = await tx.inventoryTransfer.update({
       where: { id: transfer.id },
       data: { status: TransferStatus.CANCELLED },

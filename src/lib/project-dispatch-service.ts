@@ -23,6 +23,7 @@ import {
 import { getKitComponentsForFulfillment } from "@/lib/product-service";
 import { generateProjectDispatchNumber } from "@/lib/projects";
 import {
+  buildProjectDispatchSourceWarehouseIds,
   executeProjectDispatchStockMove,
   listHoWarehousePools,
 } from "@/lib/project-stock-service";
@@ -559,12 +560,15 @@ async function validateProjectDispatchLines(
     if (uniqueIds.length !== allSerialIds.length) throw new Error("INVALID_SERIAL_SELECTION");
 
     const hoPools = await listHoWarehousePools(prisma, input.companyId);
-    const hoWarehouseIds = hoPools.map((pool) => pool.warehouseId);
+    const sourceWarehouseIds = buildProjectDispatchSourceWarehouseIds(
+      input.warehouseId,
+      hoPools.map((pool) => pool.warehouseId),
+    );
 
     const selectable = await prisma.inventorySerial.findMany({
       where: {
         id: { in: uniqueIds },
-        currentWarehouseId: { in: hoWarehouseIds },
+        currentWarehouseId: { in: sourceWarehouseIds },
         status: SerialStatus.AVAILABLE,
       },
       include: { product: { select: { id: true, serialTracking: true } } },
@@ -892,11 +896,15 @@ export async function listAvailableSerialsForProjectDispatch(
   if (!project) throw new Error("NOT_FOUND");
 
   const hoPools = await listHoWarehousePools(prisma, input.companyId);
+  const sourceWarehouseIds = buildProjectDispatchSourceWarehouseIds(
+    project.warehouseId,
+    hoPools.map((pool) => pool.warehouseId),
+  );
 
   return prisma.inventorySerial.findMany({
     where: {
       productId: input.productId,
-      currentWarehouseId: { in: hoPools.map((pool) => pool.warehouseId) },
+      currentWarehouseId: { in: sourceWarehouseIds },
       status: SerialStatus.AVAILABLE,
     },
     select: { id: true, serialNumber: true, status: true },
@@ -936,12 +944,15 @@ export async function lookupSerialsForProjectDispatch(
 ) {
   const project = await prisma.project.findFirst({
     where: { id: input.projectId, companyId: input.companyId },
-    select: { id: true },
+    select: { id: true, warehouseId: true },
   });
   if (!project) throw new Error("NOT_FOUND");
 
   const hoPools = await listHoWarehousePools(prisma, input.companyId);
-  const hoWarehouseIds = hoPools.map((pool) => pool.warehouseId);
+  const sourceWarehouseIds = buildProjectDispatchSourceWarehouseIds(
+    project.warehouseId,
+    hoPools.map((pool) => pool.warehouseId),
+  );
 
   const valid: Array<{
     id: string;
@@ -964,7 +975,7 @@ export async function lookupSerialsForProjectDispatch(
     const serial = await prisma.inventorySerial.findFirst({
       where: {
         serialNumber,
-        currentWarehouseId: { in: hoWarehouseIds },
+        currentWarehouseId: { in: sourceWarehouseIds },
         status: SerialStatus.AVAILABLE,
         ...(input.productId ? { productId: input.productId } : {}),
       },
@@ -976,7 +987,10 @@ export async function lookupSerialsForProjectDispatch(
     });
 
     if (!serial) {
-      invalid.push({ serialNumber, reason: "Serial not found or not available at HO." });
+      invalid.push({
+        serialNumber,
+        reason: "Serial not found or not available at Projects warehouse or HO.",
+      });
       continue;
     }
 

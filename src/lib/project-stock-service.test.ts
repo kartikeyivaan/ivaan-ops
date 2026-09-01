@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildProjectDispatchSourceWarehouseIds,
   computeProRataReturnAllocations,
+  isValidProjectDispatchSerialLocation,
   parseStockSourceLog,
   reduceStockSourceLog,
 } from "@/lib/project-stock-service";
@@ -65,5 +67,23 @@ describe("reduceStockSourceLog", () => {
     expect(
       reduceStockSourceLog([{ companyId: "ise", warehouseId: "ise-ho", qty: 3 }], 3),
     ).toEqual([]);
+  });
+});
+
+describe("buildProjectDispatchSourceWarehouseIds", () => {
+  it("lists Projects warehouse first and dedupes HO ids", () => {
+    expect(
+      buildProjectDispatchSourceWarehouseIds("projects-wh", ["ise-ho", "pcm-ho", "projects-wh"]),
+    ).toEqual(["projects-wh", "ise-ho", "pcm-ho"]);
+  });
+});
+
+describe("isValidProjectDispatchSerialLocation", () => {
+  it("accepts Projects warehouse and HO pools only", () => {
+    const hoIds = ["ise-ho", "pcm-ho"];
+    expect(isValidProjectDispatchSerialLocation("projects-wh", "projects-wh", hoIds)).toBe(true);
+    expect(isValidProjectDispatchSerialLocation("ise-ho", "projects-wh", hoIds)).toBe(true);
+    expect(isValidProjectDispatchSerialLocation("other-wh", "projects-wh", hoIds)).toBe(false);
+    expect(isValidProjectDispatchSerialLocation(null, "projects-wh", hoIds)).toBe(false);
   });
 });

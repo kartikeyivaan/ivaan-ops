@@ -36,6 +36,14 @@ const SERVICE_ERRORS: Record<string, { message: string; status: number }> = {
     message: "Insufficient available stock to complete this dispatch.",
     status: 400,
   },
+  INSUFFICIENT_STOCK: {
+    message: "Insufficient available stock to complete this dispatch.",
+    status: 400,
+  },
+  INVENTORY_OPS_BLOCKED: {
+    message: "Inventory operations are blocked until Opening Stock Audit is approved for all warehouses.",
+    status: 423,
+  },
   WRONG_PRODUCT: { message: "Serial belongs to a different product.", status: 400 },
   SERIAL_NOT_FOUND: { message: "Serial not found or not available.", status: 404 },
 };

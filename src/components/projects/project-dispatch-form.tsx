@@ -20,6 +20,7 @@ import {
   parseSerialInput,
   serialsPerEntryLimitMessage,
 } from "@/lib/inventory";
+import { parseApiJson } from "@/lib/api-response";
 import { normalizeMobileNumber } from "@/lib/phone";
 import type { DispatchableProject } from "@/lib/project-dispatch-service";
 import {
@@ -278,14 +279,22 @@ export function ProjectDispatchForm({ defaultProjectId }: { defaultProjectId?: s
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const data = await response.json();
+      const data = await parseApiJson<{ id?: string; message?: string }>(response);
       if (!response.ok) {
         setError(data.message ?? "Unable to create project dispatch.");
         return;
       }
+      if (!data.id) {
+        setError("Dispatch was created but the response was incomplete. Refresh and check dispatch history.");
+        return;
+      }
       router.push(`/inventory/dispatches/projects/${data.id}`);
-    } catch {
-      setError("Unable to create project dispatch. Check your connection and retry.");
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message && err.message !== "Failed to fetch"
+          ? err.message
+          : "Unable to create project dispatch. Check your connection and retry.";
+      setError(message);
     } finally {
       setLoading(false);
     }

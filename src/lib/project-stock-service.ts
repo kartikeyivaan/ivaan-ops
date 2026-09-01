@@ -339,7 +339,7 @@ export async function executeTransferBatches(
   for (const batch of input.batches) {
     if (batch.lines.length === 0) continue;
 
-    const transfer = await createTransfer(prisma as PrismaClient, {
+    const transfer = await createTransfer(prisma, {
       fromCompanyId: batch.fromCompanyId,
       fromWarehouseId: batch.fromWarehouseId,
       toWarehouseId: input.toWarehouseId,
@@ -348,7 +348,7 @@ export async function executeTransferBatches(
       createdById: input.performedById,
     });
 
-    await dispatchTransfer(prisma as PrismaClient, {
+    await dispatchTransfer(prisma, {
       transferId: transfer.id,
       companyId: batch.fromCompanyId,
       dispatchedById: input.performedById,
@@ -359,7 +359,7 @@ export async function executeTransferBatches(
       include: { lines: true },
     });
 
-    await receiveTransfer(prisma as PrismaClient, {
+    await receiveTransfer(prisma, {
       transferId: transfer.id,
       companyId: input.toCompanyId,
       receivedById: input.performedById,
@@ -436,6 +436,31 @@ export async function listHoWarehousePools(
   return pools;
 }
 
+/** Warehouses eligible for project dispatch serial lookup: Projects WH first, then HO pools. */
+export function buildProjectDispatchSourceWarehouseIds(
+  projectsWarehouseId: string,
+  hoWarehouseIds: string[],
+): string[] {
+  const ids = [projectsWarehouseId];
+  for (const warehouseId of hoWarehouseIds) {
+    if (warehouseId !== projectsWarehouseId) ids.push(warehouseId);
+  }
+  return ids;
+}
+
+export function isValidProjectDispatchSerialLocation(
+  warehouseId: string | null | undefined,
+  projectsWarehouseId: string,
+  hoWarehouseIds: Iterable<string>,
+): boolean {
+  if (!warehouseId) return false;
+  if (warehouseId === projectsWarehouseId) return true;
+  for (const hoWarehouseId of hoWarehouseIds) {
+    if (warehouseId === hoWarehouseId) return true;
+  }
+  return false;
+}
+
 type DispatchStockPool = HoWarehousePool & { serialIds?: string[]; qty: number };
 
 function groupSerialsForDispatch(
@@ -505,11 +530,26 @@ export async function executeProjectDispatchStockMove(
     }
 
     const hoWarehouseIds = new Set(pools.map((pool) => pool.warehouseId));
-    if (serials.some((serial) => !serial.currentWarehouseId || !hoWarehouseIds.has(serial.currentWarehouseId))) {
+    if (
+      serials.some(
+        (serial) =>
+          !isValidProjectDispatchSerialLocation(
+            serial.currentWarehouseId,
+            input.projectsWarehouseId,
+            hoWarehouseIds,
+          ),
+      )
+    ) {
       throw new Error("INVALID_SERIAL_SELECTION");
     }
 
-    for (const group of groupSerialsForDispatch(serials)) {
+    const hoSerials = serials.filter(
+      (serial) =>
+        serial.currentWarehouseId !== input.projectsWarehouseId &&
+        hoWarehouseIds.has(serial.currentWarehouseId!),
+    );
+
+    for (const group of groupSerialsForDispatch(hoSerials)) {
       batches.push({
         fromCompanyId: group.companyId,
         fromWarehouseId: group.warehouseId,
@@ -524,6 +564,15 @@ export async function executeProjectDispatchStockMove(
     }
   } else {
     let remaining = input.qty;
+
+    const atProjects = await getPhysicalAvailableQtyAtWarehouse(
+      prisma as PrismaClient,
+      input.projectCompanyId,
+      input.projectsWarehouseId,
+      input.productId,
+    );
+    remaining -= Math.min(remaining, atProjects);
+
     const preferredSources = parseStockSourceLog(input.stockSourceLog);
     const orderedPools: HoWarehousePool[] = [];
 

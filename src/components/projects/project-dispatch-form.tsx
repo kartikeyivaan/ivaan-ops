@@ -141,6 +141,21 @@ export function ProjectDispatchForm({ defaultProjectId }: { defaultProjectId?: s
     });
   }
 
+  async function addSerialsFromPaste(lineIndex: number) {
+    const line = linesRef.current[lineIndex];
+    if (!line || !projectIdRef.current) return;
+
+    const serialNumbers = parseSerialPaste(line.pasteText);
+    if (serialNumbers.length === 0) {
+      updateLine(lineIndex, {
+        invalidSerials: [{ serialNumber: "", reason: "Paste or type at least one serial number." }],
+      });
+      return;
+    }
+
+    await lookupAndAddSerials(lineIndex, serialNumbers);
+  }
+
   async function lookupAndAddSerials(
     lineIndex: number,
     serialNumbers: string[],
@@ -181,16 +196,23 @@ export function ProjectDispatchForm({ defaultProjectId }: { defaultProjectId?: s
 
       const latest = linesRef.current[lineIndex] ?? line;
       const existingIds = new Set(latest.serials.map((serial) => serial.id));
+      const existingNumbers = new Set(
+        latest.serials.map((serial) => normalizeSerialNumber(serial.serialNumber)),
+      );
       const added: SelectedSerial[] = [];
       const invalid: InvalidSerial[] = [...(data.invalid ?? [])];
 
       for (const found of data.valid ?? []) {
-        if (existingIds.has(found.id)) {
+        if (
+          existingIds.has(found.id) ||
+          existingNumbers.has(normalizeSerialNumber(found.serialNumber))
+        ) {
           invalid.push({ serialNumber: found.serialNumber, reason: "Already added." });
           continue;
         }
         added.push({ id: found.id, serialNumber: found.serialNumber });
         existingIds.add(found.id);
+        existingNumbers.add(normalizeSerialNumber(found.serialNumber));
       }
 
       const serials = [...latest.serials, ...added];
@@ -389,21 +411,36 @@ export function ProjectDispatchForm({ defaultProjectId }: { defaultProjectId?: s
 
               {line.serialTracking ? (
                 <div className="mt-4 space-y-3">
-                  <div className="flex flex-wrap gap-2">
-                    <ScanSerialsButton onClick={() => setScannerLineIndex(index)} />
-                    <Input
-                      placeholder="Paste serial numbers…"
+                  <div className="space-y-2">
+                    <Label>Serial numbers</Label>
+                    <ScanSerialsButton
+                      className="h-12 w-full border-emerald-300 bg-emerald-50 text-base text-emerald-900 hover:bg-emerald-100"
+                      disabled={line.lookingUp || !projectId}
+                      onClick={() => setScannerLineIndex(index)}
+                    />
+                    <p className="text-xs text-slate-500">
+                      Scan, paste, or type serials (newline, comma, or semicolon separated).
+                    </p>
+                    <textarea
+                      className="flex min-h-28 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-base ring-offset-white placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+                      placeholder={"SN-001\nSN-002\nSN-003"}
                       value={line.pasteText}
                       onChange={(e) => updateLine(index, { pasteText: e.target.value })}
-                      className="min-w-[200px] flex-1"
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+                          event.preventDefault();
+                          void addSerialsFromPaste(index);
+                        }
+                      }}
                     />
                     <Button
                       type="button"
                       variant="outline"
-                      disabled={line.lookingUp}
-                      onClick={() => void lookupAndAddSerials(index, parseSerialPaste(line.pasteText))}
+                      className="h-12"
+                      disabled={line.lookingUp || !line.pasteText.trim()}
+                      onClick={() => void addSerialsFromPaste(index)}
                     >
-                      Add Serials
+                      {line.lookingUp ? "Checking…" : "Add Serials"}
                     </Button>
                   </div>
                   {line.serials.length > 0 ? (

@@ -162,13 +162,15 @@ export function serialsPerEntryLimitMessage(count: number) {
 }
 
 /**
- * Split pasted serial text on newlines/commas/semicolons/tabs.
+ * Split pasted serial text on any whitespace, commas, or semicolons.
  * Strips `[QR]` scanner noise and empty tokens.
+ * Whitespace counts as a separator because single-line inputs collapse pasted
+ * newlines into spaces, which would otherwise merge every serial into one token.
  */
 export function parseSerialInput(text: string): string[] {
   return text
     .replace(SERIAL_QR_NOISE, " ")
-    .split(/[\n,;\t]+/)
+    .split(/[\s,;]+/)
     .map((part) => part.trim())
     .filter(Boolean);
 }

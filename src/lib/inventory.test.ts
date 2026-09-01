@@ -46,6 +46,12 @@ describe("inventory helpers", () => {
     expect(parseSerialInput("[QR]")).toEqual([]);
   });
 
+  it("splits space-separated serials from single-line pastes", () => {
+    expect(
+      parseSerialInput("[QR] WS08269075967868 [QR] WS08269075967863 [QR] WS08269075949036"),
+    ).toEqual(["WS08269075967868", "WS08269075967863", "WS08269075949036"]);
+  });
+
   it("detects Waaree panel serial format and brand", () => {
     expect(isWaareePanelSerial("WS07269074147109")).toBe(true);
     expect(isWaareePanelSerial("ws07269074147109")).toBe(true);

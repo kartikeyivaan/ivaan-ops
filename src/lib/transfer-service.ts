@@ -68,7 +68,7 @@ type TransferLineInput = {
 };
 
 async function getWarehouseNames(
-  prisma: PrismaClient,
+  prisma: TransferDbClient,
   fromWarehouseId: string,
   toWarehouseId: string,
 ) {
@@ -84,7 +84,7 @@ async function getWarehouseNames(
 }
 
 async function validateTransferLineStock(
-  prisma: PrismaClient,
+  prisma: TransferDbClient,
   input: {
     companyId: string;
     warehouseId: string;

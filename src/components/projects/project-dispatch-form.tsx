@@ -49,6 +49,8 @@ type LineDraft = {
   lookingUp: boolean;
 };
 
+const DEFAULT_VEHICLE_NO = "MH19CY7902";
+
 function parseSerialPaste(text: string): string[] {
   return parseSerialInput(text);
 }
@@ -57,7 +59,7 @@ export function ProjectDispatchForm({ defaultProjectId }: { defaultProjectId?: s
   const router = useRouter();
   const [projects, setProjects] = useState<DispatchableProject[]>([]);
   const [projectId, setProjectId] = useState(defaultProjectId ?? "");
-  const [vehicleNo, setVehicleNo] = useState("");
+  const [vehicleNo, setVehicleNo] = useState(DEFAULT_VEHICLE_NO);
   const [receiverName, setReceiverName] = useState("");
   const [receiverMobile, setReceiverMobile] = useState("");
   const [signatureData, setSignatureData] = useState<string | null>(null);
@@ -95,7 +97,7 @@ export function ProjectDispatchForm({ defaultProjectId }: { defaultProjectId?: s
     if (linesForProjectIdRef.current === project.id) return;
 
     linesForProjectIdRef.current = project.id;
-    setVehicleNo(project.draft?.vehicleNo ?? "");
+    setVehicleNo(project.draft?.vehicleNo ?? DEFAULT_VEHICLE_NO);
     setReceiverName(project.draft?.receiverName ?? "");
     setReceiverMobile(project.draft?.receiverMobile ?? "");
     setRemarks(project.draft?.remarks ?? "");
@@ -254,8 +256,8 @@ export function ProjectDispatchForm({ defaultProjectId }: { defaultProjectId?: s
   );
 
   async function handleSubmit() {
-    if (!vehicleNo.trim() || !receiverName.trim() || !receiverMobile.trim()) {
-      setError("Vehicle number, receiver name, and receiver mobile are required.");
+    if (!vehicleNo.trim() || !receiverName.trim()) {
+      setError("Vehicle number and receiver name are required.");
       return;
     }
 
@@ -279,7 +281,7 @@ export function ProjectDispatchForm({ defaultProjectId }: { defaultProjectId?: s
       projectId,
       vehicleNo: vehicleNo.trim(),
       receiverName: receiverName.trim(),
-      receiverMobile: normalizeMobileNumber(receiverMobile),
+      receiverMobile: receiverMobile.trim() ? normalizeMobileNumber(receiverMobile) : undefined,
       signatureData: signatureData || undefined,
       remarks: remarks || undefined,
       confirm: true,
@@ -372,7 +374,7 @@ export function ProjectDispatchForm({ defaultProjectId }: { defaultProjectId?: s
             <Input className="h-12 text-base" value={receiverName} onChange={(e) => setReceiverName(e.target.value)} />
           </div>
           <div className="space-y-2">
-            <Label>Receiver Mobile *</Label>
+            <Label>Receiver Mobile</Label>
             <Input className="h-12 text-base" value={receiverMobile} onChange={(e) => setReceiverMobile(e.target.value)} />
           </div>
           <div className="space-y-2 md:col-span-2">

@@ -549,177 +549,205 @@ enum ModuleMasteryResetPeriod {
   MONTHLY
 }
 
+enum CustomerRefundStatus {
+  DRAFT
+  PENDING_APPROVAL
+  REJECTED
+  APPROVED
+  PROCESSING
+  REFUNDED
+  CANCELLED
+  FAILED
+}
+
+enum CustomerRefundReason {
+  ORDER_CANCELLED
+  EXCESS_PAYMENT
+  DUPLICATE_PAYMENT
+  PARTIAL_ORDER_CANCELLATION
+  PAYMENT_RECEIVED_IN_ERROR
+  OTHER
+}
+
 model Company {
-  id                  String   @id @default(uuid()) @db.Uuid
-  name                String
-  code                String   @unique
-  logoUrl             String?  @map("logo_url")
-  digitalSignatureUrl String?  @map("digital_signature_url")
-  address             String?
-  city                String?
-  state               String?
-  pincode             String?
-  phone               String?
-  email               String?
-  gstNumber           String?  @map("gst_number")
-  tagline             String?
-  bankDetails         String?  @map("bank_details")
-  termsAndConditions  String?  @map("terms_and_conditions")
+  id                         String                @id @default(uuid()) @db.Uuid
+  name                       String
+  code                       String                @unique
+  logoUrl                    String?               @map("logo_url")
+  digitalSignatureUrl        String?               @map("digital_signature_url")
+  address                    String?
+  city                       String?
+  state                      String?
+  pincode                    String?
+  phone                      String?
+  email                      String?
+  gstNumber                  String?               @map("gst_number")
+  tagline                    String?
+  bankDetails                String?               @map("bank_details")
+  termsAndConditions         String?               @map("terms_and_conditions")
   /// HH:mm local cut-off for ready-stock same-day dispatch (e.g. "15:00"). Null = preserve legacy behaviour.
-  dispatchCutoffTime  String?  @map("dispatch_cutoff_time")
+  dispatchCutoffTime         String?               @map("dispatch_cutoff_time")
   /// Opening Stock Audit gate: ops blocked while IN_PROGRESS until all warehouses approved.
   inventoryOpeningPhase      InventoryOpeningPhase @default(NOT_STARTED) @map("inventory_opening_phase")
   inventoryTrackingStartDate DateTime?             @map("inventory_tracking_start_date")
   /// Sandbox company used only while Learning Mode is on. Never use for real ops.
-  isPractice          Boolean  @default(false) @map("is_practice")
-  isActive            Boolean  @default(true) @map("is_active")
-  createdAt           DateTime @default(now()) @map("created_at")
-  updatedAt           DateTime @updatedAt @map("updated_at")
+  isPractice                 Boolean               @default(false) @map("is_practice")
+  isActive                   Boolean               @default(true) @map("is_active")
+  createdAt                  DateTime              @default(now()) @map("created_at")
+  updatedAt                  DateTime              @updatedAt @map("updated_at")
 
-  warehouses            Warehouse[]
-  userCompanies         UserCompany[]
-  inventoryLots         InventoryLot[]
-  inventoryTransactions InventoryTransaction[]
-  inventoryEvents       InventoryEvent[]
-  inventorySafetyStock  InventorySafetyStock[]
-  workingDays           CompanyWorkingDay[]
-  holidays              CompanyHoliday[]
-  transfersFrom         InventoryTransfer[]    @relation("TransferFromCompany")
-  transfersTo           InventoryTransfer[]    @relation("TransferToCompany")
-  crossCompanyPlansFrom PiCrossCompanyTransferPlan[] @relation("CrossCompanyPlanFrom")
-  crossCompanyPlansTo   PiCrossCompanyTransferPlan[] @relation("CrossCompanyPlanTo")
-  quotations            Quotation[]
-  quotationWarningLogs  QuotationWarningLog[]
-  proformaInvoices      ProformaInvoice[]
-  payments              Payment[]
-  dispatches            Dispatch[]
-  invoiceHandovers      InvoiceHandover[]
-  documentationRecords  DocumentationRecord[]
-  projectProposals      ProjectProposal[]
-  projectEnquiries      ProjectEnquiry[]
-  executionProjects     Project[]
-  projectDispatches     ProjectDispatch[]
-  serviceRequests       ServiceRequest[]
-  openingAudits         InventoryOpeningAudit[]
-  dailyAudits           InventoryDailyAudit[]
-  damageReports         InventoryDamageReport[]
-  incomingLotChanges    IncomingLotChangeRequest[]
-  piEditRequests        ProformaInvoiceEditRequest[]
-  purchaseRequests      PurchaseRequest[]
-  manualStockEntries    ManualStockEntry[]
-  salesModuleTargets    SalesModuleTarget[]
-  moduleMasteryConfig   ModuleMasteryConfig?
-  moduleMasteryLevels   ModuleMasteryLevel[]
-  moduleMasteryProgress ExecutiveModuleMasteryProgress[]
+  warehouses              Warehouse[]
+  userCompanies           UserCompany[]
+  inventoryLots           InventoryLot[]
+  inventoryTransactions   InventoryTransaction[]
+  inventoryEvents         InventoryEvent[]
+  inventorySafetyStock    InventorySafetyStock[]
+  workingDays             CompanyWorkingDay[]
+  holidays                CompanyHoliday[]
+  transfersFrom           InventoryTransfer[]               @relation("TransferFromCompany")
+  transfersTo             InventoryTransfer[]               @relation("TransferToCompany")
+  crossCompanyPlansFrom   PiCrossCompanyTransferPlan[]      @relation("CrossCompanyPlanFrom")
+  crossCompanyPlansTo     PiCrossCompanyTransferPlan[]      @relation("CrossCompanyPlanTo")
+  quotations              Quotation[]
+  quotationWarningLogs    QuotationWarningLog[]
+  proformaInvoices        ProformaInvoice[]
+  payments                Payment[]
+  dispatches              Dispatch[]
+  invoiceHandovers        InvoiceHandover[]
+  documentationRecords    DocumentationRecord[]
+  projectProposals        ProjectProposal[]
+  projectEnquiries        ProjectEnquiry[]
+  executionProjects       Project[]
+  projectDispatches       ProjectDispatch[]
+  serviceRequests         ServiceRequest[]
+  openingAudits           InventoryOpeningAudit[]
+  dailyAudits             InventoryDailyAudit[]
+  damageReports           InventoryDamageReport[]
+  incomingLotChanges      IncomingLotChangeRequest[]
+  piEditRequests          ProformaInvoiceEditRequest[]
+  purchaseRequests        PurchaseRequest[]
+  manualStockEntries      ManualStockEntry[]
+  salesModuleTargets      SalesModuleTarget[]
+  moduleMasteryConfig     ModuleMasteryConfig?
+  moduleMasteryLevels     ModuleMasteryLevel[]
+  moduleMasteryProgress   ExecutiveModuleMasteryProgress[]
   moduleLevelAchievements ExecutiveModuleLevelAchievement[]
-  bankAccounts          BankAccount[]
+  bankAccounts            BankAccount[]
+  customerRefunds         CustomerRefund[]
 
   @@map("companies")
 }
 
 model User {
-  id                     String     @id @default(uuid()) @db.Uuid
-  name                   String
-  email                  String     @unique
-  mobile                 String?
-  officialContactNumber  String?    @map("official_contact_number")
-  personalContactNumber  String?    @map("personal_contact_number")
-  digitalVisitingCardUrl String?    @map("digital_visiting_card_url")
-  passwordHash           String     @map("password_hash")
-  mustChangePassword     Boolean    @default(true) @map("must_change_password")
-  passwordChangedAt      DateTime?  @map("password_changed_at")
-  failedLoginAttempts    Int        @default(0) @map("failed_login_attempts")
-  lockedUntil            DateTime?  @map("locked_until")
-  status                 UserStatus @default(ACTIVE)
-  learningPromptDismissedAt DateTime? @map("learning_prompt_dismissed_at")
-  createdAt              DateTime   @default(now()) @map("created_at")
-  updatedAt              DateTime   @updatedAt @map("updated_at")
+  id                        String     @id @default(uuid()) @db.Uuid
+  name                      String
+  email                     String     @unique
+  mobile                    String?
+  officialContactNumber     String?    @map("official_contact_number")
+  personalContactNumber     String?    @map("personal_contact_number")
+  digitalVisitingCardUrl    String?    @map("digital_visiting_card_url")
+  passwordHash              String     @map("password_hash")
+  mustChangePassword        Boolean    @default(true) @map("must_change_password")
+  passwordChangedAt         DateTime?  @map("password_changed_at")
+  failedLoginAttempts       Int        @default(0) @map("failed_login_attempts")
+  lockedUntil               DateTime?  @map("locked_until")
+  status                    UserStatus @default(ACTIVE)
+  learningPromptDismissedAt DateTime?  @map("learning_prompt_dismissed_at")
+  createdAt                 DateTime   @default(now()) @map("created_at")
+  updatedAt                 DateTime   @updatedAt @map("updated_at")
 
-  roles                             UserRole[]
-  companies                         UserCompany[]
-  learningProgress                  LearningProgress[]
-  auditLogs                         AuditLog[]                     @relation("AuditPerformedBy")
-  notifications                     Notification[]
-  assignedCustomers                 Customer[]                     @relation("AssignedSalesExecutive")
-  createdCustomers                  Customer[]                     @relation("CustomerCreatedBy")
-  updatedCustomers                  Customer[]                     @relation("CustomerUpdatedBy")
-  createdLots                       InventoryLot[]                 @relation("LotCreatedBy")
-  inventoryTransactions             InventoryTransaction[]         @relation("TransactionCreatedBy")
-  createdTransfers                  InventoryTransfer[]            @relation("TransferCreatedBy")
-  dispatchedTransfers               InventoryTransfer[]            @relation("TransferDispatchedBy")
-  receivedTransfers                 InventoryTransfer[]            @relation("TransferReceivedBy")
-  approvedTransfers                 InventoryTransfer[]            @relation("TransferApprovedBy")
-  crossCompanyPlansRequested        PiCrossCompanyTransferPlan[]   @relation("CrossCompanyPlanRequestedBy")
-  crossCompanyPlansApproved         PiCrossCompanyTransferPlan[]   @relation("CrossCompanyPlanApprovedBy")
-  salesQuotations                   Quotation[]                    @relation("QuotationSalesUser")
-  salesProformaInvoices             ProformaInvoice[]              @relation("ProformaSalesUser")
-  bookedProformaInvoices            ProformaInvoice[]              @relation("ProformaBookedBy")
-  dispatchTodayMarkedPis            ProformaInvoice[]              @relation("ProformaDispatchTodayMarkedBy")
-  creditRequestedProformaInvoices   ProformaInvoice[]              @relation("ProformaCreditRequestedBy")
-  creditSmApprovedProformaInvoices  ProformaInvoice[]              @relation("ProformaCreditSmApprovedBy")
-  creditAccountsApprovedProformaInvoices ProformaInvoice[]         @relation("ProformaCreditAccountsApprovedBy")
-  recordedPayments                  Payment[]                      @relation("PaymentRecordedBy")
-  createdDispatches                 Dispatch[]                     @relation("DispatchCreatedBy")
-  dispatchedOrders                  Dispatch[]                     @relation("DispatchDispatchedBy")
-  approvalRequests                  ApprovalRequest[]              @relation("ApprovalRequestedBy")
-  approvalDecisions                 ApprovalRequest[]              @relation("ApprovalDecidedBy")
-  salesProjectProposals             ProjectProposal[]              @relation("ProjectProposalSalesUser")
-  createdProjectProposals           ProjectProposal[]              @relation("ProjectProposalCreatedBy")
-  updatedProjectProposals           ProjectProposal[]              @relation("ProjectProposalUpdatedBy")
-  convertedProjectProposals         ProjectProposal[]              @relation("ProjectProposalConvertedBy")
-  createdProjectProposalRevisions   ProjectProposalRevision[]      @relation("ProjectProposalRevisionCreatedBy")
-  updatedProjectProposalRevisions   ProjectProposalRevision[]      @relation("ProjectProposalRevisionUpdatedBy")
-  projectProposalStatusChanges      ProjectProposalStatusHistory[] @relation("ProjectProposalStatusChangedBy")
-  projectProposalApprovalsRequested ProjectProposalApproval[]      @relation("ProjectProposalApprovalRequestedBy")
-  projectProposalApprovalsDecided   ProjectProposalApproval[]      @relation("ProjectProposalApprovalDecidedBy")
-  salesProjectEnquiries             ProjectEnquiry[]               @relation("ProjectEnquirySalesUser")
-  createdProjectEnquiries           ProjectEnquiry[]               @relation("ProjectEnquiryCreatedBy")
-  updatedProjectEnquiries           ProjectEnquiry[]               @relation("ProjectEnquiryUpdatedBy")
-  projectEnquiryFollowups           ProjectEnquiryFollowup[]       @relation("ProjectEnquiryFollowupCreatedBy")
-  assignedServiceRequests           ServiceRequest[]               @relation("ServiceAssignedTo")
-  createdServiceRequests            ServiceRequest[]               @relation("ServiceCreatedBy")
-  serviceUpdatesAssigned            ServiceUpdate[]                @relation("ServiceUpdateAssignedExecutive")
-  serviceUpdatesCreated             ServiceUpdate[]                @relation("ServiceUpdateCreatedBy")
-  serviceAttachmentsUploaded        ServiceAttachment[]            @relation("ServiceAttachmentUploadedBy")
-  servicePaymentsRecorded           ServicePayment[]               @relation("ServicePaymentRecordedBy")
-  inventoryEventsCreated            InventoryEvent[]               @relation("InventoryEventCreatedBy")
-  inventoryEventsUpdated            InventoryEvent[]               @relation("InventoryEventUpdatedBy")
-  safetyStockCreated                InventorySafetyStock[]         @relation("SafetyStockCreatedBy")
-  safetyStockUpdated                InventorySafetyStock[]         @relation("SafetyStockUpdatedBy")
-  quotationWarningsProceeded        QuotationWarningLog[]          @relation("QuotationWarningProceededBy")
-  invoiceHandoversRecorded          InvoiceHandover[]              @relation("InvoiceHandoverRecordedBy")
-  documentationAssigned             DocumentationRecord[]          @relation("DocumentationAssignedTo")
-  documentationCompleted            DocumentationRecord[]          @relation("DocumentationCompletedBy")
-  documentationStatusChanges        DocumentationStatusHistory[]   @relation("DocumentationStatusChangedBy")
-  documentationAssignments          DocumentationAssignmentHistory[] @relation("DocumentationAssignmentChangedBy")
-  openingAuditsCreated              InventoryOpeningAudit[]        @relation("OpeningAuditCreatedBy")
-  openingAuditsSubmitted            InventoryOpeningAudit[]        @relation("OpeningAuditSubmittedBy")
-  openingAuditsApproved             InventoryOpeningAudit[]        @relation("OpeningAuditApprovedBy")
-  dailyAuditsCreated                InventoryDailyAudit[]          @relation("DailyAuditCreatedBy")
-  dailyAuditsSubmitted              InventoryDailyAudit[]          @relation("DailyAuditSubmittedBy")
-  damageReportsRequested            InventoryDamageReport[]        @relation("DamageReportRequestedBy")
-  damageReportsDecided              InventoryDamageReport[]        @relation("DamageReportDecidedBy")
-  incomingLotChangesRequested       IncomingLotChangeRequest[]     @relation("IncomingLotChangeRequestedBy")
-  incomingLotChangesDecided         IncomingLotChangeRequest[]     @relation("IncomingLotChangeDecidedBy")
-  piEditsRequested                  ProformaInvoiceEditRequest[]   @relation("PiEditRequestedBy")
-  piEditsDecided                    ProformaInvoiceEditRequest[]   @relation("PiEditDecidedBy")
-  purchaseRequestsRequested         PurchaseRequest[]              @relation("PurchaseRequestRequestedBy")
-  purchaseRequestsUpdated           PurchaseRequest[]              @relation("PurchaseRequestUpdatedBy")
-  manualStockEntriesCreated         ManualStockEntry[]             @relation("ManualStockEntryCreatedBy")
-  createdExecutionProjects          Project[]                      @relation("ProjectCreatedBy")
-  updatedExecutionProjects          Project[]                      @relation("ProjectUpdatedBy")
-  closedExecutionProjects           Project[]                      @relation("ProjectClosedBy")
-  approvedMaterialAssignments       ProjectMaterialAssignment[]    @relation("ProjectMaterialApprovedBy")
-  createdProjectDispatches          ProjectDispatch[]              @relation("ProjectDispatchCreatedBy")
-  salesModuleTargetsAsExecutive     SalesModuleTarget[]            @relation("SalesModuleTargetExecutive")
-  salesModuleTargetsCreated         SalesModuleTarget[]            @relation("SalesModuleTargetCreatedBy")
-  salesModuleTargetsUpdated         SalesModuleTarget[]            @relation("SalesModuleTargetUpdatedBy")
-  moduleMasteryProgress             ExecutiveModuleMasteryProgress[] @relation("ModuleMasteryProgressExecutive")
-  moduleLevelAchievements           ExecutiveModuleLevelAchievement[] @relation("ModuleLevelAchievementExecutive")
-  bankStatementImportsUploaded      BankStatementImport[]            @relation("BankStatementImportUploadedBy")
-  bankTransactionIssuesResolved     BankTransactionIssue[]           @relation("BankTransactionIssueResolvedBy")
-  bankTransactionIssuesIgnored      BankTransactionIssue[]           @relation("BankTransactionIssueIgnoredBy")
-  bankPaymentAllocationsCreated     BankPaymentAllocation[]          @relation("BankPaymentAllocationCreatedBy")
+  roles                                  UserRole[]
+  companies                              UserCompany[]
+  learningProgress                       LearningProgress[]
+  auditLogs                              AuditLog[]                        @relation("AuditPerformedBy")
+  notifications                          Notification[]
+  assignedCustomers                      Customer[]                        @relation("AssignedSalesExecutive")
+  createdCustomers                       Customer[]                        @relation("CustomerCreatedBy")
+  updatedCustomers                       Customer[]                        @relation("CustomerUpdatedBy")
+  createdLots                            InventoryLot[]                    @relation("LotCreatedBy")
+  inventoryTransactions                  InventoryTransaction[]            @relation("TransactionCreatedBy")
+  createdTransfers                       InventoryTransfer[]               @relation("TransferCreatedBy")
+  dispatchedTransfers                    InventoryTransfer[]               @relation("TransferDispatchedBy")
+  receivedTransfers                      InventoryTransfer[]               @relation("TransferReceivedBy")
+  approvedTransfers                      InventoryTransfer[]               @relation("TransferApprovedBy")
+  crossCompanyPlansRequested             PiCrossCompanyTransferPlan[]      @relation("CrossCompanyPlanRequestedBy")
+  crossCompanyPlansApproved              PiCrossCompanyTransferPlan[]      @relation("CrossCompanyPlanApprovedBy")
+  salesQuotations                        Quotation[]                       @relation("QuotationSalesUser")
+  salesProformaInvoices                  ProformaInvoice[]                 @relation("ProformaSalesUser")
+  bookedProformaInvoices                 ProformaInvoice[]                 @relation("ProformaBookedBy")
+  dispatchTodayMarkedPis                 ProformaInvoice[]                 @relation("ProformaDispatchTodayMarkedBy")
+  creditRequestedProformaInvoices        ProformaInvoice[]                 @relation("ProformaCreditRequestedBy")
+  creditSmApprovedProformaInvoices       ProformaInvoice[]                 @relation("ProformaCreditSmApprovedBy")
+  creditAccountsApprovedProformaInvoices ProformaInvoice[]                 @relation("ProformaCreditAccountsApprovedBy")
+  recordedPayments                       Payment[]                         @relation("PaymentRecordedBy")
+  createdDispatches                      Dispatch[]                        @relation("DispatchCreatedBy")
+  dispatchedOrders                       Dispatch[]                        @relation("DispatchDispatchedBy")
+  approvalRequests                       ApprovalRequest[]                 @relation("ApprovalRequestedBy")
+  approvalDecisions                      ApprovalRequest[]                 @relation("ApprovalDecidedBy")
+  salesProjectProposals                  ProjectProposal[]                 @relation("ProjectProposalSalesUser")
+  createdProjectProposals                ProjectProposal[]                 @relation("ProjectProposalCreatedBy")
+  updatedProjectProposals                ProjectProposal[]                 @relation("ProjectProposalUpdatedBy")
+  convertedProjectProposals              ProjectProposal[]                 @relation("ProjectProposalConvertedBy")
+  createdProjectProposalRevisions        ProjectProposalRevision[]         @relation("ProjectProposalRevisionCreatedBy")
+  updatedProjectProposalRevisions        ProjectProposalRevision[]         @relation("ProjectProposalRevisionUpdatedBy")
+  projectProposalStatusChanges           ProjectProposalStatusHistory[]    @relation("ProjectProposalStatusChangedBy")
+  projectProposalApprovalsRequested      ProjectProposalApproval[]         @relation("ProjectProposalApprovalRequestedBy")
+  projectProposalApprovalsDecided        ProjectProposalApproval[]         @relation("ProjectProposalApprovalDecidedBy")
+  salesProjectEnquiries                  ProjectEnquiry[]                  @relation("ProjectEnquirySalesUser")
+  createdProjectEnquiries                ProjectEnquiry[]                  @relation("ProjectEnquiryCreatedBy")
+  updatedProjectEnquiries                ProjectEnquiry[]                  @relation("ProjectEnquiryUpdatedBy")
+  projectEnquiryFollowups                ProjectEnquiryFollowup[]          @relation("ProjectEnquiryFollowupCreatedBy")
+  assignedServiceRequests                ServiceRequest[]                  @relation("ServiceAssignedTo")
+  createdServiceRequests                 ServiceRequest[]                  @relation("ServiceCreatedBy")
+  serviceUpdatesAssigned                 ServiceUpdate[]                   @relation("ServiceUpdateAssignedExecutive")
+  serviceUpdatesCreated                  ServiceUpdate[]                   @relation("ServiceUpdateCreatedBy")
+  serviceAttachmentsUploaded             ServiceAttachment[]               @relation("ServiceAttachmentUploadedBy")
+  servicePaymentsRecorded                ServicePayment[]                  @relation("ServicePaymentRecordedBy")
+  inventoryEventsCreated                 InventoryEvent[]                  @relation("InventoryEventCreatedBy")
+  inventoryEventsUpdated                 InventoryEvent[]                  @relation("InventoryEventUpdatedBy")
+  safetyStockCreated                     InventorySafetyStock[]            @relation("SafetyStockCreatedBy")
+  safetyStockUpdated                     InventorySafetyStock[]            @relation("SafetyStockUpdatedBy")
+  quotationWarningsProceeded             QuotationWarningLog[]             @relation("QuotationWarningProceededBy")
+  invoiceHandoversRecorded               InvoiceHandover[]                 @relation("InvoiceHandoverRecordedBy")
+  documentationAssigned                  DocumentationRecord[]             @relation("DocumentationAssignedTo")
+  documentationCompleted                 DocumentationRecord[]             @relation("DocumentationCompletedBy")
+  documentationStatusChanges             DocumentationStatusHistory[]      @relation("DocumentationStatusChangedBy")
+  documentationAssignments               DocumentationAssignmentHistory[]  @relation("DocumentationAssignmentChangedBy")
+  openingAuditsCreated                   InventoryOpeningAudit[]           @relation("OpeningAuditCreatedBy")
+  openingAuditsSubmitted                 InventoryOpeningAudit[]           @relation("OpeningAuditSubmittedBy")
+  openingAuditsApproved                  InventoryOpeningAudit[]           @relation("OpeningAuditApprovedBy")
+  dailyAuditsCreated                     InventoryDailyAudit[]             @relation("DailyAuditCreatedBy")
+  dailyAuditsSubmitted                   InventoryDailyAudit[]             @relation("DailyAuditSubmittedBy")
+  damageReportsRequested                 InventoryDamageReport[]           @relation("DamageReportRequestedBy")
+  damageReportsDecided                   InventoryDamageReport[]           @relation("DamageReportDecidedBy")
+  incomingLotChangesRequested            IncomingLotChangeRequest[]        @relation("IncomingLotChangeRequestedBy")
+  incomingLotChangesDecided              IncomingLotChangeRequest[]        @relation("IncomingLotChangeDecidedBy")
+  piEditsRequested                       ProformaInvoiceEditRequest[]      @relation("PiEditRequestedBy")
+  piEditsDecided                         ProformaInvoiceEditRequest[]      @relation("PiEditDecidedBy")
+  purchaseRequestsRequested              PurchaseRequest[]                 @relation("PurchaseRequestRequestedBy")
+  purchaseRequestsUpdated                PurchaseRequest[]                 @relation("PurchaseRequestUpdatedBy")
+  manualStockEntriesCreated              ManualStockEntry[]                @relation("ManualStockEntryCreatedBy")
+  createdExecutionProjects               Project[]                         @relation("ProjectCreatedBy")
+  updatedExecutionProjects               Project[]                         @relation("ProjectUpdatedBy")
+  closedExecutionProjects                Project[]                         @relation("ProjectClosedBy")
+  approvedMaterialAssignments            ProjectMaterialAssignment[]       @relation("ProjectMaterialApprovedBy")
+  createdProjectDispatches               ProjectDispatch[]                 @relation("ProjectDispatchCreatedBy")
+  salesModuleTargetsAsExecutive          SalesModuleTarget[]               @relation("SalesModuleTargetExecutive")
+  salesModuleTargetsCreated              SalesModuleTarget[]               @relation("SalesModuleTargetCreatedBy")
+  salesModuleTargetsUpdated              SalesModuleTarget[]               @relation("SalesModuleTargetUpdatedBy")
+  moduleMasteryProgress                  ExecutiveModuleMasteryProgress[]  @relation("ModuleMasteryProgressExecutive")
+  moduleLevelAchievements                ExecutiveModuleLevelAchievement[] @relation("ModuleLevelAchievementExecutive")
+  bankStatementImportsUploaded           BankStatementImport[]             @relation("BankStatementImportUploadedBy")
+  bankTransactionIssuesResolved          BankTransactionIssue[]            @relation("BankTransactionIssueResolvedBy")
+  bankTransactionIssuesIgnored           BankTransactionIssue[]            @relation("BankTransactionIssueIgnoredBy")
+  bankPaymentAllocationsCreated          BankPaymentAllocation[]           @relation("BankPaymentAllocationCreatedBy")
+  customerRefundsRequested               CustomerRefund[]                  @relation("CustomerRefundRequestedBy")
+  customerRefundsApproved                CustomerRefund[]                  @relation("CustomerRefundApprovedBy")
+  customerRefundsRejected                CustomerRefund[]                  @relation("CustomerRefundRejectedBy")
+  customerRefundsReturned                CustomerRefund[]                  @relation("CustomerRefundReturnedBy")
+  customerRefundsProcessed               CustomerRefund[]                  @relation("CustomerRefundProcessedBy")
+  customerRefundsCancelled               CustomerRefund[]                  @relation("CustomerRefundCancelledBy")
+  customerRefundBankAccountsCreated      CustomerRefundBankAccount[]       @relation("CustomerRefundBankAccountCreatedBy")
 
   @@map("users")
 }
@@ -781,7 +809,7 @@ model Warehouse {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  company              Company               @relation(fields: [companyId], references: [id])
+  company              Company                 @relation(fields: [companyId], references: [id])
   inventoryLots        InventoryLot[]
   inventorySerials     InventorySerial[]
   inventoryEvents      InventoryEvent[]
@@ -851,39 +879,41 @@ model DocumentSequence {
 }
 
 model Customer {
-  id                  String         @id @default(uuid()) @db.Uuid
-  customerCode        String         @unique @map("customer_code")
-  customerName        String         @map("customer_name")
-  contactPersonName   String?        @map("contact_person_name")
-  customerType        CustomerType   @map("customer_type")
-  gstNumber           String         @unique @map("gst_number")
-  address             String?
-  city                String?
-  state               String?
-  pinCode             String?        @map("pin_code")
-  mobile              String?
-  email               String?
-  assignedSalesUserId String         @map("assigned_sales_user_id") @db.Uuid
-  createdById         String         @map("created_by") @db.Uuid
-  updatedById         String         @map("updated_by") @db.Uuid
+  id                     String         @id @default(uuid()) @db.Uuid
+  customerCode           String         @unique @map("customer_code")
+  customerName           String         @map("customer_name")
+  contactPersonName      String?        @map("contact_person_name")
+  customerType           CustomerType   @map("customer_type")
+  gstNumber              String         @unique @map("gst_number")
+  address                String?
+  city                   String?
+  state                  String?
+  pinCode                String?        @map("pin_code")
+  mobile                 String?
+  email                  String?
+  assignedSalesUserId    String         @map("assigned_sales_user_id") @db.Uuid
+  createdById            String         @map("created_by") @db.Uuid
+  updatedById            String         @map("updated_by") @db.Uuid
   /// Share of this firm's sales credited toward SE incentive KPIs (0–100). Default 100.
-  incentiveCreditPercent Decimal      @default(100) @map("incentive_credit_percent") @db.Decimal(5, 2)
-  status              CustomerStatus @default(ACTIVE)
-  createdAt           DateTime       @default(now()) @map("created_at")
-  updatedAt           DateTime       @updatedAt @map("updated_at")
+  incentiveCreditPercent Decimal        @default(100) @map("incentive_credit_percent") @db.Decimal(5, 2)
+  status                 CustomerStatus @default(ACTIVE)
+  createdAt              DateTime       @default(now()) @map("created_at")
+  updatedAt              DateTime       @updatedAt @map("updated_at")
 
-  assignedSalesUser User              @relation("AssignedSalesExecutive", fields: [assignedSalesUserId], references: [id])
-  createdBy         User              @relation("CustomerCreatedBy", fields: [createdById], references: [id])
-  updatedBy         User              @relation("CustomerUpdatedBy", fields: [updatedById], references: [id])
-  contacts          CustomerContact[]
-  quotations        Quotation[]
-  proformaInvoices  ProformaInvoice[]
-  proposedPiEdits   ProformaInvoiceEditRequest[] @relation("PiEditProposedCustomer")
-  payments          Payment[]
-  dispatches        Dispatch[]
-  invoiceHandovers  InvoiceHandover[]
-  documentationRecords DocumentationRecord[]
+  assignedSalesUser      User                         @relation("AssignedSalesExecutive", fields: [assignedSalesUserId], references: [id])
+  createdBy              User                         @relation("CustomerCreatedBy", fields: [createdById], references: [id])
+  updatedBy              User                         @relation("CustomerUpdatedBy", fields: [updatedById], references: [id])
+  contacts               CustomerContact[]
+  quotations             Quotation[]
+  proformaInvoices       ProformaInvoice[]
+  proposedPiEdits        ProformaInvoiceEditRequest[] @relation("PiEditProposedCustomer")
+  payments               Payment[]
+  dispatches             Dispatch[]
+  invoiceHandovers       InvoiceHandover[]
+  documentationRecords   DocumentationRecord[]
   bankPaymentAllocations BankPaymentAllocation[]
+  refundBankAccounts     CustomerRefundBankAccount[]
+  refunds                CustomerRefund[]
 
   @@index([customerName])
   @@index([city])
@@ -958,32 +988,32 @@ model Product {
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
 
-  category                 ProductCategory           @relation(fields: [categoryId], references: [id])
-  brand                    Brand                     @relation(fields: [brandId], references: [id])
-  technology               ProductTechnology?        @relation(fields: [technologyId], references: [id])
-  prices                   ProductPrice[]
-  kitComponents            KitComponent[]            @relation("KitProductComponents")
-  componentOfKits          KitComponent[]            @relation("ComponentProductKits")
-  inventoryLots            InventoryLot[]
-  inventorySerials         InventorySerial[]
-  inventoryTransactions    InventoryTransaction[]
-  inventoryEvents          InventoryEvent[]
-  inventorySafetyStock     InventorySafetyStock[]
-  damageReports            InventoryDamageReport[]
-  incomingLotChangesProposed IncomingLotChangeRequest[] @relation("IncomingLotChangeProposedProduct")
-  incomingLotChangesPrevious IncomingLotChangeRequest[] @relation("IncomingLotChangePreviousProduct")
-  transferLines            InventoryTransferLine[]
-  crossCompanyPlanLines    PiCrossCompanyTransferPlanLine[]
-  quotationItems           QuotationItem[]
-  proformaInvoiceItems     ProformaInvoiceItem[]
-  dispatchLines            DispatchLine[]
-  projectProposalRevisions ProjectProposalRevision[]
-  openingAuditLines        InventoryOpeningAuditLine[]
-  dailyAuditLines          InventoryDailyAuditLine[]
-  purchaseRequestLines     PurchaseRequestLine[]
-  manualStockEntries       ManualStockEntry[]
-  projectMaterialLines     ProjectMaterialLine[]
-  projectDispatchLines     ProjectDispatchLine[]
+  category                   ProductCategory                  @relation(fields: [categoryId], references: [id])
+  brand                      Brand                            @relation(fields: [brandId], references: [id])
+  technology                 ProductTechnology?               @relation(fields: [technologyId], references: [id])
+  prices                     ProductPrice[]
+  kitComponents              KitComponent[]                   @relation("KitProductComponents")
+  componentOfKits            KitComponent[]                   @relation("ComponentProductKits")
+  inventoryLots              InventoryLot[]
+  inventorySerials           InventorySerial[]
+  inventoryTransactions      InventoryTransaction[]
+  inventoryEvents            InventoryEvent[]
+  inventorySafetyStock       InventorySafetyStock[]
+  damageReports              InventoryDamageReport[]
+  incomingLotChangesProposed IncomingLotChangeRequest[]       @relation("IncomingLotChangeProposedProduct")
+  incomingLotChangesPrevious IncomingLotChangeRequest[]       @relation("IncomingLotChangePreviousProduct")
+  transferLines              InventoryTransferLine[]
+  crossCompanyPlanLines      PiCrossCompanyTransferPlanLine[]
+  quotationItems             QuotationItem[]
+  proformaInvoiceItems       ProformaInvoiceItem[]
+  dispatchLines              DispatchLine[]
+  projectProposalRevisions   ProjectProposalRevision[]
+  openingAuditLines          InventoryOpeningAuditLine[]
+  dailyAuditLines            InventoryDailyAuditLine[]
+  purchaseRequestLines       PurchaseRequestLine[]
+  manualStockEntries         ManualStockEntry[]
+  projectMaterialLines       ProjectMaterialLine[]
+  projectDispatchLines       ProjectDispatchLine[]
 
   @@index([displayName])
   @@index([categoryId])
@@ -991,7 +1021,9 @@ model Product {
   @@map("products")
 }
 
-/** Sales BOM for Kit products — kits are never stocked; components are fulfilled. */
+/**
+ * Sales BOM for Kit products — kits are never stocked; components are fulfilled.
+ */
 model KitComponent {
   id                 String  @id @default(uuid()) @db.Uuid
   kitProductId       String  @map("kit_product_id") @db.Uuid
@@ -1027,37 +1059,37 @@ model Vendor {
 }
 
 model InventoryLot {
-  id                String    @id @default(uuid()) @db.Uuid
-  lotNumber         String    @unique @map("lot_number")
-  companyId         String    @map("company_id") @db.Uuid
-  warehouseId       String    @map("warehouse_id") @db.Uuid
-  vendorId          String?   @map("vendor_id") @db.Uuid
-  purchaseInvoiceNo String    @unique @map("purchase_invoice_no")
-  purchaseDate      DateTime  @map("purchase_date") @db.Date
-  expectedMinDate   DateTime? @map("expected_min_date") @db.Date
-  expectedMaxDate   DateTime? @map("expected_max_date") @db.Date
-  productId              String    @map("product_id") @db.Uuid
-  purchaseRequestLineId  String?   @map("purchase_request_line_id") @db.Uuid
-  quantity               Decimal   @db.Decimal(12, 3)
-  unitPurchaseRate       Decimal   @default(0) @map("unit_purchase_rate") @db.Decimal(12, 2)
-  transportCharges       Decimal   @default(0) @map("transport_charges") @db.Decimal(12, 2)
-  commissionCharges      Decimal   @default(0) @map("commission_charges") @db.Decimal(12, 2)
-  totalPurchaseCost      Decimal   @default(0) @map("total_purchase_cost") @db.Decimal(14, 2)
-  receivedQuantity       Decimal   @default(0) @map("received_quantity") @db.Decimal(12, 3)
-  damagedQuantity        Decimal   @default(0) @map("damaged_quantity") @db.Decimal(12, 3)
-  status                 LotStatus
-  remarks                String?
-  referenceNumber        String?   @map("reference_number")
-  createdById            String    @map("created_by") @db.Uuid
-  createdAt              DateTime  @default(now()) @map("created_at")
-  updatedAt              DateTime  @updatedAt @map("updated_at")
+  id                    String    @id @default(uuid()) @db.Uuid
+  lotNumber             String    @unique @map("lot_number")
+  companyId             String    @map("company_id") @db.Uuid
+  warehouseId           String    @map("warehouse_id") @db.Uuid
+  vendorId              String?   @map("vendor_id") @db.Uuid
+  purchaseInvoiceNo     String    @unique @map("purchase_invoice_no")
+  purchaseDate          DateTime  @map("purchase_date") @db.Date
+  expectedMinDate       DateTime? @map("expected_min_date") @db.Date
+  expectedMaxDate       DateTime? @map("expected_max_date") @db.Date
+  productId             String    @map("product_id") @db.Uuid
+  purchaseRequestLineId String?   @map("purchase_request_line_id") @db.Uuid
+  quantity              Decimal   @db.Decimal(12, 3)
+  unitPurchaseRate      Decimal   @default(0) @map("unit_purchase_rate") @db.Decimal(12, 2)
+  transportCharges      Decimal   @default(0) @map("transport_charges") @db.Decimal(12, 2)
+  commissionCharges     Decimal   @default(0) @map("commission_charges") @db.Decimal(12, 2)
+  totalPurchaseCost     Decimal   @default(0) @map("total_purchase_cost") @db.Decimal(14, 2)
+  receivedQuantity      Decimal   @default(0) @map("received_quantity") @db.Decimal(12, 3)
+  damagedQuantity       Decimal   @default(0) @map("damaged_quantity") @db.Decimal(12, 3)
+  status                LotStatus
+  remarks               String?
+  referenceNumber       String?   @map("reference_number")
+  createdById           String    @map("created_by") @db.Uuid
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
 
-  company             Company              @relation(fields: [companyId], references: [id])
-  warehouse           Warehouse            @relation(fields: [warehouseId], references: [id])
-  vendor              Vendor?              @relation(fields: [vendorId], references: [id])
-  product             Product              @relation(fields: [productId], references: [id])
-  purchaseRequestLine PurchaseRequestLine? @relation(fields: [purchaseRequestLineId], references: [id])
-  createdBy           User                 @relation("LotCreatedBy", fields: [createdById], references: [id])
+  company             Company                    @relation(fields: [companyId], references: [id])
+  warehouse           Warehouse                  @relation(fields: [warehouseId], references: [id])
+  vendor              Vendor?                    @relation(fields: [vendorId], references: [id])
+  product             Product                    @relation(fields: [productId], references: [id])
+  purchaseRequestLine PurchaseRequestLine?       @relation(fields: [purchaseRequestLineId], references: [id])
+  createdBy           User                       @relation("LotCreatedBy", fields: [createdById], references: [id])
   serials             InventorySerial[]
   transactions        InventoryTransaction[]
   changeRequests      IncomingLotChangeRequest[]
@@ -1080,16 +1112,16 @@ model InventorySerial {
   createdAt          DateTime     @default(now()) @map("created_at")
   updatedAt          DateTime     @updatedAt @map("updated_at")
 
-  lot                    InventoryLot                  @relation(fields: [lotId], references: [id], onDelete: Cascade)
-  product                Product                       @relation(fields: [productId], references: [id])
-  currentWarehouse       Warehouse                     @relation(fields: [currentWarehouseId], references: [id])
-  transferLineSerials    InventoryTransferLineSerial[]
-  proformaInvoiceSerials ProformaInvoiceSerial[]
-  dispatchLineSerials    DispatchLineSerial[]
+  lot                        InventoryLot                       @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  product                    Product                            @relation(fields: [productId], references: [id])
+  currentWarehouse           Warehouse                          @relation(fields: [currentWarehouseId], references: [id])
+  transferLineSerials        InventoryTransferLineSerial[]
+  proformaInvoiceSerials     ProformaInvoiceSerial[]
+  dispatchLineSerials        DispatchLineSerial[]
   projectDispatchLineSerials ProjectDispatchLineSerial[]
-  damageReports          InventoryDamageReport[]
-  crossCompanyPlanSerials PiCrossCompanyTransferPlanSerial[]
-  manualStockEntryLines  ManualStockEntryLine[]
+  damageReports              InventoryDamageReport[]
+  crossCompanyPlanSerials    PiCrossCompanyTransferPlanSerial[]
+  manualStockEntryLines      ManualStockEntryLine[]
 
   @@index([productId, status])
   @@index([currentWarehouseId])
@@ -1110,10 +1142,10 @@ model ManualStockEntry {
   createdById String                 @map("created_by") @db.Uuid
   createdAt   DateTime               @default(now()) @map("created_at")
 
-  company   Company               @relation(fields: [companyId], references: [id])
-  warehouse Warehouse             @relation(fields: [warehouseId], references: [id])
-  product   Product               @relation(fields: [productId], references: [id])
-  createdBy User                  @relation("ManualStockEntryCreatedBy", fields: [createdById], references: [id])
+  company   Company                @relation(fields: [companyId], references: [id])
+  warehouse Warehouse              @relation(fields: [warehouseId], references: [id])
+  product   Product                @relation(fields: [productId], references: [id])
+  createdBy User                   @relation("ManualStockEntryCreatedBy", fields: [createdById], references: [id])
   lines     ManualStockEntryLine[]
 
   @@index([companyId, createdAt])
@@ -1123,12 +1155,12 @@ model ManualStockEntry {
 }
 
 model ManualStockEntryLine {
-  id           String         @id @default(uuid()) @db.Uuid
-  entryId      String         @map("entry_id") @db.Uuid
-  serialId     String?        @map("serial_id") @db.Uuid
-  serialNumber String?        @map("serial_number")
-  fromStatus   SerialStatus?  @map("from_status")
-  toStatus     SerialStatus?  @map("to_status")
+  id           String        @id @default(uuid()) @db.Uuid
+  entryId      String        @map("entry_id") @db.Uuid
+  serialId     String?       @map("serial_id") @db.Uuid
+  serialNumber String?       @map("serial_number")
+  fromStatus   SerialStatus? @map("from_status")
+  toStatus     SerialStatus? @map("to_status")
 
   entry  ManualStockEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
   serial InventorySerial? @relation(fields: [serialId], references: [id])
@@ -1139,21 +1171,21 @@ model ManualStockEntryLine {
 }
 
 model InventoryDamageReport {
-  id             String             @id @default(uuid()) @db.Uuid
-  companyId      String             @map("company_id") @db.Uuid
-  serialId       String             @map("serial_id") @db.Uuid
-  productId      String             @map("product_id") @db.Uuid
-  warehouseId    String             @map("warehouse_id") @db.Uuid
-  serialNumber   String             @map("serial_number")
-  category       DamageCategory
-  reason         String
-  status         DamageReportStatus @default(PENDING)
-  requestedById  String             @map("requested_by") @db.Uuid
-  decidedById    String?            @map("decided_by") @db.Uuid
-  decidedAt      DateTime?          @map("decided_at")
-  decisionRemarks String?           @map("decision_remarks")
-  createdAt      DateTime           @default(now()) @map("created_at")
-  updatedAt      DateTime           @updatedAt @map("updated_at")
+  id              String             @id @default(uuid()) @db.Uuid
+  companyId       String             @map("company_id") @db.Uuid
+  serialId        String             @map("serial_id") @db.Uuid
+  productId       String             @map("product_id") @db.Uuid
+  warehouseId     String             @map("warehouse_id") @db.Uuid
+  serialNumber    String             @map("serial_number")
+  category        DamageCategory
+  reason          String
+  status          DamageReportStatus @default(PENDING)
+  requestedById   String             @map("requested_by") @db.Uuid
+  decidedById     String?            @map("decided_by") @db.Uuid
+  decidedAt       DateTime?          @map("decided_at")
+  decisionRemarks String?            @map("decision_remarks")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
 
   company     Company         @relation(fields: [companyId], references: [id])
   serial      InventorySerial @relation(fields: [serialId], references: [id])
@@ -1169,29 +1201,29 @@ model InventoryDamageReport {
 }
 
 model IncomingLotChangeRequest {
-  id                         String                   @id @default(uuid()) @db.Uuid
-  companyId                  String                   @map("company_id") @db.Uuid
-  lotId                      String                   @map("lot_id") @db.Uuid
-  previousProductId          String                   @map("previous_product_id") @db.Uuid
-  previousQuantity           Decimal                  @map("previous_quantity") @db.Decimal(12, 3)
-  previousPurchaseInvoiceNo  String                   @map("previous_purchase_invoice_no")
-  proposedProductId          String                   @map("proposed_product_id") @db.Uuid
-  proposedQuantity           Decimal                  @map("proposed_quantity") @db.Decimal(12, 3)
-  proposedPurchaseInvoiceNo  String                   @map("proposed_purchase_invoice_no")
-  status                     IncomingLotChangeStatus  @default(PENDING)
-  requestedById              String                   @map("requested_by") @db.Uuid
-  decidedById                String?                  @map("decided_by") @db.Uuid
-  decidedAt                  DateTime?                @map("decided_at")
-  decisionRemarks            String?                  @map("decision_remarks")
-  createdAt                  DateTime                 @default(now()) @map("created_at")
-  updatedAt                  DateTime                 @updatedAt @map("updated_at")
+  id                        String                  @id @default(uuid()) @db.Uuid
+  companyId                 String                  @map("company_id") @db.Uuid
+  lotId                     String                  @map("lot_id") @db.Uuid
+  previousProductId         String                  @map("previous_product_id") @db.Uuid
+  previousQuantity          Decimal                 @map("previous_quantity") @db.Decimal(12, 3)
+  previousPurchaseInvoiceNo String                  @map("previous_purchase_invoice_no")
+  proposedProductId         String                  @map("proposed_product_id") @db.Uuid
+  proposedQuantity          Decimal                 @map("proposed_quantity") @db.Decimal(12, 3)
+  proposedPurchaseInvoiceNo String                  @map("proposed_purchase_invoice_no")
+  status                    IncomingLotChangeStatus @default(PENDING)
+  requestedById             String                  @map("requested_by") @db.Uuid
+  decidedById               String?                 @map("decided_by") @db.Uuid
+  decidedAt                 DateTime?               @map("decided_at")
+  decisionRemarks           String?                 @map("decision_remarks")
+  createdAt                 DateTime                @default(now()) @map("created_at")
+  updatedAt                 DateTime                @updatedAt @map("updated_at")
 
-  company         Company       @relation(fields: [companyId], references: [id])
-  lot             InventoryLot  @relation(fields: [lotId], references: [id], onDelete: Cascade)
-  previousProduct Product       @relation("IncomingLotChangePreviousProduct", fields: [previousProductId], references: [id])
-  proposedProduct Product       @relation("IncomingLotChangeProposedProduct", fields: [proposedProductId], references: [id])
-  requestedBy     User          @relation("IncomingLotChangeRequestedBy", fields: [requestedById], references: [id])
-  decidedBy       User?         @relation("IncomingLotChangeDecidedBy", fields: [decidedById], references: [id])
+  company         Company      @relation(fields: [companyId], references: [id])
+  lot             InventoryLot @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  previousProduct Product      @relation("IncomingLotChangePreviousProduct", fields: [previousProductId], references: [id])
+  proposedProduct Product      @relation("IncomingLotChangeProposedProduct", fields: [proposedProductId], references: [id])
+  requestedBy     User         @relation("IncomingLotChangeRequestedBy", fields: [requestedById], references: [id])
+  decidedBy       User?        @relation("IncomingLotChangeDecidedBy", fields: [decidedById], references: [id])
 
   @@index([companyId, status])
   @@index([lotId, status])
@@ -1228,26 +1260,26 @@ model PurchaseRequest {
 }
 
 model PurchaseRequestLine {
-  id                String                  @id @default(uuid()) @db.Uuid
-  purchaseRequestId String                  @map("purchase_request_id") @db.Uuid
-  productId         String                  @map("product_id") @db.Uuid
-  categoryName      String                  @map("category_name")
-  brandName         String                  @map("brand_name")
-  requestedQty      Decimal                 @map("requested_qty") @db.Decimal(12, 3)
-  fulfilledQty      Decimal                 @default(0) @map("fulfilled_qty") @db.Decimal(12, 3)
-  targetDate        DateTime?               @map("target_date") @db.Date
-  priority          PurchaseRequestPriority @default(NORMAL)
-  remarks           String?
-  sortOrder         Int                     @default(0) @map("sort_order")
-  projectId         String?                 @map("project_id") @db.Uuid
-  projectMaterialLineId String?             @unique @map("project_material_line_id") @db.Uuid
-  createdAt         DateTime                @default(now()) @map("created_at")
-  updatedAt         DateTime                @updatedAt @map("updated_at")
+  id                    String                  @id @default(uuid()) @db.Uuid
+  purchaseRequestId     String                  @map("purchase_request_id") @db.Uuid
+  productId             String                  @map("product_id") @db.Uuid
+  categoryName          String                  @map("category_name")
+  brandName             String                  @map("brand_name")
+  requestedQty          Decimal                 @map("requested_qty") @db.Decimal(12, 3)
+  fulfilledQty          Decimal                 @default(0) @map("fulfilled_qty") @db.Decimal(12, 3)
+  targetDate            DateTime?               @map("target_date") @db.Date
+  priority              PurchaseRequestPriority @default(NORMAL)
+  remarks               String?
+  sortOrder             Int                     @default(0) @map("sort_order")
+  projectId             String?                 @map("project_id") @db.Uuid
+  projectMaterialLineId String?                 @unique @map("project_material_line_id") @db.Uuid
+  createdAt             DateTime                @default(now()) @map("created_at")
+  updatedAt             DateTime                @updatedAt @map("updated_at")
 
-  purchaseRequest PurchaseRequest @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade)
-  product         Product         @relation(fields: [productId], references: [id])
+  purchaseRequest     PurchaseRequest      @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade)
+  product             Product              @relation(fields: [productId], references: [id])
   projectMaterialLine ProjectMaterialLine? @relation(fields: [projectMaterialLineId], references: [id])
-  lots            InventoryLot[]
+  lots                InventoryLot[]
 
   @@index([purchaseRequestId])
   @@index([productId])
@@ -1299,35 +1331,35 @@ model ProductPrice {
 }
 
 model InventoryTransfer {
-  id                 String         @id @default(uuid()) @db.Uuid
-  transferNumber     String         @unique @map("transfer_number")
-  fromCompanyId      String         @map("from_company_id") @db.Uuid
-  toCompanyId        String         @map("to_company_id") @db.Uuid
-  fromWarehouseId    String         @map("from_warehouse_id") @db.Uuid
-  toWarehouseId      String         @map("to_warehouse_id") @db.Uuid
-  status             TransferStatus
-  origin             TransferOrigin @default(MANUAL)
-  notes              String?
-  proformaInvoiceId  String?        @map("proforma_invoice_id") @db.Uuid
-  dispatchId         String?        @map("dispatch_id") @db.Uuid
-  approvedById       String?        @map("approved_by") @db.Uuid
-  createdById        String         @map("created_by") @db.Uuid
-  dispatchedById     String?        @map("dispatched_by") @db.Uuid
-  dispatchedAt       DateTime?      @map("dispatched_at")
-  receivedById       String?        @map("received_by") @db.Uuid
-  receivedAt         DateTime?      @map("received_at")
-  createdAt          DateTime       @default(now()) @map("created_at")
-  updatedAt          DateTime       @updatedAt @map("updated_at")
+  id                String         @id @default(uuid()) @db.Uuid
+  transferNumber    String         @unique @map("transfer_number")
+  fromCompanyId     String         @map("from_company_id") @db.Uuid
+  toCompanyId       String         @map("to_company_id") @db.Uuid
+  fromWarehouseId   String         @map("from_warehouse_id") @db.Uuid
+  toWarehouseId     String         @map("to_warehouse_id") @db.Uuid
+  status            TransferStatus
+  origin            TransferOrigin @default(MANUAL)
+  notes             String?
+  proformaInvoiceId String?        @map("proforma_invoice_id") @db.Uuid
+  dispatchId        String?        @map("dispatch_id") @db.Uuid
+  approvedById      String?        @map("approved_by") @db.Uuid
+  createdById       String         @map("created_by") @db.Uuid
+  dispatchedById    String?        @map("dispatched_by") @db.Uuid
+  dispatchedAt      DateTime?      @map("dispatched_at")
+  receivedById      String?        @map("received_by") @db.Uuid
+  receivedAt        DateTime?      @map("received_at")
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
 
-  fromCompany     Company                 @relation("TransferFromCompany", fields: [fromCompanyId], references: [id])
-  toCompany       Company                 @relation("TransferToCompany", fields: [toCompanyId], references: [id])
-  createdBy       User                    @relation("TransferCreatedBy", fields: [createdById], references: [id])
-  dispatchedBy    User?                   @relation("TransferDispatchedBy", fields: [dispatchedById], references: [id])
-  receivedBy      User?                   @relation("TransferReceivedBy", fields: [receivedById], references: [id])
-  approvedBy      User?                   @relation("TransferApprovedBy", fields: [approvedById], references: [id])
-  proformaInvoice ProformaInvoice?        @relation(fields: [proformaInvoiceId], references: [id])
-  dispatch        Dispatch?               @relation(fields: [dispatchId], references: [id])
-  lines           InventoryTransferLine[]
+  fromCompany      Company                     @relation("TransferFromCompany", fields: [fromCompanyId], references: [id])
+  toCompany        Company                     @relation("TransferToCompany", fields: [toCompanyId], references: [id])
+  createdBy        User                        @relation("TransferCreatedBy", fields: [createdById], references: [id])
+  dispatchedBy     User?                       @relation("TransferDispatchedBy", fields: [dispatchedById], references: [id])
+  receivedBy       User?                       @relation("TransferReceivedBy", fields: [receivedById], references: [id])
+  approvedBy       User?                       @relation("TransferApprovedBy", fields: [approvedById], references: [id])
+  proformaInvoice  ProformaInvoice?            @relation(fields: [proformaInvoiceId], references: [id])
+  dispatch         Dispatch?                   @relation(fields: [dispatchId], references: [id])
+  lines            InventoryTransferLine[]
   crossCompanyPlan PiCrossCompanyTransferPlan?
 
   @@index([fromCompanyId, status])
@@ -1338,27 +1370,27 @@ model InventoryTransfer {
 }
 
 model PiCrossCompanyTransferPlan {
-  id                  String                            @id @default(uuid()) @db.Uuid
-  piId                String                            @map("pi_id") @db.Uuid
-  fromCompanyId       String                            @map("from_company_id") @db.Uuid
-  toCompanyId         String                            @map("to_company_id") @db.Uuid
+  id                  String                           @id @default(uuid()) @db.Uuid
+  piId                String                           @map("pi_id") @db.Uuid
+  fromCompanyId       String                           @map("from_company_id") @db.Uuid
+  toCompanyId         String                           @map("to_company_id") @db.Uuid
   status              PiCrossCompanyTransferPlanStatus
-  requestedById       String                            @map("requested_by") @db.Uuid
-  approvedById        String?                           @map("approved_by") @db.Uuid
-  approvedAt          DateTime?                         @map("approved_at")
-  rejectionReason     String?                           @map("rejection_reason")
-  inventoryTransferId String?                           @unique @map("inventory_transfer_id") @db.Uuid
-  dispatchId          String?                           @map("dispatch_id") @db.Uuid
-  createdAt           DateTime                          @default(now()) @map("created_at")
-  updatedAt           DateTime                          @updatedAt @map("updated_at")
+  requestedById       String                           @map("requested_by") @db.Uuid
+  approvedById        String?                          @map("approved_by") @db.Uuid
+  approvedAt          DateTime?                        @map("approved_at")
+  rejectionReason     String?                          @map("rejection_reason")
+  inventoryTransferId String?                          @unique @map("inventory_transfer_id") @db.Uuid
+  dispatchId          String?                          @map("dispatch_id") @db.Uuid
+  createdAt           DateTime                         @default(now()) @map("created_at")
+  updatedAt           DateTime                         @updatedAt @map("updated_at")
 
-  pi                ProformaInvoice                   @relation(fields: [piId], references: [id], onDelete: Cascade)
-  fromCompany       Company                           @relation("CrossCompanyPlanFrom", fields: [fromCompanyId], references: [id])
-  toCompany         Company                           @relation("CrossCompanyPlanTo", fields: [toCompanyId], references: [id])
-  requestedBy       User                              @relation("CrossCompanyPlanRequestedBy", fields: [requestedById], references: [id])
-  approvedBy        User?                             @relation("CrossCompanyPlanApprovedBy", fields: [approvedById], references: [id])
-  inventoryTransfer InventoryTransfer?                @relation(fields: [inventoryTransferId], references: [id])
-  dispatch          Dispatch?                         @relation(fields: [dispatchId], references: [id])
+  pi                ProformaInvoice                  @relation(fields: [piId], references: [id], onDelete: Cascade)
+  fromCompany       Company                          @relation("CrossCompanyPlanFrom", fields: [fromCompanyId], references: [id])
+  toCompany         Company                          @relation("CrossCompanyPlanTo", fields: [toCompanyId], references: [id])
+  requestedBy       User                             @relation("CrossCompanyPlanRequestedBy", fields: [requestedById], references: [id])
+  approvedBy        User?                            @relation("CrossCompanyPlanApprovedBy", fields: [approvedById], references: [id])
+  inventoryTransfer InventoryTransfer?               @relation(fields: [inventoryTransferId], references: [id])
+  dispatch          Dispatch?                        @relation(fields: [dispatchId], references: [id])
   lines             PiCrossCompanyTransferPlanLine[]
 
   @@index([piId, status])
@@ -1374,9 +1406,9 @@ model PiCrossCompanyTransferPlanLine {
   actualQty        Decimal @default(0) @map("actual_qty") @db.Decimal(12, 3)
   unitPurchaseCost Decimal @default(0) @map("unit_purchase_cost") @db.Decimal(12, 2)
 
-  plan     PiCrossCompanyTransferPlan         @relation(fields: [planId], references: [id], onDelete: Cascade)
-  product  Product                            @relation(fields: [productId], references: [id])
-  serials  PiCrossCompanyTransferPlanSerial[]
+  plan    PiCrossCompanyTransferPlan         @relation(fields: [planId], references: [id], onDelete: Cascade)
+  product Product                            @relation(fields: [productId], references: [id])
+  serials PiCrossCompanyTransferPlanSerial[]
 
   @@index([planId])
   @@map("pi_cross_company_transfer_plan_lines")
@@ -1423,26 +1455,26 @@ model InventoryTransferLineSerial {
 }
 
 model Quotation {
-  id                         String            @id @default(uuid()) @db.Uuid
-  quotationNo                String            @unique @map("quotation_no")
-  companyId                  String            @map("company_id") @db.Uuid
-  customerId                 String            @map("customer_id") @db.Uuid
-  salesUserId                String            @map("sales_user_id") @db.Uuid
-  status                     QuotationStatus
-  revisionNo                 Int               @default(1) @map("revision_no")
-  parentQuotationId          String?           @map("parent_quotation_id") @db.Uuid
-  quotationDate              DateTime          @map("quotation_date") @db.Date
-  expiryDate                 DateTime          @map("expiry_date") @db.Date
-  totalValue                 Decimal           @map("total_value") @db.Decimal(14, 2)
-  notes                      String?
-  deliveryTermMode           DeliveryTermMode  @default(LEGACY) @map("delivery_term_mode")
-  bookingAllowed             Boolean           @default(false) @map("booking_allowed")
-  requiredPaymentPercent     Decimal?          @map("required_payment_percent") @db.Decimal(5, 2)
-  dispatchMinDays            Int?              @map("dispatch_min_days")
-  dispatchMaxDays            Int?              @map("dispatch_max_days")
-  deliveryTermNoteSnapshot   String?           @map("delivery_term_note_snapshot")
-  createdAt                  DateTime          @default(now()) @map("created_at")
-  updatedAt                  DateTime          @updatedAt @map("updated_at")
+  id                       String           @id @default(uuid()) @db.Uuid
+  quotationNo              String           @unique @map("quotation_no")
+  companyId                String           @map("company_id") @db.Uuid
+  customerId               String           @map("customer_id") @db.Uuid
+  salesUserId              String           @map("sales_user_id") @db.Uuid
+  status                   QuotationStatus
+  revisionNo               Int              @default(1) @map("revision_no")
+  parentQuotationId        String?          @map("parent_quotation_id") @db.Uuid
+  quotationDate            DateTime         @map("quotation_date") @db.Date
+  expiryDate               DateTime         @map("expiry_date") @db.Date
+  totalValue               Decimal          @map("total_value") @db.Decimal(14, 2)
+  notes                    String?
+  deliveryTermMode         DeliveryTermMode @default(LEGACY) @map("delivery_term_mode")
+  bookingAllowed           Boolean          @default(false) @map("booking_allowed")
+  requiredPaymentPercent   Decimal?         @map("required_payment_percent") @db.Decimal(5, 2)
+  dispatchMinDays          Int?             @map("dispatch_min_days")
+  dispatchMaxDays          Int?             @map("dispatch_max_days")
+  deliveryTermNoteSnapshot String?          @map("delivery_term_note_snapshot")
+  createdAt                DateTime         @default(now()) @map("created_at")
+  updatedAt                DateTime         @updatedAt @map("updated_at")
 
   company         Company               @relation(fields: [companyId], references: [id])
   customer        Customer              @relation(fields: [customerId], references: [id])
@@ -1496,68 +1528,68 @@ model ApprovalRequest {
 }
 
 model ProformaInvoice {
-  id                     String                @id @default(uuid()) @db.Uuid
-  piNo                   String                @unique @map("pi_no")
-  companyId              String                @map("company_id") @db.Uuid
-  customerId             String                @map("customer_id") @db.Uuid
-  salesUserId            String                @map("sales_user_id") @db.Uuid
-  quotationId            String?               @unique @map("quotation_id") @db.Uuid
-  warehouseId            String?               @map("warehouse_id") @db.Uuid
-  status                 ProformaInvoiceStatus
-  piDate                 DateTime              @map("pi_date") @db.Date
-  totalValue             Decimal               @map("total_value") @db.Decimal(14, 2)
-  notes                  String?
-  bookedAt               DateTime?             @map("booked_at")
-  bookedById             String?               @map("booked_by") @db.Uuid
-  deliveryTermMode       DeliveryTermMode?     @map("delivery_term_mode")
-  bookingAllowed         Boolean?              @map("booking_allowed")
-  requiredPaymentPercent Decimal?              @map("required_payment_percent") @db.Decimal(5, 2)
-  dispatchMinDays        Int?                  @map("dispatch_min_days")
-  dispatchMaxDays        Int?                  @map("dispatch_max_days")
-  deliveryTermNoteSnapshot String?             @map("delivery_term_note_snapshot")
-  requiredDispatchMinDate DateTime?            @map("required_dispatch_min_date") @db.Date
-  requiredDispatchMaxDate DateTime?            @map("required_dispatch_max_date") @db.Date
-  dispatchTodayDate       DateTime?            @map("dispatch_today_date") @db.Date
-  dispatchTodayMarkedAt   DateTime?            @map("dispatch_today_marked_at")
-  dispatchTodayMarkedById String?              @map("dispatch_today_marked_by") @db.Uuid
-  dispatchDraftVehicleNo  String?              @map("dispatch_draft_vehicle_no")
-  dispatchDraftDriverName String?              @map("dispatch_draft_driver_name")
-  dispatchDraftReceiverName String?            @map("dispatch_draft_receiver_name")
-  dispatchDraftReceiverMobile String?          @map("dispatch_draft_receiver_mobile")
-  dispatchDraftNotes      String?              @map("dispatch_draft_notes")
-  creditStatus            PiCreditStatus       @default(NONE) @map("credit_status")
-  creditNotes             String?              @map("credit_notes")
-  creditRequestedAt       DateTime?            @map("credit_requested_at")
-  creditRequestedById     String?              @map("credit_requested_by") @db.Uuid
-  creditSmApprovedAt      DateTime?            @map("credit_sm_approved_at")
-  creditSmApprovedById    String?              @map("credit_sm_approved_by") @db.Uuid
-  creditAccountsApprovedAt DateTime?           @map("credit_accounts_approved_at")
-  creditAccountsApprovedById String?           @map("credit_accounts_approved_by") @db.Uuid
-  creditDueDate           DateTime?            @map("credit_due_date") @db.Date
-  creditClearedAt         DateTime?            @map("credit_cleared_at")
-  creditRejectionReason   String?              @map("credit_rejection_reason")
-  creditLastReminderOn    DateTime?            @map("credit_last_reminder_on") @db.Date
-  createdAt              DateTime              @default(now()) @map("created_at")
-  updatedAt              DateTime              @updatedAt @map("updated_at")
+  id                          String                @id @default(uuid()) @db.Uuid
+  piNo                        String                @unique @map("pi_no")
+  companyId                   String                @map("company_id") @db.Uuid
+  customerId                  String                @map("customer_id") @db.Uuid
+  salesUserId                 String                @map("sales_user_id") @db.Uuid
+  quotationId                 String?               @unique @map("quotation_id") @db.Uuid
+  warehouseId                 String?               @map("warehouse_id") @db.Uuid
+  status                      ProformaInvoiceStatus
+  piDate                      DateTime              @map("pi_date") @db.Date
+  totalValue                  Decimal               @map("total_value") @db.Decimal(14, 2)
+  notes                       String?
+  bookedAt                    DateTime?             @map("booked_at")
+  bookedById                  String?               @map("booked_by") @db.Uuid
+  deliveryTermMode            DeliveryTermMode?     @map("delivery_term_mode")
+  bookingAllowed              Boolean?              @map("booking_allowed")
+  requiredPaymentPercent      Decimal?              @map("required_payment_percent") @db.Decimal(5, 2)
+  dispatchMinDays             Int?                  @map("dispatch_min_days")
+  dispatchMaxDays             Int?                  @map("dispatch_max_days")
+  deliveryTermNoteSnapshot    String?               @map("delivery_term_note_snapshot")
+  requiredDispatchMinDate     DateTime?             @map("required_dispatch_min_date") @db.Date
+  requiredDispatchMaxDate     DateTime?             @map("required_dispatch_max_date") @db.Date
+  dispatchTodayDate           DateTime?             @map("dispatch_today_date") @db.Date
+  dispatchTodayMarkedAt       DateTime?             @map("dispatch_today_marked_at")
+  dispatchTodayMarkedById     String?               @map("dispatch_today_marked_by") @db.Uuid
+  dispatchDraftVehicleNo      String?               @map("dispatch_draft_vehicle_no")
+  dispatchDraftDriverName     String?               @map("dispatch_draft_driver_name")
+  dispatchDraftReceiverName   String?               @map("dispatch_draft_receiver_name")
+  dispatchDraftReceiverMobile String?               @map("dispatch_draft_receiver_mobile")
+  dispatchDraftNotes          String?               @map("dispatch_draft_notes")
+  creditStatus                PiCreditStatus        @default(NONE) @map("credit_status")
+  creditNotes                 String?               @map("credit_notes")
+  creditRequestedAt           DateTime?             @map("credit_requested_at")
+  creditRequestedById         String?               @map("credit_requested_by") @db.Uuid
+  creditSmApprovedAt          DateTime?             @map("credit_sm_approved_at")
+  creditSmApprovedById        String?               @map("credit_sm_approved_by") @db.Uuid
+  creditAccountsApprovedAt    DateTime?             @map("credit_accounts_approved_at")
+  creditAccountsApprovedById  String?               @map("credit_accounts_approved_by") @db.Uuid
+  creditDueDate               DateTime?             @map("credit_due_date") @db.Date
+  creditClearedAt             DateTime?             @map("credit_cleared_at")
+  creditRejectionReason       String?               @map("credit_rejection_reason")
+  creditLastReminderOn        DateTime?             @map("credit_last_reminder_on") @db.Date
+  createdAt                   DateTime              @default(now()) @map("created_at")
+  updatedAt                   DateTime              @updatedAt @map("updated_at")
 
-  company    Company                 @relation(fields: [companyId], references: [id])
-  customer   Customer                @relation(fields: [customerId], references: [id])
-  salesUser  User                    @relation("ProformaSalesUser", fields: [salesUserId], references: [id])
-  quotation  Quotation?              @relation(fields: [quotationId], references: [id])
-  warehouse  Warehouse?              @relation(fields: [warehouseId], references: [id])
-  bookedBy   User?                   @relation("ProformaBookedBy", fields: [bookedById], references: [id])
-  dispatchTodayMarkedBy User?        @relation("ProformaDispatchTodayMarkedBy", fields: [dispatchTodayMarkedById], references: [id])
-  creditRequestedBy User?            @relation("ProformaCreditRequestedBy", fields: [creditRequestedById], references: [id])
-  creditSmApprovedBy User?           @relation("ProformaCreditSmApprovedBy", fields: [creditSmApprovedById], references: [id])
-  creditAccountsApprovedBy User?     @relation("ProformaCreditAccountsApprovedBy", fields: [creditAccountsApprovedById], references: [id])
-  items                 ProformaInvoiceItem[]
-  payments              Payment[]
-  serials               ProformaInvoiceSerial[]
-  dispatches            Dispatch[]
-  inventoryTransfers    InventoryTransfer[]
-  crossCompanyPlans     PiCrossCompanyTransferPlan[]
-  editRequests          ProformaInvoiceEditRequest[]
-  bankPaymentAllocations BankPaymentAllocation[]
+  company                  Company                      @relation(fields: [companyId], references: [id])
+  customer                 Customer                     @relation(fields: [customerId], references: [id])
+  salesUser                User                         @relation("ProformaSalesUser", fields: [salesUserId], references: [id])
+  quotation                Quotation?                   @relation(fields: [quotationId], references: [id])
+  warehouse                Warehouse?                   @relation(fields: [warehouseId], references: [id])
+  bookedBy                 User?                        @relation("ProformaBookedBy", fields: [bookedById], references: [id])
+  dispatchTodayMarkedBy    User?                        @relation("ProformaDispatchTodayMarkedBy", fields: [dispatchTodayMarkedById], references: [id])
+  creditRequestedBy        User?                        @relation("ProformaCreditRequestedBy", fields: [creditRequestedById], references: [id])
+  creditSmApprovedBy       User?                        @relation("ProformaCreditSmApprovedBy", fields: [creditSmApprovedById], references: [id])
+  creditAccountsApprovedBy User?                        @relation("ProformaCreditAccountsApprovedBy", fields: [creditAccountsApprovedById], references: [id])
+  items                    ProformaInvoiceItem[]
+  payments                 Payment[]
+  serials                  ProformaInvoiceSerial[]
+  dispatches               Dispatch[]
+  inventoryTransfers       InventoryTransfer[]
+  crossCompanyPlans        PiCrossCompanyTransferPlan[]
+  editRequests             ProformaInvoiceEditRequest[]
+  bankPaymentAllocations   BankPaymentAllocation[]
 
   @@index([companyId, status])
   @@index([customerId])
@@ -1643,12 +1675,12 @@ model Payment {
   createdAt          DateTime                  @default(now()) @map("created_at")
   updatedAt          DateTime                  @updatedAt @map("updated_at")
 
-  company          Company                 @relation(fields: [companyId], references: [id])
-  customer         Customer                @relation(fields: [customerId], references: [id])
-  proformaInvoice  ProformaInvoice         @relation(fields: [proformaInvoiceId], references: [id])
-  recordedBy       User                    @relation("PaymentRecordedBy", fields: [recordedById], references: [id])
-  bankTransaction  BankTransaction?        @relation(fields: [bankTransactionId], references: [id], onDelete: SetNull)
-  bankAllocations  BankPaymentAllocation[]
+  company         Company                 @relation(fields: [companyId], references: [id])
+  customer        Customer                @relation(fields: [customerId], references: [id])
+  proformaInvoice ProformaInvoice         @relation(fields: [proformaInvoiceId], references: [id])
+  recordedBy      User                    @relation("PaymentRecordedBy", fields: [recordedById], references: [id])
+  bankTransaction BankTransaction?        @relation(fields: [bankTransactionId], references: [id], onDelete: SetNull)
+  bankAllocations BankPaymentAllocation[]
 
   @@index([proformaInvoiceId])
   @@index([customerId])
@@ -1659,38 +1691,38 @@ model Payment {
 }
 
 model Dispatch {
-  id                String         @id @default(uuid()) @db.Uuid
-  dcNo              String         @unique @map("dc_no")
-  companyId         String         @map("company_id") @db.Uuid
-  customerId        String         @map("customer_id") @db.Uuid
-  proformaInvoiceId String         @map("proforma_invoice_id") @db.Uuid
-  warehouseId       String         @map("warehouse_id") @db.Uuid
-  status            DispatchStatus
-  dispatchDate      DateTime       @map("dispatch_date") @db.Date
-  vehicleNo         String?        @map("vehicle_no")
-  driverName        String?        @map("driver_name")
-  receiverName      String?        @map("receiver_name")
-  receiverMobile    String?        @map("receiver_mobile")
-  signatureUrl      String?        @map("signature_url")
-  plannedDispatchDate DateTime?    @map("planned_dispatch_date") @db.Date
-  notes             String?
-  createdById       String         @map("created_by") @db.Uuid
-  dispatchedById    String?        @map("dispatched_by") @db.Uuid
-  dispatchedAt      DateTime?      @map("dispatched_at")
-  createdAt         DateTime       @default(now()) @map("created_at")
-  updatedAt         DateTime       @updatedAt @map("updated_at")
+  id                  String         @id @default(uuid()) @db.Uuid
+  dcNo                String         @unique @map("dc_no")
+  companyId           String         @map("company_id") @db.Uuid
+  customerId          String         @map("customer_id") @db.Uuid
+  proformaInvoiceId   String         @map("proforma_invoice_id") @db.Uuid
+  warehouseId         String         @map("warehouse_id") @db.Uuid
+  status              DispatchStatus
+  dispatchDate        DateTime       @map("dispatch_date") @db.Date
+  vehicleNo           String?        @map("vehicle_no")
+  driverName          String?        @map("driver_name")
+  receiverName        String?        @map("receiver_name")
+  receiverMobile      String?        @map("receiver_mobile")
+  signatureUrl        String?        @map("signature_url")
+  plannedDispatchDate DateTime?      @map("planned_dispatch_date") @db.Date
+  notes               String?
+  createdById         String         @map("created_by") @db.Uuid
+  dispatchedById      String?        @map("dispatched_by") @db.Uuid
+  dispatchedAt        DateTime?      @map("dispatched_at")
+  createdAt           DateTime       @default(now()) @map("created_at")
+  updatedAt           DateTime       @updatedAt @map("updated_at")
 
-  company         Company          @relation(fields: [companyId], references: [id])
-  customer        Customer         @relation(fields: [customerId], references: [id])
-  proformaInvoice ProformaInvoice  @relation(fields: [proformaInvoiceId], references: [id])
-  warehouse       Warehouse        @relation(fields: [warehouseId], references: [id])
-  createdBy       User             @relation("DispatchCreatedBy", fields: [createdById], references: [id])
-  dispatchedBy    User?            @relation("DispatchDispatchedBy", fields: [dispatchedById], references: [id])
-  lines                DispatchLine[]
-  invoiceHandover      InvoiceHandover?
-  documentation        DocumentationRecord?
-  inventoryTransfers   InventoryTransfer[]
-  crossCompanyPlans    PiCrossCompanyTransferPlan[]
+  company            Company                      @relation(fields: [companyId], references: [id])
+  customer           Customer                     @relation(fields: [customerId], references: [id])
+  proformaInvoice    ProformaInvoice              @relation(fields: [proformaInvoiceId], references: [id])
+  warehouse          Warehouse                    @relation(fields: [warehouseId], references: [id])
+  createdBy          User                         @relation("DispatchCreatedBy", fields: [createdById], references: [id])
+  dispatchedBy       User?                        @relation("DispatchDispatchedBy", fields: [dispatchedById], references: [id])
+  lines              DispatchLine[]
+  invoiceHandover    InvoiceHandover?
+  documentation      DocumentationRecord?
+  inventoryTransfers InventoryTransfer[]
+  crossCompanyPlans  PiCrossCompanyTransferPlan[]
 
   @@index([companyId, status])
   @@index([customerId])
@@ -1797,15 +1829,15 @@ model ProjectProposal {
   createdAt         DateTime              @default(now()) @map("created_at")
   updatedAt         DateTime              @updatedAt @map("updated_at")
 
-  company       Company                        @relation(fields: [companyId], references: [id])
-  salesUser     User                           @relation("ProjectProposalSalesUser", fields: [salesUserId], references: [id])
-  convertedBy   User?                          @relation("ProjectProposalConvertedBy", fields: [convertedById], references: [id])
-  createdBy     User                           @relation("ProjectProposalCreatedBy", fields: [createdById], references: [id])
-  updatedBy     User                           @relation("ProjectProposalUpdatedBy", fields: [updatedById], references: [id])
-  revisions     ProjectProposalRevision[]
-  statusHistory ProjectProposalStatusHistory[]
-  approvals     ProjectProposalApproval[]
-  enquiry       ProjectEnquiry?
+  company          Company                        @relation(fields: [companyId], references: [id])
+  salesUser        User                           @relation("ProjectProposalSalesUser", fields: [salesUserId], references: [id])
+  convertedBy      User?                          @relation("ProjectProposalConvertedBy", fields: [convertedById], references: [id])
+  createdBy        User                           @relation("ProjectProposalCreatedBy", fields: [createdById], references: [id])
+  updatedBy        User                           @relation("ProjectProposalUpdatedBy", fields: [updatedById], references: [id])
+  revisions        ProjectProposalRevision[]
+  statusHistory    ProjectProposalStatusHistory[]
+  approvals        ProjectProposalApproval[]
+  enquiry          ProjectEnquiry?
   executionProject Project?
 
   @@index([companyId, status])
@@ -1815,32 +1847,32 @@ model ProjectProposal {
 
 /// B2C project execution record created when an approved proposal is converted.
 model Project {
-  id               String        @id @default(uuid()) @db.Uuid
-  projectNo        String        @unique @map("project_no")
-  companyId        String        @map("company_id") @db.Uuid
-  proposalId       String        @unique @map("proposal_id") @db.Uuid
-  revisionId       String        @map("revision_id") @db.Uuid
-  warehouseId      String        @map("warehouse_id") @db.Uuid
-  customerName     String        @map("customer_name")
-  customerMobile   String        @map("customer_mobile")
-  siteAddress      String        @map("site_address")
-  status           ProjectStatus
-  closedAt         DateTime?     @map("closed_at")
-  closedById       String?       @map("closed_by") @db.Uuid
-  createdById      String        @map("created_by") @db.Uuid
-  updatedById      String        @map("updated_by") @db.Uuid
-  createdAt        DateTime      @default(now()) @map("created_at")
-  updatedAt        DateTime      @updatedAt @map("updated_at")
+  id             String        @id @default(uuid()) @db.Uuid
+  projectNo      String        @unique @map("project_no")
+  companyId      String        @map("company_id") @db.Uuid
+  proposalId     String        @unique @map("proposal_id") @db.Uuid
+  revisionId     String        @map("revision_id") @db.Uuid
+  warehouseId    String        @map("warehouse_id") @db.Uuid
+  customerName   String        @map("customer_name")
+  customerMobile String        @map("customer_mobile")
+  siteAddress    String        @map("site_address")
+  status         ProjectStatus
+  closedAt       DateTime?     @map("closed_at")
+  closedById     String?       @map("closed_by") @db.Uuid
+  createdById    String        @map("created_by") @db.Uuid
+  updatedById    String        @map("updated_by") @db.Uuid
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
 
-  company     Company                    @relation(fields: [companyId], references: [id])
-  proposal    ProjectProposal            @relation(fields: [proposalId], references: [id])
-  warehouse   Warehouse                  @relation(fields: [warehouseId], references: [id])
-  closedBy    User?                      @relation("ProjectClosedBy", fields: [closedById], references: [id])
-  createdBy   User                       @relation("ProjectCreatedBy", fields: [createdById], references: [id])
-  updatedBy   User                       @relation("ProjectUpdatedBy", fields: [updatedById], references: [id])
-  assignment  ProjectMaterialAssignment?
+  company          Company                    @relation(fields: [companyId], references: [id])
+  proposal         ProjectProposal            @relation(fields: [proposalId], references: [id])
+  warehouse        Warehouse                  @relation(fields: [warehouseId], references: [id])
+  closedBy         User?                      @relation("ProjectClosedBy", fields: [closedById], references: [id])
+  createdBy        User                       @relation("ProjectCreatedBy", fields: [createdById], references: [id])
+  updatedBy        User                       @relation("ProjectUpdatedBy", fields: [updatedById], references: [id])
+  assignment       ProjectMaterialAssignment?
   purchaseRequests PurchaseRequest[]
-  dispatches  ProjectDispatch[]
+  dispatches       ProjectDispatch[]
 
   @@index([companyId, status])
   @@index([customerName])
@@ -1873,12 +1905,12 @@ model ProjectMaterialLine {
   assignedQty     Decimal                   @default(0) @map("assigned_qty") @db.Decimal(12, 3)
   dispatchedQty   Decimal                   @default(0) @map("dispatched_qty") @db.Decimal(12, 3)
   lineStatus      ProjectMaterialLineStatus @map("line_status")
-  sortOrder             Int                       @default(0) @map("sort_order")
-  lastApprovedQty       Decimal?                  @map("last_approved_qty") @db.Decimal(12, 3)
-  stockSourceLog        Json?                     @map("stock_source_log")
-  remarks               String?
-  createdAt             DateTime                  @default(now()) @map("created_at")
-  updatedAt             DateTime                  @updatedAt @map("updated_at")
+  sortOrder       Int                       @default(0) @map("sort_order")
+  lastApprovedQty Decimal?                  @map("last_approved_qty") @db.Decimal(12, 3)
+  stockSourceLog  Json?                     @map("stock_source_log")
+  remarks         String?
+  createdAt       DateTime                  @default(now()) @map("created_at")
+  updatedAt       DateTime                  @updatedAt @map("updated_at")
 
   assignment          ProjectMaterialAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
   product             Product                   @relation(fields: [productId], references: [id])
@@ -1919,15 +1951,15 @@ model ProjectDispatch {
 }
 
 model ProjectDispatchLine {
-  id             String  @id @default(uuid()) @db.Uuid
-  dispatchId     String  @map("dispatch_id") @db.Uuid
-  materialLineId String  @map("material_line_id") @db.Uuid
-  productId      String  @map("product_id") @db.Uuid
-  qty            Decimal @db.Decimal(12, 3)
-  kitProductId   String? @map("kit_product_id") @db.Uuid
-  kitProductName String? @map("kit_product_name")
+  id             String   @id @default(uuid()) @db.Uuid
+  dispatchId     String   @map("dispatch_id") @db.Uuid
+  materialLineId String   @map("material_line_id") @db.Uuid
+  productId      String   @map("product_id") @db.Uuid
+  qty            Decimal  @db.Decimal(12, 3)
+  kitProductId   String?  @map("kit_product_id") @db.Uuid
+  kitProductName String?  @map("kit_product_name")
   kitBomQty      Decimal? @map("kit_bom_qty") @db.Decimal(12, 3)
-  sortOrder      Int     @default(0) @map("sort_order")
+  sortOrder      Int      @default(0) @map("sort_order")
 
   dispatch     ProjectDispatch             @relation(fields: [dispatchId], references: [id], onDelete: Cascade)
   materialLine ProjectMaterialLine         @relation(fields: [materialLineId], references: [id])
@@ -1952,28 +1984,28 @@ model ProjectDispatchLineSerial {
 }
 
 model ProjectEnquiry {
-  id             String              @id @default(uuid()) @db.Uuid
-  enquiryNo      String              @unique @map("enquiry_no")
-  companyId      String              @map("company_id") @db.Uuid
-  salesUserId    String              @map("sales_user_id") @db.Uuid
-  customerName   String              @map("customer_name")
-  customerMobile String              @map("customer_mobile")
+  id             String               @id @default(uuid()) @db.Uuid
+  enquiryNo      String               @unique @map("enquiry_no")
+  companyId      String               @map("company_id") @db.Uuid
+  salesUserId    String               @map("sales_user_id") @db.Uuid
+  customerName   String               @map("customer_name")
+  customerMobile String               @map("customer_mobile")
   status         ProjectEnquiryStatus @default(OPEN)
-  nextFollowupAt DateTime            @map("next_followup_at") @db.Date
-  lastFollowupAt DateTime?           @map("last_followup_at") @db.Date
-  lostReason     String?             @map("lost_reason")
-  proposalId     String?             @unique @map("proposal_id") @db.Uuid
-  createdById    String              @map("created_by") @db.Uuid
-  updatedById    String              @map("updated_by") @db.Uuid
-  createdAt      DateTime            @default(now()) @map("created_at")
-  updatedAt      DateTime            @updatedAt @map("updated_at")
+  nextFollowupAt DateTime             @map("next_followup_at") @db.Date
+  lastFollowupAt DateTime?            @map("last_followup_at") @db.Date
+  lostReason     String?              @map("lost_reason")
+  proposalId     String?              @unique @map("proposal_id") @db.Uuid
+  createdById    String               @map("created_by") @db.Uuid
+  updatedById    String               @map("updated_by") @db.Uuid
+  createdAt      DateTime             @default(now()) @map("created_at")
+  updatedAt      DateTime             @updatedAt @map("updated_at")
 
-  company    Company                 @relation(fields: [companyId], references: [id])
-  salesUser  User                    @relation("ProjectEnquirySalesUser", fields: [salesUserId], references: [id])
-  proposal   ProjectProposal?        @relation(fields: [proposalId], references: [id])
-  createdBy  User                    @relation("ProjectEnquiryCreatedBy", fields: [createdById], references: [id])
-  updatedBy  User                    @relation("ProjectEnquiryUpdatedBy", fields: [updatedById], references: [id])
-  followups  ProjectEnquiryFollowup[]
+  company   Company                  @relation(fields: [companyId], references: [id])
+  salesUser User                     @relation("ProjectEnquirySalesUser", fields: [salesUserId], references: [id])
+  proposal  ProjectProposal?         @relation(fields: [proposalId], references: [id])
+  createdBy User                     @relation("ProjectEnquiryCreatedBy", fields: [createdById], references: [id])
+  updatedBy User                     @relation("ProjectEnquiryUpdatedBy", fields: [updatedById], references: [id])
+  followups ProjectEnquiryFollowup[]
 
   @@index([companyId, status, nextFollowupAt])
   @@index([salesUserId])
@@ -2273,12 +2305,12 @@ model InventoryEvent {
   createdAt          DateTime             @default(now()) @map("created_at")
   updatedAt          DateTime             @updatedAt @map("updated_at")
 
-  company       Company         @relation(fields: [companyId], references: [id])
-  warehouse     Warehouse       @relation(fields: [warehouseId], references: [id])
-  product       Product         @relation(fields: [productId], references: [id])
-  createdBy     User            @relation("InventoryEventCreatedBy", fields: [createdById], references: [id])
-  updatedBy     User?           @relation("InventoryEventUpdatedBy", fields: [updatedById], references: [id])
-  replacesEvent InventoryEvent? @relation("InventoryEventReplacement", fields: [replacesEventId], references: [id])
+  company       Company          @relation(fields: [companyId], references: [id])
+  warehouse     Warehouse        @relation(fields: [warehouseId], references: [id])
+  product       Product          @relation(fields: [productId], references: [id])
+  createdBy     User             @relation("InventoryEventCreatedBy", fields: [createdById], references: [id])
+  updatedBy     User?            @relation("InventoryEventUpdatedBy", fields: [updatedById], references: [id])
+  replacesEvent InventoryEvent?  @relation("InventoryEventReplacement", fields: [replacesEventId], references: [id])
   replacedBy    InventoryEvent[] @relation("InventoryEventReplacement")
 
   @@index([companyId, warehouseId, productId, effectiveDate])
@@ -2289,17 +2321,17 @@ model InventoryEvent {
 }
 
 model InventorySafetyStock {
-  id            String    @id @default(uuid()) @db.Uuid
-  companyId     String    @map("company_id") @db.Uuid
-  warehouseId   String    @map("warehouse_id") @db.Uuid
-  productId     String    @map("product_id") @db.Uuid
-  safetyQty     Decimal   @map("safety_qty") @db.Decimal(12, 3)
-  effectiveFrom DateTime  @map("effective_from") @db.Date
-  isActive      Boolean   @default(true) @map("is_active")
-  createdById   String    @map("created_by") @db.Uuid
-  updatedById   String?   @map("updated_by") @db.Uuid
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
+  id            String   @id @default(uuid()) @db.Uuid
+  companyId     String   @map("company_id") @db.Uuid
+  warehouseId   String   @map("warehouse_id") @db.Uuid
+  productId     String   @map("product_id") @db.Uuid
+  safetyQty     Decimal  @map("safety_qty") @db.Decimal(12, 3)
+  effectiveFrom DateTime @map("effective_from") @db.Date
+  isActive      Boolean  @default(true) @map("is_active")
+  createdById   String   @map("created_by") @db.Uuid
+  updatedById   String?  @map("updated_by") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   company   Company   @relation(fields: [companyId], references: [id])
   warehouse Warehouse @relation(fields: [warehouseId], references: [id])
@@ -2326,11 +2358,11 @@ model CompanyWorkingDay {
 }
 
 model CompanyHoliday {
-  id        String   @id @default(uuid()) @db.Uuid
-  companyId String   @map("company_id") @db.Uuid
+  id          String   @id @default(uuid()) @db.Uuid
+  companyId   String   @map("company_id") @db.Uuid
   holidayDate DateTime @map("holiday_date") @db.Date
-  name      String?
-  createdAt DateTime @default(now()) @map("created_at")
+  name        String?
+  createdAt   DateTime @default(now()) @map("created_at")
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -2364,14 +2396,14 @@ model WarehouseHoliday {
 }
 
 model QuotationWarningLog {
-  id          String              @id @default(uuid()) @db.Uuid
-  quotationId String              @map("quotation_id") @db.Uuid
-  companyId   String              @map("company_id") @db.Uuid
-  warningType QuotationWarningType @map("warning_type")
-  displayed   Boolean             @default(true)
-  details     Json?
-  proceededById String            @map("proceeded_by") @db.Uuid
-  proceededAt DateTime            @default(now()) @map("proceeded_at")
+  id            String               @id @default(uuid()) @db.Uuid
+  quotationId   String               @map("quotation_id") @db.Uuid
+  companyId     String               @map("company_id") @db.Uuid
+  warningType   QuotationWarningType @map("warning_type")
+  displayed     Boolean              @default(true)
+  details       Json?
+  proceededById String               @map("proceeded_by") @db.Uuid
+  proceededAt   DateTime             @default(now()) @map("proceeded_at")
 
   quotation   Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
   company     Company   @relation(fields: [companyId], references: [id])
@@ -2383,24 +2415,24 @@ model QuotationWarningLog {
 }
 
 model InvoiceHandover {
-  id                String                @id @default(uuid()) @db.Uuid
-  dispatchId        String                @unique @map("dispatch_id") @db.Uuid
-  companyId         String                @map("company_id") @db.Uuid
-  customerId        String                @map("customer_id") @db.Uuid
-  status            InvoiceHandoverStatus @default(PENDING_INVOICE)
-  invoiceNumber     String?               @map("invoice_number")
-  invoiceDate       DateTime?             @map("invoice_date") @db.Date
-  remarks           String?
-  attachmentUrl     String?               @map("attachment_url")
-  recordedById      String?               @map("recorded_by") @db.Uuid
-  recordedAt        DateTime?             @map("recorded_at")
-  createdAt         DateTime              @default(now()) @map("created_at")
-  updatedAt         DateTime              @updatedAt @map("updated_at")
+  id            String                @id @default(uuid()) @db.Uuid
+  dispatchId    String                @unique @map("dispatch_id") @db.Uuid
+  companyId     String                @map("company_id") @db.Uuid
+  customerId    String                @map("customer_id") @db.Uuid
+  status        InvoiceHandoverStatus @default(PENDING_INVOICE)
+  invoiceNumber String?               @map("invoice_number")
+  invoiceDate   DateTime?             @map("invoice_date") @db.Date
+  remarks       String?
+  attachmentUrl String?               @map("attachment_url")
+  recordedById  String?               @map("recorded_by") @db.Uuid
+  recordedAt    DateTime?             @map("recorded_at")
+  createdAt     DateTime              @default(now()) @map("created_at")
+  updatedAt     DateTime              @updatedAt @map("updated_at")
 
-  dispatch   Dispatch @relation(fields: [dispatchId], references: [id], onDelete: Cascade)
-  company    Company  @relation(fields: [companyId], references: [id])
-  customer   Customer @relation(fields: [customerId], references: [id])
-  recordedBy User?    @relation("InvoiceHandoverRecordedBy", fields: [recordedById], references: [id])
+  dispatch      Dispatch             @relation(fields: [dispatchId], references: [id], onDelete: Cascade)
+  company       Company              @relation(fields: [companyId], references: [id])
+  customer      Customer             @relation(fields: [customerId], references: [id])
+  recordedBy    User?                @relation("InvoiceHandoverRecordedBy", fields: [recordedById], references: [id])
   documentation DocumentationRecord?
 
   @@index([companyId, status])
@@ -2409,30 +2441,30 @@ model InvoiceHandover {
 }
 
 model DocumentationRecord {
-  id                   String              @id @default(uuid()) @db.Uuid
-  dispatchId           String              @unique @map("dispatch_id") @db.Uuid
-  invoiceHandoverId    String              @unique @map("invoice_handover_id") @db.Uuid
-  companyId            String              @map("company_id") @db.Uuid
-  customerId           String              @map("customer_id") @db.Uuid
-  status               DocumentationStatus @default(PENDING)
-  assignedToId         String?             @map("assigned_to") @db.Uuid
-  assignedDate         DateTime?           @map("assigned_date") @db.Date
-  completedDate        DateTime?           @map("completed_date") @db.Date
-  completedById        String?             @map("completed_by") @db.Uuid
-  remarks              String?
-  internalNotes        String?             @map("internal_notes")
-  holdReason           String?             @map("hold_reason")
-  reviewReason         String?             @map("review_reason")
-  createdAt            DateTime            @default(now()) @map("created_at")
-  updatedAt            DateTime            @updatedAt @map("updated_at")
+  id                String              @id @default(uuid()) @db.Uuid
+  dispatchId        String              @unique @map("dispatch_id") @db.Uuid
+  invoiceHandoverId String              @unique @map("invoice_handover_id") @db.Uuid
+  companyId         String              @map("company_id") @db.Uuid
+  customerId        String              @map("customer_id") @db.Uuid
+  status            DocumentationStatus @default(PENDING)
+  assignedToId      String?             @map("assigned_to") @db.Uuid
+  assignedDate      DateTime?           @map("assigned_date") @db.Date
+  completedDate     DateTime?           @map("completed_date") @db.Date
+  completedById     String?             @map("completed_by") @db.Uuid
+  remarks           String?
+  internalNotes     String?             @map("internal_notes")
+  holdReason        String?             @map("hold_reason")
+  reviewReason      String?             @map("review_reason")
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
 
-  dispatch        Dispatch                       @relation(fields: [dispatchId], references: [id], onDelete: Cascade)
-  invoiceHandover InvoiceHandover                @relation(fields: [invoiceHandoverId], references: [id], onDelete: Cascade)
-  company         Company                        @relation(fields: [companyId], references: [id])
-  customer        Customer                       @relation(fields: [customerId], references: [id])
-  assignedTo      User?                          @relation("DocumentationAssignedTo", fields: [assignedToId], references: [id])
-  completedBy     User?                          @relation("DocumentationCompletedBy", fields: [completedById], references: [id])
-  statusHistory   DocumentationStatusHistory[]
+  dispatch          Dispatch                         @relation(fields: [dispatchId], references: [id], onDelete: Cascade)
+  invoiceHandover   InvoiceHandover                  @relation(fields: [invoiceHandoverId], references: [id], onDelete: Cascade)
+  company           Company                          @relation(fields: [companyId], references: [id])
+  customer          Customer                         @relation(fields: [customerId], references: [id])
+  assignedTo        User?                            @relation("DocumentationAssignedTo", fields: [assignedToId], references: [id])
+  completedBy       User?                            @relation("DocumentationCompletedBy", fields: [completedById], references: [id])
+  statusHistory     DocumentationStatusHistory[]
   assignmentHistory DocumentationAssignmentHistory[]
 
   @@index([companyId, status])
@@ -2442,15 +2474,15 @@ model DocumentationRecord {
 }
 
 model DocumentationStatusHistory {
-  id                   String              @id @default(uuid()) @db.Uuid
-  documentationRecordId String             @map("documentation_record_id") @db.Uuid
-  fromStatus           DocumentationStatus? @map("from_status")
-  toStatus             DocumentationStatus @map("to_status")
-  holdReason           String?             @map("hold_reason")
-  reviewReason         String?             @map("review_reason")
-  remarks              String?
-  changedById          String              @map("changed_by") @db.Uuid
-  changedAt            DateTime            @default(now()) @map("changed_at")
+  id                    String               @id @default(uuid()) @db.Uuid
+  documentationRecordId String               @map("documentation_record_id") @db.Uuid
+  fromStatus            DocumentationStatus? @map("from_status")
+  toStatus              DocumentationStatus  @map("to_status")
+  holdReason            String?              @map("hold_reason")
+  reviewReason          String?              @map("review_reason")
+  remarks               String?
+  changedById           String               @map("changed_by") @db.Uuid
+  changedAt             DateTime             @default(now()) @map("changed_at")
 
   documentationRecord DocumentationRecord @relation(fields: [documentationRecordId], references: [id], onDelete: Cascade)
   changedBy           User                @relation("DocumentationStatusChangedBy", fields: [changedById], references: [id])
@@ -2480,19 +2512,19 @@ model DocumentationAssignmentHistory {
 // ---------------------------------------------------------------------------
 
 model InventoryOpeningAudit {
-  id           String             @id @default(uuid()) @db.Uuid
-  auditNumber  String             @unique @map("audit_number")
-  companyId    String             @map("company_id") @db.Uuid
-  warehouseId  String             @map("warehouse_id") @db.Uuid
-  status       OpeningAuditStatus @default(DRAFT)
-  notes        String?
-  createdById  String             @map("created_by") @db.Uuid
-  submittedAt  DateTime?          @map("submitted_at")
-  submittedById String?           @map("submitted_by") @db.Uuid
-  approvedAt   DateTime?          @map("approved_at")
-  approvedById String?            @map("approved_by") @db.Uuid
-  createdAt    DateTime           @default(now()) @map("created_at")
-  updatedAt    DateTime           @updatedAt @map("updated_at")
+  id            String             @id @default(uuid()) @db.Uuid
+  auditNumber   String             @unique @map("audit_number")
+  companyId     String             @map("company_id") @db.Uuid
+  warehouseId   String             @map("warehouse_id") @db.Uuid
+  status        OpeningAuditStatus @default(DRAFT)
+  notes         String?
+  createdById   String             @map("created_by") @db.Uuid
+  submittedAt   DateTime?          @map("submitted_at")
+  submittedById String?            @map("submitted_by") @db.Uuid
+  approvedAt    DateTime?          @map("approved_at")
+  approvedById  String?            @map("approved_by") @db.Uuid
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
 
   company     Company                     @relation(fields: [companyId], references: [id])
   warehouse   Warehouse                   @relation(fields: [warehouseId], references: [id])
@@ -2565,15 +2597,15 @@ model InventoryDailyAudit {
 }
 
 model InventoryDailyAuditLine {
-  id          String    @id @default(uuid()) @db.Uuid
-  auditId     String    @map("audit_id") @db.Uuid
-  productId   String    @map("product_id") @db.Uuid
-  systemQty   Decimal   @map("system_qty") @db.Decimal(12, 3)
-  physicalQty Decimal?  @map("physical_qty") @db.Decimal(12, 3)
-  varianceQty Decimal?  @map("variance_qty") @db.Decimal(12, 3)
+  id          String   @id @default(uuid()) @db.Uuid
+  auditId     String   @map("audit_id") @db.Uuid
+  productId   String   @map("product_id") @db.Uuid
+  systemQty   Decimal  @map("system_qty") @db.Decimal(12, 3)
+  physicalQty Decimal? @map("physical_qty") @db.Decimal(12, 3)
+  varianceQty Decimal? @map("variance_qty") @db.Decimal(12, 3)
   remarks     String?
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
   audit   InventoryDailyAudit @relation(fields: [auditId], references: [id], onDelete: Cascade)
   product Product             @relation(fields: [productId], references: [id])
@@ -2626,16 +2658,16 @@ model ModuleMasteryConfig {
 }
 
 model ModuleMasteryLevel {
-  id                String   @id @default(uuid()) @db.Uuid
-  companyId         String   @map("company_id") @db.Uuid
-  levelNumber       Int      @map("level_number")
-  name              String
-  badge             String
-  thresholdModules  Int      @map("threshold_modules")
-  isActive          Boolean  @default(true) @map("is_active")
-  sortOrder         Int      @map("sort_order")
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
+  id               String   @id @default(uuid()) @db.Uuid
+  companyId        String   @map("company_id") @db.Uuid
+  levelNumber      Int      @map("level_number")
+  name             String
+  badge            String
+  thresholdModules Int      @map("threshold_modules")
+  isActive         Boolean  @default(true) @map("is_active")
+  sortOrder        Int      @map("sort_order")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
@@ -2698,26 +2730,30 @@ model ExecutiveModuleLevelAchievement {
 // ─── Banking & payment reconciliation ───────────────────────────────────────
 
 model BankAccount {
-  id                   String   @id @default(uuid()) @db.Uuid
-  companyId            String   @map("company_id") @db.Uuid
-  bankName             String   @map("bank_name")
-  accountName          String   @map("account_name")
-  accountNumber        String   @map("account_number")
-  accountNumberMasked  String   @map("account_number_masked")
-  ifscCode             String?  @map("ifsc_code")
-  currency             String   @default("INR")
+  id                  String            @id @default(uuid()) @db.Uuid
+  companyId           String            @map("company_id") @db.Uuid
+  bankName            String            @map("bank_name")
+  accountName         String            @map("account_name")
+  accountNumber       String            @map("account_number")
+  accountNumberMasked String            @map("account_number_masked")
+  ifscCode            String?           @map("ifsc_code")
+  currency            String            @default("INR")
   /// Maps to ReceivedInAccount on PI payments (SBI / HDFC / ICICI).
-  receivedInAccount    ReceivedInAccount @map("received_in_account")
-  isActive             Boolean  @default(true) @map("is_active")
+  receivedInAccount   ReceivedInAccount @map("received_in_account")
+  isActive            Boolean           @default(true) @map("is_active")
   /// When true, credit receipts from this account appear in Sales Daily Receipts.
-  visibleToSales       Boolean  @default(true) @map("visible_to_sales")
-  createdAt            DateTime @default(now()) @map("created_at")
-  updatedAt            DateTime @updatedAt @map("updated_at")
+  visibleToSales      Boolean           @default(true) @map("visible_to_sales")
+  /// Firm refund bank-account memory: how often this account has paid out a customer refund.
+  refundUsageCount    Int               @default(0) @map("refund_usage_count")
+  lastRefundUsedAt    DateTime?         @map("last_refund_used_at")
+  createdAt           DateTime          @default(now()) @map("created_at")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
 
-  company      Company               @relation(fields: [companyId], references: [id])
-  imports      BankStatementImport[]
-  transactions BankTransaction[]
-  issues       BankTransactionIssue[]
+  company         Company                @relation(fields: [companyId], references: [id])
+  imports         BankStatementImport[]
+  transactions    BankTransaction[]
+  issues          BankTransactionIssue[]
+  refundsPaidFrom CustomerRefund[]       @relation("CustomerRefundFromBankAccount")
 
   @@unique([accountNumber])
   @@index([companyId, isActive])
@@ -2727,27 +2763,27 @@ model BankAccount {
 }
 
 model BankStatementImport {
-  id                      String                     @id @default(uuid()) @db.Uuid
-  bankAccountId           String?                    @map("bank_account_id") @db.Uuid
-  originalFilename        String                     @map("original_filename")
-  fileHash                String                     @map("file_hash")
-  parserType              BankStatementParserType    @map("parser_type")
-  statementStartDate      DateTime?                  @map("statement_start_date") @db.Date
-  statementEndDate        DateTime?                  @map("statement_end_date") @db.Date
-  transactionsDetected    Int                        @default(0) @map("transactions_detected")
-  newTransactions         Int                        @default(0) @map("new_transactions")
-  duplicatesDetected      Int                        @default(0) @map("duplicates_detected")
-  mismatchesDetected      Int                        @default(0) @map("mismatches_detected")
-  balanceIssuesDetected   Int                        @default(0) @map("balance_issues_detected")
-  processingStatus        BankStatementImportStatus  @default(PENDING) @map("processing_status")
-  errorMessage            String?                    @map("error_message")
+  id                    String                    @id @default(uuid()) @db.Uuid
+  bankAccountId         String?                   @map("bank_account_id") @db.Uuid
+  originalFilename      String                    @map("original_filename")
+  fileHash              String                    @map("file_hash")
+  parserType            BankStatementParserType   @map("parser_type")
+  statementStartDate    DateTime?                 @map("statement_start_date") @db.Date
+  statementEndDate      DateTime?                 @map("statement_end_date") @db.Date
+  transactionsDetected  Int                       @default(0) @map("transactions_detected")
+  newTransactions       Int                       @default(0) @map("new_transactions")
+  duplicatesDetected    Int                       @default(0) @map("duplicates_detected")
+  mismatchesDetected    Int                       @default(0) @map("mismatches_detected")
+  balanceIssuesDetected Int                       @default(0) @map("balance_issues_detected")
+  processingStatus      BankStatementImportStatus @default(PENDING) @map("processing_status")
+  errorMessage          String?                   @map("error_message")
   /// Preview analysis JSON (normalized txns + classifications). No original file content.
-  analysisPayload         Json?                      @map("analysis_payload")
-  uploadedById            String                     @map("uploaded_by") @db.Uuid
-  uploadedAt              DateTime                   @default(now()) @map("uploaded_at")
+  analysisPayload       Json?                     @map("analysis_payload")
+  uploadedById          String                    @map("uploaded_by") @db.Uuid
+  uploadedAt            DateTime                  @default(now()) @map("uploaded_at")
   /// Set when the temporary upload file is deleted (success or failure). Never store a permanent file path.
-  fileDeletedAt           DateTime?                  @map("file_deleted_at")
-  completedAt             DateTime?                  @map("completed_at")
+  fileDeletedAt         DateTime?                 @map("file_deleted_at")
+  completedAt           DateTime?                 @map("completed_at")
 
   bankAccount  BankAccount?           @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
   uploadedBy   User                   @relation("BankStatementImportUploadedBy", fields: [uploadedById], references: [id])
@@ -2761,30 +2797,32 @@ model BankStatementImport {
 }
 
 model BankTransaction {
-  id                    String                          @id @default(uuid()) @db.Uuid
-  bankAccountId         String                          @map("bank_account_id") @db.Uuid
-  sourceImportId        String?                         @map("source_import_id") @db.Uuid
-  transactionDate       DateTime                        @map("transaction_date") @db.Date
-  valueDate             DateTime?                       @map("value_date") @db.Date
-  description           String
-  referenceNumber       String?                         @map("reference_number")
-  debitAmount           Decimal                         @default(0) @map("debit_amount") @db.Decimal(14, 2)
-  creditAmount          Decimal                         @default(0) @map("credit_amount") @db.Decimal(14, 2)
-  runningBalance        Decimal                         @map("running_balance") @db.Decimal(14, 2)
-  statementSequence     Int                             @map("statement_sequence")
-  sourceRowNumber       Int?                            @map("source_row_number")
-  transactionFingerprint String                         @map("transaction_fingerprint")
+  id                     String                          @id @default(uuid()) @db.Uuid
+  bankAccountId          String                          @map("bank_account_id") @db.Uuid
+  sourceImportId         String?                         @map("source_import_id") @db.Uuid
+  transactionDate        DateTime                        @map("transaction_date") @db.Date
+  valueDate              DateTime?                       @map("value_date") @db.Date
+  description            String
+  referenceNumber        String?                         @map("reference_number")
+  debitAmount            Decimal                         @default(0) @map("debit_amount") @db.Decimal(14, 2)
+  creditAmount           Decimal                         @default(0) @map("credit_amount") @db.Decimal(14, 2)
+  runningBalance         Decimal                         @map("running_balance") @db.Decimal(14, 2)
+  statementSequence      Int                             @map("statement_sequence")
+  sourceRowNumber        Int?                            @map("source_row_number")
+  transactionFingerprint String                          @map("transaction_fingerprint")
   /// Short unique copyable code for credit receipts (e.g. P8K4X2). Null for debits.
-  paymentCode           String?                         @unique @map("payment_code")
-  assignmentStatus      BankTransactionAssignmentStatus @default(UNASSIGNED) @map("assignment_status")
-  createdAt             DateTime                        @default(now()) @map("created_at")
-  updatedAt             DateTime                        @updatedAt @map("updated_at")
+  paymentCode            String?                         @unique @map("payment_code")
+  assignmentStatus       BankTransactionAssignmentStatus @default(UNASSIGNED) @map("assignment_status")
+  createdAt              DateTime                        @default(now()) @map("created_at")
+  updatedAt              DateTime                        @updatedAt @map("updated_at")
 
-  bankAccount   BankAccount             @relation(fields: [bankAccountId], references: [id])
-  sourceImport  BankStatementImport?    @relation(fields: [sourceImportId], references: [id], onDelete: SetNull)
-  payments      Payment[]
-  allocations   BankPaymentAllocation[]
-  issues        BankTransactionIssue[]
+  bankAccount           BankAccount                          @relation(fields: [bankAccountId], references: [id])
+  sourceImport          BankStatementImport?                 @relation(fields: [sourceImportId], references: [id], onDelete: SetNull)
+  payments              Payment[]
+  allocations           BankPaymentAllocation[]
+  issues                BankTransactionIssue[]
+  refundsAgainstReceipt CustomerRefund[]                     @relation("CustomerRefundOriginalReceipt")
+  refundReferences      CustomerRefundTransactionReference[]
 
   @@unique([bankAccountId, transactionFingerprint])
   @@index([bankAccountId, transactionDate])
@@ -2795,29 +2833,29 @@ model BankTransaction {
 }
 
 model BankTransactionIssue {
-  id                String                      @id @default(uuid()) @db.Uuid
-  bankAccountId     String?                     @map("bank_account_id") @db.Uuid
-  bankTransactionId String?                     @map("bank_transaction_id") @db.Uuid
-  sourceImportId    String?                     @map("source_import_id") @db.Uuid
-  issueType         BankTransactionIssueType    @map("issue_type")
-  status            BankTransactionIssueStatus  @default(OPEN)
+  id                String                     @id @default(uuid()) @db.Uuid
+  bankAccountId     String?                    @map("bank_account_id") @db.Uuid
+  bankTransactionId String?                    @map("bank_transaction_id") @db.Uuid
+  sourceImportId    String?                    @map("source_import_id") @db.Uuid
+  issueType         BankTransactionIssueType   @map("issue_type")
+  status            BankTransactionIssueStatus @default(OPEN)
   /// Field-level existing vs uploaded values for mismatch investigation.
-  existingValues    Json?                       @map("existing_values")
-  uploadedValues    Json?                       @map("uploaded_values")
+  existingValues    Json?                      @map("existing_values")
+  uploadedValues    Json?                      @map("uploaded_values")
   details           Json?
-  resolutionReason  String?                     @map("resolution_reason")
-  resolvedById      String?                     @map("resolved_by") @db.Uuid
-  resolvedAt        DateTime?                   @map("resolved_at")
-  ignoredById       String?                     @map("ignored_by") @db.Uuid
-  ignoredAt         DateTime?                   @map("ignored_at")
-  createdAt         DateTime                    @default(now()) @map("created_at")
-  updatedAt         DateTime                    @updatedAt @map("updated_at")
+  resolutionReason  String?                    @map("resolution_reason")
+  resolvedById      String?                    @map("resolved_by") @db.Uuid
+  resolvedAt        DateTime?                  @map("resolved_at")
+  ignoredById       String?                    @map("ignored_by") @db.Uuid
+  ignoredAt         DateTime?                  @map("ignored_at")
+  createdAt         DateTime                   @default(now()) @map("created_at")
+  updatedAt         DateTime                   @updatedAt @map("updated_at")
 
-  bankAccount     BankAccount?          @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
-  bankTransaction BankTransaction?      @relation(fields: [bankTransactionId], references: [id], onDelete: SetNull)
-  sourceImport    BankStatementImport?  @relation(fields: [sourceImportId], references: [id], onDelete: SetNull)
-  resolvedBy      User?                 @relation("BankTransactionIssueResolvedBy", fields: [resolvedById], references: [id])
-  ignoredBy       User?                 @relation("BankTransactionIssueIgnoredBy", fields: [ignoredById], references: [id])
+  bankAccount     BankAccount?         @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
+  bankTransaction BankTransaction?     @relation(fields: [bankTransactionId], references: [id], onDelete: SetNull)
+  sourceImport    BankStatementImport? @relation(fields: [sourceImportId], references: [id], onDelete: SetNull)
+  resolvedBy      User?                @relation("BankTransactionIssueResolvedBy", fields: [resolvedById], references: [id])
+  ignoredBy       User?                @relation("BankTransactionIssueIgnoredBy", fields: [ignoredById], references: [id])
 
   @@index([status, issueType])
   @@index([bankAccountId, status])
@@ -2827,20 +2865,20 @@ model BankTransactionIssue {
 }
 
 model BankPaymentAllocation {
-  id                   String                      @id @default(uuid()) @db.Uuid
-  bankTransactionId    String                      @map("bank_transaction_id") @db.Uuid
-  piPaymentId          String                      @map("pi_payment_id") @db.Uuid
-  piId                 String                      @map("pi_id") @db.Uuid
-  customerId           String                      @map("customer_id") @db.Uuid
-  customerCompanyName  String                      @map("customer_company_name")
-  customerGstNumber    String                      @map("customer_gst_number")
-  allocatedAmount      Decimal                     @map("allocated_amount") @db.Decimal(14, 2)
-  allocationStatus     BankPaymentAllocationStatus @default(ACTIVE) @map("allocation_status")
-  createdById          String                      @map("created_by") @db.Uuid
-  createdAt            DateTime                    @default(now()) @map("created_at")
-  updatedAt            DateTime                    @updatedAt @map("updated_at")
-  releasedAt           DateTime?                   @map("released_at")
-  releaseReason        String?                     @map("release_reason")
+  id                  String                      @id @default(uuid()) @db.Uuid
+  bankTransactionId   String                      @map("bank_transaction_id") @db.Uuid
+  piPaymentId         String                      @map("pi_payment_id") @db.Uuid
+  piId                String                      @map("pi_id") @db.Uuid
+  customerId          String                      @map("customer_id") @db.Uuid
+  customerCompanyName String                      @map("customer_company_name")
+  customerGstNumber   String                      @map("customer_gst_number")
+  allocatedAmount     Decimal                     @map("allocated_amount") @db.Decimal(14, 2)
+  allocationStatus    BankPaymentAllocationStatus @default(ACTIVE) @map("allocation_status")
+  createdById         String                      @map("created_by") @db.Uuid
+  createdAt           DateTime                    @default(now()) @map("created_at")
+  updatedAt           DateTime                    @updatedAt @map("updated_at")
+  releasedAt          DateTime?                   @map("released_at")
+  releaseReason       String?                     @map("release_reason")
 
   bankTransaction BankTransaction @relation(fields: [bankTransactionId], references: [id])
   piPayment       Payment         @relation(fields: [piPaymentId], references: [id])
@@ -2853,6 +2891,129 @@ model BankPaymentAllocation {
   @@index([piId, allocationStatus])
   @@index([customerId])
   @@map("bank_payment_allocations")
+}
+
+// ─── Customer refunds ───────────────────────────────────────────────────────
+// A refund is a standalone financial record. It never mutates the original
+// Payment, BankTransaction or ProformaInvoice — those stay at their full value
+// so the receipt → refund request → refund transaction chain stays auditable.
+
+/// Reusable customer payout bank accounts. Kept separate from BankAccount
+/// (the firm master) so a customer account can never be picked as a payout source.
+model CustomerRefundBankAccount {
+  id                  String    @id @default(uuid()) @db.Uuid
+  customerId          String    @map("customer_id") @db.Uuid
+  accountHolderName   String    @map("account_holder_name")
+  accountNumber       String    @map("account_number")
+  accountNumberMasked String    @map("account_number_masked")
+  ifscCode            String    @map("ifsc_code")
+  bankName            String    @map("bank_name")
+  /// Incremented only when a refund is actually paid out to this account.
+  usageCount          Int       @default(0) @map("usage_count")
+  lastUsedAt          DateTime? @map("last_used_at")
+  isActive            Boolean   @default(true) @map("is_active")
+  createdById         String    @map("created_by") @db.Uuid
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  customer  Customer         @relation(fields: [customerId], references: [id])
+  createdBy User             @relation("CustomerRefundBankAccountCreatedBy", fields: [createdById], references: [id])
+  refunds   CustomerRefund[]
+
+  @@unique([customerId, accountNumber, ifscCode])
+  @@index([customerId, isActive])
+  @@map("customer_refund_bank_accounts")
+}
+
+model CustomerRefund {
+  id                  String               @id @default(uuid()) @db.Uuid
+  refundNumber        String               @unique @map("refund_number")
+  companyId           String               @map("company_id") @db.Uuid
+  customerId          String               @map("customer_id") @db.Uuid
+  /// Existing BankTransaction.paymentCode the SE verified. Snapshot, not a FK.
+  verificationCode    String               @map("verification_code")
+  /// The verified original credit receipt. Never modified by the refund flow.
+  bankTransactionId   String               @map("bank_transaction_id") @db.Uuid
+  /// Reference only. Plain text so no PI recalculation can ever be triggered.
+  piNumber            String?              @map("pi_number")
+  /// Gross credit on the original receipt at request time (audit snapshot).
+  receivedAmount      Decimal              @map("received_amount") @db.Decimal(14, 2)
+  requestedAmount     Decimal              @map("requested_amount") @db.Decimal(14, 2)
+  approvedAmount      Decimal?             @map("approved_amount") @db.Decimal(14, 2)
+  actualRefundAmount  Decimal?             @map("actual_refund_amount") @db.Decimal(14, 2)
+  reason              CustomerRefundReason
+  remarks             String?
+  status              CustomerRefundStatus @default(DRAFT)
+  refundBankAccountId String?              @map("refund_bank_account_id") @db.Uuid
+
+  requestedById String    @map("requested_by") @db.Uuid
+  requestedAt   DateTime  @default(now()) @map("requested_at")
+  submittedAt   DateTime? @map("submitted_at")
+
+  approvedById                String?   @map("approved_by") @db.Uuid
+  approvedAt                  DateTime? @map("approved_at")
+  approvalRemarks             String?   @map("approval_remarks")
+  rejectedById                String?   @map("rejected_by") @db.Uuid
+  rejectedAt                  DateTime? @map("rejected_at")
+  rejectionReason             String?   @map("rejection_reason")
+  /// Controlled post-approval correction path: unlocks the request and forces re-approval.
+  returnedForCorrectionAt     DateTime? @map("returned_for_correction_at")
+  returnedForCorrectionById   String?   @map("returned_for_correction_by") @db.Uuid
+  returnedForCorrectionReason String?   @map("returned_for_correction_reason")
+
+  processedById           String?      @map("processed_by") @db.Uuid
+  processedAt             DateTime?    @map("processed_at")
+  refundDate              DateTime?    @map("refund_date") @db.Date
+  refundFromBankAccountId String?      @map("refund_from_bank_account_id") @db.Uuid
+  refundPaymentMode       PaymentMode? @map("refund_payment_mode")
+  /// Bank-issued reference. Unique so one transfer can never settle two refunds.
+  /// Postgres unique indexes ignore NULLs, so unexecuted refunds are unaffected.
+  utrNumber               String?      @unique @map("utr_number")
+  processingRemarks       String?      @map("processing_remarks")
+  failureReason           String?      @map("failure_reason")
+
+  cancelledById String?   @map("cancelled_by") @db.Uuid
+  cancelledAt   DateTime? @map("cancelled_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  company                 Company                              @relation(fields: [companyId], references: [id])
+  customer                Customer                             @relation(fields: [customerId], references: [id])
+  bankTransaction         BankTransaction                      @relation("CustomerRefundOriginalReceipt", fields: [bankTransactionId], references: [id])
+  refundBankAccount       CustomerRefundBankAccount?           @relation(fields: [refundBankAccountId], references: [id])
+  refundFromBankAccount   BankAccount?                         @relation("CustomerRefundFromBankAccount", fields: [refundFromBankAccountId], references: [id])
+  requestedBy             User                                 @relation("CustomerRefundRequestedBy", fields: [requestedById], references: [id])
+  approvedBy              User?                                @relation("CustomerRefundApprovedBy", fields: [approvedById], references: [id])
+  rejectedBy              User?                                @relation("CustomerRefundRejectedBy", fields: [rejectedById], references: [id])
+  returnedForCorrectionBy User?                                @relation("CustomerRefundReturnedBy", fields: [returnedForCorrectionById], references: [id])
+  processedBy             User?                                @relation("CustomerRefundProcessedBy", fields: [processedById], references: [id])
+  cancelledBy             User?                                @relation("CustomerRefundCancelledBy", fields: [cancelledById], references: [id])
+  transactionReferences   CustomerRefundTransactionReference[]
+
+  @@index([companyId, status])
+  @@index([customerId, status])
+  @@index([bankTransactionId, status])
+  @@index([requestedById, status])
+  @@index([companyId, requestedAt])
+  @@index([status])
+  @@map("customer_refunds")
+}
+
+/// Links a refund to one or more existing bank_transactions rows.
+/// Reference only — no bank transaction is ever created or altered here.
+model CustomerRefundTransactionReference {
+  id                String   @id @default(uuid()) @db.Uuid
+  refundId          String   @map("refund_id") @db.Uuid
+  bankTransactionId String   @map("bank_transaction_id") @db.Uuid
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  refund          CustomerRefund  @relation(fields: [refundId], references: [id], onDelete: Cascade)
+  bankTransaction BankTransaction @relation(fields: [bankTransactionId], references: [id])
+
+  @@unique([refundId, bankTransactionId])
+  @@index([bankTransactionId])
+  @@map("customer_refund_transaction_references")
 }
 
 model StoredPdf {

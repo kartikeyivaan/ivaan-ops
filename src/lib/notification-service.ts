@@ -532,6 +532,113 @@ export async function notifyPiCreditOverdueEscalation(
   });
 }
 
+export async function notifyRefundApprovalNeeded(
+  client: NotificationClient,
+  input: {
+    companyId: string;
+    refundNumber: string;
+    customerName: string;
+    amount: number;
+  },
+) {
+  const users = await client.user.findMany({
+    where: {
+      status: "ACTIVE",
+      companies: { some: { companyId: input.companyId } },
+      roles: {
+        some: {
+          role: { name: { in: [ROLES.SALES_MANAGER, ROLES.SUPER_ADMIN] } },
+        },
+      },
+    },
+    select: { id: true },
+  });
+  if (!users.length) return { count: 0 };
+  const amount = `₹${Math.round(input.amount).toLocaleString("en-IN")}`;
+  return client.notification.createMany({
+    data: users.map(({ id }) => ({
+      userId: id,
+      title: "Refund approval needed",
+      message: `${input.refundNumber} requests a ${amount} refund to ${input.customerName}.`,
+      module: "refunds",
+    })),
+  });
+}
+
+export async function notifyRefundDecided(
+  client: NotificationClient,
+  input: {
+    userId: string;
+    refundNumber: string;
+    approved: boolean;
+    reason?: string;
+    returnedForCorrection?: boolean;
+  },
+) {
+  const title = input.returnedForCorrection
+    ? "Refund returned for correction"
+    : input.approved
+      ? "Refund approved"
+      : "Refund rejected";
+  const message = input.returnedForCorrection
+    ? `${input.refundNumber} needs correction${input.reason ? `: ${input.reason}` : "."} Re-submit for approval after updating.`
+    : input.approved
+      ? `${input.refundNumber} was approved and is now pending execution by Accounts.`
+      : `${input.refundNumber} was rejected${input.reason ? `: ${input.reason}` : "."}`;
+
+  return createNotification(
+    { userId: input.userId, title, message, module: "refunds" },
+    client,
+  );
+}
+
+export async function notifyRefundExecutionNeeded(
+  client: NotificationClient,
+  input: { companyId: string; refundNumber: string; amount: number },
+) {
+  const users = await client.user.findMany({
+    where: {
+      status: "ACTIVE",
+      companies: { some: { companyId: input.companyId } },
+      roles: {
+        some: { role: { name: { in: [ROLES.ACCOUNTS, ROLES.SUPER_ADMIN] } } },
+      },
+    },
+    select: { id: true },
+  });
+  if (!users.length) return { count: 0 };
+  const amount = `₹${Math.round(input.amount).toLocaleString("en-IN")}`;
+  return client.notification.createMany({
+    data: users.map(({ id }) => ({
+      userId: id,
+      title: "Refund pending execution",
+      message: `${input.refundNumber} is approved for ${amount} and awaiting transfer.`,
+      module: "refunds",
+    })),
+  });
+}
+
+export async function notifyRefundCompleted(
+  client: NotificationClient,
+  input: {
+    userId: string;
+    refundNumber: string;
+    amount: number;
+    utrNumber: string;
+  },
+) {
+  const amount = `₹${Math.round(input.amount).toLocaleString("en-IN")}`;
+  return createNotification(
+    {
+      userId: input.userId,
+      title: "Refund completed",
+      message: `${input.refundNumber} refunded ${amount}. UTR ${input.utrNumber}.`,
+      module: "refunds",
+    },
+    client,
+  );
+}
+
 export async function notifyProjectMaterialStockReceived(
   client: NotificationClient,
   input: {

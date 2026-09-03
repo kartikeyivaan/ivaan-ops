@@ -6,6 +6,7 @@ export type SerialHistoryEventType =
   | "TRANSFER_OUT"
   | "TRANSFER_IN"
   | "DISPATCHED"
+  | "PROJECT_DISPATCHED"
   | "DAMAGE_REPORTED"
   | "DAMAGE_APPROVED"
   | "DAMAGE_REJECTED"
@@ -62,6 +63,9 @@ function companyTouchesSerial(
     dispatchLineSerials: Array<{
       line: { dispatch: { companyId: string } };
     }>;
+    projectDispatchLineSerials: Array<{
+      dispatchLine: { dispatch: { companyId: string } };
+    }>;
     damageReports: Array<{ companyId: string }>;
     manualStockEntryLines: Array<{
       entry: { companyId: string };
@@ -82,6 +86,13 @@ function companyTouchesSerial(
   if (
     serial.dispatchLineSerials.some(
       (row) => row.line.dispatch.companyId === companyId,
+    )
+  ) {
+    return true;
+  }
+  if (
+    serial.projectDispatchLineSerials.some(
+      (row) => row.dispatchLine.dispatch.companyId === companyId,
     )
   ) {
     return true;
@@ -145,6 +156,23 @@ export async function getSerialPhysicalHistory(
                   warehouse: { select: { id: true, name: true } },
                   customer: { select: { customerName: true } },
                   dispatchedBy: { select: { name: true } },
+                  createdBy: { select: { name: true } },
+                },
+              },
+            },
+          },
+        },
+      },
+      projectDispatchLineSerials: {
+        include: {
+          dispatchLine: {
+            include: {
+              dispatch: {
+                include: {
+                  warehouse: { select: { id: true, name: true } },
+                  project: {
+                    select: { id: true, projectNo: true, customerName: true },
+                  },
                   createdBy: { select: { name: true } },
                 },
               },
@@ -277,6 +305,27 @@ export async function getSerialPhysicalHistory(
       href: `/inventory/dispatches/${dispatch.id}`,
       notes: dispatch.customer.customerName,
       actorName: dispatch.dispatchedBy?.name ?? dispatch.createdBy.name,
+    });
+  }
+
+  for (const row of serial.projectDispatchLineSerials) {
+    const dispatch = row.dispatchLine.dispatch;
+    if (dispatch.status === "DRAFT" || dispatch.status === "CANCELLED") continue;
+    events.push({
+      id: `project-dispatch-${dispatch.id}-${serial.id}`,
+      type: "PROJECT_DISPATCHED",
+      occurredAt: (dispatch.dispatchedAt ?? dispatch.createdAt).toISOString(),
+      label: "Dispatched to project site",
+      direction: "OUT",
+      warehouseName: dispatch.warehouse.name,
+      fromWarehouseName: dispatch.warehouse.name,
+      toWarehouseName: null,
+      referenceType: "PROJECT_DISPATCH",
+      referenceId: dispatch.id,
+      referenceNumber: dispatch.dispatchNo,
+      href: `/inventory/dispatches/projects/${dispatch.id}`,
+      notes: `${dispatch.project.projectNo} · ${dispatch.project.customerName}`,
+      actorName: dispatch.createdBy.name,
     });
   }
 

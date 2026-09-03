@@ -29,7 +29,7 @@ const SERVICE_ERRORS: Record<string, { message: string; status: number }> = {
   INVALID_QUANTITY: { message: "Invalid quantity.", status: 400 },
   INVALID_STATUS: { message: "Dispatch is not in a valid status for this action.", status: 400 },
   MANDATORY_DISPATCH_FIELDS_REQUIRED: {
-    message: "Receiver name, receiver mobile and vehicle number are required.",
+    message: "Receiver name and vehicle number are required.",
     status: 400,
   },
   NEGATIVE_STOCK_BLOCKED: {
@@ -63,6 +63,14 @@ export function mapProjectDispatchError(error: unknown) {
   const mapped = SERVICE_ERRORS[error.message];
   if (mapped) {
     return projectDispatchErrorResponse(error.message, mapped.message, mapped.status);
+  }
+
+  if (error.message.startsWith("SERIAL_NOT_FOUND|")) {
+    return projectDispatchErrorResponse(
+      "SERIAL_NOT_FOUND",
+      error.message.slice("SERIAL_NOT_FOUND|".length),
+      404,
+    );
   }
 
   if (error.message.startsWith("KIT_BOM_EMPTY|")) {

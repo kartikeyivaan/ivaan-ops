@@ -50,6 +50,11 @@ function formatQty(value: number) {
   );
 }
 
+/** Statuses where the unit has physically left our stock. */
+function isOutOfStock(status: string): boolean {
+  return status === "DISPATCHED" || status === "REMOVED" || status === "DAMAGED";
+}
+
 function statusBadgeVariant(
   status: string,
 ): "default" | "success" | "warning" | "danger" {
@@ -217,7 +222,11 @@ function QrHistoryPanel({ canScan }: { canScan: boolean }) {
                 </Badge>
               </div>
               <div>
-                <p className="text-xs text-slate-500">Current warehouse</p>
+                <p className="text-xs text-slate-500">
+                  {isOutOfStock(history.serial.status)
+                    ? "Last warehouse (no longer in stock)"
+                    : "Current warehouse"}
+                </p>
                 <p className="font-medium text-slate-900">
                   {history.serial.currentWarehouse.name}
                 </p>

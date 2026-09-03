@@ -140,7 +140,7 @@ export function normalizeSerialNumber(serial: string): string {
   return serial.trim().toUpperCase();
 }
 
-/** Scanner paste often includes this noise; ignore it when parsing serials. */
+/** Scanner paste often includes this noise; treat it as a separator between serials. */
 const SERIAL_QR_NOISE = /\[QR\]/gi;
 
 /** Waaree module serials look like WS07269074147109 (WS + 14 digits). */
@@ -162,15 +162,28 @@ export function serialsPerEntryLimitMessage(count: number) {
 }
 
 /**
- * Split pasted serial text on any whitespace, commas, or semicolons.
- * Strips `[QR]` scanner noise and empty tokens.
- * Whitespace counts as a separator because single-line inputs collapse pasted
- * newlines into spaces, which would otherwise merge every serial into one token.
+ * A single line can still hold several serials when a scanner emitted them
+ * space-separated without `[QR]` markers. Split only when every token is a
+ * serial in its own right, so multi-word serials survive: inverters are scanned
+ * as "<model> <serial>" (e.g. `WSP3300i WPS033260720291`) and are stored, and
+ * must therefore be looked up, with the space intact.
+ */
+function splitSpaceSeparatedSerials(line: string): string[] {
+  const tokens = line.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length < 2) return tokens;
+  return tokens.every(isWaareePanelSerial) ? tokens : [line.trim()];
+}
+
+/**
+ * Split pasted serial text on newlines, commas, semicolons, tabs, and `[QR]`
+ * scanner noise. A bare space only separates serials when the whole line reads
+ * as a list of standalone serials; see `splitSpaceSeparatedSerials`.
  */
 export function parseSerialInput(text: string): string[] {
   return text
-    .replace(SERIAL_QR_NOISE, " ")
-    .split(/[\s,;]+/)
+    .replace(SERIAL_QR_NOISE, "\n")
+    .split(/[\n\r,;\t]+/)
+    .flatMap(splitSpaceSeparatedSerials)
     .map((part) => part.trim())
     .filter(Boolean);
 }

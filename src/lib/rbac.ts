@@ -273,6 +273,17 @@ export const NAV_ITEMS: NavItem[] = [
     roles: [ROLES.SUPER_ADMIN, ROLES.ACCOUNTS],
   },
   {
+    label: "Refunds",
+    href: "/accounts/refunds",
+    group: "Accounts",
+    roles: [
+      ROLES.SUPER_ADMIN,
+      ROLES.ACCOUNTS,
+      ROLES.SALES_MANAGER,
+      ROLES.SALES_EXECUTIVE,
+    ],
+  },
+  {
     label: "Stock Transfers",
     href: "/accounts/stock-transfers",
     group: "Accounts",

@@ -11,7 +11,7 @@ import {
 } from "@prisma/client";
 import { writeAuditLogTx } from "@/lib/audit";
 import { assertProjectsCompany } from "@/lib/company-scope";
-import { decimalToNumber, normalizeSerialNumber } from "@/lib/inventory";
+import { decimalToNumber } from "@/lib/inventory";
 import { toSignedInventoryQuantity } from "@/lib/inventory-events";
 import { getRemainingQty } from "@/lib/dispatches";
 import {
@@ -22,6 +22,7 @@ import {
 } from "@/lib/kit-fulfillment";
 import { getKitComponentsForFulfillment } from "@/lib/product-service";
 import { generateProjectDispatchNumber } from "@/lib/projects";
+import { resolveStoredSerials } from "@/lib/serial-resolution";
 import {
   buildProjectDispatchSourceWarehouseIds,
   executeProjectDispatchStockMove,
@@ -717,11 +718,7 @@ async function confirmProjectDispatchTx(
   if (!dispatch) throw new Error("NOT_FOUND");
   if (dispatch.status !== ProjectDispatchStatus.DRAFT) throw new Error("INVALID_STATUS");
   if (dispatch.project.status === ProjectStatus.CLOSED) throw new Error("PROJECT_CLOSED");
-  if (
-    !dispatch.vehicleNo?.trim() ||
-    !dispatch.receiverName?.trim() ||
-    !dispatch.receiverMobile?.trim()
-  ) {
+  if (!dispatch.vehicleNo?.trim() || !dispatch.receiverName?.trim()) {
     throw new Error("MANDATORY_DISPATCH_FIELDS_REQUIRED");
   }
   if (dispatch.lines.length === 0) throw new Error("LINES_REQUIRED");
@@ -930,7 +927,7 @@ export async function lookupSerialForProjectDispatch(
   if (result.valid[0]) return result.valid[0];
   const reason = result.invalid[0]?.reason;
   if (reason?.includes("different product")) throw new Error("WRONG_PRODUCT");
-  throw new Error("SERIAL_NOT_FOUND");
+  throw new Error(reason ? `SERIAL_NOT_FOUND|${reason}` : "SERIAL_NOT_FOUND");
 }
 
 export async function lookupSerialsForProjectDispatch(
@@ -962,10 +959,7 @@ export async function lookupSerialsForProjectDispatch(
   const invalid: Array<{ serialNumber: string; reason: string }> = [];
   const seen = new Set<string>();
 
-  for (const raw of input.serialNumbers) {
-    const serialNumber = normalizeSerialNumber(raw);
-    if (!serialNumber) continue;
-
+  for (const serialNumber of await resolveStoredSerials(prisma, input.serialNumbers)) {
     if (seen.has(serialNumber)) {
       invalid.push({ serialNumber, reason: "Duplicate in list." });
       continue;
@@ -973,29 +967,38 @@ export async function lookupSerialsForProjectDispatch(
     seen.add(serialNumber);
 
     const serial = await prisma.inventorySerial.findFirst({
-      where: {
-        serialNumber,
-        currentWarehouseId: { in: sourceWarehouseIds },
-        status: SerialStatus.AVAILABLE,
-        ...(input.productId ? { productId: input.productId } : {}),
-      },
+      where: { serialNumber },
       include: {
         product: {
           select: { id: true, displayName: true, serialTracking: true },
         },
+        currentWarehouse: { select: { id: true, name: true } },
       },
     });
 
     if (!serial) {
-      invalid.push({
-        serialNumber,
-        reason: "Serial not found or not available at Projects warehouse or HO.",
-      });
+      invalid.push({ serialNumber, reason: "Serial not found in the system." });
       continue;
     }
 
     if (input.productId && serial.productId !== input.productId) {
       invalid.push({ serialNumber, reason: "Serial belongs to a different product." });
+      continue;
+    }
+
+    if (serial.status !== SerialStatus.AVAILABLE) {
+      invalid.push({
+        serialNumber,
+        reason: await describeUnavailableSerial(prisma, serial),
+      });
+      continue;
+    }
+
+    if (!sourceWarehouseIds.includes(serial.currentWarehouseId)) {
+      invalid.push({
+        serialNumber,
+        reason: `Stock is at ${serial.currentWarehouse.name}. Transfer it to the Projects warehouse or HO first.`,
+      });
       continue;
     }
 
@@ -1007,6 +1010,97 @@ export async function lookupSerialsForProjectDispatch(
   }
 
   return { valid, invalid };
+}
+
+function formatDispatchDate(value: Date | null): string {
+  if (!value) return "";
+  return ` on ${value.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  })}`;
+}
+
+/** Explain why a serial cannot be dispatched, naming the record that consumed it. */
+async function describeUnavailableSerial(
+  prisma: PrismaClient,
+  serial: { id: string; status: SerialStatus },
+): Promise<string> {
+  if (serial.status === SerialStatus.DISPATCHED) {
+    const projectRow = await prisma.projectDispatchLineSerial.findFirst({
+      where: {
+        serialId: serial.id,
+        dispatchLine: {
+          dispatch: { status: { not: ProjectDispatchStatus.CANCELLED } },
+        },
+      },
+      select: {
+        dispatchLine: {
+          select: {
+            dispatch: {
+              select: {
+                dispatchNo: true,
+                dispatchedAt: true,
+                project: { select: { projectNo: true, customerName: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (projectRow) {
+      const d = projectRow.dispatchLine.dispatch;
+      return `Already dispatched on ${d.dispatchNo} to project ${d.project.projectNo} (${d.project.customerName})${formatDispatchDate(d.dispatchedAt)}.`;
+    }
+
+    const salesRow = await prisma.dispatchLineSerial.findFirst({
+      where: { serialId: serial.id },
+      select: {
+        line: {
+          select: {
+            dispatch: {
+              select: {
+                dcNo: true,
+                dispatchedAt: true,
+                customer: { select: { customerName: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (salesRow) {
+      const d = salesRow.line.dispatch;
+      return `Already dispatched on ${d.dcNo} to ${d.customer.customerName}${formatDispatchDate(d.dispatchedAt)}.`;
+    }
+
+    return "Already dispatched out of stock.";
+  }
+
+  if (serial.status === SerialStatus.BOOKED) {
+    const booking = await prisma.proformaInvoiceSerial.findFirst({
+      where: { serialId: serial.id },
+      select: {
+        proformaInvoice: {
+          select: { piNo: true, customer: { select: { customerName: true } } },
+        },
+      },
+    });
+    return booking
+      ? `Booked for sales on PI ${booking.proformaInvoice.piNo} (${booking.proformaInvoice.customer.customerName}).`
+      : "Booked against a sales order.";
+  }
+
+  if (serial.status === SerialStatus.DAMAGED) {
+    return "Marked damaged and removed from sellable stock.";
+  }
+  if (serial.status === SerialStatus.DAMAGE_PENDING) {
+    return "A damage report is pending approval for this serial.";
+  }
+  if (serial.status === SerialStatus.REMOVED) {
+    return "Removed from stock.";
+  }
+  return `Not available (status ${serial.status}).`;
 }
 
 export async function listProjectDispatchHistory(

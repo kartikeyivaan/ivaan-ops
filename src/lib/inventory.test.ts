@@ -50,6 +50,27 @@ describe("inventory helpers", () => {
     expect(
       parseSerialInput("[QR] WS08269075967868 [QR] WS08269075967863 [QR] WS08269075949036"),
     ).toEqual(["WS08269075967868", "WS08269075967863", "WS08269075949036"]);
+    expect(
+      parseSerialInput("WS08269075967868 WS08269075967863"),
+    ).toEqual(["WS08269075967868", "WS08269075967863"]);
+  });
+
+  it("keeps multi-word inverter serials intact", () => {
+    expect(parseSerialInput("WSP3300i WPS033260720291")).toEqual([
+      "WSP3300i WPS033260720291",
+    ]);
+    expect(
+      parseSerialInput(
+        "WSP3300i WPS033260720291\nWSP3300i WPS033260719908\nWSP5000i WPS050260501424",
+      ),
+    ).toEqual([
+      "WSP3300i WPS033260720291",
+      "WSP3300i WPS033260719908",
+      "WSP5000i WPS050260501424",
+    ]);
+    expect(
+      parseSerialInput("[QR] WSP3300i WPS033260720291 [QR] WSP5000i WPS050260501424"),
+    ).toEqual(["WSP3300i WPS033260720291", "WSP5000i WPS050260501424"]);
   });
 
   it("detects Waaree panel serial format and brand", () => {

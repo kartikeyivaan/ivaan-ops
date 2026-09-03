@@ -1023,6 +1023,142 @@ export const reassignProjectEnquirySchema = z.object({
   salesUserId: z.string().uuid(),
 });
 
+// ─── Customer refunds ───────────────────────────────────────────────────────
+
+const customerRefundReasonSchema = z.enum([
+  "ORDER_CANCELLED",
+  "EXCESS_PAYMENT",
+  "DUPLICATE_PAYMENT",
+  "PARTIAL_ORDER_CANCELLATION",
+  "PAYMENT_RECEIVED_IN_ERROR",
+  "OTHER",
+]);
+
+const customerRefundStatusSchema = z.enum([
+  "DRAFT",
+  "PENDING_APPROVAL",
+  "REJECTED",
+  "APPROVED",
+  "PROCESSING",
+  "REFUNDED",
+  "CANCELLED",
+  "FAILED",
+]);
+
+/** Standard Indian IFSC: 4 letters, 0, then 6 alphanumerics. */
+const ifscField = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^[A-Z]{4}0[A-Z0-9]{6}$/, "Enter a valid IFSC (e.g. HDFC0001234)");
+
+/** Indian bank account numbers are 9–18 digits. */
+const refundAccountNumberField = z
+  .string()
+  .trim()
+  .transform((value) => value.replace(/\s+/g, ""))
+  .refine((value) => /^\d{9,18}$/.test(value), {
+    message: "Account number must be 9–18 digits",
+  });
+
+const refundBankAccountSchema = z.discriminatedUnion("mode", [
+  z.object({
+    mode: z.literal("EXISTING"),
+    refundBankAccountId: z.string().uuid(),
+  }),
+  z.object({
+    mode: z.literal("NEW"),
+    accountHolderName: z.string().trim().min(2, "Account holder name is required").max(150),
+    accountNumber: refundAccountNumberField,
+    ifscCode: ifscField,
+    bankName: z.string().trim().min(2, "Bank name is required").max(100),
+  }),
+]);
+
+export const verifyRefundPaymentSchema = z.object({
+  companyId: z.string().uuid(),
+  verificationCode: z.string().trim().min(4, "Verification code is required"),
+});
+
+export const createCustomerRefundSchema = z
+  .object({
+    companyId: z.string().uuid(),
+    verificationCode: z.string().trim().min(4, "Verification code is required"),
+    customerId: z.string().uuid().optional().nullable(),
+    piNumber: z.string().trim().max(50).optional().nullable(),
+    requestedAmount: z.coerce.number().positive("Refund amount must be greater than zero"),
+    reason: customerRefundReasonSchema,
+    remarks: z.string().trim().max(1000).optional().nullable(),
+    bankTransactionIds: z.array(z.string().uuid()).default([]),
+    refundBankAccount: refundBankAccountSchema,
+    submit: z.boolean().default(false),
+  })
+  .refine((data) => data.reason !== "OTHER" || Boolean(data.remarks?.trim()), {
+    message: "Remarks are required when the reason is Other",
+    path: ["remarks"],
+  });
+
+export const updateCustomerRefundSchema = z
+  .object({
+    piNumber: z.string().trim().max(50).optional().nullable(),
+    requestedAmount: z.coerce.number().positive().optional(),
+    reason: customerRefundReasonSchema.optional(),
+    remarks: z.string().trim().max(1000).optional().nullable(),
+    bankTransactionIds: z.array(z.string().uuid()).optional(),
+    refundBankAccount: refundBankAccountSchema.optional(),
+  })
+  .refine((data) => data.reason !== "OTHER" || Boolean(data.remarks?.trim()), {
+    message: "Remarks are required when the reason is Other",
+    path: ["remarks"],
+  });
+
+export const approveCustomerRefundSchema = z.object({
+  remarks: z.string().trim().max(1000).optional().nullable(),
+});
+
+export const rejectCustomerRefundSchema = z.object({
+  rejectionReason: z.string().trim().min(3, "Rejection reason is required").max(1000),
+});
+
+export const returnCustomerRefundSchema = z.object({
+  reason: z.string().trim().min(3, "A correction reason is required").max(1000),
+});
+
+export const processCustomerRefundSchema = z.object({
+  refundDate: z.string().min(1, "Refund date is required"),
+  actualRefundAmount: z.coerce.number().positive("Refund amount must be greater than zero"),
+  refundPaymentMode: z.enum(["BANK_TRANSFER", "CHEQUE", "CASH", "UPI", "NEFT", "RTGS"]),
+  refundFromBankAccountId: z.string().uuid(),
+  utrNumber: z.string().trim().min(4, "UTR / transaction reference is required").max(64),
+  remarks: z.string().trim().max(1000).optional().nullable(),
+});
+
+export const markCustomerRefundFailedSchema = z.object({
+  failureReason: z.string().trim().min(3, "A failure reason is required").max(1000),
+});
+
+export const cancelCustomerRefundSchema = z.object({
+  reason: z.string().trim().max(1000).optional().nullable(),
+});
+
+export const customerRefundSearchSchema = z.object({
+  companyId: z.string().uuid().optional(),
+  status: customerRefundStatusSchema.optional(),
+  customerId: z.string().uuid().optional(),
+  requestedById: z.string().uuid().optional(),
+  approvedById: z.string().uuid().optional(),
+  reason: customerRefundReasonSchema.optional(),
+  fromDate: z.string().optional(),
+  toDate: z.string().optional(),
+  q: z.string().trim().max(100).optional(),
+});
+
+export const refundBankTransactionSearchSchema = z.object({
+  companyId: z.string().uuid(),
+  q: z.string().trim().max(100).optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+
 export type LoginInput = z.infer<typeof loginSchema>;
 export type CompanyInput = z.infer<typeof companySchema>;
 export type WarehouseInput = z.infer<typeof warehouseSchema>;

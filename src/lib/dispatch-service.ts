@@ -23,7 +23,7 @@ import {
   getRemainingQty,
   toDateOnly,
 } from "@/lib/dispatches";
-import { decimalToNumber, normalizeSerialNumber } from "@/lib/inventory";
+import { decimalToNumber } from "@/lib/inventory";
 import { toSignedInventoryQuantity } from "@/lib/inventory-events";
 import { createEvent } from "@/lib/inventory-event-service";
 import {
@@ -37,6 +37,7 @@ import {
   notifyInvoicePending,
 } from "@/lib/notification-service";
 import { calculateOutstanding } from "@/lib/proforma-invoices";
+import { resolveStoredSerials } from "@/lib/serial-resolution";
 import { clearExpiredDispatchTodayFlags } from "@/lib/pi-service";
 import { deductNonSerialStock } from "@/lib/transfer-service";
 import {
@@ -596,10 +597,7 @@ export async function lookupSerialsForDispatch(
   const invalid: Array<{ serialNumber: string; reason: string }> = [];
   const seen = new Set<string>();
 
-  for (const raw of input.serialNumbers) {
-    const serialNumber = normalizeSerialNumber(raw);
-    if (!serialNumber) continue;
-
+  for (const serialNumber of await resolveStoredSerials(prisma, input.serialNumbers)) {
     if (seen.has(serialNumber)) {
       invalid.push({ serialNumber, reason: "Duplicate in list." });
       continue;

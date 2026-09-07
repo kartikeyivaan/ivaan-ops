@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { isReferentialConstraintError } from "@/lib/api-response";
 import {
+  canCorrectReceivedLotProduct,
   canCreateIncoming,
   canEditClosedIncomingLot,
   canViewInventory,
@@ -85,6 +86,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       updatedById: session.user.id,
       confirmSimilar: parsed.data.confirmSimilar,
       allowClosed: canEditClosedIncomingLot(session.user.roles),
+      allowProductCorrection: canCorrectReceivedLotProduct(session.user.roles),
     });
 
     return NextResponse.json(
@@ -106,6 +108,13 @@ export async function PATCH(request: Request, context: RouteContext) {
         return errorResponse(
           "VALIDATION_ERROR",
           "Product and warehouse cannot be changed after material has been received.",
+          400,
+        );
+      }
+      if (error.message === "SERIAL_TRACKING_MISMATCH") {
+        return errorResponse(
+          "VALIDATION_ERROR",
+          "Choose a product with the same serial-tracking setting as the current lot product.",
           400,
         );
       }

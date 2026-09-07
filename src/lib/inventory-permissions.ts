@@ -55,6 +55,11 @@ export function canEditClosedIncomingLot(userRoles: string[]): boolean {
   return isSuperAdmin(userRoles);
 }
 
+/** Super Admin may correct the product on a lot after material has been received. */
+export function canCorrectReceivedLotProduct(userRoles: string[]): boolean {
+  return isSuperAdmin(userRoles);
+}
+
 /** Purchase applies receive-field edits immediately; warehouse may propose them. */
 export function canProposeIncomingLotReceiveEdit(userRoles: string[]): boolean {
   return canInwardMaterial(userRoles);

@@ -339,6 +339,15 @@ export function IncomingReceiptList({
                             <Link href={`/inventory/incoming/${lot.id}`}>Receive</Link>
                           </Button>
                         ) : null}
+                        {canEditHistory && showHistory ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setEditingLot(lot)}
+                          >
+                            Edit
+                          </Button>
+                        ) : null}
                         <IncomingSerialExportButton
                           lotId={lot.id}
                           serialTracking={lot.product.serialTracking}
@@ -374,6 +383,7 @@ export function IncomingReceiptList({
           warehouses={warehouses}
           vendors={vendors}
           allowDelete={false}
+          canCorrectProduct={canEditHistory}
           onClose={() => setEditingLot(null)}
           onSaved={() => void refreshLots()}
         />

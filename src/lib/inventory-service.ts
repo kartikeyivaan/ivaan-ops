@@ -705,6 +705,43 @@ export function canModifyIncomingLot(lot: {
   );
 }
 
+/** Product can change before any receipt, or after receipt when Super Admin corrects it. */
+export function canChangeIncomingLotProduct(
+  lot: {
+    receivedQuantity: Prisma.Decimal | number;
+    damagedQuantity: Prisma.Decimal | number;
+  },
+  options?: { allowProductCorrection?: boolean },
+) {
+  const hasReceipts =
+    decimalToNumber(lot.receivedQuantity) > 0 ||
+    decimalToNumber(lot.damagedQuantity) > 0;
+  return !hasReceipts || Boolean(options?.allowProductCorrection);
+}
+
+async function syncReceivedLotProductReferences(
+  tx: Prisma.TransactionClient,
+  lotId: string,
+  productId: string,
+) {
+  await tx.inventorySerial.updateMany({
+    where: { lotId },
+    data: { productId },
+  });
+  await tx.inventoryTransaction.updateMany({
+    where: { lotId },
+    data: { productId },
+  });
+  await tx.inventoryEvent.updateMany({
+    where: { sourceType: "INVENTORY_LOT", sourceId: lotId },
+    data: { productId },
+  });
+  await tx.inventoryDamageReport.updateMany({
+    where: { serial: { lotId } },
+    data: { productId },
+  });
+}
+
 export async function updateIncomingLot(
   prisma: PrismaClient,
   lotId: string,
@@ -724,6 +761,7 @@ export async function updateIncomingLot(
     updatedById: string;
     confirmSimilar?: boolean;
     allowClosed?: boolean;
+    allowProductCorrection?: boolean;
   },
 ) {
   const lot = await prisma.inventoryLot.findFirst({
@@ -737,23 +775,46 @@ export async function updateIncomingLot(
   const receivedQuantity = decimalToNumber(lot.receivedQuantity);
   const damagedQuantity = decimalToNumber(lot.damagedQuantity);
   const hasReceipts = receivedQuantity > 0 || damagedQuantity > 0;
+  const canChangeProduct = canChangeIncomingLotProduct(lot, {
+    allowProductCorrection: input.allowProductCorrection,
+  });
 
-  if (hasReceipts) {
-    if (input.warehouseId !== lot.warehouseId || input.productId !== lot.productId) {
-      throw new Error("PRODUCT_WAREHOUSE_LOCKED");
-    }
+  if (hasReceipts && input.warehouseId !== lot.warehouseId) {
+    throw new Error("PRODUCT_WAREHOUSE_LOCKED");
+  }
+  if (!canChangeProduct && input.productId !== lot.productId) {
+    throw new Error("PRODUCT_WAREHOUSE_LOCKED");
   }
 
   const warehouseId = hasReceipts ? lot.warehouseId : input.warehouseId;
-  const productId = hasReceipts ? lot.productId : input.productId;
+  const productId = canChangeProduct ? input.productId : lot.productId;
+  const productChanging = productId !== lot.productId;
 
   const warehouse = await prisma.warehouse.findFirst({
     where: { id: warehouseId, companyId, isActive: true },
   });
   if (!warehouse) throw new Error("WAREHOUSE_NOT_FOUND");
 
-  const product = await prisma.product.findUnique({ where: { id: productId } });
+  const [product, previousProduct] = await Promise.all([
+    prisma.product.findUnique({ where: { id: productId } }),
+    productChanging
+      ? prisma.product.findUnique({ where: { id: lot.productId } })
+      : Promise.resolve(null),
+  ]);
   if (!product || !product.isActive) throw new Error("PRODUCT_NOT_FOUND");
+  if (productChanging && hasReceipts) {
+    if (!previousProduct) throw new Error("PRODUCT_NOT_FOUND");
+    if (previousProduct.serialTracking !== product.serialTracking) {
+      throw new Error("SERIAL_TRACKING_MISMATCH");
+    }
+    const serialCount = await prisma.inventorySerial.count({ where: { lotId } });
+    if (product.serialTracking && receivedQuantity > 0 && serialCount === 0) {
+      throw new Error("SERIAL_TRACKING_MISMATCH");
+    }
+    if (!product.serialTracking && serialCount > 0) {
+      throw new Error("SERIAL_TRACKING_MISMATCH");
+    }
+  }
 
   if (input.quantity <= 0) throw new Error("INVALID_QUANTITY");
   if (input.quantity < receivedQuantity + damagedQuantity) {
@@ -842,6 +903,10 @@ export async function updateIncomingLot(
         status: nextStatus,
       },
     });
+
+    if (productChanging && hasReceipts) {
+      await syncReceivedLotProductReferences(tx, lotId, productId);
+    }
 
     const event = await tx.inventoryEvent.findFirst({
       where: {

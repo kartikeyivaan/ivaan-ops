@@ -1,10 +1,15 @@
 import { LotStatus } from "@prisma/client";
 import { describe, expect, it } from "vitest";
-import { canEditIncomingLot, canModifyIncomingLot } from "@/lib/inventory-service";
+import {
+  canChangeIncomingLotProduct,
+  canEditIncomingLot,
+  canModifyIncomingLot,
+} from "@/lib/inventory-service";
 import {
   canAdjustStock,
   canApplyIncomingLotReceiveEdit,
   canApproveIncomingLotEdit,
+  canCorrectReceivedLotProduct,
   canCreateIncoming,
   canEditClosedIncomingLot,
   canInwardMaterial,
@@ -244,6 +249,32 @@ describe("inventory helpers", () => {
       }),
     ).toBe(false);
   });
+
+  it("allows product change after receipts only with admin correction", () => {
+    expect(
+      canChangeIncomingLotProduct({
+        receivedQuantity: 0,
+        damagedQuantity: 0,
+      }),
+    ).toBe(true);
+
+    expect(
+      canChangeIncomingLotProduct({
+        receivedQuantity: 1,
+        damagedQuantity: 0,
+      }),
+    ).toBe(false);
+
+    expect(
+      canChangeIncomingLotProduct(
+        {
+          receivedQuantity: 1,
+          damagedQuantity: 0,
+        },
+        { allowProductCorrection: true },
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("inventory permissions", () => {
@@ -289,5 +320,11 @@ describe("inventory permissions", () => {
     expect(canEditClosedIncomingLot([ROLES.SUPER_ADMIN])).toBe(true);
     expect(canEditClosedIncomingLot([ROLES.PURCHASE])).toBe(false);
     expect(canEditClosedIncomingLot([ROLES.WAREHOUSE])).toBe(false);
+  });
+
+  it("allows only super admin to correct product on a received lot", () => {
+    expect(canCorrectReceivedLotProduct([ROLES.SUPER_ADMIN])).toBe(true);
+    expect(canCorrectReceivedLotProduct([ROLES.PURCHASE])).toBe(false);
+    expect(canCorrectReceivedLotProduct([ROLES.WAREHOUSE])).toBe(false);
   });
 });

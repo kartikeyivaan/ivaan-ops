@@ -55,6 +55,7 @@ export function IncomingLotEditDialog({
   onSaved,
   onDeleted,
   allowDelete = true,
+  canCorrectProduct = false,
 }: {
   lot: SerializedInventoryLot;
   products: Product[];
@@ -64,6 +65,7 @@ export function IncomingLotEditDialog({
   onSaved?: () => void | Promise<void>;
   onDeleted?: () => void | Promise<void>;
   allowDelete?: boolean;
+  canCorrectProduct?: boolean;
 }) {
   const companyWarehouses = useMemo(
     () => warehouses.filter((warehouse) => warehouse.companyId === lot.company.id),
@@ -75,6 +77,7 @@ export function IncomingLotEditDialog({
   const hasReceipts = receivedQuantity > 0 || damagedQuantity > 0;
   const minExpectedQuantity = receivedQuantity + damagedQuantity;
   const canDelete = allowDelete && !hasReceipts;
+  const canEditProduct = !hasReceipts || canCorrectProduct;
 
   const [form, setForm] = useState({
     warehouseId: lot.warehouse.id,
@@ -253,6 +256,19 @@ export function IncomingLotEditDialog({
       return;
     }
 
+    if (hasReceipts && canCorrectProduct && form.productId !== lot.product.id) {
+      const nextProduct =
+        products.find((product) => product.id === form.productId)?.displayName ??
+        "the selected product";
+      const confirmed = window.confirm(
+        `Lot ${lot.lotNumber} already has received material recorded as ${lot.product.displayName}.\n\nChange this lot to ${nextProduct}? Received serials and stock for this lot will move with it.`,
+      );
+      if (!confirmed) {
+        setLoading(false);
+        return;
+      }
+    }
+
     const payload = {
       warehouseId: form.warehouseId,
       vendorId: form.vendorId || undefined,
@@ -363,20 +379,28 @@ export function IncomingLotEditDialog({
                 </select>
               )}
             </div>
-            {hasReceipts ? (
+            {canEditProduct ? (
+              <div className="space-y-2">
+                <TypeaheadSelect
+                  label="Product"
+                  options={productOptions}
+                  value={form.productId}
+                  onChange={(productId) => setForm({ ...form, productId })}
+                  placeholder="Type product name here"
+                  required
+                />
+                {hasReceipts && canCorrectProduct ? (
+                  <p className="text-xs text-slate-500">
+                    Changing the product updates this lot and moves its received
+                    serials and stock to the selected product.
+                  </p>
+                ) : null}
+              </div>
+            ) : (
               <div className="space-y-2">
                 <Label>Product</Label>
                 <Input value={lot.product.displayName} readOnly />
               </div>
-            ) : (
-              <TypeaheadSelect
-                label="Product"
-                options={productOptions}
-                value={form.productId}
-                onChange={(productId) => setForm({ ...form, productId })}
-                placeholder="Type product name here"
-                required
-              />
             )}
             <TypeaheadSelect
               label="Vendor"

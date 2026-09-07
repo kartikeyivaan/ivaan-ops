@@ -226,6 +226,7 @@ export function PurchaseIncomingList({
           onSaved={() => void refreshLots()}
           onDeleted={() => void refreshLots()}
           allowDelete={editingLot.status === "INCOMING"}
+          canCorrectProduct={canEditClosedLots}
         />
       ) : null}
     </div>

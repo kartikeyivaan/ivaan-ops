@@ -6,6 +6,7 @@ import {
 } from "@prisma/client";
 import { parseBusinessDate, getBusinessToday } from "@/lib/business-dates";
 import { decimalToNumber } from "@/lib/inventory";
+import { dispatchTodayActiveWhere } from "@/lib/proforma-invoices";
 import {
   sumDispatchedUnitsFromLines,
   type CompanyIdFilter,
@@ -33,7 +34,7 @@ export async function getDispatchTodaySummary(
     prisma.proformaInvoice.findMany({
       where: {
         companyId: options.companyId,
-        dispatchTodayDate: todayDate,
+        ...dispatchTodayActiveWhere(),
         ...executiveFilter,
       },
       select: {

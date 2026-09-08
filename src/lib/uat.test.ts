@@ -32,6 +32,15 @@ describe("UAT — navigation matrix", () => {
     }
   });
 
+  it("exposes pending dispatch as a sales-only menu item", () => {
+    const item = NAV_ITEMS.find((nav) => nav.href === "/sales/pending-dispatches")!;
+    expect(item).toBeTruthy();
+    expect(canAccessNav([ROLES.SALES_EXECUTIVE], item)).toBe(true);
+    expect(canAccessNav([ROLES.SALES_MANAGER], item)).toBe(true);
+    expect(canAccessNav([ROLES.WAREHOUSE], item)).toBe(false);
+    expect(canAccessNav([ROLES.ACCOUNTS], item)).toBe(false);
+  });
+
   it("restricts admin nav to super admin only", () => {
     const adminRoutes = ["/admin/users", "/admin/companies", "/admin/audit"];
     for (const href of adminRoutes) {

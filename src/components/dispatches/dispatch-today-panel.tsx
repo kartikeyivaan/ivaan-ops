@@ -92,7 +92,7 @@ export function DispatchTodayPanel({
           <Package className="h-10 w-10" />
           <p>
             {tiles.length === 0
-              ? "No PIs marked for dispatch today."
+              ? "No PIs marked for dispatch (marks last 48 hours if not yet dispatched)."
               : "No tiles match your search."}
           </p>
         </div>

@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
+import { getBusinessToday, parseBusinessDateString } from "@/lib/business-dates";
 import { getFinancialYear } from "@/lib/inventory";
 import { roundMoney } from "@/lib/quotations";
 
@@ -91,6 +92,7 @@ export const PAYMENT_RECORDABLE_STATUSES = [
   "BOOKED",
   "PARTIALLY_DISPATCHED",
   "FULLY_DISPATCHED",
+  "CLOSED_PARTIAL",
 ] as const;
 
 export function canRecordPaymentAgainstPi(status: string, outstanding: number): boolean {
@@ -123,6 +125,100 @@ export function canEditProformaInvoice(input: {
 /** Booked stock must be released before lines can change. */
 export function canUnbookProformaInvoice(input: { status: string }): boolean {
   return input.status === "PENDING_BOOKING" || input.status === "BOOKED";
+}
+
+/** Remaining ordered qty that is still booked after confirmed dispatches. */
+export function getPiRemainingQty(qty: number, dispatchedQty: number): number {
+  return Math.max(0, qty - dispatchedQty);
+}
+
+/**
+ * Partially dispatched PIs may be closed when leftover qty cannot ship
+ * (pallet / vehicle capacity). Remaining booked qty is then released.
+ */
+export function canClosePartialDispatchPi(input: { status: string }): boolean {
+  return input.status === "PARTIALLY_DISPATCHED";
+}
+
+/** Statuses that stay on the sales Pending Dispatch list. */
+export const PENDING_DISPATCH_LIST_STATUSES = [
+  "BOOKED",
+  "PARTIALLY_DISPATCHED",
+  "CANCEL_PENDING",
+] as const;
+
+export function isPendingDispatchListStatus(status: string): boolean {
+  return (PENDING_DISPATCH_LIST_STATUSES as readonly string[]).includes(status);
+}
+
+export function dispatchQueueClearData() {
+  return {
+    dispatchQueuedAt: null as Date | null,
+    dispatchQueuedById: null as string | null,
+  };
+}
+
+/**
+ * Inclusive window for sales historic / same-day DC dates:
+ * first day of last calendar month through today (Asia/Kolkata).
+ */
+export function historicDispatchDateWindow(asOf = new Date()): {
+  min: string;
+  max: string;
+} {
+  const today = getBusinessToday(asOf);
+  const { year, month } = parseBusinessDateString(today);
+  const lastMonthYear = month === 1 ? year - 1 : year;
+  const lastMonth = month === 1 ? 12 : month - 1;
+  return {
+    min: `${lastMonthYear}-${String(lastMonth).padStart(2, "0")}-01`,
+    max: today,
+  };
+}
+
+export function isHistoricDispatchDateAllowed(
+  date: string,
+  asOf = new Date(),
+): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+  const window = historicDispatchDateWindow(asOf);
+  return date >= window.min && date <= window.max;
+}
+
+export function daysOnPendingDispatch(
+  queuedAt: string | Date | null | undefined,
+  today: string | Date = new Date(),
+): number | null {
+  if (!queuedAt) return null;
+  const queuedDate =
+    typeof queuedAt === "string" ? queuedAt.slice(0, 10) : getBusinessToday(queuedAt);
+  const todayDate = typeof today === "string" ? today.slice(0, 10) : getBusinessToday(today);
+  const waiting = daysUntilCommittedDispatch(todayDate, queuedDate);
+  return waiting == null ? null : Math.max(0, waiting);
+}
+
+export function canRecordQueuedDispatchOnPi(input: {
+  status: string;
+  hasOpenDispatchDraft: boolean;
+}): boolean {
+  if (input.hasOpenDispatchDraft) return false;
+  return input.status === "BOOKED" || input.status === "PARTIALLY_DISPATCHED";
+}
+
+export function canRequestCancelFromPendingDispatch(input: {
+  status: string;
+  hasOpenDispatchDraft: boolean;
+}): boolean {
+  if (input.hasOpenDispatchDraft) return false;
+  return input.status === "BOOKED";
+}
+
+export function canCloseFromPendingDispatch(input: {
+  status: string;
+  hasOpenDispatchDraft: boolean;
+}): boolean {
+  if (input.hasOpenDispatchDraft) return false;
+  return canClosePartialDispatchPi(input);
 }
 
 /** Max amount allowed when editing a payment (current outstanding + this payment). */
@@ -166,18 +262,65 @@ export function daysUntilCommittedDispatch(
   return Math.round((committedMs - todayMs) / 86_400_000);
 }
 
+/** Warehouse Dispatch Today stays live this long after the mark, if not yet dispatched. */
+export const DISPATCH_TODAY_TTL_HOURS = 48;
+const DISPATCH_TODAY_TTL_MS = DISPATCH_TODAY_TTL_HOURS * 60 * 60 * 1000;
+
+export function getDispatchTodayCutoff(now = new Date()): Date {
+  return new Date(now.getTime() - DISPATCH_TODAY_TTL_MS);
+}
+
+function toInstant(value: string | Date): Date {
+  if (value instanceof Date) return value;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return new Date(`${value}T00:00:00.000Z`);
+  }
+  return new Date(value);
+}
+
 export function isDispatchTodayActive(
   dispatchTodayDate: string | Date | null | undefined,
-  today: string | Date = new Date(),
+  now: string | Date = new Date(),
+  markedAt?: string | Date | null,
 ): boolean {
-  if (!dispatchTodayDate) return false;
-  const marked =
-    typeof dispatchTodayDate === "string"
-      ? dispatchTodayDate.slice(0, 10)
-      : dispatchTodayDate.toISOString().slice(0, 10);
-  const todayString =
-    typeof today === "string" ? today.slice(0, 10) : today.toISOString().slice(0, 10);
-  return marked === todayString;
+  if (!dispatchTodayDate && (markedAt == null || markedAt === "")) return false;
+  const created =
+    markedAt != null && markedAt !== ""
+      ? toInstant(markedAt)
+      : dispatchTodayDate
+        ? toInstant(dispatchTodayDate)
+        : null;
+  if (!created || Number.isNaN(created.getTime())) return false;
+  const nowDate = toInstant(now);
+  if (Number.isNaN(nowDate.getTime())) return false;
+  const ageMs = nowDate.getTime() - created.getTime();
+  return ageMs >= 0 && ageMs < DISPATCH_TODAY_TTL_MS;
+}
+
+/** Prisma where: mark still within the 48-hour window (or same calendar day if markedAt is missing). */
+export function dispatchTodayActiveWhere(now = new Date()) {
+  const cutoff = getDispatchTodayCutoff(now);
+  const today = toDateOnly(now);
+  return {
+    dispatchTodayDate: { not: null },
+    OR: [
+      { dispatchTodayMarkedAt: { gte: cutoff } },
+      { AND: [{ dispatchTodayMarkedAt: null }, { dispatchTodayDate: today }] },
+    ],
+  };
+}
+
+/** Prisma where: mark older than 48 hours (legacy rows without markedAt still expire overnight). */
+export function dispatchTodayExpiredWhere(now = new Date()) {
+  const cutoff = getDispatchTodayCutoff(now);
+  const today = toDateOnly(now);
+  return {
+    dispatchTodayDate: { not: null },
+    OR: [
+      { dispatchTodayMarkedAt: { lt: cutoff } },
+      { AND: [{ dispatchTodayMarkedAt: null }, { dispatchTodayDate: { lt: today } }] },
+    ],
+  };
 }
 
 /** Early vs committed min date — needs sales manager / admin approval. */
@@ -305,6 +448,7 @@ export async function generateProformaInvoiceNumber(
 
 export function formatProformaStatus(status: string): string {
   if (status === "FULLY_DISPATCHED") return "Fully Dispatched";
+  if (status === "CLOSED_PARTIAL") return "Closed (Partial Dispatch)";
   return status
     .split("_")
     .map((part) => part.charAt(0) + part.slice(1).toLowerCase())

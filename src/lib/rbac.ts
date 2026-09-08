@@ -88,6 +88,12 @@ export const NAV_ITEMS: NavItem[] = [
     ],
   },
   {
+    label: "Pending Dispatch",
+    href: "/sales/pending-dispatches",
+    group: "Sales",
+    roles: [ROLES.SUPER_ADMIN, ROLES.SALES_MANAGER, ROLES.SALES_EXECUTIVE],
+  },
+  {
     label: "Projects",
     href: "/projects/proposals",
     group: "Projects",

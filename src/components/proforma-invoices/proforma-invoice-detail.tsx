@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { ArrowLeft, Download, MessageCircle, Pencil, Send, ShieldCheck, Trash2, Truck, Undo2, XCircle } from "lucide-react";
+import { ArrowLeft, Download, MessageCircle, PackageX, Pencil, Send, ShieldCheck, Trash2, Truck, Undo2, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,6 +38,7 @@ import { formatCurrency } from "@/lib/quotations";
 import { formatDocumentDate, formatPaymentDate } from "@/lib/utils";
 import { formatPricingType } from "@/lib/products";
 import { CourierStickersButton } from "@/components/dispatches/courier-stickers-button";
+import { PiClosePartialDialog } from "@/components/proforma-invoices/pi-close-partial-dialog";
 
 type Warehouse = { id: string; name: string; code: string | null };
 
@@ -45,6 +46,7 @@ type DispatchedChallan = {
   id: string;
   dcNo: string;
   dispatchDate: string;
+  dispatchedBy?: { id: string; name: string } | null;
   invoiceNumber: string | null;
   invoiceDate: string | null;
   documentationStatus: string | null;
@@ -79,6 +81,9 @@ type ProformaInvoiceDetailData = {
   quotation?: { quotationNo: string } | null;
   warehouse?: { name: string } | null;
   bookedBy?: { name: string } | null;
+  closedAt?: string | null;
+  closedRemarks?: string | null;
+  closedBy?: { id: string; name: string } | null;
   dispatchToday?: {
     date: string | null;
     active: boolean;
@@ -113,6 +118,8 @@ type ProformaInvoiceDetailData = {
   items: Array<{
     id: string;
     qty: number;
+    dispatchedQty?: number;
+    remainingQty?: number;
     rate: number;
     gstRate: number;
     lineTotal: number;
@@ -163,6 +170,7 @@ type ProformaInvoiceDetailData = {
   };
   canEdit?: boolean;
   canUnbook?: boolean;
+  canClosePartial?: boolean;
   pendingEdit?: {
     id: string;
     requestedBy: { id: string; name: string };
@@ -183,9 +191,12 @@ type ProformaInvoiceDetailData = {
 };
 
 function statusVariant(status: string): "default" | "success" | "warning" | "danger" {
-  if (status === "ISSUED" || status === "BOOKED") return "success";
+  if (status === "ISSUED" || status === "BOOKED" || status === "FULLY_DISPATCHED") {
+    return "success";
+  }
   if (status === "PENDING_BOOKING" || status === "CANCEL_PENDING") return "warning";
   if (status === "CANCELLED") return "danger";
+  if (status === "CLOSED_PARTIAL") return "warning";
   return "default";
 }
 
@@ -228,6 +239,7 @@ export function ProformaInvoiceDetail({
   const [error, setError] = useState("");
   const [warning, setWarning] = useState("");
   const [loading, setLoading] = useState(false);
+  const [closePartialOpen, setClosePartialOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
   const [paymentMode, setPaymentMode] = useState("BANK_TRANSFER");
@@ -1027,6 +1039,16 @@ export function ProformaInvoiceDetail({
               Unbook
             </Button>
           ) : null}
+          {canManage && pi.canClosePartial ? (
+            <Button
+              variant="outline"
+              disabled={loading}
+              onClick={() => setClosePartialOpen(true)}
+            >
+              <PackageX className="h-4 w-4" />
+              Close Partial Dispatch
+            </Button>
+          ) : null}
           {canApproveEdit && pi.pendingEdit ? (
             <>
               <Button variant="secondary" disabled={loading} onClick={handleApproveEdit}>
@@ -1142,6 +1164,9 @@ export function ProformaInvoiceDetail({
               ) : null}
               {pi.credit?.status === "PENDING_SM" || pi.credit?.status === "PENDING_ACCOUNTS" ? (
                 <Badge variant="warning">Credit Pending</Badge>
+              ) : null}
+              {pi.status === "CLOSED_PARTIAL" ? (
+                <Badge variant="warning">Remaining qty released</Badge>
               ) : null}
               {dispatchToday?.active ? <Badge variant="success">Dispatch Today</Badge> : null}
               {dispatchToday?.pendingApproval ? (
@@ -1330,23 +1355,31 @@ export function ProformaInvoiceDetail({
               <TableRow>
                 <TableHead>Product</TableHead>
                 <TableHead>Qty</TableHead>
+                <TableHead>Dispatched</TableHead>
+                <TableHead>Remaining</TableHead>
                 <TableHead>Rate</TableHead>
                 <TableHead>GST</TableHead>
                 <TableHead className="text-right">Total</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {pi.items.map((item) => (
-                <TableRow key={item.id}>
-                  <TableCell>{item.product.displayName}</TableCell>
-                  <TableCell>{item.qty}</TableCell>
-                  <TableCell>
-                    {formatCurrency(item.rate)} ({formatPricingType(item.product.pricingType)})
-                  </TableCell>
-                  <TableCell>{item.gstRate}%</TableCell>
-                  <TableCell className="text-right">{formatCurrency(item.lineTotal)}</TableCell>
-                </TableRow>
-              ))}
+              {pi.items.map((item) => {
+                const dispatchedQty = item.dispatchedQty ?? 0;
+                const remainingQty = item.remainingQty ?? Math.max(0, item.qty - dispatchedQty);
+                return (
+                  <TableRow key={item.id}>
+                    <TableCell>{item.product.displayName}</TableCell>
+                    <TableCell>{item.qty}</TableCell>
+                    <TableCell>{dispatchedQty}</TableCell>
+                    <TableCell>{remainingQty}</TableCell>
+                    <TableCell>
+                      {formatCurrency(item.rate)} ({formatPricingType(item.product.pricingType)})
+                    </TableCell>
+                    <TableCell>{item.gstRate}%</TableCell>
+                    <TableCell className="text-right">{formatCurrency(item.lineTotal)}</TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </CardContent>
@@ -1770,6 +1803,20 @@ export function ProformaInvoiceDetail({
         </Card>
       ) : null}
 
+      {pi.status === "CLOSED_PARTIAL" ? (
+        <Card>
+          <CardContent className="space-y-2 pt-6 text-sm text-slate-600">
+            <p className="font-medium text-amber-800">
+              Closed with partial dispatch
+              {pi.closedAt ? ` on ${formatDocumentDate(pi.closedAt.slice(0, 10))}` : ""}
+              {pi.closedBy ? ` by ${pi.closedBy.name}` : ""}. Remaining quantity was released from
+              holding.
+            </p>
+            {pi.closedRemarks ? <p>Reason: {pi.closedRemarks}</p> : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
       {pi.status === "BOOKED" || pi.status === "PARTIALLY_DISPATCHED" ? (
         <Card>
           <CardContent className="space-y-2 pt-6 text-sm text-slate-600">
@@ -1812,7 +1859,7 @@ export function ProformaInvoiceDetail({
               <p className="text-sm text-emerald-700">
                 Marked for dispatch today
                 {dispatchToday.markedBy ? ` by ${dispatchToday.markedBy.name}` : ""}. Warehouse can
-                record the DC from Inventory → Dispatches.
+                record the DC from Inventory → Dispatches within 48 hours if not yet dispatched.
               </p>
             ) : null}
             {dispatchToday?.pendingApproval ? (
@@ -1973,6 +2020,7 @@ export function ProformaInvoiceDetail({
                       <p className="font-semibold text-slate-900">{challan.dcNo}</p>
                       <p className="text-sm text-slate-500">
                         Dispatched {formatDocumentDate(challan.dispatchDate)}
+                        {challan.dispatchedBy ? ` by ${challan.dispatchedBy.name}` : ""}
                       </p>
                     </div>
                     {challan.documentationStatus ? (
@@ -2038,6 +2086,21 @@ export function ProformaInvoiceDetail({
           </CardContent>
         </Card>
       ) : null}
+
+      <PiClosePartialDialog
+        piId={pi.id}
+        piNo={pi.piNo}
+        lines={pi.items.map((item) => ({
+          id: item.id,
+          displayName: item.product.displayName,
+          qty: item.qty,
+          dispatchedQty: item.dispatchedQty ?? 0,
+          remainingQty: item.remainingQty ?? Math.max(0, item.qty - (item.dispatchedQty ?? 0)),
+        }))}
+        open={closePartialOpen}
+        onOpenChange={setClosePartialOpen}
+        onClosed={() => router.refresh()}
+      />
     </div>
   );
 }

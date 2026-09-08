@@ -163,8 +163,9 @@ export function getSupersededInventoryEventIds(
 }
 
 /**
- * PI statuses that still hold bookable reserved stock. Fully dispatched and
- * cancelled PIs must not reduce projected / timeline availability.
+ * PI statuses that still hold bookable reserved stock. Fully dispatched,
+ * closed-partial, and cancelled PIs must not reduce projected / timeline
+ * availability.
  */
 export const OPEN_RESERVED_PI_STATUSES: ReadonlySet<string> = new Set([
   "BOOKED",

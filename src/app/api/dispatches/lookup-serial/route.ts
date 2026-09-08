@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { canManageDispatches } from "@/lib/dispatch-permissions";
+import { canLookupDispatchSerials } from "@/lib/dispatch-permissions";
 import { lookupBookedSerialForDispatch } from "@/lib/dispatch-service";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
@@ -11,7 +11,7 @@ function errorResponse(code: string, message: string, status: number) {
 
 export async function GET(request: Request) {
   const session = await auth();
-  if (!session?.user || !canManageDispatches(session.user.roles)) {
+  if (!session?.user || !canLookupDispatchSerials(session.user.roles)) {
     return errorResponse("FORBIDDEN", "You do not have permission for this action.", 403);
   }
 

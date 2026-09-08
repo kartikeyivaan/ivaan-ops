@@ -12,6 +12,7 @@ import {
   Prisma,
   ProformaInvoiceStatus,
   QuotationStatus,
+  SerialStatus,
   type PrismaClient,
 } from "@prisma/client";
 import { writeAuditLogTx } from "@/lib/audit";
@@ -55,10 +56,14 @@ import {
   buildDispatchTodayApprovalCopy,
   calculateAdvanceRequired,
   calculateOutstanding,
+  canClosePartialDispatchPi,
   canEditProformaInvoice,
   canRequestBooking,
   canUnbookProformaInvoice,
+  dispatchQueueClearData,
+  getPiRemainingQty,
   daysUntilCommittedDispatch,
+  dispatchTodayExpiredWhere,
   formatDispatchTodayApprovalMessage,
   formatDispatchTodayConfirmationMessage,
   generateProformaInvoiceNumber,
@@ -128,6 +133,7 @@ export const piInclude = {
   },
   warehouse: { select: { id: true, name: true, code: true } },
   bookedBy: { select: { id: true, name: true } },
+  closedBy: { select: { id: true, name: true } },
   dispatchTodayMarkedBy: { select: { id: true, name: true } },
   creditRequestedBy: { select: { id: true, name: true } },
   creditSmApprovedBy: { select: { id: true, name: true } },
@@ -282,7 +288,11 @@ function serializePi(
   const readyForDispatch = isReadyForDispatch(pi.status, outstanding, {
     hasApprovedCredit: creditApproved,
   });
-  const dispatchTodayActive = isDispatchTodayActive(dispatchTodayDate, todayString);
+  const dispatchTodayActive = isDispatchTodayActive(
+    dispatchTodayDate,
+    new Date(),
+    pi.dispatchTodayMarkedAt,
+  );
   const credit = serializePiCredit(pi, outstanding);
 
   return {
@@ -329,6 +339,10 @@ function serializePi(
       hasPendingEdit: pi.editRequests.length > 0,
     }),
     canUnbook: canUnbookProformaInvoice({ status: pi.status }),
+    canClosePartial: canClosePartialDispatchPi({ status: pi.status }),
+    closedAt: pi.closedAt?.toISOString() ?? null,
+    closedRemarks: pi.closedRemarks,
+    closedBy: pi.closedBy,
     pendingEdit: serializePendingPiEdit(pi),
     customer: pi.customer,
     salesUser: pi.salesUser,
@@ -343,14 +357,20 @@ function serializePi(
       : pi.quotation,
     warehouse: pi.warehouse,
     bookedBy: pi.bookedBy,
-    items: pi.items.map((item) => ({
-      id: item.id,
-      qty: decimalToNumber(item.qty),
-      rate: decimalToNumber(item.rate),
-      gstRate: decimalToNumber(item.gstRate),
-      lineTotal: decimalToNumber(item.lineTotal),
-      product: item.product,
-    })),
+    items: pi.items.map((item) => {
+      const qty = decimalToNumber(item.qty);
+      const dispatchedQty = decimalToNumber(item.dispatchedQty);
+      return {
+        id: item.id,
+        qty,
+        dispatchedQty,
+        remainingQty: getPiRemainingQty(qty, dispatchedQty),
+        rate: decimalToNumber(item.rate),
+        gstRate: decimalToNumber(item.gstRate),
+        lineTotal: decimalToNumber(item.lineTotal),
+        product: item.product,
+      };
+    }),
     payments: pi.payments.map((payment) => ({
       id: payment.id,
       amount: decimalToNumber(payment.amount),
@@ -2333,6 +2353,7 @@ export async function countPendingPayments(prisma: PrismaClient, companyId: stri
           ProformaInvoiceStatus.PENDING_BOOKING,
           ProformaInvoiceStatus.BOOKED,
           ProformaInvoiceStatus.PARTIALLY_DISPATCHED,
+          ProformaInvoiceStatus.CLOSED_PARTIAL,
         ],
       },
     },
@@ -2431,12 +2452,11 @@ export async function clearExpiredDispatchTodayFlags(
   companyId: string,
   piId?: string,
 ) {
-  const today = toDateOnly(new Date());
   await prisma.proformaInvoice.updateMany({
     where: {
       companyId,
       ...(piId ? { id: piId } : {}),
-      dispatchTodayDate: { not: null, lt: today },
+      ...dispatchTodayExpiredWhere(),
       status: {
         in: [ProformaInvoiceStatus.BOOKED, ProformaInvoiceStatus.PARTIALLY_DISPATCHED],
       },
@@ -2563,12 +2583,23 @@ async function activateDispatchToday(
     updatedById: input.markedById,
   });
 
+  const current = await tx.proformaInvoice.findUniqueOrThrow({
+    where: { id: input.piId },
+    select: { dispatchQueuedAt: true, dispatchQueuedById: true },
+  });
+
   const updated = await tx.proformaInvoice.update({
     where: { id: input.piId },
     data: {
       dispatchTodayDate: today,
       dispatchTodayMarkedAt: new Date(),
       dispatchTodayMarkedById: input.markedById,
+      ...(current.dispatchQueuedAt
+        ? {}
+        : {
+            dispatchQueuedAt: new Date(),
+            dispatchQueuedById: input.markedById,
+          }),
       ...draftFieldsFromInput(input.draft),
     },
     include: piInclude,
@@ -2650,7 +2681,7 @@ export async function markDispatchToday(
   }
 
   const todayString = toDateOnly(new Date()).toISOString().slice(0, 10);
-  if (isDispatchTodayActive(pi.dispatchTodayDate, todayString)) {
+  if (isDispatchTodayActive(pi.dispatchTodayDate, new Date(), pi.dispatchTodayMarkedAt)) {
     const updated = await prisma.proformaInvoice.update({
       where: { id: pi.id },
       data: draftFieldsFromInput(input.draft),
@@ -3068,8 +3099,11 @@ export async function recallDispatchToday(
   });
   if (!pi) throw new Error("NOT_FOUND");
 
-  const todayString = toDateOnly(new Date()).toISOString().slice(0, 10);
-  const active = isDispatchTodayActive(pi.dispatchTodayDate, todayString);
+  const active = isDispatchTodayActive(
+    pi.dispatchTodayDate,
+    new Date(),
+    pi.dispatchTodayMarkedAt,
+  );
 
   const pending = await prisma.approvalRequest.findFirst({
     where: {
@@ -3294,6 +3328,7 @@ export async function unbookProformaInvoice(
         dispatchTodayDate: null,
         dispatchTodayMarkedAt: null,
         dispatchTodayMarkedById: null,
+        ...dispatchQueueClearData(),
         dispatchDraftVehicleNo: null,
         dispatchDraftDriverName: null,
         dispatchDraftReceiverName: null,
@@ -3315,6 +3350,145 @@ export async function unbookProformaInvoice(
     });
 
     return serializePi(updated);
+  });
+}
+
+export async function closePartialDispatchPi(
+  prisma: PrismaClient,
+  input: {
+    companyId: string;
+    piId: string;
+    performedById: string;
+    remarks?: string;
+  },
+) {
+  const pi = await prisma.proformaInvoice.findFirst({
+    where: { id: input.piId, companyId: input.companyId },
+    include: { items: true },
+  });
+  if (!pi) throw new Error("NOT_FOUND");
+  if (pi.status === ProformaInvoiceStatus.CLOSED_PARTIAL) {
+    throw new Error("ALREADY_CLOSED");
+  }
+  if (!canClosePartialDispatchPi({ status: pi.status })) {
+    throw new Error("INVALID_STATUS");
+  }
+
+  const remainingLines = pi.items
+    .map((item) => ({
+      productId: item.productId,
+      remainingQty: getPiRemainingQty(
+        decimalToNumber(item.qty),
+        decimalToNumber(item.dispatchedQty),
+      ),
+    }))
+    .filter((line) => line.remainingQty > 0);
+  if (remainingLines.length === 0) throw new Error("NOTHING_TO_CLOSE");
+
+  const openDispatch = await prisma.dispatch.findFirst({
+    where: {
+      proformaInvoiceId: pi.id,
+      status: { in: [DispatchStatus.DRAFT, DispatchStatus.CANCEL_PENDING] },
+    },
+    select: { id: true },
+  });
+  if (openDispatch) throw new Error("HAS_OPEN_DISPATCH");
+
+  const remarks = input.remarks?.trim() || null;
+  const closedAt = new Date();
+  const dispatchTodayWasActive = Boolean(pi.dispatchTodayDate);
+
+  return prisma.$transaction(async (tx) => {
+    await releasePiBookingReservations(tx, {
+      companyId: input.companyId,
+      piId: pi.id,
+      piNo: pi.piNo,
+      performedById: input.performedById,
+      notes: `Released remaining booking for closed partial ${pi.piNo}`,
+    });
+
+    const piSerials = await tx.proformaInvoiceSerial.findMany({
+      where: { piId: pi.id },
+      select: { serialId: true },
+    });
+    if (piSerials.length > 0) {
+      await tx.inventorySerial.updateMany({
+        where: {
+          id: { in: piSerials.map((row) => row.serialId) },
+          status: SerialStatus.BOOKED,
+        },
+        data: { status: SerialStatus.AVAILABLE },
+      });
+      await tx.proformaInvoiceSerial.deleteMany({
+        where: { piId: pi.id },
+      });
+    }
+
+    await cancelOpenCrossCompanyPlansForPi(tx, {
+      piId: pi.id,
+      performedById: input.performedById,
+      reason: remarks ?? "PI closed with partial dispatch",
+    });
+
+    await tx.approvalRequest.updateMany({
+      where: {
+        moduleType: {
+          in: [ApprovalModuleType.BOOKING, ApprovalModuleType.DISPATCH_TODAY],
+        },
+        moduleId: pi.id,
+        status: ApprovalRequestStatus.PENDING,
+      },
+      data: {
+        status: ApprovalRequestStatus.REJECTED,
+        approvedById: input.performedById,
+        remarks: remarks ?? "Rejected because PI was closed with partial dispatch",
+      },
+    });
+
+    const updated = await tx.proformaInvoice.update({
+      where: { id: pi.id },
+      data: {
+        status: ProformaInvoiceStatus.CLOSED_PARTIAL,
+        closedAt,
+        closedById: input.performedById,
+        closedRemarks: remarks,
+        dispatchTodayDate: null,
+        dispatchTodayMarkedAt: null,
+        dispatchTodayMarkedById: null,
+        ...dispatchQueueClearData(),
+        dispatchDraftVehicleNo: null,
+        dispatchDraftDriverName: null,
+        dispatchDraftReceiverName: null,
+        dispatchDraftReceiverMobile: null,
+        dispatchDraftNotes: null,
+      },
+      include: piInclude,
+    });
+
+    await writeAuditLogTx(tx, {
+      tableName: "proforma_invoices",
+      recordId: pi.id,
+      action: "UPDATE",
+      oldValue: { status: pi.status },
+      newValue: {
+        status: ProformaInvoiceStatus.CLOSED_PARTIAL,
+        closedPartial: true,
+        remainingLines,
+        remarks,
+      },
+      performedBy: input.performedById,
+      companyId: input.companyId,
+      reference: pi.piNo,
+    });
+
+    if (dispatchTodayWasActive) {
+      await notifyWarehouseDispatchTodayRecalled(tx, {
+        companyId: input.companyId,
+        piNo: pi.piNo,
+      });
+    }
+
+    return serializePi(updated, { pendingDispatchTodayApproval: false });
   });
 }
 
@@ -3457,6 +3631,7 @@ export async function approvePiCancel(
         dispatchTodayDate: null,
         dispatchTodayMarkedAt: null,
         dispatchTodayMarkedById: null,
+        ...dispatchQueueClearData(),
         dispatchDraftVehicleNo: null,
         dispatchDraftDriverName: null,
         dispatchDraftReceiverName: null,

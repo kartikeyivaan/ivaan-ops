@@ -79,10 +79,22 @@ function parseSerialPaste(text: string): string[] {
   return parseSerialInput(text);
 }
 
-export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
+export function DispatchForm({
+  defaultPiId,
+  mode = "warehouse",
+  lockedPi,
+  dateWindow,
+}: {
+  defaultPiId?: string;
+  mode?: "warehouse" | "sales";
+  lockedPi?: BookablePi;
+  dateWindow?: { min: string; max: string };
+}) {
   const router = useRouter();
-  const [bookablePis, setBookablePis] = useState<BookablePi[]>([]);
-  const [piId, setPiId] = useState(defaultPiId ?? "");
+  const isSales = mode === "sales";
+  const [bookablePis, setBookablePis] = useState<BookablePi[]>(lockedPi ? [lockedPi] : []);
+  const [piId, setPiId] = useState(defaultPiId ?? lockedPi?.id ?? "");
+  const [dispatchDate, setDispatchDate] = useState(dateWindow?.max ?? "");
   const [vehicleNo, setVehicleNo] = useState("");
   const [driverName, setDriverName] = useState("");
   const [receiverName, setReceiverName] = useState("");
@@ -100,6 +112,7 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
   const linesForPiIdRef = useRef("");
 
   useEffect(() => {
+    if (isSales) return;
     fetch("/api/dispatches/bookable-pis")
       .then((response) => response.json())
       .then((data) => {
@@ -108,7 +121,7 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
           setPiId((current) => current || data[0]?.id || "");
         }
       });
-  }, []);
+  }, [isSales]);
 
   useEffect(() => {
     const pi = bookablePis.find((row) => row.id === piId);
@@ -324,8 +337,14 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
 
     setLoading(true);
 
+    if (isSales && !dispatchDate) {
+      setError("Choose the actual dispatch date.");
+      return;
+    }
+
     const payload = {
       proformaInvoiceId: piId,
+      dispatchDate: isSales ? dispatchDate : undefined,
       vehicleNo: vehicleNo || undefined,
       driverName: driverName || undefined,
       receiverName,
@@ -342,7 +361,10 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
     };
 
     try {
-      const response = await fetch("/api/dispatches", {
+      const endpoint = isSales
+        ? `/api/pending-dispatches/${piId}/dispatch`
+        : "/api/dispatches";
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -370,7 +392,9 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
         return;
       }
 
-      router.push(`/inventory/dispatches/${data.id}`);
+      router.push(
+        isSales ? `/sales/pending-dispatches` : `/inventory/dispatches/${data.id}`,
+      );
     } catch {
       setError("Unable to create dispatch. Check your connection and retry.");
     } finally {
@@ -384,13 +408,17 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">New Dispatch</h1>
+          <h1 className="text-2xl font-bold text-slate-900">
+            {isSales ? "Record Dispatch" : "New Dispatch"}
+          </h1>
           <p className="text-sm text-slate-500">
-            Only PIs marked Dispatch Today appear here. Sales-entered details are prefilled.
+            {isSales
+              ? "Record a missed or same-day delivery challan. Stock and serials must still be available."
+              : "Only PIs marked Dispatch Today appear here (marks last 48 hours if not yet dispatched). Sales-entered details are prefilled."}
           </p>
         </div>
         <Button variant="outline" asChild className="h-12">
-          <Link href="/inventory/dispatches">
+          <Link href={isSales ? "/sales/pending-dispatches" : "/inventory/dispatches"}>
             <ArrowLeft className="h-4 w-4" />
             Back
           </Link>
@@ -404,6 +432,13 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
         <CardContent className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2 md:col-span-2">
             <Label>Booked PI</Label>
+            {isSales ? (
+              <p className="flex h-12 items-center rounded-md border border-slate-200 bg-slate-50 px-3 text-base text-slate-800">
+                {selectedPi
+                  ? `${selectedPi.piNo} · ${selectedPi.customer.customerName}`
+                  : "Loading…"}
+              </p>
+            ) : (
             <select
               value={piId}
               onChange={(event) => setPiId(event.target.value)}
@@ -417,13 +452,32 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
                 </option>
               ))}
             </select>
-            {bookablePis.length === 0 ? (
+            )}
+            {bookablePis.length === 0 && !isSales ? (
               <p className="text-sm text-slate-500">
-                No PIs are marked for dispatch today. Sales must mark a fully paid booked PI as
-                Dispatch Today first.
+                No PIs are marked for dispatch. Marks stay here for 48 hours from creation if not
+                yet dispatched. Sales must mark a fully paid booked PI as Dispatch Today first.
               </p>
             ) : null}
           </div>
+          {isSales ? (
+            <div className="space-y-2">
+              <Label>Dispatch date *</Label>
+              <Input
+                required
+                type="date"
+                className="h-12 text-base"
+                value={dispatchDate}
+                min={dateWindow?.min}
+                max={dateWindow?.max}
+                onChange={(event) => setDispatchDate(event.target.value)}
+              />
+              <p className="text-xs text-slate-500">
+                This month and last month only
+                {dateWindow ? ` (${dateWindow.min} to ${dateWindow.max})` : ""}.
+              </p>
+            </div>
+          ) : null}
           <div className="space-y-2">
             <Label>Vehicle No *</Label>
             <Input
@@ -620,6 +674,7 @@ export function DispatchForm({ defaultPiId }: { defaultPiId?: string }) {
         disabled={
           loading ||
           !piId ||
+          (isSales && !dispatchDate) ||
           !vehicleNo.trim() ||
           !receiverName.trim() ||
           receiverMobile.trim().length < 10

@@ -251,6 +251,11 @@ describe("inventory events", () => {
           status: "CANCELLED",
           items: [{ productId, qty: 10, dispatchedQty: 0 }],
         },
+        {
+          id: "pi-closed-partial",
+          status: "CLOSED_PARTIAL",
+          items: [{ productId, qty: 40, dispatchedQty: 36 }],
+        },
       ],
       productId,
     );
@@ -259,6 +264,7 @@ describe("inventory events", () => {
     expect(remaining.get("pi-done")).toBe(0);
     expect(remaining.get("pi-partial")).toBe(10);
     expect(remaining.get("pi-cancelled")).toBe(0);
+    expect(remaining.get("pi-closed-partial")).toBe(0);
   });
 
   it("drops PI reservation events whose PI is absent from the remaining map", () => {

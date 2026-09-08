@@ -8,6 +8,7 @@ import {
 } from "@/lib/dispatches";
 import {
   canApproveDispatchCancel,
+  canLookupDispatchSerials,
   canManageDispatches,
   canViewDispatches,
 } from "@/lib/dispatch-permissions";
@@ -100,6 +101,12 @@ describe("dispatch permissions", () => {
   it("allows warehouse to manage dispatches", () => {
     expect(canManageDispatches([ROLES.WAREHOUSE])).toBe(true);
     expect(canManageDispatches([ROLES.SALES_EXECUTIVE])).toBe(false);
+  });
+
+  it("lets sales look up serials for queued historic DCs without warehouse manage rights", () => {
+    expect(canLookupDispatchSerials([ROLES.SALES_EXECUTIVE])).toBe(true);
+    expect(canLookupDispatchSerials([ROLES.WAREHOUSE])).toBe(true);
+    expect(canLookupDispatchSerials([ROLES.ACCOUNTS])).toBe(false);
   });
 
   it("allows manager to approve DC cancellation", () => {

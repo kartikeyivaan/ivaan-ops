@@ -189,6 +189,7 @@ enum ProformaInvoiceStatus {
   BOOKED
   PARTIALLY_DISPATCHED
   FULLY_DISPATCHED
+  CLOSED_PARTIAL
   CANCEL_PENDING
   CANCELLED
 }
@@ -675,7 +676,9 @@ model User {
   salesQuotations                        Quotation[]                       @relation("QuotationSalesUser")
   salesProformaInvoices                  ProformaInvoice[]                 @relation("ProformaSalesUser")
   bookedProformaInvoices                 ProformaInvoice[]                 @relation("ProformaBookedBy")
+  closedProformaInvoices                 ProformaInvoice[]                 @relation("ProformaClosedBy")
   dispatchTodayMarkedPis                 ProformaInvoice[]                 @relation("ProformaDispatchTodayMarkedBy")
+  dispatchQueuedPis                      ProformaInvoice[]                 @relation("ProformaDispatchQueuedBy")
   creditRequestedProformaInvoices        ProformaInvoice[]                 @relation("ProformaCreditRequestedBy")
   creditSmApprovedProformaInvoices       ProformaInvoice[]                 @relation("ProformaCreditSmApprovedBy")
   creditAccountsApprovedProformaInvoices ProformaInvoice[]                 @relation("ProformaCreditAccountsApprovedBy")
@@ -1552,6 +1555,8 @@ model ProformaInvoice {
   dispatchTodayDate           DateTime?             @map("dispatch_today_date") @db.Date
   dispatchTodayMarkedAt       DateTime?             @map("dispatch_today_marked_at")
   dispatchTodayMarkedById     String?               @map("dispatch_today_marked_by") @db.Uuid
+  dispatchQueuedAt            DateTime?             @map("dispatch_queued_at")
+  dispatchQueuedById          String?               @map("dispatch_queued_by") @db.Uuid
   dispatchDraftVehicleNo      String?               @map("dispatch_draft_vehicle_no")
   dispatchDraftDriverName     String?               @map("dispatch_draft_driver_name")
   dispatchDraftReceiverName   String?               @map("dispatch_draft_receiver_name")
@@ -1569,6 +1574,9 @@ model ProformaInvoice {
   creditClearedAt             DateTime?             @map("credit_cleared_at")
   creditRejectionReason       String?               @map("credit_rejection_reason")
   creditLastReminderOn        DateTime?             @map("credit_last_reminder_on") @db.Date
+  closedAt                    DateTime?             @map("closed_at")
+  closedById                  String?               @map("closed_by") @db.Uuid
+  closedRemarks               String?               @map("closed_remarks")
   createdAt                   DateTime              @default(now()) @map("created_at")
   updatedAt                   DateTime              @updatedAt @map("updated_at")
 
@@ -1578,7 +1586,9 @@ model ProformaInvoice {
   quotation                Quotation?                   @relation(fields: [quotationId], references: [id])
   warehouse                Warehouse?                   @relation(fields: [warehouseId], references: [id])
   bookedBy                 User?                        @relation("ProformaBookedBy", fields: [bookedById], references: [id])
+  closedBy                 User?                        @relation("ProformaClosedBy", fields: [closedById], references: [id])
   dispatchTodayMarkedBy    User?                        @relation("ProformaDispatchTodayMarkedBy", fields: [dispatchTodayMarkedById], references: [id])
+  dispatchQueuedBy         User?                        @relation("ProformaDispatchQueuedBy", fields: [dispatchQueuedById], references: [id])
   creditRequestedBy        User?                        @relation("ProformaCreditRequestedBy", fields: [creditRequestedById], references: [id])
   creditSmApprovedBy       User?                        @relation("ProformaCreditSmApprovedBy", fields: [creditSmApprovedById], references: [id])
   creditAccountsApprovedBy User?                        @relation("ProformaCreditAccountsApprovedBy", fields: [creditAccountsApprovedById], references: [id])
@@ -1594,6 +1604,7 @@ model ProformaInvoice {
   @@index([companyId, status])
   @@index([customerId])
   @@index([companyId, dispatchTodayDate])
+  @@index([companyId, dispatchQueuedAt])
   @@index([companyId, creditStatus])
   @@index([customerId, creditStatus])
   @@map("proforma_invoices")

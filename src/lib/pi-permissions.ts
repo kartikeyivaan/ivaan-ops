@@ -70,6 +70,20 @@ export function canApprovePiCancel(userRoles: string[]): boolean {
   return hasRole(userRoles, [...APPROVE_CANCEL_ROLES]);
 }
 
+/** Sales may close a partially dispatched PI and release leftover holding. */
+export function canClosePartialPi(userRoles: string[]): boolean {
+  return canManageProformaInvoices(userRoles);
+}
+
+/** Sales Pending Dispatch list and historic / same-day DC recording. */
+export function canViewPendingDispatches(userRoles: string[]): boolean {
+  return canManageProformaInvoices(userRoles);
+}
+
+export function canRecordQueuedDispatch(userRoles: string[]): boolean {
+  return canManageProformaInvoices(userRoles);
+}
+
 export function canRequestPiEdit(userRoles: string[]): boolean {
   return canManageProformaInvoices(userRoles);
 }

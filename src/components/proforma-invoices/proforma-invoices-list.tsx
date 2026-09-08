@@ -46,7 +46,9 @@ type SalesExecutive = { id: string; name: string; email?: string };
 function statusVariant(status: string): "default" | "success" | "warning" | "danger" {
   if (status === "ISSUED") return "success";
   if (status === "BOOKED") return "success";
+  if (status === "FULLY_DISPATCHED") return "success";
   if (status === "PENDING_BOOKING" || status === "CANCEL_PENDING") return "warning";
+  if (status === "CLOSED_PARTIAL") return "warning";
   if (status === "CANCELLED") return "danger";
   return "default";
 }
@@ -197,6 +199,7 @@ export function ProformaInvoicesList({
             <option value="BOOKED">Booked</option>
             <option value="PARTIALLY_DISPATCHED">Partially Dispatched</option>
             <option value="FULLY_DISPATCHED">Fully Dispatched</option>
+            <option value="CLOSED_PARTIAL">Closed (Partial Dispatch)</option>
             <option value="CANCEL_PENDING">Cancel Pending</option>
             <option value="CANCELLED">Cancelled</option>
           </select>

@@ -707,6 +707,10 @@ export const approvePiCancelSchema = z.object({
   remarks: z.string().optional(),
 });
 
+export const closePartialDispatchPiSchema = z.object({
+  remarks: z.string().trim().max(500).optional(),
+});
+
 export const proformaInvoiceSearchSchema = z.object({
   q: z.string().optional(),
   status: z
@@ -717,6 +721,7 @@ export const proformaInvoiceSearchSchema = z.object({
       "BOOKED",
       "PARTIALLY_DISPATCHED",
       "FULLY_DISPATCHED",
+      "CLOSED_PARTIAL",
       "CANCEL_PENDING",
       "CANCELLED",
     ])
@@ -742,6 +747,31 @@ export const dispatchLineSchema = z.object({
   productId: z.string().uuid(),
   qty: z.coerce.number().positive(),
   serialIds: z.array(z.string().uuid()).max(MAX_SERIALS_PER_ENTRY).optional(),
+});
+
+export const createQueuedDispatchSchema = z.object({
+  dispatchDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Dispatch date must be YYYY-MM-DD."),
+  vehicleNo: z.string().trim().min(1, "Vehicle number is required."),
+  driverName: z.string().optional(),
+  receiverName: z.string().trim().min(1, "Receiver name is required."),
+  receiverMobile: z.string().trim().min(10, "Receiver mobile is required."),
+  signatureUrl: z
+    .string()
+    .max(200_000)
+    .refine(
+      (value) =>
+        value === "" ||
+        value.startsWith("data:image/png;base64,") ||
+        value.startsWith("data:image/jpeg;base64,") ||
+        value.startsWith("data:image/webp;base64,"),
+      "Signature must be a PNG, JPEG, or WebP image.",
+    )
+    .optional(),
+  notes: z.string().optional(),
+  confirm: z.boolean().default(true),
+  lines: z.array(dispatchLineSchema).min(1),
 });
 
 export const createDispatchSchema = z.object({

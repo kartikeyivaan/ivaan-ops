@@ -25,6 +25,7 @@ import {
 export { remainingReservedQtyByPiId };
 import { pendingIncomingQuantity } from "@/lib/inventory";
 import { prisma } from "@/lib/prisma";
+import { dispatchTodayActiveWhere } from "@/lib/proforma-invoices";
 import { resolveSafetyQty } from "@/lib/safety-stock";
 import { addCalendarDays } from "@/lib/working-days";
 
@@ -544,7 +545,7 @@ export async function loadInventoryTimeline(
     client.proformaInvoice.findMany({
       where: {
         companyId: { in: input.companyIds },
-        dispatchTodayDate: todayDate,
+        ...dispatchTodayActiveWhere(),
       },
       select: {
         id: true,

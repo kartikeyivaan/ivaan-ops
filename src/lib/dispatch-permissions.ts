@@ -26,6 +26,17 @@ export function canManageDispatches(userRoles: string[]): boolean {
   return hasRole(userRoles, [...MANAGE_ROLES]);
 }
 
+/** Warehouse live DC or sales queued/historic DC — both need serial lookup. */
+export function canLookupDispatchSerials(userRoles: string[]): boolean {
+  return (
+    canManageDispatches(userRoles) ||
+    hasRole(userRoles, [
+      ROLES.SALES_MANAGER,
+      ROLES.SALES_EXECUTIVE,
+    ])
+  );
+}
+
 export function canViewDispatchSerials(userRoles: string[]): boolean {
   return hasRole(userRoles, [...SERIAL_VIEW_ROLES]);
 }

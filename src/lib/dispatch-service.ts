@@ -36,7 +36,12 @@ import {
   notifyDispatchCompleted,
   notifyInvoicePending,
 } from "@/lib/notification-service";
-import { calculateOutstanding } from "@/lib/proforma-invoices";
+import {
+  calculateOutstanding,
+  dispatchQueueClearData,
+  dispatchTodayActiveWhere,
+  isDispatchTodayActive,
+} from "@/lib/proforma-invoices";
 import { resolveStoredSerials } from "@/lib/serial-resolution";
 import { clearExpiredDispatchTodayFlags } from "@/lib/pi-service";
 import { deductNonSerialStock } from "@/lib/transfer-service";
@@ -203,6 +208,10 @@ async function refreshPiDispatchStatus(
     include: { items: true },
   });
 
+  if (pi.status === ProformaInvoiceStatus.CLOSED_PARTIAL) {
+    return;
+  }
+
   const allDispatched = pi.items.every(
     (item) => decimalToNumber(item.dispatchedQty) >= decimalToNumber(item.qty),
   );
@@ -230,6 +239,7 @@ async function refreshPiDispatchStatus(
               dispatchTodayDate: null,
               dispatchTodayMarkedAt: null,
               dispatchTodayMarkedById: null,
+              ...dispatchQueueClearData(),
             }
           : {}),
       },
@@ -340,6 +350,8 @@ export async function listPiDispatchedChallans(
       id: true,
       dcNo: true,
       dispatchDate: true,
+      dispatchedBy: { select: { id: true, name: true } },
+      createdBy: { select: { id: true, name: true } },
       invoiceHandover: {
         select: {
           invoiceNumber: true,
@@ -359,6 +371,7 @@ export async function listPiDispatchedChallans(
     id: dispatch.id,
     dcNo: dispatch.dcNo,
     dispatchDate: dispatch.dispatchDate.toISOString().slice(0, 10),
+    dispatchedBy: dispatch.dispatchedBy ?? dispatch.createdBy ?? null,
     invoiceNumber: dispatch.invoiceHandover?.invoiceNumber ?? null,
     invoiceDate: dispatch.invoiceHandover?.invoiceDate?.toISOString().slice(0, 10) ?? null,
     documentationStatus: dispatch.documentation?.status ?? null,
@@ -395,14 +408,13 @@ export async function listDispatchableProformaInvoices(
 ) {
   await clearExpiredDispatchTodayFlags(prisma, companyId);
 
-  const today = toDateOnly(new Date());
   const rows = await prisma.proformaInvoice.findMany({
     where: {
       companyId,
       status: {
         in: [ProformaInvoiceStatus.BOOKED, ProformaInvoiceStatus.PARTIALLY_DISPATCHED],
       },
-      dispatchTodayDate: today,
+      ...dispatchTodayActiveWhere(),
     },
     include: {
       customer: { select: { id: true, customerName: true, customerCode: true } },
@@ -433,45 +445,7 @@ export async function listDispatchableProformaInvoices(
     );
     const outstanding = calculateOutstanding(decimalToNumber(pi.totalValue), totalPaid);
 
-    const items = [];
-    for (const item of pi.items) {
-      const remainingKits = getRemainingQty(
-        decimalToNumber(item.qty),
-        decimalToNumber(item.dispatchedQty),
-      );
-      if (remainingKits <= 0) continue;
-
-      if (isKitCategory(item.product.category.name)) {
-        const components = await getKitComponentsForFulfillment(prisma, item.productId);
-        for (const component of components) {
-          items.push({
-            id: item.id,
-            productId: component.componentProductId,
-            productName: `${component.displayName} (from ${item.product.displayName})`,
-            kitProductName: item.product.displayName,
-            serialTracking: component.serialTracking,
-            orderedQty: decimalToNumber(item.qty) * component.qty,
-            dispatchedQty: decimalToNumber(item.dispatchedQty) * component.qty,
-            remainingQty: componentRemainingQty(remainingKits, component.qty),
-            isKitComponent: true,
-            kitBomQty: component.qty,
-          });
-        }
-      } else {
-        items.push({
-          id: item.id,
-          productId: item.productId,
-          productName: item.product.displayName,
-          kitProductName: null,
-          serialTracking: item.product.serialTracking,
-          orderedQty: decimalToNumber(item.qty),
-          dispatchedQty: decimalToNumber(item.dispatchedQty),
-          remainingQty: remainingKits,
-          isKitComponent: false,
-          kitBomQty: null,
-        });
-      }
-    }
+    const items = await buildDispatchFormItems(prisma, pi.items);
 
     result.push({
       id: pi.id,
@@ -528,6 +502,75 @@ export async function listDispatchableProformaInvoices(
 
   // SE already gated payment/credit when marking Dispatch Today — do not re-block on outstanding.
   return result.filter((pi) => pi.items.some((item) => item.remainingQty > 0));
+}
+
+export type DispatchFormItem = {
+  id: string;
+  productId: string;
+  productName: string;
+  kitProductName: string | null;
+  serialTracking: boolean;
+  orderedQty: number;
+  dispatchedQty: number;
+  remainingQty: number;
+  isKitComponent: boolean;
+  kitBomQty: number | null;
+};
+
+export async function buildDispatchFormItems(
+  prisma: PrismaClient,
+  items: Array<{
+    id: string;
+    productId: string;
+    qty: { toNumber(): number } | number | string;
+    dispatchedQty: { toNumber(): number } | number | string;
+    product: {
+      displayName: string;
+      serialTracking: boolean;
+      category: { name: string };
+    };
+  }>,
+): Promise<DispatchFormItem[]> {
+  const result: DispatchFormItem[] = [];
+  for (const item of items) {
+    const remainingKits = getRemainingQty(
+      decimalToNumber(item.qty),
+      decimalToNumber(item.dispatchedQty),
+    );
+    if (remainingKits <= 0) continue;
+
+    if (isKitCategory(item.product.category.name)) {
+      const components = await getKitComponentsForFulfillment(prisma, item.productId);
+      for (const component of components) {
+        result.push({
+          id: item.id,
+          productId: component.componentProductId,
+          productName: `${component.displayName} (from ${item.product.displayName})`,
+          kitProductName: item.product.displayName,
+          serialTracking: component.serialTracking,
+          orderedQty: decimalToNumber(item.qty) * component.qty,
+          dispatchedQty: decimalToNumber(item.dispatchedQty) * component.qty,
+          remainingQty: componentRemainingQty(remainingKits, component.qty),
+          isKitComponent: true,
+          kitBomQty: component.qty,
+        });
+      }
+    } else {
+      result.push({
+        id: item.id,
+        productId: item.productId,
+        productName: item.product.displayName,
+        kitProductName: null,
+        serialTracking: item.product.serialTracking,
+        orderedQty: decimalToNumber(item.qty),
+        dispatchedQty: decimalToNumber(item.dispatchedQty),
+        remainingQty: remainingKits,
+        isKitComponent: false,
+        kitBomQty: null,
+      });
+    }
+  }
+  return result;
 }
 
 export async function listBookedSerialsForPi(
@@ -668,6 +711,7 @@ async function validateDispatchLines(
     piId: string;
     warehouseId: string;
     lines: DispatchLineInput[];
+    skipDispatchTodayCheck?: boolean;
   },
 ) {
   if (input.lines.length === 0) throw new Error("LINES_REQUIRED");
@@ -688,12 +732,12 @@ async function validateDispatchLines(
 
   // SE already gated payment/credit (incl. ₹10 tolerance / approved credit) when marking
   // Dispatch Today — warehouse DC creation must not re-block on outstanding.
-  const today = toDateOnly(new Date());
-  if (
-    !pi.dispatchTodayDate ||
-    pi.dispatchTodayDate.toISOString().slice(0, 10) !== today.toISOString().slice(0, 10)
-  ) {
-    throw new Error("NOT_MARKED_DISPATCH_TODAY");
+  if (!input.skipDispatchTodayCheck) {
+    if (
+      !isDispatchTodayActive(pi.dispatchTodayDate, new Date(), pi.dispatchTodayMarkedAt)
+    ) {
+      throw new Error("NOT_MARKED_DISPATCH_TODAY");
+    }
   }
 
   if (pi.warehouseId !== input.warehouseId) throw new Error("WAREHOUSE_MISMATCH");
@@ -811,6 +855,8 @@ export async function createDispatch(
     notes?: string;
     confirm: boolean;
     lines: DispatchLineInput[];
+    dispatchDate?: Date;
+    skipDispatchTodayCheck?: boolean;
   },
 ) {
   const pi = await prisma.proformaInvoice.findFirst({
@@ -825,9 +871,10 @@ export async function createDispatch(
     piId: pi.id,
     warehouseId: pi.warehouseId,
     lines: input.lines,
+    skipDispatchTodayCheck: input.skipDispatchTodayCheck,
   });
 
-  const dispatchDate = toDateOnly(new Date());
+  const dispatchDate = input.dispatchDate ?? toDateOnly(new Date());
   const dcNo = await generateDispatchNumber(
     prisma,
     pi.company.code,
@@ -1346,9 +1393,13 @@ export async function requestDispatchCancel(
 ) {
   const dispatch = await prisma.dispatch.findFirst({
     where: { id: input.dispatchId, companyId: input.companyId },
+    include: { proformaInvoice: { select: { status: true } } },
   });
   if (!dispatch) throw new Error("NOT_FOUND");
   if (dispatch.status !== DispatchStatus.DISPATCHED) throw new Error("INVALID_STATUS");
+  if (dispatch.proformaInvoice.status === ProformaInvoiceStatus.CLOSED_PARTIAL) {
+    throw new Error("PI_CLOSED");
+  }
 
   const existing = await prisma.approvalRequest.findFirst({
     where: {

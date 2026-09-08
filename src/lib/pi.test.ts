@@ -4,14 +4,25 @@ import {
   buildDispatchTodayApprovalCopy,
   calculateAdvanceRequired,
   calculateOutstanding,
+  canCloseFromPendingDispatch,
+  canClosePartialDispatchPi,
   canEditProformaInvoice,
+  canRecordQueuedDispatchOnPi,
+  canRequestCancelFromPendingDispatch,
+  daysOnPendingDispatch,
+  historicDispatchDateWindow,
+  isHistoricDispatchDateAllowed,
+  isPendingDispatchListStatus,
   canUnbookProformaInvoice,
   canRecordPaymentAgainstPi,
   canManageExistingPiPayment,
   canRequestBooking,
+  formatProformaStatus,
+  getPiRemainingQty,
   daysUntilCommittedDispatch,
   formatDispatchTodayApprovalMessage,
   formatDispatchTodayConfirmationMessage,
+  getDispatchTodayCutoff,
   isDispatchTodayActive,
   isOutstandingWithinTolerance,
   isReadyForDispatch,
@@ -23,7 +34,10 @@ import {
 import {
   canApproveBooking,
   canApproveDispatchToday,
+  canClosePartialPi,
   canManageProformaInvoices,
+  canRecordQueuedDispatch,
+  canViewPendingDispatches,
   canMarkDispatchToday,
   canRecallDispatchToday,
   canRecordPayments,
@@ -89,6 +103,7 @@ describe("proforma invoice calculations", () => {
     expect(canRecordPaymentAgainstPi("PARTIALLY_DISPATCHED", 1000)).toBe(true);
     expect(canRecordPaymentAgainstPi("BOOKED", 0)).toBe(false);
     expect(canRecordPaymentAgainstPi("FULLY_DISPATCHED", 100)).toBe(true);
+    expect(canRecordPaymentAgainstPi("CLOSED_PARTIAL", 100)).toBe(true);
   });
 
   it("allows editing existing payments except on draft or cancelled PIs", () => {
@@ -127,6 +142,80 @@ describe("proforma invoice calculations", () => {
     expect(canUnbookProformaInvoice({ status: "PARTIALLY_DISPATCHED" })).toBe(false);
   });
 
+  it("allows closing only partially dispatched PIs and releases remaining qty", () => {
+    expect(canClosePartialDispatchPi({ status: "PARTIALLY_DISPATCHED" })).toBe(true);
+    expect(canClosePartialDispatchPi({ status: "BOOKED" })).toBe(false);
+    expect(canClosePartialDispatchPi({ status: "FULLY_DISPATCHED" })).toBe(false);
+    expect(canClosePartialDispatchPi({ status: "CLOSED_PARTIAL" })).toBe(false);
+    expect(getPiRemainingQty(40, 36)).toBe(4);
+    expect(getPiRemainingQty(10, 10)).toBe(0);
+    expect(formatProformaStatus("CLOSED_PARTIAL")).toBe("Closed (Partial Dispatch)");
+  });
+
+  it("keeps marked PIs on the pending dispatch list until a terminal action", () => {
+    expect(isPendingDispatchListStatus("BOOKED")).toBe(true);
+    expect(isPendingDispatchListStatus("PARTIALLY_DISPATCHED")).toBe(true);
+    expect(isPendingDispatchListStatus("CANCEL_PENDING")).toBe(true);
+    expect(isPendingDispatchListStatus("CANCELLED")).toBe(false);
+    expect(isPendingDispatchListStatus("FULLY_DISPATCHED")).toBe(false);
+    expect(isPendingDispatchListStatus("CLOSED_PARTIAL")).toBe(false);
+  });
+
+  it("blocks pending-dispatch actions while a draft DC is open", () => {
+    expect(canRecordQueuedDispatchOnPi({ status: "BOOKED", hasOpenDispatchDraft: false })).toBe(
+      true,
+    );
+    expect(canRecordQueuedDispatchOnPi({ status: "BOOKED", hasOpenDispatchDraft: true })).toBe(
+      false,
+    );
+    expect(
+      canRequestCancelFromPendingDispatch({ status: "BOOKED", hasOpenDispatchDraft: true }),
+    ).toBe(false);
+    expect(
+      canRequestCancelFromPendingDispatch({ status: "BOOKED", hasOpenDispatchDraft: false }),
+    ).toBe(true);
+    expect(
+      canRequestCancelFromPendingDispatch({
+        status: "PARTIALLY_DISPATCHED",
+        hasOpenDispatchDraft: false,
+      }),
+    ).toBe(false);
+    expect(
+      canCloseFromPendingDispatch({
+        status: "PARTIALLY_DISPATCHED",
+        hasOpenDispatchDraft: false,
+      }),
+    ).toBe(true);
+    expect(
+      canCloseFromPendingDispatch({
+        status: "PARTIALLY_DISPATCHED",
+        hasOpenDispatchDraft: true,
+      }),
+    ).toBe(false);
+    expect(canCloseFromPendingDispatch({ status: "BOOKED", hasOpenDispatchDraft: false })).toBe(
+      false,
+    );
+  });
+
+  it("allows historic dispatch dates only in this month and last month", () => {
+    const asOf = new Date("2026-09-07T08:00:00+05:30");
+    expect(historicDispatchDateWindow(asOf)).toEqual({
+      min: "2026-08-01",
+      max: "2026-09-07",
+    });
+    expect(isHistoricDispatchDateAllowed("2026-08-01", asOf)).toBe(true);
+    expect(isHistoricDispatchDateAllowed("2026-09-07", asOf)).toBe(true);
+    expect(isHistoricDispatchDateAllowed("2026-07-31", asOf)).toBe(false);
+    expect(isHistoricDispatchDateAllowed("2026-09-08", asOf)).toBe(false);
+
+    const january = new Date("2026-01-15T08:00:00+05:30");
+    expect(historicDispatchDateWindow(january)).toEqual({
+      min: "2025-12-01",
+      max: "2026-01-15",
+    });
+    expect(daysOnPendingDispatch("2026-09-01", "2026-09-07")).toBe(6);
+  });
+
   it("caps edited payment amount to outstanding plus the current payment", () => {
     expect(maxPaymentAmountOnEdit(100000, 40000, 10000)).toBe(70000);
     expect(maxPaymentAmountOnEdit(100000, 100000, 25000)).toBe(25000);
@@ -139,6 +228,7 @@ describe("proforma invoice calculations", () => {
     expect(isReadyForDispatch("PARTIALLY_DISPATCHED", 0)).toBe(true);
     expect(isReadyForDispatch("PARTIALLY_DISPATCHED", 5)).toBe(true);
     expect(isReadyForDispatch("ISSUED", 0)).toBe(false);
+    expect(isReadyForDispatch("CLOSED_PARTIAL", 0)).toBe(false);
   });
 
   it("allows dispatch with approved credit when outstanding remains", () => {
@@ -164,8 +254,29 @@ describe("proforma invoice calculations", () => {
     expect(daysUntilCommittedDispatch("2026-07-28", "2026-07-30")).toBe(-2);
     expect(needsEarlyDispatchTodayApproval("2026-08-05", "2026-07-30")).toBe(true);
     expect(needsEarlyDispatchTodayApproval("2026-07-30", "2026-07-30")).toBe(false);
+  });
+
+  it("keeps dispatch today active for 48 hours from the mark if not dispatched", () => {
+    const markedAt = new Date("2026-09-06T10:00:00.000Z");
+    expect(getDispatchTodayCutoff(new Date("2026-09-08T10:00:00.000Z")).toISOString()).toBe(
+      "2026-09-06T10:00:00.000Z",
+    );
+    expect(
+      isDispatchTodayActive("2026-09-06", new Date("2026-09-06T10:00:00.000Z"), markedAt),
+    ).toBe(true);
+    expect(
+      isDispatchTodayActive("2026-09-06", new Date("2026-09-07T10:00:00.000Z"), markedAt),
+    ).toBe(true);
+    expect(
+      isDispatchTodayActive("2026-09-06", new Date("2026-09-08T09:59:59.000Z"), markedAt),
+    ).toBe(true);
+    expect(
+      isDispatchTodayActive("2026-09-06", new Date("2026-09-08T10:00:00.000Z"), markedAt),
+    ).toBe(false);
+
     expect(isDispatchTodayActive("2026-07-30", "2026-07-30")).toBe(true);
-    expect(isDispatchTodayActive("2026-07-29", "2026-07-30")).toBe(false);
+    expect(isDispatchTodayActive("2026-07-29", "2026-07-30")).toBe(true);
+    expect(isDispatchTodayActive("2026-07-28", "2026-07-30")).toBe(false);
   });
 
   it("builds a single clear approval message for early and stock transfer", () => {
@@ -282,6 +393,20 @@ describe("proforma invoice permissions", () => {
     expect(canMarkDispatchToday([ROLES.WAREHOUSE])).toBe(false);
     expect(canApproveDispatchToday([ROLES.SALES_MANAGER])).toBe(true);
     expect(canApproveDispatchToday([ROLES.SALES_EXECUTIVE])).toBe(false);
+  });
+
+  it("allows sales to close a partially dispatched PI", () => {
+    expect(canClosePartialPi([ROLES.SALES_EXECUTIVE])).toBe(true);
+    expect(canClosePartialPi([ROLES.SALES_MANAGER])).toBe(true);
+    expect(canClosePartialPi([ROLES.WAREHOUSE])).toBe(false);
+    expect(canClosePartialPi([ROLES.ACCOUNTS])).toBe(false);
+  });
+
+  it("limits the pending dispatch page to sales roles", () => {
+    expect(canViewPendingDispatches([ROLES.SALES_EXECUTIVE])).toBe(true);
+    expect(canRecordQueuedDispatch([ROLES.SALES_EXECUTIVE])).toBe(true);
+    expect(canViewPendingDispatches([ROLES.WAREHOUSE])).toBe(false);
+    expect(canViewPendingDispatches([ROLES.ACCOUNTS])).toBe(false);
   });
 
   it("allows sales to recall dispatch today", () => {

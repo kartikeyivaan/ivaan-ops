@@ -242,6 +242,7 @@ export async function getPaymentFollowupReport(
           ProformaInvoiceStatus.BOOKED,
           ProformaInvoiceStatus.PARTIALLY_DISPATCHED,
           ProformaInvoiceStatus.FULLY_DISPATCHED,
+          ProformaInvoiceStatus.CLOSED_PARTIAL,
         ],
       },
       ...(filters.salesUserId ? { salesUserId: filters.salesUserId } : {}),

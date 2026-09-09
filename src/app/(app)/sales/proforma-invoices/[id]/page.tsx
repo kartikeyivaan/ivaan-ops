@@ -20,7 +20,7 @@ import {
 import { buildProformaInvoiceWhatsappUrl } from "@/lib/pi-share";
 import { getProformaInvoiceById } from "@/lib/pi-service";
 import { prisma } from "@/lib/prisma";
-import { requireActiveCompany } from "@/lib/session";
+import { resolveDashboardCompanyIds } from "@/lib/company-scope";
 import { ProformaInvoiceDetail } from "@/components/proforma-invoices/proforma-invoice-detail";
 
 type PageProps = {
@@ -33,14 +33,21 @@ export default async function ProformaInvoiceDetailPage({ params }: PageProps) {
     redirect("/dashboard");
   }
 
-  let companyId: string;
-  try {
-    companyId = requireActiveCompany(session);
-  } catch {
+  const { id } = await params;
+  const companyIds = resolveDashboardCompanyIds(session);
+  if (companyIds.length === 0) {
     redirect("/select-company");
   }
 
-  const { id } = await params;
+  const scoped = await prisma.proformaInvoice.findFirst({
+    where: { id, companyId: { in: companyIds } },
+    select: { companyId: true },
+  });
+  if (!scoped) {
+    notFound();
+  }
+  const companyId = scoped.companyId;
+
   const [pi, warehouses, company, dispatchedChallans] = await Promise.all([
     getProformaInvoiceById(prisma, companyId, id),
     prisma.warehouse.findMany({

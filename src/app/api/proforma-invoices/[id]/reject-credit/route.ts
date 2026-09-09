@@ -8,7 +8,7 @@ import {
 } from "@/lib/pi-permissions";
 import { prisma } from "@/lib/prisma";
 import { rejectApprovalSchema } from "@/lib/validations";
-import { requireActiveCompany } from "@/lib/session";
+import { requireAccessibleCompany } from "@/lib/company-scope";
 
 function errorResponse(code: string, message: string, status: number, details?: unknown) {
   return NextResponse.json({ code, message, details }, { status });
@@ -22,20 +22,23 @@ export async function POST(request: Request, context: RouteContext) {
     return errorResponse("FORBIDDEN", "You do not have permission for this action.", 403);
   }
 
-  let companyId: string;
-  try {
-    companyId = requireActiveCompany(session);
-  } catch {
-    return errorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
-  }
-
   const { id } = await context.params;
-  const pi = await prisma.proformaInvoice.findFirst({
-    where: { id, companyId },
-    select: { creditStatus: true },
+  const pi = await prisma.proformaInvoice.findUnique({
+    where: { id },
+    select: { companyId: true, creditStatus: true },
   });
   if (!pi) {
     return errorResponse("NOT_FOUND", "Proforma invoice not found.", 404);
+  }
+
+  let companyId: string;
+  try {
+    companyId = requireAccessibleCompany(session, pi.companyId);
+  } catch (error) {
+    if (error instanceof Error && error.message === "NOT_FOUND") {
+      return errorResponse("NOT_FOUND", "Proforma invoice not found.", 404);
+    }
+    return errorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
   }
 
   const allowed =

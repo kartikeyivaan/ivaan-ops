@@ -6,6 +6,7 @@ import {
   IncomingLotChangeStatus,
   ItemApprovalStatus,
   OpeningAuditStatus,
+  PiCreditStatus,
   PiEditRequestStatus,
   PrismaClient,
   ProformaInvoiceStatus,
@@ -1019,6 +1020,10 @@ async function listPendingPiCreditApprovals(
     where: {
       companyId,
       id: { in: approvals.map((row) => row.moduleId) },
+      creditStatus:
+        options.moduleType === ApprovalModuleType.PI_CREDIT
+          ? PiCreditStatus.PENDING_SM
+          : PiCreditStatus.PENDING_ACCOUNTS,
     },
     include: {
       customer: { select: { customerName: true } },

@@ -46,6 +46,25 @@ export function resolveDashboardCompanyIds(session: Session): string[] {
   return match ? [match.id] : companies.map((c) => c.id);
 }
 
+/**
+ * Company id for a mutation on an existing record.
+ * Unlike requireActiveCompany, this uses the record's firm when
+ * "All companies" is selected instead of falling back to the first firm.
+ */
+export function requireAccessibleCompany(
+  session: Session | null,
+  resourceCompanyId: string,
+): string {
+  if (!session?.user) {
+    throw new Error("COMPANY_REQUIRED");
+  }
+  const accessible = resolveDashboardCompanyIds(session);
+  if (!accessible.includes(resourceCompanyId)) {
+    throw new Error("NOT_FOUND");
+  }
+  return resourceCompanyId;
+}
+
 export const PROJECTS_ISE_ONLY_MESSAGE =
   "Project proposals, projects and project dispatches are available only for Ivaan Solar Energy.";
 

@@ -15,6 +15,11 @@ const PENDING_STATUSES: InvoiceHandoverStatus[] = [
   InvoiceHandoverStatus.CORRECTION_REQUIRED,
 ];
 
+const COMPLETED_DOCUMENTATION_STATUSES: DocumentationStatus[] = [
+  DocumentationStatus.DCR_ISSUED,
+  DocumentationStatus.NOT_REQUIRED,
+];
+
 const include = {
   dispatch: {
     select: {
@@ -261,15 +266,18 @@ export async function recordInvoice(
     });
 
     if (existingDocumentation) {
-      await tx.documentationStatusHistory.create({
-        data: {
-          documentationRecordId: existingDocumentation.id,
-          fromStatus: existingDocumentation.status,
-          toStatus: existingDocumentation.status,
-          remarks: "Invoice recorded",
-          changedById: input.recordedById,
-        },
-      });
+      // Early DCR already finished — do not reopen documentation for a second check.
+      if (!COMPLETED_DOCUMENTATION_STATUSES.includes(existingDocumentation.status)) {
+        await tx.documentationStatusHistory.create({
+          data: {
+            documentationRecordId: existingDocumentation.id,
+            fromStatus: existingDocumentation.status,
+            toStatus: existingDocumentation.status,
+            remarks: "Invoice recorded",
+            changedById: input.recordedById,
+          },
+        });
+      }
     } else {
       await tx.documentationRecord.create({
         data: {

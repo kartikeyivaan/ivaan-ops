@@ -1162,8 +1162,11 @@ export function ProformaInvoiceDetail({
                   {pi.credit?.overdue ? "Credit Overdue" : "On Credit"}
                 </Badge>
               ) : null}
-              {pi.credit?.status === "PENDING_SM" || pi.credit?.status === "PENDING_ACCOUNTS" ? (
-                <Badge variant="warning">Credit Pending</Badge>
+              {pi.credit?.status === "PENDING_SM" ? (
+                <Badge variant="warning">Credit Pending (Sales Manager)</Badge>
+              ) : null}
+              {pi.credit?.status === "PENDING_ACCOUNTS" ? (
+                <Badge variant="warning">Credit Pending (Accounts)</Badge>
               ) : null}
               {pi.status === "CLOSED_PARTIAL" ? (
                 <Badge variant="warning">Remaining qty released</Badge>

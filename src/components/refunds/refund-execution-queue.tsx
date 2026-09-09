@@ -164,8 +164,8 @@ export function RefundExecutionQueue({
                           <div className="font-medium">
                             {refund.refundBankAccount.bankName}
                           </div>
-                          <div className="text-xs text-slate-500">
-                            {refund.refundBankAccount.accountNumberMasked} ·{" "}
+                          <div className="font-mono text-xs text-slate-500">
+                            {refund.refundBankAccount.accountNumber} ·{" "}
                             {refund.refundBankAccount.ifscCode}
                           </div>
                         </>

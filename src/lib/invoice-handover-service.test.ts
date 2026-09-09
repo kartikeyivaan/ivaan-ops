@@ -52,7 +52,7 @@ describe("recordInvoice documentation attach", () => {
     expect(client.documentationStatusHistory.create).not.toHaveBeenCalled();
   });
 
-  it("attaches the invoice to an early DCR record without resetting status", async () => {
+  it("does not reopen documentation when DCR was already issued before invoicing", async () => {
     const client = mockClient();
     vi.mocked(client.invoiceHandover.findFirst).mockResolvedValue(handover as never);
     vi.mocked(client.documentationRecord.findUnique).mockResolvedValue({
@@ -69,11 +69,51 @@ describe("recordInvoice documentation attach", () => {
     });
 
     expect(client.documentationRecord.create).not.toHaveBeenCalled();
+    expect(client.documentationStatusHistory.create).not.toHaveBeenCalled();
+  });
+
+  it("does not reopen documentation when it was marked not required before invoicing", async () => {
+    const client = mockClient();
+    vi.mocked(client.invoiceHandover.findFirst).mockResolvedValue(handover as never);
+    vi.mocked(client.documentationRecord.findUnique).mockResolvedValue({
+      id: "doc-1",
+      status: DocumentationStatus.NOT_REQUIRED,
+    } as never);
+
+    await recordInvoice(client, {
+      companyId: "company-1",
+      handoverId: "handover-1",
+      invoiceNumber: "INV-100",
+      invoiceDate: new Date("2026-08-18"),
+      recordedById: "user-1",
+    });
+
+    expect(client.documentationRecord.create).not.toHaveBeenCalled();
+    expect(client.documentationStatusHistory.create).not.toHaveBeenCalled();
+  });
+
+  it("leaves in-progress early documentation in the queue without resetting status", async () => {
+    const client = mockClient();
+    vi.mocked(client.invoiceHandover.findFirst).mockResolvedValue(handover as never);
+    vi.mocked(client.documentationRecord.findUnique).mockResolvedValue({
+      id: "doc-1",
+      status: DocumentationStatus.PENDING,
+    } as never);
+
+    await recordInvoice(client, {
+      companyId: "company-1",
+      handoverId: "handover-1",
+      invoiceNumber: "INV-100",
+      invoiceDate: new Date("2026-08-18"),
+      recordedById: "user-1",
+    });
+
+    expect(client.documentationRecord.create).not.toHaveBeenCalled();
     expect(client.documentationStatusHistory.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         documentationRecordId: "doc-1",
-        fromStatus: DocumentationStatus.DCR_ISSUED,
-        toStatus: DocumentationStatus.DCR_ISSUED,
+        fromStatus: DocumentationStatus.PENDING,
+        toStatus: DocumentationStatus.PENDING,
         remarks: "Invoice recorded",
         changedById: "user-1",
       }),

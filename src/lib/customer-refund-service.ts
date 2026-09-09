@@ -521,6 +521,7 @@ export type SerializedCustomerRefund = {
   refundBankAccount: {
     id: string;
     accountHolderName: string;
+    accountNumber: string;
     accountNumberMasked: string;
     ifscCode: string;
     bankName: string;
@@ -627,6 +628,7 @@ export function serializeCustomerRefund(row: RefundRecord): SerializedCustomerRe
       ? {
           id: row.refundBankAccount.id,
           accountHolderName: row.refundBankAccount.accountHolderName,
+          accountNumber: row.refundBankAccount.accountNumber,
           accountNumberMasked: row.refundBankAccount.accountNumberMasked,
           ifscCode: row.refundBankAccount.ifscCode,
           bankName: row.refundBankAccount.bankName,

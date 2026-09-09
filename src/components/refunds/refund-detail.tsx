@@ -305,7 +305,11 @@ export function RefundDetail({
               />
               <DetailField
                 label="Account Number"
-                value={refund.refundBankAccount.accountNumberMasked}
+                value={
+                  <span className="font-mono tracking-wide">
+                    {refund.refundBankAccount.accountNumber}
+                  </span>
+                }
               />
               <DetailField label="IFSC" value={refund.refundBankAccount.ifscCode} />
               <DetailField

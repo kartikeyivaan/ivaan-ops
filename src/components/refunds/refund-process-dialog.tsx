@@ -157,8 +157,30 @@ export function RefundProcessDialog({
             />
             <DetailField
               label="Payee"
-              value={refund.refundBankAccount?.accountNumberMasked ?? "—"}
+              value={refund.refundBankAccount?.accountHolderName ?? "—"}
               hint={refund.refundBankAccount?.bankName}
+            />
+            <DetailField
+              label="Account Number"
+              value={
+                refund.refundBankAccount?.accountNumber ? (
+                  <span className="font-mono tracking-wide">
+                    {refund.refundBankAccount.accountNumber}
+                  </span>
+                ) : (
+                  "—"
+                )
+              }
+            />
+            <DetailField
+              label="IFSC"
+              value={
+                refund.refundBankAccount?.ifscCode ? (
+                  <span className="font-mono">{refund.refundBankAccount.ifscCode}</span>
+                ) : (
+                  "—"
+                )
+              }
             />
           </div>
 

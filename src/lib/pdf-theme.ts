@@ -81,6 +81,19 @@ export function companyLogo(companyCode: string | null | undefined): Buffer | nu
   return readAsset(LOGO_ISE);
 }
 
+export function companyLogoDataUrl(companyCode: string | null | undefined): string | null {
+  const logo = companyLogo(companyCode);
+  if (!logo) return null;
+  return `data:image/png;base64,${logo.toString("base64")}`;
+}
+
+function pngSize(buffer: Buffer): { width: number; height: number } | null {
+  if (buffer.length < 24 || buffer[0] !== 0x89 || buffer.toString("ascii", 1, 4) !== "PNG") {
+    return null;
+  }
+  return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
+}
+
 const STAMP_ISE = path.join(ASSET_ROOT, "branding", "ise-stamp.png");
 const STAMP_PCM = path.join(ASSET_ROOT, "branding", "pcmv-stamp.png");
 
@@ -572,9 +585,36 @@ export function drawTable(
   return { y, columnX };
 }
 
+function measureLetterCompanyBlock(
+  doc: PDFKit.PDFDocument,
+  fonts: PdfFonts,
+  opts: { companyName: string; profile: CompanyProfile },
+  width: number,
+): number {
+  const contactBits = [opts.profile.phone, opts.profile.email].filter(Boolean).join("  |  ");
+  doc.font(fonts.bold).fontSize(11);
+  let height = doc.heightOfString(opts.companyName, { width });
+  if (opts.profile.tagline) {
+    doc.font(fonts.bold).fontSize(8.5);
+    height += 1 + doc.heightOfString(opts.profile.tagline, { width });
+  }
+  doc.font(fonts.regular).fontSize(8.5);
+  for (const line of opts.profile.addressLines) {
+    height += doc.heightOfString(line, { width });
+  }
+  if (contactBits) {
+    height += doc.heightOfString(contactBits, { width });
+  }
+  if (opts.profile.gst) {
+    doc.font(fonts.bold).fontSize(8.5);
+    height += doc.heightOfString(`GSTIN: ${opts.profile.gst}`, { width });
+  }
+  return height;
+}
+
 /**
- * Official letter header: same logo + company block as other PDFs, date on the
- * right, and no document serial number.
+ * Official letter header: logo and company block share the top-left row at the
+ * same height. Date sits below the full-width hairline, right aligned.
  */
 export function drawLetterheadBand(
   ctx: DocContext,
@@ -587,59 +627,89 @@ export function drawLetterheadBand(
 ): number {
   const { doc, palette, fonts } = ctx;
   const top = MARGIN_TOP;
+  const logoGap = 12;
+  const logoMaxW = 260;
+  const native = opts.logo ? pngSize(opts.logo) : null;
+
+  let logoW = 0;
+  let logoH = 0;
+  let textX = CONTENT_LEFT;
+  let textW = CONTENT_WIDTH;
 
   if (opts.logo) {
-    doc.image(opts.logo, CONTENT_LEFT, top, { fit: [190, 56] });
-  } else {
-    doc.font(fonts.bold).fontSize(20).fillColor(palette.ink).text(opts.companyName, CONTENT_LEFT, top);
+    logoW = Math.min(190, logoMaxW);
+    logoH = native ? (native.height / native.width) * logoW : 56;
+    textX = CONTENT_LEFT + logoW + logoGap;
+    textW = CONTENT_RIGHT - textX;
+    const blockH = measureLetterCompanyBlock(doc, fonts, opts, textW);
+    if (native) {
+      logoW = native.width * (blockH / native.height);
+      logoH = blockH;
+      if (logoW > logoMaxW) {
+        logoW = logoMaxW;
+        logoH = native.height * (logoMaxW / native.width);
+      }
+    } else {
+      logoH = Math.max(blockH, 56);
+    }
+    textX = CONTENT_LEFT + logoW + logoGap;
+    textW = CONTENT_RIGHT - textX;
   }
 
-  doc.font(fonts.regular).fontSize(11).fillColor(palette.ink).text(opts.dateLabel, CONTENT_LEFT, top + 8, {
-    width: CONTENT_WIDTH,
-    align: "right",
-  });
-  doc
-    .moveTo(CONTENT_RIGHT - 150, top + 28)
-    .lineTo(CONTENT_RIGHT, top + 28)
-    .lineWidth(2)
-    .strokeColor(palette.accent)
-    .stroke();
+  const blockH = measureLetterCompanyBlock(doc, fonts, opts, textW);
+  const rowH = Math.max(logoH, blockH);
 
-  let addrY = top + 64;
-  doc.font(fonts.bold).fontSize(11).fillColor(palette.ink).text(opts.companyName, CONTENT_LEFT, addrY);
+  if (opts.logo) {
+    const logoY = top + (rowH - logoH) / 2;
+    if (native) {
+      doc.image(opts.logo, CONTENT_LEFT, logoY, { width: logoW, height: logoH });
+    } else {
+      doc.image(opts.logo, CONTENT_LEFT, logoY, { fit: [logoW || 190, rowH] });
+    }
+  }
+
+  let addrY = top + (rowH - blockH) / 2;
+  doc.font(fonts.bold).fontSize(11).fillColor(palette.ink).text(opts.companyName, textX, addrY, {
+    width: textW,
+  });
   addrY = doc.y + 1;
   if (opts.profile.tagline) {
-    doc.font(fonts.bold).fontSize(8.5).fillColor(palette.accent).text(opts.profile.tagline, CONTENT_LEFT, addrY, {
-      width: 300,
+    doc.font(fonts.bold).fontSize(8.5).fillColor(palette.accent).text(opts.profile.tagline, textX, addrY, {
+      width: textW,
     });
     addrY = doc.y + 1;
   }
   doc.font(fonts.regular).fontSize(8.5).fillColor(palette.muted);
   for (const line of opts.profile.addressLines) {
-    doc.text(line, CONTENT_LEFT, addrY, { width: 300 });
+    doc.text(line, textX, addrY, { width: textW });
     addrY = doc.y;
   }
   const contactBits = [opts.profile.phone, opts.profile.email].filter(Boolean).join("  |  ");
   if (contactBits) {
-    doc.font(fonts.regular).fillColor(palette.muted).text(contactBits, CONTENT_LEFT, addrY, { width: 320 });
+    doc.font(fonts.regular).fillColor(palette.muted).text(contactBits, textX, addrY, { width: textW });
     addrY = doc.y;
   }
   if (opts.profile.gst) {
-    doc.font(fonts.bold).fillColor(palette.ink).text(`GSTIN: ${opts.profile.gst}`, CONTENT_LEFT, addrY, {
-      width: 300,
+    doc.font(fonts.bold).fillColor(palette.ink).text(`GSTIN: ${opts.profile.gst}`, textX, addrY, {
+      width: textW,
     });
     addrY = doc.y;
   }
 
-  addrY += 10;
+  const ruleY = top + rowH + 10;
   doc
-    .moveTo(CONTENT_LEFT, addrY)
-    .lineTo(CONTENT_RIGHT, addrY)
+    .moveTo(CONTENT_LEFT, ruleY)
+    .lineTo(CONTENT_RIGHT, ruleY)
     .lineWidth(0.75)
     .strokeColor(palette.border)
     .stroke();
 
-  return addrY + 16;
+  doc.font(fonts.regular).fontSize(11).fillColor(palette.ink).text(opts.dateLabel, CONTENT_LEFT, ruleY + 10, {
+    width: CONTENT_WIDTH,
+    align: "right",
+  });
+
+  return doc.y + 16;
 }
 
 export type FooterOptions = {

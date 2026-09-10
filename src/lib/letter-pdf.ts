@@ -66,8 +66,9 @@ function mmToPt(mm: number): number {
 }
 
 function signatureBlockHeight(signature: Buffer | null, stamp: Buffer | null): number {
-  const imageH = signature || stamp ? 56 : 28;
-  return imageH + 46;
+  const imageH = signature ? 52 : 28;
+  const textH = 44;
+  return imageH + textH + (stamp ? 22 : 0);
 }
 
 function drawInlines(
@@ -118,25 +119,27 @@ function drawLetterBody(
   const blocks = letterHtmlToBlocks(html);
   doc.y = startY;
 
-  for (const block of blocks) {
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index]!;
+    const isLast = index === blocks.length - 1;
     if (block.type === "p") {
       ensureSpace(ctx, pageBottom, 18, contentTop);
       const y = doc.y;
       drawInlines(ctx, block.children, CONTENT_LEFT, y, CONTENT_WIDTH, block.align);
-      doc.y += 8;
+      if (!isLast) doc.y += 8;
       continue;
     }
 
     const marker = block.type === "ol";
-    block.items.forEach((item, index) => {
+    block.items.forEach((item, itemIndex) => {
       ensureSpace(ctx, pageBottom, 18, contentTop);
       const y = doc.y;
       doc.font(fonts.regular).fontSize(11).fillColor(palette.ink);
-      doc.text(marker ? `${index + 1}.` : "•", CONTENT_LEFT, y, { width: 18 });
+      doc.text(marker ? `${itemIndex + 1}.` : "•", CONTENT_LEFT, y, { width: 18 });
       drawInlines(ctx, item, CONTENT_LEFT + 20, y, CONTENT_WIDTH - 20);
       doc.y += 4;
     });
-    doc.y += 6;
+    if (!isLast) doc.y += 6;
   }
 }
 
@@ -155,15 +158,15 @@ function drawSignatureArea(
   const needed = signatureBlockHeight(signature, stamp);
   ensureSpace(ctx, pageBottom, needed, contentTop);
 
-  let y = Math.max(doc.y + 18, pageBottom - needed - 8);
+  let y = doc.y + 10;
   if (y + needed > pageBottom) {
     doc.addPage();
-    y = contentTop + 12;
+    y = contentTop;
   }
 
-  const signLeft = CONTENT_LEFT + CONTENT_WIDTH - 220;
+  const signLeft = CONTENT_LEFT;
   doc.font(fonts.regular).fontSize(9).fillColor(palette.muted).text(`For ${letter.company.name}`, signLeft, y, {
-    width: 220,
+    width: 260,
     align: "left",
   });
   y = doc.y + 6;
@@ -176,15 +179,15 @@ function drawSignatureArea(
   }
 
   doc.font(fonts.bold).fontSize(10).fillColor(palette.ink).text(letter.signatoryName, signLeft, y, {
-    width: 220,
+    width: 260,
   });
   y = doc.y + 1;
   doc.font(fonts.regular).fontSize(9).fillColor(palette.muted).text(letter.signatoryDesignation, signLeft, y, {
-    width: 220,
+    width: 260,
   });
 
   if (stamp) {
-    const stampX = CONTENT_LEFT + CONTENT_WIDTH - 108;
+    const stampX = signLeft + 150;
     const stampY = Math.max(y - 70, contentTop);
     doc.image(stamp, stampX, stampY, { fit: [92, 92] });
   }

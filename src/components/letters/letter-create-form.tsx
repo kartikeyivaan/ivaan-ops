@@ -32,6 +32,7 @@ export type LetterCompanyOption = {
   printContentTopOffsetMm: number;
   signatureImageData?: string | null;
   stampImageData?: string | null;
+  logoImageData?: string | null;
 };
 
 export type LetterDraftRecord = {

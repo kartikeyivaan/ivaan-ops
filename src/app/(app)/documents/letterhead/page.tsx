@@ -4,7 +4,7 @@ import { isOperationalLetterCompany } from "@/lib/letter-content";
 import { canManageOfficialLetters } from "@/lib/letter-permissions";
 import { getOfficialLetterById, serializeLetterDetail } from "@/lib/letter-service";
 import { prisma } from "@/lib/prisma";
-import { companyStampDataUrl } from "@/lib/pdf-theme";
+import { companyLogoDataUrl, companyStampDataUrl } from "@/lib/pdf-theme";
 import { LetterCreateForm } from "@/components/letters/letter-create-form";
 
 export const dynamic = "force-dynamic";
@@ -61,6 +61,7 @@ export default async function LetterheadGeneratorPage({ searchParams }: PageProp
     <LetterCreateForm
       companies={companies.filter(isOperationalLetterCompany).map((company) => ({
         ...company,
+        logoImageData: companyLogoDataUrl(company.code),
         stampImageData: company.stampImageData || companyStampDataUrl(company.code),
       }))}
       draft={draftLetter ? serializeLetterDetail(draftLetter) : null}

@@ -12,6 +12,7 @@ export type LetterPreviewCompany = {
   email?: string | null;
   gstNumber?: string | null;
   tagline?: string | null;
+  logoImageData?: string | null;
 };
 
 export function LetterPreview({
@@ -47,10 +48,18 @@ export function LetterPreview({
   return (
     <div className="rounded-md border border-slate-200 bg-white p-6 text-sm text-slate-800 shadow-inner">
       {!printMode && company ? (
-        <div className="mb-6 border-b border-slate-200 pb-4">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-base font-semibold text-slate-900">{company.name}</p>
+        <div className="mb-4">
+          <div className="flex items-stretch gap-3">
+            {company.logoImageData ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={company.logoImageData}
+                alt=""
+                className="h-auto max-h-24 w-[42%] max-w-[220px] object-contain object-left"
+              />
+            ) : null}
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-slate-900">{company.name}</p>
               {company.tagline ? <p className="text-xs font-medium text-amber-700">{company.tagline}</p> : null}
               {company.address
                 ? company.address.split("\n").map((line) => (
@@ -67,7 +76,9 @@ export function LetterPreview({
                 <p className="text-xs font-medium text-slate-700">GSTIN: {company.gstNumber}</p>
               ) : null}
             </div>
-            <p className="shrink-0 text-sm text-slate-800">{dateLabel}</p>
+          </div>
+          <div className="mt-3 border-t border-slate-200 pt-2">
+            <p className="text-right text-sm text-slate-800">{dateLabel}</p>
           </div>
         </div>
       ) : (
@@ -81,7 +92,7 @@ export function LetterPreview({
         dangerouslySetInnerHTML={{ __html: sanitizeLetterHtml(content || "<p></p>") }}
       />
 
-      <div className="relative mt-10 flex justify-end">
+      <div className="relative mt-3">
         <div className="w-56">
           {company ? <p className="text-xs text-slate-500">For {company.name}</p> : null}
           {showSignature && signatureImageData ? (
@@ -98,7 +109,7 @@ export function LetterPreview({
           <img
             src={stampImageData ?? ""}
             alt=""
-            className="absolute bottom-0 right-0 h-20 w-20 object-contain opacity-90"
+            className="absolute bottom-0 left-36 h-20 w-20 object-contain opacity-90"
           />
         ) : null}
       </div>

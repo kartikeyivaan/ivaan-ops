@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { MAX_SERIALS_PER_ENTRY } from "@/lib/inventory";
+import { LETTER_CONTENT_MAX, sanitizeLetterHtml } from "@/lib/letter-content";
 import { isStrongPassword, STRONG_PASSWORD_HINT } from "@/lib/password-policy";
 
 const serialNumbersPerEntrySchema = z
@@ -1218,7 +1219,10 @@ export const companyLetterheadSchema = z.object({
 export const createOfficialLetterSchema = z.object({
   companyId: z.string().uuid(),
   letterDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a valid date."),
-  content: z.string().max(50_000).default("<p></p>"),
+  content: z.preprocess(
+    (value) => (typeof value === "string" ? sanitizeLetterHtml(value) : value),
+    z.string().max(LETTER_CONTENT_MAX, "Letter content is too long.").default("<p></p>"),
+  ),
   signatoryName: z.string().trim().min(2).max(120),
   signatoryDesignation: z.string().trim().min(2).max(120),
   signatureImageData: letterImageDataUrl,

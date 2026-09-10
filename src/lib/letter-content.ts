@@ -10,6 +10,7 @@ export const DEFAULT_LETTER_SIGNATORIES: Record<
 };
 
 export const IMAGE_DATA_URL_MAX = 400_000;
+export const LETTER_CONTENT_MAX = 200_000;
 
 const IMAGE_DATA_URL_PATTERN = /^data:image\/(png|jpeg|jpg|webp);base64,/i;
 const ALLOWED_TAGS = new Set(["p", "br", "div", "span", "strong", "b", "em", "i", "u", "ul", "ol", "li"]);
@@ -75,8 +76,11 @@ function parseTextAlign(attrs: string): string | undefined {
 }
 
 export function sanitizeLetterHtml(html: string): string {
-  const withoutComments = html.replace(/<!--[\s\S]*?-->/g, "");
-  return withoutComments.replace(/<\/?([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/g, (match, rawTag: string, attrs: string) => {
+  const withoutJunk = html
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<(style|script|xml|head|meta|link|title)[^>]*>[\s\S]*?<\/\1>/gi, "")
+    .replace(/<\/?[a-zA-Z][\w.-]*:[^>]*>/g, "");
+  return withoutJunk.replace(/<\/?([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/g, (match, rawTag: string, attrs: string) => {
     const tag = rawTag.toLowerCase();
     const closing = match.startsWith("</");
     if (!ALLOWED_TAGS.has(tag)) return "";

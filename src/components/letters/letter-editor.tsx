@@ -1,8 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, type ClipboardEvent } from "react";
 import { Button } from "@/components/ui/button";
+import { sanitizeLetterHtml } from "@/lib/letter-content";
 import { cn } from "@/lib/utils";
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
 
 const COMMANDS = [
   { cmd: "bold", label: "B", title: "Bold", className: "font-bold" },
@@ -30,6 +38,22 @@ export function LetterRichTextEditor({
   const run = useCallback((command: string, arg?: string) => {
     ref.current?.focus();
     document.execCommand(command, false, arg);
+    onChange(ref.current?.innerHTML ?? "");
+  }, [onChange]);
+
+  const handlePaste = useCallback((event: ClipboardEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const html = event.clipboardData.getData("text/html");
+    const text = event.clipboardData.getData("text/plain");
+    const cleaned = html
+      ? sanitizeLetterHtml(html)
+      : sanitizeLetterHtml(
+          text
+            .split(/\r?\n/)
+            .map((line) => `<p>${escapeHtml(line)}</p>`)
+            .join(""),
+        );
+    document.execCommand("insertHTML", false, cleaned || escapeHtml(text));
     onChange(ref.current?.innerHTML ?? "");
   }, [onChange]);
 
@@ -71,6 +95,7 @@ export function LetterRichTextEditor({
         suppressContentEditableWarning
         className="min-h-[240px] bg-white px-3 py-3 text-sm leading-6 text-slate-800 outline-none [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6"
         onInput={() => onChange(ref.current?.innerHTML ?? "")}
+        onPaste={handlePaste}
         onBlur={() => onChange(ref.current?.innerHTML ?? "")}
       />
     </div>

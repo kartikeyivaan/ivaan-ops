@@ -14,6 +14,7 @@ import { formatLetterDate } from "@/lib/utils";
 import { canManageOfficialLetters } from "@/lib/letter-permissions";
 import { companyStamp } from "@/lib/pdf-theme";
 import { ROLES } from "@/lib/rbac";
+import { createOfficialLetterSchema } from "@/lib/validations";
 
 describe("official letter helpers", () => {
   it("formats serial numbers like other ops documents", () => {
@@ -66,6 +67,17 @@ describe("official letter helpers", () => {
     expect(html).not.toContain("onclick");
   });
 
+  it("strips Word paste junk so letter content stays under the save limit", () => {
+    const wordHtml = `<html><head><style>.MsoNormal{font-family:Calibri}${ "x".repeat(60_000)}</style></head><body><!--StartFragment--><p class="MsoNormal">Dear team,<o:p></o:p></p><p class="MsoNormal">Please proceed with dispatch.<o:p></o:p></p><!--EndFragment--></body></html>`;
+    const html = sanitizeLetterHtml(wordHtml);
+    expect(html.length).toBeLessThan(500);
+    expect(html).toContain("Dear team");
+    expect(html).toContain("Please proceed with dispatch");
+    expect(html).not.toContain("MsoNormal");
+    expect(html).not.toContain("Calibri");
+    expect(html).not.toContain("<o:p>");
+  });
+
   it("converts HTML into PDF blocks", () => {
     const blocks = letterHtmlToBlocks("<p>Hello <strong>ISE</strong></p><ul><li>Item</li></ul>");
     expect(blocks[0]).toMatchObject({ type: "p" });
@@ -76,5 +88,21 @@ describe("official letter helpers", () => {
   it("loads bundled ISE and PCMV stamps", () => {
     expect(companyStamp("ISE")?.byteLength).toBeGreaterThan(1000);
     expect(companyStamp("PCMV")?.byteLength).toBeGreaterThan(1000);
+  });
+
+  it("accepts pasted Word HTML that previously exceeded the 50k save limit", () => {
+    const wordHtml = `<html><head><style>.MsoNormal{font-family:Calibri}${ "x".repeat(60_000)}</style></head><body><p class="MsoNormal">Official letter body with enough text to save.<o:p></o:p></p></body></html>`;
+    const parsed = createOfficialLetterSchema.safeParse({
+      companyId: "11111111-1111-4111-8111-111111111111",
+      letterDate: "2026-04-10",
+      content: wordHtml,
+      signatoryName: "Harshal Patil",
+      signatoryDesignation: "Partner",
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.content.length).toBeLessThan(500);
+      expect(parsed.data.content).toContain("Official letter body");
+    }
   });
 });

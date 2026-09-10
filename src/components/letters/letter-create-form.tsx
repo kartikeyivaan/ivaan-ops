@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatApiErrorMessage, parseApiJson } from "@/lib/api-response";
 import { getBusinessToday } from "@/lib/business-dates";
-import { defaultSignatoryForCode, letterHtmlHasText } from "@/lib/letter-content";
+import { defaultSignatoryForCode, letterHtmlHasText, sanitizeLetterHtml } from "@/lib/letter-content";
 import { formatLetterDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -118,7 +118,7 @@ export function LetterCreateForm({
     return {
       companyId,
       letterDate,
-      content,
+      content: sanitizeLetterHtml(content),
       signatoryName,
       signatoryDesignation,
       signatureImageData: useCompanySignature ? null : signatureOverride,

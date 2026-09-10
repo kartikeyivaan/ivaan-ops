@@ -491,7 +491,7 @@ export async function issueOfficialLetter(
     throw new LetterServiceError("NOT_FOUND", "Letter not found.", 404);
   }
   if (existing.status === "ISSUED" && existing.generatedPdfData) {
-    return serializeLetterDetail({ ...existing, generatedPdfData: undefined });
+    return serializeLetterDetail(existing);
   }
   if (!letterHtmlHasText(existing.content)) {
     throw new LetterServiceError("VALIDATION_ERROR", "Enter letter content before generating the PDF.", 400);

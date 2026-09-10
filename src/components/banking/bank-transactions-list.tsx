@@ -60,6 +60,8 @@ function assignmentLabel(status: string) {
       return "Manual review";
     case "NON_CUSTOMER_PAYMENT":
       return "Non-customer";
+    case "RETURNED":
+      return "Returned";
     default:
       return status;
   }
@@ -226,6 +228,7 @@ export function BankTransactionsList() {
               <option value="FULLY_ASSIGNED">Fully assigned</option>
               <option value="MANUAL_REVIEW">Manual review</option>
               <option value="NON_CUSTOMER_PAYMENT">Non-customer</option>
+              <option value="RETURNED">Returned</option>
             </select>
           </div>
           <div className="space-y-2">

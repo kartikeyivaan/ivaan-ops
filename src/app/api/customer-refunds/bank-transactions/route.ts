@@ -7,13 +7,12 @@ import {
   getAccessibleRefundCompanyIds,
 } from "@/lib/customer-refund-permissions";
 import { searchRefundBankTransactions } from "@/lib/customer-refund-service";
-import { decimalToNumber } from "@/lib/inventory";
 import { prisma } from "@/lib/prisma";
 import { refundBankTransactionSearchSchema } from "@/lib/validations";
 
 /**
- * Look up existing bank transactions of a firm so they can be attached as
- * refund references. Read-only — the refund flow never writes to this table.
+ * Look up existing credit receipts of a firm so they can be attached as extra
+ * orders on a combined refund. Read-only.
  */
 export async function GET(request: Request) {
   const session = await auth();
@@ -30,6 +29,7 @@ export async function GET(request: Request) {
     companyId: searchParams.get("companyId") ?? undefined,
     q: searchParams.get("q") ?? undefined,
     limit: searchParams.get("limit") ?? undefined,
+    excludeBankTransactionId: searchParams.get("excludeBankTransactionId") ?? undefined,
   });
   if (!parsed.success) {
     return refundErrorResponse(
@@ -49,26 +49,14 @@ export async function GET(request: Request) {
     );
   }
 
-  const rows = await searchRefundBankTransactions(prisma, {
+  const items = await searchRefundBankTransactions(prisma, {
     companyId: parsed.data.companyId,
     search: parsed.data.q,
     limit: parsed.data.limit,
+    excludeBankTransactionIds: parsed.data.excludeBankTransactionId
+      ? [parsed.data.excludeBankTransactionId]
+      : [],
   });
 
-  return NextResponse.json({
-    items: rows.map((row) => {
-      const credit = decimalToNumber(row.creditAmount);
-      const debit = decimalToNumber(row.debitAmount);
-      return {
-        id: row.id,
-        bankName: row.bankAccount.bankName,
-        bankAccountMasked: row.bankAccount.accountNumberMasked,
-        transactionReference: row.referenceNumber,
-        transactionDate: row.transactionDate.toISOString().slice(0, 10),
-        description: row.description,
-        amount: credit > 0 ? credit : debit,
-        isCredit: credit > 0,
-      };
-    }),
-  });
+  return NextResponse.json({ items });
 }

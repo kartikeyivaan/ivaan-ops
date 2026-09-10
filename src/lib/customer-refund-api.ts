@@ -25,6 +25,11 @@ const SERVICE_ERROR_MAP: Record<string, [number, string, string]> = {
     "PAYMENT_CODE_NOT_FOUND",
     "No received payment matches this verification code.",
   ],
+  PAYMENT_ALREADY_RETURNED: [
+    400,
+    "PAYMENT_ALREADY_RETURNED",
+    "This received payment has already been returned as a customer refund.",
+  ],
   BANK_COMPANY_MISMATCH: [
     400,
     "BANK_COMPANY_MISMATCH",
@@ -53,7 +58,7 @@ const SERVICE_ERROR_MAP: Record<string, [number, string, string]> = {
   REFUND_AMOUNT_EXCEEDS_AVAILABLE: [
     400,
     "REFUND_AMOUNT_EXCEEDS_AVAILABLE",
-    "Refund amount exceeds the available refundable amount on this receipt.",
+    "Refund amount exceeds the available refundable amount on the attached receipts.",
   ],
   REFUND_AMOUNT_EXCEEDS_APPROVED: [
     400,
@@ -88,6 +93,16 @@ const SERVICE_ERROR_MAP: Record<string, [number, string, string]> = {
     400,
     "INVALID_TRANSACTION_REFERENCE",
     "One or more selected bank transactions do not exist or do not belong to this firm.",
+  ],
+  TRANSACTION_REFERENCE_NOT_CREDIT: [
+    400,
+    "TRANSACTION_REFERENCE_NOT_CREDIT",
+    "Only received (credit) bank payments can be attached to a refund.",
+  ],
+  TRANSACTION_ALREADY_RETURNED: [
+    400,
+    "TRANSACTION_ALREADY_RETURNED",
+    "One or more attached bank payments have already been returned.",
   ],
 
   // Refund bank accounts

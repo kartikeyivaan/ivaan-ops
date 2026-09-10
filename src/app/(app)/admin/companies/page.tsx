@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { isSuperAdmin } from "@/lib/rbac";
+import { isOperationalLetterCompany } from "@/lib/letter-content";
+import { companyStampDataUrl } from "@/lib/pdf-theme";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -12,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { CompanyLetterheadSettings } from "@/components/admin/company-letterhead-settings";
 
 export default async function CompaniesAdminPage() {
   const session = await auth();
@@ -23,6 +26,18 @@ export default async function CompaniesAdminPage() {
     include: { warehouses: true },
     orderBy: { name: "asc" },
   });
+  const letterheadCompanies = companies
+    .filter((company) => isOperationalLetterCompany(company))
+    .map((company) => ({
+      id: company.id,
+      name: company.name,
+      code: company.code,
+      defaultSignatoryName: company.defaultSignatoryName,
+      defaultSignatoryDesignation: company.defaultSignatoryDesignation,
+      printContentTopOffsetMm: company.printContentTopOffsetMm,
+      signatureImageData: company.signatureImageData,
+      stampImageData: company.stampImageData || companyStampDataUrl(company.code),
+    }));
 
   return (
     <div className="space-y-6">
@@ -62,6 +77,8 @@ export default async function CompaniesAdminPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <CompanyLetterheadSettings companies={letterheadCompanies} />
     </div>
   );
 }

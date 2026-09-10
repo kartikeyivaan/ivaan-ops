@@ -103,6 +103,11 @@ export async function recalculateBankAssignmentStatus(db: Db, bankTransactionId:
     },
   });
 
+  // A completed customer refund owns this receipt; do not re-open it.
+  if (txn.assignmentStatus === BankTransactionAssignmentStatus.RETURNED) {
+    return;
+  }
+
   const credit = decimalToNumber(txn.creditAmount);
   if (credit <= 0) {
     await db.bankTransaction.update({
@@ -214,6 +219,9 @@ export async function previewBankPaymentLink(
   // Lookup uses the PI's company — bank receipts from another firm cannot match.
   const txn = await findCreditTransactionByPaymentCode(db, pi.companyId, input.paymentCode);
   assertBankBelongsToPiCompany(txn.bankAccount.companyId, pi.companyId);
+  if (txn.assignmentStatus === BankTransactionAssignmentStatus.RETURNED) {
+    throw new Error("PAYMENT_ALREADY_RETURNED");
+  }
   const available = availableBankCreditAmount(txn);
   if (available <= 0) throw new Error("BANK_FULLY_ALLOCATED");
 
@@ -385,6 +393,9 @@ export async function matchManualPaymentWithBank(
 
     const txn = await findCreditTransactionByPaymentCode(tx, pi.companyId, input.paymentCode);
     assertBankBelongsToPiCompany(txn.bankAccount.companyId, pi.companyId);
+    if (txn.assignmentStatus === BankTransactionAssignmentStatus.RETURNED) {
+      throw new Error("PAYMENT_ALREADY_RETURNED");
+    }
     await lockBankTransactionForAllocation(tx, txn.id);
     const locked = await findCreditTransactionByPaymentCode(tx, pi.companyId, input.paymentCode);
     assertBankBelongsToPiCompany(locked.bankAccount.companyId, pi.companyId);

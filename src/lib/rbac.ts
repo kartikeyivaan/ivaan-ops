@@ -23,6 +23,7 @@ export const NAV_GROUPS = [
   "Purchase",
   "Reports",
   "Accounts",
+  "Documents",
   "Admin",
 ] as const;
 
@@ -304,6 +305,18 @@ export const NAV_ITEMS: NavItem[] = [
       ROLES.ACCOUNTS,
       ROLES.DOCUMENTATION_EXECUTIVE,
     ],
+  },
+  {
+    label: "Letterhead Generator",
+    href: "/documents/letterhead",
+    group: "Documents",
+    roles: [ROLES.SUPER_ADMIN],
+  },
+  {
+    label: "Letter History",
+    href: "/documents/letters",
+    group: "Documents",
+    roles: [ROLES.SUPER_ADMIN],
   },
   {
     label: "Users",

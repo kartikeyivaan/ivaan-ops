@@ -18,6 +18,7 @@ export async function GET() {
       : {
           id: { in: session.user.companies.map((c) => c.id) },
         },
+    omit: { signatureImageData: true, stampImageData: true },
     orderBy: { name: "asc" },
   });
 

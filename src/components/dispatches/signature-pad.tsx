@@ -9,9 +9,15 @@ const LOGICAL_HEIGHT = 160;
 
 type SignaturePadProps = {
   onChange: (dataUrl: string | null) => void;
+  label?: string;
+  hint?: string;
 };
 
-export function SignaturePad({ onChange }: SignaturePadProps) {
+export function SignaturePad({
+  onChange,
+  label = "Receiver Signature (optional)",
+  hint = "Sign with finger or stylus on a touch device. Leave blank if not available.",
+}: SignaturePadProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawingRef = useRef(false);
   const strokeDrawnRef = useRef(false);
@@ -107,7 +113,7 @@ export function SignaturePad({ onChange }: SignaturePadProps) {
   return (
     <div className="space-y-2 md:col-span-2">
       <div className="flex items-center justify-between gap-2">
-        <Label>Receiver Signature (optional)</Label>
+        <Label>{label}</Label>
         <Button type="button" variant="outline" className="h-9" onClick={clear} disabled={!hasInk}>
           Clear
         </Button>
@@ -121,9 +127,7 @@ export function SignaturePad({ onChange }: SignaturePadProps) {
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
       />
-      <p className="text-xs text-slate-500">
-        Sign with finger or stylus on a touch device. Leave blank if not available.
-      </p>
+      <p className="text-xs text-slate-500">{hint}</p>
     </div>
   );
 }

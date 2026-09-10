@@ -29,6 +29,16 @@ export function formatDocumentDate(value: Date | string): string {
   }).format(parseDateOnly(value));
 }
 
+/** e.g. 10 April 2026 — official letters only */
+export function formatLetterDate(value: Date | string): string {
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(parseDateOnly(value));
+}
+
 /** e.g. 03-08-26 — for recorded payment dates */
 export function formatPaymentDate(value: Date | string): string {
   const date = parseDateOnly(value);

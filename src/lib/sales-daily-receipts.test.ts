@@ -39,5 +39,6 @@ describe("sales daily receipts helpers", () => {
     expect(salesAvailabilityLabel("UNASSIGNED")).toBe("Available");
     expect(salesAvailabilityLabel("PARTIALLY_ASSIGNED")).toBe("Partially Used");
     expect(salesAvailabilityLabel("FULLY_ASSIGNED")).toBe("Fully Used");
+    expect(salesAvailabilityLabel("RETURNED")).toBe("Returned");
   });
 });

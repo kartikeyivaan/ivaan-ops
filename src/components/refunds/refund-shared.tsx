@@ -42,6 +42,11 @@ export function formatRefundDateTime(value: string | null): string {
   return new Date(value).toLocaleString("en-IN");
 }
 
+export function formatReceiptAssignmentStatus(status: string): string {
+  if (status === "RETURNED") return "Returned";
+  return status.replaceAll("_", " ");
+}
+
 /** Label/value pair used across the summary cards. */
 export function DetailField({
   label,

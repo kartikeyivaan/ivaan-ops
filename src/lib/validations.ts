@@ -1187,6 +1187,59 @@ export const refundBankTransactionSearchSchema = z.object({
   companyId: z.string().uuid(),
   q: z.string().trim().max(100).optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
+  excludeBankTransactionId: z.string().uuid().optional(),
+});
+
+const letterImageDataUrl = z
+  .string()
+  .max(400_000)
+  .refine(
+    (value) =>
+      value === "" ||
+      value.startsWith("data:image/png;base64,") ||
+      value.startsWith("data:image/jpeg;base64,") ||
+      value.startsWith("data:image/jpg;base64,") ||
+      value.startsWith("data:image/webp;base64,"),
+    "Image must be a PNG, JPEG, or WebP file.",
+  )
+  .optional()
+  .nullable();
+
+export const companyLetterheadSchema = z.object({
+  defaultSignatoryName: z.string().trim().min(2).max(120),
+  defaultSignatoryDesignation: z.string().trim().min(2).max(120),
+  printContentTopOffsetMm: z.coerce.number().int().min(20).max(120),
+  signatureImageData: letterImageDataUrl,
+  stampImageData: letterImageDataUrl,
+  clearSignature: z.boolean().optional(),
+  clearStamp: z.boolean().optional(),
+});
+
+export const createOfficialLetterSchema = z.object({
+  companyId: z.string().uuid(),
+  letterDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a valid date."),
+  content: z.string().max(50_000).default("<p></p>"),
+  signatoryName: z.string().trim().min(2).max(120),
+  signatoryDesignation: z.string().trim().min(2).max(120),
+  signatureImageData: letterImageDataUrl,
+  useCompanySignature: z.boolean().optional(),
+  stampEnabled: z.boolean().optional(),
+  printSignatureEnabled: z.boolean().optional(),
+  asDraft: z.boolean().optional(),
+});
+
+export const officialLetterSearchSchema = z.object({
+  companyId: z.string().uuid().optional(),
+  status: z.enum(["DRAFT", "ISSUED"]).optional(),
+  fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  toDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  q: z.string().trim().max(100).optional(),
+  page: z.coerce.number().int().min(1).optional(),
+  pageSize: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+export const duplicateOfficialLetterSchema = z.object({
+  letterDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;

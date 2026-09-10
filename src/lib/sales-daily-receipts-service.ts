@@ -27,7 +27,7 @@ export function salesReceiptBanksForCompany(company: {
 
 export function salesAvailabilityLabel(
   status: BankTransactionAssignmentStatus,
-): "Available" | "Partially Used" | "Fully Used" | "Review" {
+): "Available" | "Partially Used" | "Fully Used" | "Returned" | "Review" {
   switch (status) {
     case "UNASSIGNED":
       return "Available";
@@ -35,6 +35,8 @@ export function salesAvailabilityLabel(
       return "Partially Used";
     case "FULLY_ASSIGNED":
       return "Fully Used";
+    case "RETURNED":
+      return "Returned";
     case "MANUAL_REVIEW":
     case "NON_CUSTOMER_PAYMENT":
     default:

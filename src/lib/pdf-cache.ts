@@ -62,16 +62,17 @@ export async function resolveStoredPdf(
 export function pdfInlineResponse(
   pdf: Buffer,
   filename: string,
-  options?: { asciiName?: string; privateCache?: boolean },
+  options?: { asciiName?: string; privateCache?: boolean; download?: boolean },
 ) {
   const safeName = filename.replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim();
   const asciiName =
     options?.asciiName ?? safeName.replace(/[^\x20-\x7E]/g, "_");
+  const disposition = options?.download ? "attachment" : "inline";
 
   return new Response(new Uint8Array(pdf), {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="${asciiName}.pdf"; filename*=UTF-8''${encodeURIComponent(
+      "Content-Disposition": `${disposition}; filename="${asciiName}.pdf"; filename*=UTF-8''${encodeURIComponent(
         `${safeName}.pdf`,
       )}`,
       "Cache-Control": options?.privateCache === false ? "private, no-store" : "private, max-age=3600",

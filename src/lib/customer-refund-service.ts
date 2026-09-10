@@ -1,5 +1,6 @@
 import {
   BankPaymentAllocationStatus,
+  BankTransactionAssignmentStatus,
   CustomerRefundReason,
   CustomerRefundStatus,
   PaymentMode,
@@ -134,23 +135,114 @@ export function summarizeRefundableAmount(
   };
 }
 
-async function loadRefundableAmount(
+/** Add extra linked receipts into one combined refundable cap. */
+export function combineRefundAmountSummaries(
+  summaries: RefundAmountSummary[],
+): RefundAmountSummary {
+  const receivedAmount = roundMoney(
+    summaries.reduce((sum, row) => sum + row.receivedAmount, 0),
+  );
+  const previousRefundedAmount = roundMoney(
+    summaries.reduce((sum, row) => sum + row.previousRefundedAmount, 0),
+  );
+  const reservedAmount = roundMoney(
+    summaries.reduce((sum, row) => sum + row.reservedAmount, 0),
+  );
+  return {
+    receivedAmount,
+    previousRefundedAmount,
+    reservedAmount,
+    availableRefundAmount: roundMoney(
+      Math.max(0, receivedAmount - previousRefundedAmount - reservedAmount),
+    ),
+  };
+}
+
+/** True when this payout consumes the remaining headroom on the attached receipts. */
+export function shouldMarkAttachedReceiptsReturned(
+  actualRefundAmount: number,
+  availableRefundAmount: number,
+): boolean {
+  return roundMoney(actualRefundAmount) + 0.005 >= roundMoney(availableRefundAmount);
+}
+
+function uniqueIds(ids: string[]): string[] {
+  return [...new Set(ids.filter(Boolean))];
+}
+
+async function lockBankTransactions(db: Db, bankTransactionIds: string[]) {
+  for (const id of [...uniqueIds(bankTransactionIds)].sort()) {
+    await db.$executeRaw`
+      SELECT id FROM bank_transactions WHERE id = ${id}::uuid FOR UPDATE
+    `;
+  }
+}
+
+const refundAmountSelect = {
+  id: true,
+  status: true,
+  requestedAmount: true,
+  approvedAmount: true,
+  actualRefundAmount: true,
+} as const;
+
+/**
+ * Refundable headroom across one or more credit receipts. A combined refund
+ * (original payment + extra linked receipts) uses the pooled total so multiple
+ * orders can be returned together.
+ */
+async function loadRefundableAmountForReceipts(
   db: Db,
-  bankTransactionId: string,
-  receivedAmount: number,
+  bankTransactionIds: string[],
   excludeRefundId?: string,
 ): Promise<RefundAmountSummary> {
-  const refunds = await db.customerRefund.findMany({
-    where: { bankTransactionId },
-    select: {
-      id: true,
-      status: true,
-      requestedAmount: true,
-      approvedAmount: true,
-      actualRefundAmount: true,
-    },
+  const unique = uniqueIds(bankTransactionIds);
+  if (unique.length === 0) {
+    return summarizeRefundableAmount(0, []);
+  }
+
+  const txns = await db.bankTransaction.findMany({
+    where: { id: { in: unique } },
+    select: { id: true, creditAmount: true },
   });
+  const receivedAmount = roundMoney(
+    txns.reduce((sum, row) => sum + decimalToNumber(row.creditAmount), 0),
+  );
+
+  const refunds = await db.customerRefund.findMany({
+    where: {
+      OR: [
+        { bankTransactionId: { in: unique } },
+        { transactionReferences: { some: { bankTransactionId: { in: unique } } } },
+      ],
+    },
+    select: refundAmountSelect,
+  });
+
   return summarizeRefundableAmount(receivedAmount, refunds, { excludeRefundId });
+}
+
+async function loadRefundReceiptIds(
+  db: Db,
+  refund: { id: string; bankTransactionId: string },
+): Promise<string[]> {
+  const refs = await db.customerRefundTransactionReference.findMany({
+    where: { refundId: refund.id },
+    select: { bankTransactionId: true },
+  });
+  return uniqueIds([
+    refund.bankTransactionId,
+    ...refs.map((row) => row.bankTransactionId),
+  ]);
+}
+
+async function markReceiptsReturned(db: Db, bankTransactionIds: string[]) {
+  const unique = uniqueIds(bankTransactionIds);
+  if (unique.length === 0) return;
+  await db.bankTransaction.updateMany({
+    where: { id: { in: unique } },
+    data: { assignmentStatus: BankTransactionAssignmentStatus.RETURNED },
+  });
 }
 
 // ─── Refund number ──────────────────────────────────────────────────────────
@@ -322,8 +414,12 @@ export async function verifyRefundPayment(
     ...new Set(allocations.map((row) => row.proformaInvoice.piNo)),
   ];
 
+  if (txn.assignmentStatus === BankTransactionAssignmentStatus.RETURNED) {
+    throw new Error("PAYMENT_ALREADY_RETURNED");
+  }
+
   const receivedAmount = decimalToNumber(txn.creditAmount);
-  const amounts = await loadRefundableAmount(db, txn.id, receivedAmount);
+  const amounts = await loadRefundableAmountForReceipts(db, [txn.id]);
 
   return {
     verificationCode: normalizePaymentCodeInput(input.verificationCode),
@@ -371,20 +467,51 @@ export type SerializedRefundTransactionReference = {
   description: string;
   amount: number;
   isCredit: boolean;
+  assignmentStatus: string;
+  piNumbers: string[];
+};
+
+export type RefundBankTransactionOption = {
+  id: string;
+  bankName: string;
+  bankAccountMasked: string;
+  transactionReference: string | null;
+  transactionDate: string;
+  description: string;
+  amount: number;
+  isCredit: boolean;
+  receivedAmount: number;
+  previousRefundedAmount: number;
+  reservedAmount: number;
+  availableRefundAmount: number;
+  assignmentStatus: string;
+  piNumbers: string[];
+  paymentCode: string | null;
 };
 
 /**
- * Search existing bank transactions belonging to the firm so the SE can attach
- * references. Read-only — the refund flow never creates a bank transaction.
+ * Search existing credit receipts of the firm so they can be attached as extra
+ * orders/payments on a combined refund. Debits and already-returned receipts
+ * are excluded. Read-only — the refund flow never creates a bank transaction.
  */
 export async function searchRefundBankTransactions(
   db: Db,
-  input: { companyId: string; search?: string; limit?: number },
-) {
+  input: {
+    companyId: string;
+    search?: string;
+    limit?: number;
+    excludeBankTransactionIds?: string[];
+  },
+): Promise<RefundBankTransactionOption[]> {
   const search = input.search?.trim();
-  return db.bankTransaction.findMany({
+  const exclude = uniqueIds(input.excludeBankTransactionIds ?? []);
+
+  const rows = await db.bankTransaction.findMany({
     where: {
       bankAccount: { companyId: input.companyId },
+      creditAmount: { gt: 0 },
+      assignmentStatus: { not: BankTransactionAssignmentStatus.RETURNED },
+      ...(exclude.length ? { id: { notIn: exclude } } : {}),
       ...(search
         ? {
             OR: [
@@ -397,22 +524,76 @@ export async function searchRefundBankTransactions(
     },
     include: {
       bankAccount: { select: { bankName: true, accountNumberMasked: true, companyId: true } },
+      allocations: {
+        where: { allocationStatus: BankPaymentAllocationStatus.ACTIVE },
+        select: { proformaInvoice: { select: { piNo: true } } },
+      },
     },
     orderBy: [{ transactionDate: "desc" }, { statementSequence: "desc" }],
     take: Math.min(input.limit ?? 25, 100),
   });
+
+  const ids = rows.map((row) => row.id);
+  const refunds =
+    ids.length === 0
+      ? []
+      : await db.customerRefund.findMany({
+          where: {
+            OR: [
+              { bankTransactionId: { in: ids } },
+              { transactionReferences: { some: { bankTransactionId: { in: ids } } } },
+            ],
+          },
+          select: {
+            ...refundAmountSelect,
+            bankTransactionId: true,
+            transactionReferences: { select: { bankTransactionId: true } },
+          },
+        });
+
+  return rows.map((row) => {
+    const receivedAmount = decimalToNumber(row.creditAmount);
+    const touching = refunds.filter(
+      (refund) =>
+        refund.bankTransactionId === row.id ||
+        refund.transactionReferences.some((ref) => ref.bankTransactionId === row.id),
+    );
+    const amounts = summarizeRefundableAmount(receivedAmount, touching);
+    return {
+      id: row.id,
+      bankName: row.bankAccount.bankName,
+      bankAccountMasked: row.bankAccount.accountNumberMasked,
+      transactionReference: row.referenceNumber,
+      transactionDate: row.transactionDate.toISOString().slice(0, 10),
+      description: row.description,
+      amount: receivedAmount,
+      isCredit: true,
+      receivedAmount: amounts.receivedAmount,
+      previousRefundedAmount: amounts.previousRefundedAmount,
+      reservedAmount: amounts.reservedAmount,
+      availableRefundAmount: amounts.availableRefundAmount,
+      assignmentStatus: row.assignmentStatus,
+      piNumbers: [
+        ...new Set(row.allocations.map((allocation) => allocation.proformaInvoice.piNo)),
+      ],
+      paymentCode: row.paymentCode,
+    };
+  });
 }
 
 /**
- * Every attached reference must be an existing transaction on a bank account of
- * the refund's firm. Returns the validated ids.
+ * Extra linked receipts must be existing credit transactions of this firm,
+ * not already returned, and not the original verified payment.
  */
 async function assertValidTransactionReferences(
   db: Db,
   companyId: string,
   bankTransactionIds: string[],
+  originalBankTransactionId: string,
 ): Promise<string[]> {
-  const unique = [...new Set(bankTransactionIds)];
+  const unique = uniqueIds(bankTransactionIds).filter(
+    (id) => id !== originalBankTransactionId,
+  );
   if (unique.length === 0) return [];
 
   const rows = await db.bankTransaction.findMany({
@@ -420,11 +601,19 @@ async function assertValidTransactionReferences(
       id: { in: unique },
       bankAccount: { companyId },
     },
-    select: { id: true },
+    select: { id: true, creditAmount: true, assignmentStatus: true },
   });
 
   if (rows.length !== unique.length) {
     throw new Error("INVALID_TRANSACTION_REFERENCE");
+  }
+  for (const row of rows) {
+    if (decimalToNumber(row.creditAmount) <= 0) {
+      throw new Error("TRANSACTION_REFERENCE_NOT_CREDIT");
+    }
+    if (row.assignmentStatus === BankTransactionAssignmentStatus.RETURNED) {
+      throw new Error("TRANSACTION_ALREADY_RETURNED");
+    }
   }
   return unique;
 }
@@ -444,6 +633,7 @@ const refundInclude = {
       referenceNumber: true,
       description: true,
       paymentCode: true,
+      assignmentStatus: true,
       bankAccount: { select: { bankName: true, accountNumberMasked: true } },
     },
   },
@@ -474,7 +664,12 @@ const refundInclude = {
           description: true,
           debitAmount: true,
           creditAmount: true,
+          assignmentStatus: true,
           bankAccount: { select: { bankName: true, accountNumberMasked: true } },
+          allocations: {
+            where: { allocationStatus: BankPaymentAllocationStatus.ACTIVE },
+            select: { proformaInvoice: { select: { piNo: true } } },
+          },
         },
       },
     },
@@ -516,6 +711,7 @@ export type SerializedCustomerRefund = {
     bankAccountMasked: string;
     transactionReference: string | null;
     description: string;
+    assignmentStatus: string;
   };
 
   refundBankAccount: {
@@ -532,6 +728,7 @@ export type SerializedCustomerRefund = {
   transactionReferences: SerializedRefundTransactionReference[];
   totalLinkedTransactions: number;
   linkedTransactionsAmount: number;
+  combinedReceivedAmount: number;
 
   requestedById: string;
   requestedByName: string;
@@ -585,8 +782,21 @@ export function serializeCustomerRefund(row: RefundRecord): SerializedCustomerRe
         description: ref.bankTransaction.description,
         amount: credit > 0 ? credit : debit,
         isCredit: credit > 0,
+        assignmentStatus: ref.bankTransaction.assignmentStatus,
+        piNumbers: [
+          ...new Set(
+            ref.bankTransaction.allocations.map(
+              (allocation) => allocation.proformaInvoice.piNo,
+            ),
+          ),
+        ],
       };
     },
+  );
+
+  const originalReceived = decimalToNumber(row.bankTransaction.creditAmount);
+  const linkedTransactionsAmount = roundMoney(
+    references.reduce((sum, ref) => sum + ref.amount, 0),
   );
 
   return {
@@ -616,12 +826,13 @@ export function serializeCustomerRefund(row: RefundRecord): SerializedCustomerRe
 
     originalPayment: {
       verificationCode: row.bankTransaction.paymentCode,
-      receivedAmount: decimalToNumber(row.bankTransaction.creditAmount),
+      receivedAmount: originalReceived,
       paymentDate: row.bankTransaction.transactionDate.toISOString().slice(0, 10),
       bankName: row.bankTransaction.bankAccount.bankName,
       bankAccountMasked: row.bankTransaction.bankAccount.accountNumberMasked,
       transactionReference: row.bankTransaction.referenceNumber,
       description: row.bankTransaction.description,
+      assignmentStatus: row.bankTransaction.assignmentStatus,
     },
 
     refundBankAccount: row.refundBankAccount
@@ -639,9 +850,8 @@ export function serializeCustomerRefund(row: RefundRecord): SerializedCustomerRe
 
     transactionReferences: references,
     totalLinkedTransactions: references.length,
-    linkedTransactionsAmount: roundMoney(
-      references.reduce((sum, ref) => sum + ref.amount, 0),
-    ),
+    linkedTransactionsAmount,
+    combinedReceivedAmount: roundMoney(originalReceived + linkedTransactionsAmount),
 
     requestedById: row.requestedById,
     requestedByName: row.requestedBy.name,
@@ -998,25 +1208,20 @@ export async function createCustomerRefund(
       throw new Error("CUSTOMER_NOT_FOUND");
     }
 
-    // Serialize concurrent requests against the same receipt.
-    await tx.$executeRaw`
-      SELECT id FROM bank_transactions WHERE id = ${verified.bankTransactionId}::uuid FOR UPDATE
-    `;
-
-    const amounts = await loadRefundableAmount(
-      tx,
-      verified.bankTransactionId,
-      verified.receivedAmount,
-    );
-    if (input.requestedAmount > amounts.availableRefundAmount) {
-      throw new Error("REFUND_AMOUNT_EXCEEDS_AVAILABLE");
-    }
-
+    // Serialize concurrent requests against the original receipt and any extras.
     const referenceIds = await assertValidTransactionReferences(
       tx,
       input.companyId,
       input.bankTransactionIds,
+      verified.bankTransactionId,
     );
+    const receiptIds = uniqueIds([verified.bankTransactionId, ...referenceIds]);
+    await lockBankTransactions(tx, receiptIds);
+
+    const amounts = await loadRefundableAmountForReceipts(tx, receiptIds);
+    if (input.requestedAmount > amounts.availableRefundAmount) {
+      throw new Error("REFUND_AMOUNT_EXCEEDS_AVAILABLE");
+    }
 
     const account = await resolveRefundBankAccount(tx, {
       customerId,
@@ -1084,10 +1289,11 @@ export async function createCustomerRefund(
         verificationCode: verified.verificationCode,
         receivedAmount: verified.receivedAmount,
         requestedAmount: input.requestedAmount,
+        linkedTransactions: referenceIds.length,
+        combinedReceivedAmount: amounts.receivedAmount,
         availableAtRequest: amounts.availableRefundAmount,
         reason: input.reason,
         piNumber: created.piNumber,
-        linkedTransactions: referenceIds.length,
         refundBankAccountId: account.id,
         status,
       },
@@ -1149,13 +1355,25 @@ export async function updateCustomerRefundDraft(
     if (input.requestedAmount !== undefined) {
       if (!(input.requestedAmount > 0)) throw new Error("REFUND_AMOUNT_INVALID");
 
-      await tx.$executeRaw`
-        SELECT id FROM bank_transactions WHERE id = ${existing.bankTransactionId}::uuid FOR UPDATE
-      `;
-      const amounts = await loadRefundableAmount(
+      const referenceIds = input.bankTransactionIds
+        ? await assertValidTransactionReferences(
+            tx,
+            existing.companyId,
+            input.bankTransactionIds,
+            existing.bankTransactionId,
+          )
+        : (
+            await tx.customerRefundTransactionReference.findMany({
+              where: { refundId: existing.id },
+              select: { bankTransactionId: true },
+            })
+          ).map((row) => row.bankTransactionId);
+
+      const receiptIds = uniqueIds([existing.bankTransactionId, ...referenceIds]);
+      await lockBankTransactions(tx, receiptIds);
+      const amounts = await loadRefundableAmountForReceipts(
         tx,
-        existing.bankTransactionId,
-        decimalToNumber(existing.receivedAmount),
+        receiptIds,
         existing.id,
       );
       if (input.requestedAmount > amounts.availableRefundAmount) {
@@ -1180,6 +1398,7 @@ export async function updateCustomerRefundDraft(
         tx,
         existing.companyId,
         input.bankTransactionIds,
+        existing.bankTransactionId,
       );
       await tx.customerRefundTransactionReference.deleteMany({
         where: { refundId: existing.id },
@@ -1191,6 +1410,19 @@ export async function updateCustomerRefundDraft(
             bankTransactionId,
           })),
         });
+      }
+
+      if (input.requestedAmount === undefined) {
+        const receiptIds = uniqueIds([existing.bankTransactionId, ...referenceIds]);
+        await lockBankTransactions(tx, receiptIds);
+        const amounts = await loadRefundableAmountForReceipts(
+          tx,
+          receiptIds,
+          existing.id,
+        );
+        if (requestedAmount > amounts.availableRefundAmount) {
+          throw new Error("REFUND_AMOUNT_EXCEEDS_AVAILABLE");
+        }
       }
     }
 
@@ -1265,14 +1497,12 @@ export async function submitCustomerRefund(
     if (existing.status !== "DRAFT") throw new Error("REFUND_NOT_SUBMITTABLE");
     if (!existing.refundBankAccountId) throw new Error("REFUND_BANK_ACCOUNT_REQUIRED");
 
-    // Re-check headroom: another refund may have consumed it since the draft was saved.
-    await tx.$executeRaw`
-      SELECT id FROM bank_transactions WHERE id = ${existing.bankTransactionId}::uuid FOR UPDATE
-    `;
-    const amounts = await loadRefundableAmount(
+    // Re-check headroom across the original receipt and any extra linked orders.
+    const receiptIds = await loadRefundReceiptIds(tx, existing);
+    await lockBankTransactions(tx, receiptIds);
+    const amounts = await loadRefundableAmountForReceipts(
       tx,
-      existing.bankTransactionId,
-      decimalToNumber(existing.receivedAmount),
+      receiptIds,
       existing.id,
     );
     if (decimalToNumber(existing.requestedAmount) > amounts.availableRefundAmount) {
@@ -1324,13 +1554,11 @@ export async function approveCustomerRefund(
     if (!existing) throw new Error("NOT_FOUND");
     if (existing.status !== "PENDING_APPROVAL") throw new Error("REFUND_NOT_PENDING_APPROVAL");
 
-    await tx.$executeRaw`
-      SELECT id FROM bank_transactions WHERE id = ${existing.bankTransactionId}::uuid FOR UPDATE
-    `;
-    const amounts = await loadRefundableAmount(
+    const receiptIds = await loadRefundReceiptIds(tx, existing);
+    await lockBankTransactions(tx, receiptIds);
+    const amounts = await loadRefundableAmountForReceipts(
       tx,
-      existing.bankTransactionId,
-      decimalToNumber(existing.receivedAmount),
+      receiptIds,
       existing.id,
     );
     const requestedAmount = decimalToNumber(existing.requestedAmount);
@@ -1531,8 +1759,10 @@ export type ProcessCustomerRefundInput = {
 };
 
 /**
- * Record the executed transfer and mark the refund as Refunded. The original
- * payment, bank transaction and PI are deliberately untouched.
+ * Record the executed transfer and mark the refund as Refunded. Payment and PI
+ * rows stay unchanged. When the payout consumes the remaining amount on the
+ * original receipt plus any extra linked orders, those bank receipts are marked
+ * RETURNED.
  */
 export async function processCustomerRefund(
   prisma: PrismaClient,
@@ -1587,6 +1817,21 @@ export async function processCustomerRefund(
     });
     if (duplicateUtr) throw new Error("UTR_ALREADY_USED");
 
+    const receiptIds = await loadRefundReceiptIds(tx, existing);
+    await lockBankTransactions(tx, receiptIds);
+    const remaining = await loadRefundableAmountForReceipts(
+      tx,
+      receiptIds,
+      existing.id,
+    );
+    const markReturned =
+      remaining.availableRefundAmount > 0 &&
+      (receiptIds.length > 1 ||
+        shouldMarkAttachedReceiptsReturned(
+          input.actualRefundAmount,
+          remaining.availableRefundAmount,
+        ));
+
     const now = new Date();
     const updated = await tx.customerRefund.update({
       where: { id: existing.id },
@@ -1616,6 +1861,17 @@ export async function processCustomerRefund(
       where: { id: existing.refundBankAccountId },
       data: { usageCount: { increment: 1 }, lastUsedAt: now },
     });
+
+    if (markReturned) {
+      await markReceiptsReturned(tx, receiptIds);
+    }
+
+    const completed = markReturned
+      ? await tx.customerRefund.findUniqueOrThrow({
+          where: { id: updated.id },
+          include: refundInclude,
+        })
+      : updated;
 
     await writeRefundAuditTx(tx, {
       eventType: REFUND_AUDIT_EVENTS.REFUND_PROCESSING_STARTED,
@@ -1648,19 +1904,20 @@ export async function processCustomerRefund(
         actualRefundAmount: input.actualRefundAmount,
         utrNumber,
         refundDate: input.refundDate.toISOString().slice(0, 10),
-        // Explicit: the receipt side of the ledger is unchanged.
         originalPaymentUnchanged: true,
+        attachedReceiptsReturned: markReturned,
+        returnedBankTransactionIds: markReturned ? receiptIds : [],
       },
     });
 
     await notifyRefundCompleted(tx, {
-      userId: updated.requestedById,
-      refundNumber: updated.refundNumber,
+      userId: completed.requestedById,
+      refundNumber: completed.refundNumber,
       amount: input.actualRefundAmount,
       utrNumber,
     });
 
-    return updated;
+    return completed;
   });
 
   return serializeCustomerRefund(refund);
@@ -1759,16 +2016,12 @@ export async function getRefundAmountSummary(
   const refund = await db.customerRefund.findUniqueOrThrow({
     where: { id: refundId },
     select: {
+      id: true,
       bankTransactionId: true,
-      receivedAmount: true,
       requestedAmount: true,
     },
   });
-  const summary = await loadRefundableAmount(
-    db,
-    refund.bankTransactionId,
-    decimalToNumber(refund.receivedAmount),
-    refundId,
-  );
+  const receiptIds = await loadRefundReceiptIds(db, refund);
+  const summary = await loadRefundableAmountForReceipts(db, receiptIds, refund.id);
   return { ...summary, requestedAmount: decimalToNumber(refund.requestedAmount) };
 }

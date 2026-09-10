@@ -51,6 +51,13 @@ export default auth((request) => {
     }
   }
 
+  if (pathname.startsWith("/documents")) {
+    const isAdmin = session.user.roles?.includes(ROLES.SUPER_ADMIN);
+    if (!isAdmin) {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+  }
+
   if (!session.user.activeCompanyId && !pathname.startsWith("/select-company")) {
     return NextResponse.redirect(new URL("/select-company", request.url));
   }

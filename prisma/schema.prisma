@@ -209,6 +209,11 @@ enum PdfDocumentType {
   PROJECT_PROPOSAL
 }
 
+enum OfficialLetterStatus {
+  DRAFT
+  ISSUED
+}
+
 enum DispatchLineCostSource {
   SERIAL_LOT
   LANDING_COST
@@ -257,6 +262,8 @@ enum BankTransactionAssignmentStatus {
   FULLY_ASSIGNED
   MANUAL_REVIEW
   NON_CUSTOMER_PAYMENT
+  /// Customer refund executed against this credit receipt.
+  RETURNED
 }
 
 enum BankTransactionIssueType {
@@ -594,6 +601,11 @@ model Company {
   /// Sandbox company used only while Learning Mode is on. Never use for real ops.
   isPractice                 Boolean               @default(false) @map("is_practice")
   isActive                   Boolean               @default(true) @map("is_active")
+  signatureImageData         String?               @map("signature_image_data")
+  stampImageData             String?               @map("stamp_image_data")
+  defaultSignatoryName       String?               @map("default_signatory_name")
+  defaultSignatoryDesignation String?              @map("default_signatory_designation")
+  printContentTopOffsetMm    Int                   @default(65) @map("print_content_top_offset_mm")
   createdAt                  DateTime              @default(now()) @map("created_at")
   updatedAt                  DateTime              @updatedAt @map("updated_at")
 
@@ -635,6 +647,7 @@ model Company {
   moduleLevelAchievements ExecutiveModuleLevelAchievement[]
   bankAccounts            BankAccount[]
   customerRefunds         CustomerRefund[]
+  officialLetters         OfficialLetter[]
 
   @@map("companies")
 }
@@ -751,6 +764,7 @@ model User {
   customerRefundsProcessed               CustomerRefund[]                  @relation("CustomerRefundProcessedBy")
   customerRefundsCancelled               CustomerRefund[]                  @relation("CustomerRefundCancelledBy")
   customerRefundBankAccountsCreated      CustomerRefundBankAccount[]       @relation("CustomerRefundBankAccountCreatedBy")
+  officialLettersCreated                 OfficialLetter[]                  @relation("OfficialLetterCreatedBy")
 
   @@map("users")
 }
@@ -2823,6 +2837,7 @@ model BankTransaction {
   transactionFingerprint String                          @map("transaction_fingerprint")
   /// Short unique copyable code for credit receipts (e.g. P8K4X2). Null for debits.
   paymentCode            String?                         @unique @map("payment_code")
+  /// RETURNED is set when a customer refund fully consumes this credit receipt.
   assignmentStatus       BankTransactionAssignmentStatus @default(UNASSIGNED) @map("assignment_status")
   createdAt              DateTime                        @default(now()) @map("created_at")
   updatedAt              DateTime                        @updatedAt @map("updated_at")
@@ -2905,9 +2920,9 @@ model BankPaymentAllocation {
 }
 
 // ─── Customer refunds ───────────────────────────────────────────────────────
-// A refund is a standalone financial record. It never mutates the original
-// Payment, BankTransaction or ProformaInvoice — those stay at their full value
-// so the receipt → refund request → refund transaction chain stays auditable.
+// A refund is a standalone financial record. It never mutates Payment or
+// ProformaInvoice rows. Linked credit receipts are marked RETURNED when a
+// refund fully consumes them, so they cannot be refunded again.
 
 /// Reusable customer payout bank accounts. Kept separate from BankAccount
 /// (the firm master) so a customer account can never be picked as a payout source.
@@ -2943,7 +2958,7 @@ model CustomerRefund {
   customerId          String               @map("customer_id") @db.Uuid
   /// Existing BankTransaction.paymentCode the SE verified. Snapshot, not a FK.
   verificationCode    String               @map("verification_code")
-  /// The verified original credit receipt. Never modified by the refund flow.
+  /// The verified original credit receipt. Assignment status may become RETURNED.
   bankTransactionId   String               @map("bank_transaction_id") @db.Uuid
   /// Reference only. Plain text so no PI recalculation can ever be triggered.
   piNumber            String?              @map("pi_number")
@@ -3011,8 +3026,9 @@ model CustomerRefund {
   @@map("customer_refunds")
 }
 
-/// Links a refund to one or more existing bank_transactions rows.
-/// Reference only — no bank transaction is ever created or altered here.
+/// Extra credit receipts (other orders/payments) included in a combined refund.
+/// Their amounts add to the maximum refundable total. On a full combined return
+/// they are marked RETURNED with the original receipt.
 model CustomerRefundTransactionReference {
   id                String   @id @default(uuid()) @db.Uuid
   refundId          String   @map("refund_id") @db.Uuid
@@ -3025,6 +3041,37 @@ model CustomerRefundTransactionReference {
   @@unique([refundId, bankTransactionId])
   @@index([bankTransactionId])
   @@map("customer_refund_transaction_references")
+}
+
+model OfficialLetter {
+  id                        String               @id @default(uuid()) @db.Uuid
+  companyId                 String               @map("company_id") @db.Uuid
+  status                    OfficialLetterStatus @default(DRAFT)
+  letterSerialNumber        String?              @unique @map("letter_serial_number")
+  financialYear             String               @map("financial_year")
+  sequenceNumber            Int?                 @map("sequence_number")
+  letterDate                DateTime             @map("letter_date") @db.Date
+  content                   String
+  signatoryName             String               @map("signatory_name")
+  signatoryDesignation      String               @map("signatory_designation")
+  signatureImageData        String?              @map("signature_image_data")
+  stampImageData            String?              @map("stamp_image_data")
+  stampEnabled              Boolean              @default(true) @map("stamp_enabled")
+  printSignatureEnabled     Boolean              @default(true) @map("print_signature_enabled")
+  printContentTopOffsetMm   Int                  @map("print_content_top_offset_mm")
+  generatedPdfData          Bytes?               @map("generated_pdf_data")
+  generatedAt               DateTime?            @map("generated_at")
+  createdById               String               @map("created_by") @db.Uuid
+  createdAt                 DateTime             @default(now()) @map("created_at")
+  updatedAt                 DateTime             @updatedAt @map("updated_at")
+
+  company   Company @relation(fields: [companyId], references: [id])
+  createdBy User    @relation("OfficialLetterCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([companyId, financialYear, sequenceNumber])
+  @@index([companyId, letterDate])
+  @@index([createdAt])
+  @@map("official_letters")
 }
 
 model StoredPdf {

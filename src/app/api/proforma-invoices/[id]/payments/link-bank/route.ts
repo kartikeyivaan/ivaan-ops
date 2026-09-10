@@ -35,6 +35,11 @@ function mapLinkError(error: unknown) {
       400,
     ],
     BANK_FULLY_ALLOCATED: ["VALIDATION_ERROR", "This bank receipt is fully allocated.", 400],
+    PAYMENT_ALREADY_RETURNED: [
+      "VALIDATION_ERROR",
+      "This bank receipt has already been returned as a customer refund.",
+      400,
+    ],
     PI_FULLY_PAID: ["VALIDATION_ERROR", "This PI has no outstanding balance.", 400],
     DIFFERENT_CUSTOMER: [
       "VALIDATION_ERROR",

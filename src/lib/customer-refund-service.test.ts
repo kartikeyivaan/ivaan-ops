@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CustomerRefundStatus } from "@prisma/client";
 import {
+  combineRefundAmountSummaries,
   isValidIfsc,
   isValidRefundAccountNumber,
   normalizeAccountNumber,
@@ -8,6 +9,7 @@ import {
   normalizeUtr,
   RESERVING_REFUND_STATUSES,
   roundMoney,
+  shouldMarkAttachedReceiptsReturned,
   summarizeRefundableAmount,
 } from "@/lib/customer-refund-service";
 import {
@@ -142,6 +144,40 @@ describe("summarizeRefundableAmount", () => {
     expect(summary.previousRefundedAmount).toBe(333.35);
     expect(summary.reservedAmount).toBe(333.35);
     expect(summary.availableRefundAmount).toBe(333.35);
+  });
+});
+
+describe("combineRefundAmountSummaries", () => {
+  it("adds extra linked receipts into the combined refund cap", () => {
+    const combined = combineRefundAmountSummaries([
+      summarizeRefundableAmount(50000, []),
+      summarizeRefundableAmount(40000, []),
+    ]);
+
+    expect(combined.receivedAmount).toBe(90000);
+    expect(combined.availableRefundAmount).toBe(90000);
+  });
+
+  it("keeps previous refunds and reservations from every attached receipt", () => {
+    const combined = combineRefundAmountSummaries([
+      summarizeRefundableAmount(50000, [row("r1", "REFUNDED", 10000, 10000, 10000)]),
+      summarizeRefundableAmount(40000, [row("r2", "PENDING_APPROVAL", 5000)]),
+    ]);
+
+    expect(combined.previousRefundedAmount).toBe(10000);
+    expect(combined.reservedAmount).toBe(5000);
+    expect(combined.availableRefundAmount).toBe(75000);
+  });
+});
+
+describe("shouldMarkAttachedReceiptsReturned", () => {
+  it("marks receipts returned when the payout consumes the remaining combined amount", () => {
+    expect(shouldMarkAttachedReceiptsReturned(90000, 90000)).toBe(true);
+    expect(shouldMarkAttachedReceiptsReturned(89999.995, 90000)).toBe(true);
+  });
+
+  it("leaves remaining receipts open on a partial payout of a single receipt", () => {
+    expect(shouldMarkAttachedReceiptsReturned(20000, 50000)).toBe(false);
   });
 });
 

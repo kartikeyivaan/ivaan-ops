@@ -81,6 +81,21 @@ export function companyLogo(companyCode: string | null | undefined): Buffer | nu
   return readAsset(LOGO_ISE);
 }
 
+const STAMP_ISE = path.join(ASSET_ROOT, "branding", "ise-stamp.png");
+const STAMP_PCM = path.join(ASSET_ROOT, "branding", "pcmv-stamp.png");
+
+export function companyStamp(companyCode: string | null | undefined): Buffer | null {
+  if (companyCode === "PCMV") return readAsset(STAMP_PCM);
+  if (companyCode === "ISE") return readAsset(STAMP_ISE);
+  return null;
+}
+
+export function companyStampDataUrl(companyCode: string | null | undefined): string | null {
+  const stamp = companyStamp(companyCode);
+  if (!stamp) return null;
+  return `data:image/png;base64,${stamp.toString("base64")}`;
+}
+
 export function waareeLogo(): Buffer | null {
   return readAsset(LOGO_WAAREE);
 }
@@ -555,6 +570,76 @@ export function drawTable(
   });
 
   return { y, columnX };
+}
+
+/**
+ * Official letter header: same logo + company block as other PDFs, date on the
+ * right, and no document serial number.
+ */
+export function drawLetterheadBand(
+  ctx: DocContext,
+  opts: {
+    logo: Buffer | null;
+    companyName: string;
+    profile: CompanyProfile;
+    dateLabel: string;
+  },
+): number {
+  const { doc, palette, fonts } = ctx;
+  const top = MARGIN_TOP;
+
+  if (opts.logo) {
+    doc.image(opts.logo, CONTENT_LEFT, top, { fit: [190, 56] });
+  } else {
+    doc.font(fonts.bold).fontSize(20).fillColor(palette.ink).text(opts.companyName, CONTENT_LEFT, top);
+  }
+
+  doc.font(fonts.regular).fontSize(11).fillColor(palette.ink).text(opts.dateLabel, CONTENT_LEFT, top + 8, {
+    width: CONTENT_WIDTH,
+    align: "right",
+  });
+  doc
+    .moveTo(CONTENT_RIGHT - 150, top + 28)
+    .lineTo(CONTENT_RIGHT, top + 28)
+    .lineWidth(2)
+    .strokeColor(palette.accent)
+    .stroke();
+
+  let addrY = top + 64;
+  doc.font(fonts.bold).fontSize(11).fillColor(palette.ink).text(opts.companyName, CONTENT_LEFT, addrY);
+  addrY = doc.y + 1;
+  if (opts.profile.tagline) {
+    doc.font(fonts.bold).fontSize(8.5).fillColor(palette.accent).text(opts.profile.tagline, CONTENT_LEFT, addrY, {
+      width: 300,
+    });
+    addrY = doc.y + 1;
+  }
+  doc.font(fonts.regular).fontSize(8.5).fillColor(palette.muted);
+  for (const line of opts.profile.addressLines) {
+    doc.text(line, CONTENT_LEFT, addrY, { width: 300 });
+    addrY = doc.y;
+  }
+  const contactBits = [opts.profile.phone, opts.profile.email].filter(Boolean).join("  |  ");
+  if (contactBits) {
+    doc.font(fonts.regular).fillColor(palette.muted).text(contactBits, CONTENT_LEFT, addrY, { width: 320 });
+    addrY = doc.y;
+  }
+  if (opts.profile.gst) {
+    doc.font(fonts.bold).fillColor(palette.ink).text(`GSTIN: ${opts.profile.gst}`, CONTENT_LEFT, addrY, {
+      width: 300,
+    });
+    addrY = doc.y;
+  }
+
+  addrY += 10;
+  doc
+    .moveTo(CONTENT_LEFT, addrY)
+    .lineTo(CONTENT_RIGHT, addrY)
+    .lineWidth(0.75)
+    .strokeColor(palette.border)
+    .stroke();
+
+  return addrY + 16;
 }
 
 export type FooterOptions = {

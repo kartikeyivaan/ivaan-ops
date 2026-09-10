@@ -35,20 +35,12 @@ import {
   CUSTOMER_REFUND_REASONS,
 } from "@/lib/customer-refund-constants";
 import type {
+  RefundBankTransactionOption,
   SerializedCustomerRefund,
   VerifiedRefundPayment,
 } from "@/lib/customer-refund-service";
 
-type BankTransactionOption = {
-  id: string;
-  bankName: string;
-  bankAccountMasked: string;
-  transactionReference: string | null;
-  transactionDate: string;
-  description: string;
-  amount: number;
-  isCredit: boolean;
-};
+type BankTransactionOption = RefundBankTransactionOption;
 
 type CustomerOption = { id: string; label: string };
 
@@ -87,7 +79,35 @@ export function RefundCreateForm({
   const [error, setError] = useState("");
 
   const requestedAmountValue = Number(refundAmount);
-  const availableRefundAmount = verified?.amounts.availableRefundAmount ?? 0;
+  const additionalAmounts = useMemo(() => {
+    return references.reduce(
+      (totals, row) => ({
+        receivedAmount: totals.receivedAmount + row.receivedAmount,
+        previousRefundedAmount:
+          totals.previousRefundedAmount + row.previousRefundedAmount,
+        reservedAmount: totals.reservedAmount + row.reservedAmount,
+        availableRefundAmount:
+          totals.availableRefundAmount + row.availableRefundAmount,
+      }),
+      {
+        receivedAmount: 0,
+        previousRefundedAmount: 0,
+        reservedAmount: 0,
+        availableRefundAmount: 0,
+      },
+    );
+  }, [references]);
+
+  const combinedReceivedAmount =
+    (verified?.amounts.receivedAmount ?? 0) + additionalAmounts.receivedAmount;
+  const combinedPreviousRefundedAmount =
+    (verified?.amounts.previousRefundedAmount ?? 0) +
+    additionalAmounts.previousRefundedAmount;
+  const combinedReservedAmount =
+    (verified?.amounts.reservedAmount ?? 0) + additionalAmounts.reservedAmount;
+  const availableRefundAmount =
+    (verified?.amounts.availableRefundAmount ?? 0) +
+    additionalAmounts.availableRefundAmount;
 
   const amountError = useMemo(() => {
     if (!refundAmount.trim()) return "";
@@ -241,15 +261,14 @@ export function RefundCreateForm({
     }
   }
 
-  const linkedTotal = references.reduce((sum, row) => sum + row.amount, 0);
-
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Request Refund</h1>
         <p className="text-sm text-slate-500">
           Verify the received payment with its bank transaction verification code, then
-          enter the refund details. The original payment is never changed.
+          enter the refund details. Link other order payments to include them in the
+          maximum refund amount. Payment and PI records are not changed.
         </p>
       </div>
 
@@ -396,12 +415,19 @@ export function RefundCreateForm({
       {verified ? (
         <>
           <Card>
-            <CardHeader className="flex-row items-center justify-between">
-              <CardTitle>Bank Transaction References</CardTitle>
+            <CardHeader className="flex-row items-start justify-between gap-3">
+              <div>
+                <CardTitle>Bank Transaction References</CardTitle>
+                <p className="mt-1 text-sm font-normal text-slate-500">
+                  Add other received payments when returning multiple orders together.
+                  Their amounts are included in the maximum refund total.
+                </p>
+              </div>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
+                className="shrink-0"
                 onClick={() => setReferencePickerOpen(true)}
               >
                 <Plus className="h-4 w-4" />
@@ -414,16 +440,18 @@ export function RefundCreateForm({
                   <TableRow>
                     <TableHead>Bank</TableHead>
                     <TableHead>Transaction Reference</TableHead>
+                    <TableHead>Order / PI</TableHead>
                     <TableHead>Transaction Date</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead className="text-right">Available</TableHead>
                     <TableHead />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {references.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="py-6 text-center text-slate-500">
-                        No transaction references linked yet.
+                      <TableCell colSpan={6} className="py-6 text-center text-slate-500">
+                        No other order payments linked yet. Add them to raise the
+                        maximum refund amount.
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -441,11 +469,14 @@ export function RefundCreateForm({
                             {row.description}
                           </div>
                         </TableCell>
+                        <TableCell>
+                          {row.piNumbers.length > 0 ? row.piNumbers.join(", ") : "—"}
+                        </TableCell>
                         <TableCell>{formatRefundDate(row.transactionDate)}</TableCell>
                         <TableCell className="text-right">
-                          {formatRefundAmount(row.amount)}
+                          {formatRefundAmount(row.availableRefundAmount)}
                           <div className="text-xs text-slate-500">
-                            {row.isCredit ? "Credit" : "Debit"}
+                            of {formatRefundAmount(row.receivedAmount)} received
                           </div>
                         </TableCell>
                         <TableCell>
@@ -469,9 +500,12 @@ export function RefundCreateForm({
                 </TableBody>
               </Table>
               <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-4 py-3 text-sm">
-                <span className="text-slate-500">Total Linked Transactions</span>
+                <span className="text-slate-500">
+                  Extra linked receipts (added to the refund cap)
+                </span>
                 <span className="font-medium text-slate-900">
-                  {references.length} · {formatRefundAmount(linkedTotal)}
+                  {references.length} · {formatRefundAmount(additionalAmounts.availableRefundAmount)}{" "}
+                  available
                 </span>
               </div>
             </CardContent>
@@ -482,24 +516,40 @@ export function RefundCreateForm({
               <CardTitle>Refund Amount</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-4 text-sm md:grid-cols-4">
+              <div className="grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-4 text-sm md:grid-cols-3 lg:grid-cols-5">
                 <DetailField
                   label="Original Received Amount"
                   value={formatRefundAmount(verified.amounts.receivedAmount)}
                 />
                 <DetailField
-                  label="Previous Completed Refunds"
-                  value={formatRefundAmount(verified.amounts.previousRefundedAmount)}
+                  label="Additional Linked Receipts"
+                  value={formatRefundAmount(additionalAmounts.receivedAmount)}
+                  hint={
+                    references.length > 0
+                      ? `${references.length} extra payment${references.length === 1 ? "" : "s"}`
+                      : "Add transaction references to include other orders"
+                  }
                 />
                 <DetailField
-                  label="Reserved by Open Requests"
-                  value={formatRefundAmount(verified.amounts.reservedAmount)}
+                  label="Combined Received Amount"
+                  value={formatRefundAmount(combinedReceivedAmount)}
+                />
+                <DetailField
+                  label="Previous / Reserved"
+                  value={formatRefundAmount(
+                    combinedPreviousRefundedAmount + combinedReservedAmount,
+                  )}
+                  hint={
+                    combinedReservedAmount > 0
+                      ? `${formatRefundAmount(combinedPreviousRefundedAmount)} completed · ${formatRefundAmount(combinedReservedAmount)} reserved`
+                      : undefined
+                  }
                 />
                 <DetailField
                   label="Available Refund Amount"
                   value={
                     <span className="text-emerald-700">
-                      {formatRefundAmount(verified.amounts.availableRefundAmount)}
+                      {formatRefundAmount(availableRefundAmount)}
                     </span>
                   }
                 />
@@ -740,6 +790,7 @@ export function RefundCreateForm({
       {referencePickerOpen && verified ? (
         <BankTransactionPicker
           companyId={companyId}
+          excludeBankTransactionId={verified.bankTransactionId}
           selectedIds={references.map((row) => row.id)}
           onSelect={addReference}
           onClose={() => setReferencePickerOpen(false)}
@@ -751,11 +802,13 @@ export function RefundCreateForm({
 
 function BankTransactionPicker({
   companyId,
+  excludeBankTransactionId,
   selectedIds,
   onSelect,
   onClose,
 }: {
   companyId: string;
+  excludeBankTransactionId: string;
   selectedIds: string[];
   onSelect: (option: BankTransactionOption) => void;
   onClose: () => void;
@@ -772,6 +825,9 @@ function BankTransactionPicker({
     try {
       const params = new URLSearchParams({ companyId });
       if (query.trim()) params.set("q", query.trim());
+      if (excludeBankTransactionId) {
+        params.set("excludeBankTransactionId", excludeBankTransactionId);
+      }
       const response = await fetch(
         `/api/customer-refunds/bank-transactions?${params.toString()}`,
       );
@@ -799,7 +855,7 @@ function BankTransactionPicker({
     <Modal size="2xl" onClose={onClose}>
       <ModalHeader
         title="Add Transaction Reference"
-        description="Link an existing bank transaction of this firm. No new transaction is created."
+        description="Link another received payment (another order) of this firm. Its available amount is added to the refund cap."
         onClose={onClose}
       />
       <ModalBody className="space-y-4">
@@ -828,23 +884,25 @@ function BankTransactionPicker({
             <TableRow>
               <TableHead>Bank</TableHead>
               <TableHead>Reference</TableHead>
+              <TableHead>Order / PI</TableHead>
               <TableHead>Date</TableHead>
-              <TableHead className="text-right">Amount</TableHead>
+              <TableHead className="text-right">Available</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
           <TableBody>
             {items.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="py-6 text-center text-slate-500">
+                <TableCell colSpan={6} className="py-6 text-center text-slate-500">
                   {searched
-                    ? "No transactions found."
-                    : "Search to find bank transactions."}
+                    ? "No received payments found."
+                    : "Search to find received payments to include in this refund."}
                 </TableCell>
               </TableRow>
             ) : (
               items.map((row) => {
                 const alreadyAdded = selectedIds.includes(row.id);
+                const nothingLeft = row.availableRefundAmount <= 0;
                 return (
                   <TableRow key={row.id}>
                     <TableCell>
@@ -859,11 +917,14 @@ function BankTransactionPicker({
                         {row.description}
                       </div>
                     </TableCell>
+                    <TableCell>
+                      {row.piNumbers.length > 0 ? row.piNumbers.join(", ") : "—"}
+                    </TableCell>
                     <TableCell>{formatRefundDate(row.transactionDate)}</TableCell>
                     <TableCell className="text-right">
-                      {formatRefundAmount(row.amount)}
+                      {formatRefundAmount(row.availableRefundAmount)}
                       <div className="text-xs text-slate-500">
-                        {row.isCredit ? "Credit" : "Debit"}
+                        of {formatRefundAmount(row.receivedAmount)}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -871,10 +932,10 @@ function BankTransactionPicker({
                         type="button"
                         size="sm"
                         variant="outline"
-                        disabled={alreadyAdded}
+                        disabled={alreadyAdded || nothingLeft}
                         onClick={() => onSelect(row)}
                       >
-                        {alreadyAdded ? "Added" : "Add"}
+                        {alreadyAdded ? "Added" : nothingLeft ? "No balance" : "Add"}
                       </Button>
                     </TableCell>
                   </TableRow>

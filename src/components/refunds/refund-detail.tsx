@@ -19,6 +19,7 @@ import {
 import { RefundProcessDialog } from "@/components/refunds/refund-process-dialog";
 import {
   DetailField,
+  formatReceiptAssignmentStatus,
   formatRefundAmount,
   formatRefundDate,
   formatRefundDateTime,
@@ -223,7 +224,7 @@ export function RefundDetail({
           <DetailField
             label="Received Amount"
             value={formatRefundAmount(refund.originalPayment.receivedAmount)}
-            hint="Unchanged by this refund"
+            hint={formatReceiptAssignmentStatus(refund.originalPayment.assignmentStatus)}
           />
           <DetailField
             label="Payment Date"
@@ -234,6 +235,13 @@ export function RefundDetail({
             value={`${refund.originalPayment.bankName} ${refund.originalPayment.bankAccountMasked}`}
             hint={refund.originalPayment.transactionReference ?? undefined}
           />
+          {refund.transactionReferences.length > 0 ? (
+            <DetailField
+              label="Combined Received Amount"
+              value={formatRefundAmount(refund.combinedReceivedAmount)}
+              hint={`${refund.transactionReferences.length} extra linked payment${refund.transactionReferences.length === 1 ? "" : "s"}`}
+            />
+          ) : null}
         </CardContent>
       </Card>
 
@@ -247,15 +255,17 @@ export function RefundDetail({
               <TableRow>
                 <TableHead>Bank</TableHead>
                 <TableHead>Transaction Reference</TableHead>
+                <TableHead>Order / PI</TableHead>
                 <TableHead>Transaction Date</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {refund.transactionReferences.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="py-6 text-center text-slate-500">
-                    No transaction references linked.
+                  <TableCell colSpan={6} className="py-6 text-center text-slate-500">
+                    No other order payments linked.
                   </TableCell>
                 </TableRow>
               ) : (
@@ -273,7 +283,13 @@ export function RefundDetail({
                         {row.description}
                       </div>
                     </TableCell>
+                    <TableCell>
+                      {row.piNumbers.length > 0 ? row.piNumbers.join(", ") : "—"}
+                    </TableCell>
                     <TableCell>{formatRefundDate(row.transactionDate)}</TableCell>
+                    <TableCell>
+                      {formatReceiptAssignmentStatus(row.assignmentStatus)}
+                    </TableCell>
                     <TableCell className="text-right">
                       {formatRefundAmount(row.amount)}
                     </TableCell>
@@ -283,7 +299,9 @@ export function RefundDetail({
             </TableBody>
           </Table>
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-4 py-3 text-sm">
-            <span className="text-slate-500">Total Linked Transactions</span>
+            <span className="text-slate-500">
+              Extra linked receipts included in this refund
+            </span>
             <span className="font-medium text-slate-900">
               {refund.totalLinkedTransactions} ·{" "}
               {formatRefundAmount(refund.linkedTransactionsAmount)}

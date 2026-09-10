@@ -65,6 +65,9 @@ async function main() {
     tagline: "Authorised Waaree Franchise",
     bankDetails: ISE_BANK_DETAILS,
     termsAndConditions: defaultTerms,
+    defaultSignatoryName: "Harshal Patil",
+    defaultSignatoryDesignation: "Partner",
+    printContentTopOffsetMm: 65,
   };
   const pcmvProfile = {
     name: "PCM Ventures",
@@ -79,6 +82,9 @@ async function main() {
     bankDetails:
       "Bank: State Bank of India\nA/c No: 44431999106   IFSC: SBIN0018300\nUPI: pcmventures@sbi\nBranch: Kalika Mandir, Jalgaon",
     termsAndConditions: defaultTerms,
+    defaultSignatoryName: "Kartikey Mahajan",
+    defaultSignatoryDesignation: "Partner",
+    printContentTopOffsetMm: 60,
   };
 
   const ise = await prisma.company.upsert({

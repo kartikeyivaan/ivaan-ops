@@ -11,6 +11,7 @@ import { countPendingIncomingTransfers } from "@/lib/transfer-service";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { YourAttentionCard } from "@/components/tasks/your-attention-card";
 
 export async function LegacyRoleDashboard({ session }: { session: Session }) {
   const roles = session.user.roles ?? [];
@@ -150,6 +151,8 @@ export async function LegacyRoleDashboard({ session }: { session: Session }) {
           </p>
         ) : null}
       </div>
+
+      <YourAttentionCard />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {widgets.map((widget) => {

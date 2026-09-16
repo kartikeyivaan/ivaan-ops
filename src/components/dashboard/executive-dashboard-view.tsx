@@ -12,6 +12,7 @@ import { DashboardPeriodSelector } from "@/components/dashboard/dashboard-period
 import { ModuleTargetCard } from "@/components/dashboard/module-target-card";
 import { ModuleMasteryCard } from "@/components/dashboard/module-mastery-card";
 import { ModuleMasteryCelebration } from "@/components/dashboard/module-mastery-celebration";
+import { YourAttentionCard } from "@/components/tasks/your-attention-card";
 import {
   formatBusinessDateLong,
   formatBusinessMonthYear,
@@ -69,6 +70,8 @@ export function ExecutiveDashboardView({
       </div>
 
       <QuickActionsBar />
+
+      <YourAttentionCard />
 
       <DispatchTodayHero data={data.dispatchToday} salesUserId={salesUserId} />
 

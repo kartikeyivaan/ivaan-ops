@@ -23,6 +23,10 @@ import {
 } from "@/lib/inventory";
 import { getWarehouseStockForProduct } from "@/lib/inventory-service";
 import { PRODUCT_CATEGORY_NAMES, resolveSerialTracking } from "@/lib/products";
+import {
+  loadSerialOccupancies,
+  occupyingSerialNumbers,
+} from "@/lib/serial-lifecycle";
 
 export const OPENING_AUDIT_SOURCE = "OPENING_STOCK_AUDIT";
 
@@ -431,12 +435,9 @@ export async function upsertOpeningLine(
       throw new Error("DUPLICATE_SERIAL_IN_AUDIT");
     }
 
-    // Also block if already exists in inventory (should be empty after reset)
-    const existingInventory = await prisma.inventorySerial.findMany({
-      where: { serialNumber: { in: normalizedSerials } },
-      select: { serialNumber: true },
-    });
-    if (existingInventory.length > 0) {
+    // Block if the serial is still live in inventory (historical dispatched/removed may re-enter).
+    const occupancies = await loadSerialOccupancies(prisma, normalizedSerials);
+    if (occupyingSerialNumbers(occupancies).length > 0) {
       throw new Error("DUPLICATE_SERIAL");
     }
   }
@@ -572,11 +573,8 @@ export async function approveOpeningAudit(
     line.serials.map((s) => s.serialNumber),
   );
   if (allSerials.length > 0) {
-    const existing = await prisma.inventorySerial.findMany({
-      where: { serialNumber: { in: allSerials } },
-      select: { serialNumber: true },
-    });
-    if (existing.length > 0) throw new Error("DUPLICATE_SERIAL");
+    const occupancies = await loadSerialOccupancies(prisma, allSerials);
+    if (occupyingSerialNumbers(occupancies).length > 0) throw new Error("DUPLICATE_SERIAL");
   }
 
   return prisma.$transaction(async (tx) => {

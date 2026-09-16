@@ -61,7 +61,7 @@ export function mapAuditServiceError(error: unknown) {
       "Physical quantity must match scanned serial count.",
       400,
     ],
-    DUPLICATE_SERIAL: ["DUPLICATE_SERIAL", "Serial number already exists.", 409],
+    DUPLICATE_SERIAL: ["DUPLICATE_SERIAL", "Serial is still in stock and cannot be received again.", 409],
     DUPLICATE_SERIAL_IN_AUDIT: [
       "DUPLICATE_SERIAL_IN_AUDIT",
       "Serial number already scanned on another line in this audit.",

@@ -11,6 +11,7 @@ import {
 } from "@/lib/manual-stock-service";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
+import { humanSerialOccupancyError } from "@/lib/serial-lifecycle";
 import { manualStockEntrySchema } from "@/lib/validations";
 
 function errorResponse(code: string, message: string, status: number, details?: unknown) {
@@ -53,6 +54,13 @@ function mapManualStockError(error: unknown) {
       "Duplicate serial numbers in the request.",
       400,
     );
+  }
+  const occupancyMessage = humanSerialOccupancyError(message);
+  if (occupancyMessage) {
+    const status = message.startsWith("SERIAL_PRODUCT_MISMATCH_UNCONFIRMED") ? 400 : 409;
+    const code = message.split(":")[0] ?? "SERIAL_STILL_IN_STOCK";
+    const serial = message.includes(":") ? message.slice(message.indexOf(":") + 1) : undefined;
+    return errorResponse(code, occupancyMessage, status, serial ? { serialNumber: serial } : undefined);
   }
   if (message === "INVALID_QUANTITY") {
     return errorResponse("INVALID_QUANTITY", "Quantity must be greater than zero.", 400);
@@ -148,6 +156,7 @@ export async function POST(request: Request) {
         reason: data.reason,
         notes: data.notes,
         createdById: session.user.id,
+        acknowledgeProductMismatch: data.acknowledgeProductMismatch,
       });
     } else if (!("mode" in data) && data.action === "OUT") {
       entry = await createManualStockOut(prisma, {

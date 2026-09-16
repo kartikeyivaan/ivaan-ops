@@ -179,6 +179,9 @@ export async function generateDispatchPdf(dispatch: DispatchRecord): Promise<Buf
 
   const dispatchLines = [dispatch.warehouse.name];
   if (dispatch.vehicleNo) dispatchLines.push(`Vehicle: ${dispatch.vehicleNo}`);
+  if (dispatch.physicalChallanNumber) {
+    dispatchLines.push(`Physical Challan: ${dispatch.physicalChallanNumber}`);
+  }
   if (dispatch.driverName) dispatchLines.push(`Driver: ${dispatch.driverName}`);
 
   const partiesBottom = drawParties(ctx, {

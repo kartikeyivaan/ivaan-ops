@@ -96,7 +96,7 @@ export function DispatchForm({
   const [piId, setPiId] = useState(defaultPiId ?? lockedPi?.id ?? "");
   const [dispatchDate, setDispatchDate] = useState(dateWindow?.max ?? "");
   const [vehicleNo, setVehicleNo] = useState("");
-  const [driverName, setDriverName] = useState("");
+  const [physicalChallanNumber, setPhysicalChallanNumber] = useState("");
   const [receiverName, setReceiverName] = useState("");
   const [receiverMobile, setReceiverMobile] = useState("");
   const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
@@ -136,7 +136,7 @@ export function DispatchForm({
 
     linesForPiIdRef.current = pi.id;
     setVehicleNo(pi.draft?.vehicleNo ?? "");
-    setDriverName(pi.draft?.driverName ?? "");
+    setPhysicalChallanNumber("");
     setReceiverName(pi.draft?.receiverName ?? "");
     setReceiverMobile(pi.draft?.receiverMobile ?? "");
     setNotes(pi.draft?.notes ?? "");
@@ -346,7 +346,7 @@ export function DispatchForm({
       proformaInvoiceId: piId,
       dispatchDate: isSales ? dispatchDate : undefined,
       vehicleNo: vehicleNo || undefined,
-      driverName: driverName || undefined,
+      physicalChallanNumber: physicalChallanNumber.trim() || undefined,
       receiverName,
       receiverMobile,
       signatureUrl: signatureUrl || undefined,
@@ -488,11 +488,12 @@ export function DispatchForm({
             />
           </div>
           <div className="space-y-2">
-            <Label>Driver Name</Label>
+            <Label>Physical Challan Number</Label>
             <Input
               className="h-12 text-base"
-              value={driverName}
-              onChange={(e) => setDriverName(e.target.value)}
+              value={physicalChallanNumber}
+              onChange={(e) => setPhysicalChallanNumber(e.target.value)}
+              placeholder="Optional"
             />
           </div>
           <div className="space-y-2">

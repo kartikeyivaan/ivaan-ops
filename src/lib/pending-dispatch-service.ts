@@ -212,6 +212,7 @@ export async function createQueuedDispatch(
     dispatchDate: string;
     vehicleNo?: string;
     driverName?: string;
+    physicalChallanNumber?: string;
     receiverName?: string;
     receiverMobile?: string;
     signatureUrl?: string;
@@ -261,6 +262,7 @@ export async function createQueuedDispatch(
     createdById: input.createdById,
     vehicleNo: input.vehicleNo,
     driverName: input.driverName,
+    physicalChallanNumber: input.physicalChallanNumber,
     receiverName: input.receiverName,
     receiverMobile: input.receiverMobile,
     signatureUrl: input.signatureUrl,

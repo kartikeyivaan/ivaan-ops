@@ -202,13 +202,24 @@ export function findDuplicateSerialKeys(serials: string[]): Set<string> {
   return duplicates;
 }
 
-export type InwardSerialCategory = "new" | "repeat" | "invalid";
+export type InwardSerialCategory = "new" | "reentry" | "repeat" | "invalid";
 
 export type InwardSerialClassification = {
   newSerials: string[];
+  /** Previously exited serials that may start a new stock cycle. */
+  reentrySerials: string[];
+  /** Re-entry serials whose last cycle was a different product. */
+  productMismatchSerials: string[];
   repeatSerials: string[];
   invalidSerials: string[];
 };
+
+/** Serials that should be received (first-time + allowed re-entry). */
+export function receivableInwardSerials(
+  classification: InwardSerialClassification,
+): string[] {
+  return [...classification.newSerials, ...classification.reentrySerials];
+}
 
 function isInverterCategory(categoryName?: string | null): boolean {
   return Boolean(categoryName && categoryName.trim().toLowerCase() === "inverters");
@@ -234,23 +245,38 @@ export function isValidInwardSerialFormat(
 }
 
 /**
- * Classify pasted/scanned inward serials into new, repeat (in-list or already in DB),
- * and invalid format. First occurrence of a valid serial is checked against `existingKeys`;
- * later occurrences of the same value are always treated as repeats.
+ * Classify pasted/scanned inward serials into new, re-entry (exited cycle),
+ * repeat (in-list or still occupying stock), and invalid format.
+ * `existingKeys` / `occupyingKeys` are live-in-system serials that must be blocked.
  */
 export function classifyInwardSerials(input: {
   serials: string[];
   existingKeys?: Iterable<string>;
+  occupyingKeys?: Iterable<string>;
+  reentryKeys?: Iterable<string>;
+  productMismatchKeys?: Iterable<string>;
   brandName?: string | null;
   categoryName?: string | null;
 }): InwardSerialClassification {
-  const existing = new Set(
-    Array.from(input.existingKeys ?? [], (value) => normalizeSerialNumber(value)).filter(
+  const occupying = new Set(
+    Array.from(input.occupyingKeys ?? input.existingKeys ?? [], (value) =>
+      normalizeSerialNumber(value),
+    ).filter(Boolean),
+  );
+  const reentry = new Set(
+    Array.from(input.reentryKeys ?? [], (value) => normalizeSerialNumber(value)).filter(
       Boolean,
     ),
   );
+  const mismatches = new Set(
+    Array.from(input.productMismatchKeys ?? [], (value) =>
+      normalizeSerialNumber(value),
+    ).filter(Boolean),
+  );
   const seen = new Set<string>();
   const newSerials: string[] = [];
+  const reentrySerials: string[] = [];
+  const productMismatchSerials: string[] = [];
   const repeatSerials: string[] = [];
   const invalidSerials: string[] = [];
 
@@ -263,17 +289,29 @@ export function classifyInwardSerials(input: {
       continue;
     }
 
-    if (seen.has(key) || existing.has(key)) {
+    if (seen.has(key) || occupying.has(key)) {
       if (!repeatSerials.includes(key)) repeatSerials.push(key);
       seen.add(key);
       continue;
     }
 
     seen.add(key);
+    if (reentry.has(key)) {
+      reentrySerials.push(key);
+      if (mismatches.has(key)) productMismatchSerials.push(key);
+      continue;
+    }
+
     newSerials.push(key);
   }
 
-  return { newSerials, repeatSerials, invalidSerials };
+  return {
+    newSerials,
+    reentrySerials,
+    productMismatchSerials,
+    repeatSerials,
+    invalidSerials,
+  };
 }
 
 export function pendingIncomingQuantity(input: {

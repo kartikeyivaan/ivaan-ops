@@ -26,6 +26,7 @@ type DispatchDetailData = {
   dispatchDate: string;
   vehicleNo?: string | null;
   driverName?: string | null;
+  physicalChallanNumber?: string | null;
   receiverName?: string | null;
   receiverMobile?: string | null;
   signatureUrl?: string | null;
@@ -252,6 +253,18 @@ export function DispatchDetail({
             <CardTitle className="text-sm">Warehouse</CardTitle>
           </CardHeader>
           <CardContent>{dispatch.warehouse.name}</CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Vehicle</CardTitle>
+          </CardHeader>
+          <CardContent>{dispatch.vehicleNo || "—"}</CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Physical Challan No</CardTitle>
+          </CardHeader>
+          <CardContent>{dispatch.physicalChallanNumber || "—"}</CardContent>
         </Card>
       </div>
 

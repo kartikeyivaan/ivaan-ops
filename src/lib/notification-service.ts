@@ -10,6 +10,7 @@ export type CreateNotificationInput = {
   title: string;
   message: string;
   module?: string;
+  href?: string | null;
 };
 
 export function createNotification(

@@ -1,5 +1,6 @@
 import type { PrismaClient, SerialStatus } from "@prisma/client";
 import { normalizeSerialNumber } from "@/lib/inventory";
+import { isLiveSerialStatus } from "@/lib/serial-lifecycle";
 
 export type SerialHistoryEventType =
   | "RECEIVED"
@@ -118,7 +119,7 @@ export async function getSerialPhysicalHistory(
   const serialNumber = normalizeSerialNumber(serialNumberInput);
   if (!serialNumber) return null;
 
-  const serial = await prisma.inventorySerial.findUnique({
+  const serials = await prisma.inventorySerial.findMany({
     where: { serialNumber },
     include: {
       product: { select: { id: true, displayName: true } },
@@ -199,16 +200,20 @@ export async function getSerialPhysicalHistory(
         },
       },
     },
+    orderBy: { createdAt: "asc" },
   });
 
-  if (!serial || !companyTouchesSerial(companyId, serial)) {
+  const visible = serials.filter((serial) => companyTouchesSerial(companyId, serial));
+  if (visible.length === 0) {
     return null;
   }
 
   const transferWarehouseIds = new Set<string>();
-  for (const row of serial.transferLineSerials) {
-    transferWarehouseIds.add(row.line.transfer.fromWarehouseId);
-    transferWarehouseIds.add(row.line.transfer.toWarehouseId);
+  for (const serial of visible) {
+    for (const row of serial.transferLineSerials) {
+      transferWarehouseIds.add(row.line.transfer.fromWarehouseId);
+      transferWarehouseIds.add(row.line.transfer.toWarehouseId);
+    }
   }
   const transferWarehouses =
     transferWarehouseIds.size > 0
@@ -223,6 +228,7 @@ export async function getSerialPhysicalHistory(
 
   const events: SerialHistoryEvent[] = [];
 
+  for (const serial of visible) {
   events.push({
     id: `received-${serial.id}`,
     type: "RECEIVED",
@@ -419,6 +425,7 @@ export async function getSerialPhysicalHistory(
       actorName: entry.createdBy.name,
     });
   }
+  }
 
   events.sort((a, b) => {
     const byTime = a.occurredAt.localeCompare(b.occurredAt);
@@ -426,20 +433,24 @@ export async function getSerialPhysicalHistory(
     return a.id.localeCompare(b.id);
   });
 
+  const header =
+    [...visible].reverse().find((row) => isLiveSerialStatus(row.status)) ??
+    visible[visible.length - 1];
+
   return {
     serial: {
-      id: serial.id,
-      serialNumber: serial.serialNumber,
-      status: serial.status,
-      createdAt: serial.createdAt.toISOString(),
-      product: serial.product,
-      currentWarehouse: serial.currentWarehouse,
+      id: header.id,
+      serialNumber: header.serialNumber,
+      status: header.status,
+      createdAt: header.createdAt.toISOString(),
+      product: header.product,
+      currentWarehouse: header.currentWarehouse,
       lot: {
-        id: serial.lot.id,
-        lotNumber: serial.lot.lotNumber,
-        purchaseInvoiceNo: serial.lot.purchaseInvoiceNo,
-        companyId: serial.lot.companyId,
-        warehouse: serial.lot.warehouse,
+        id: header.lot.id,
+        lotNumber: header.lot.lotNumber,
+        purchaseInvoiceNo: header.lot.purchaseInvoiceNo,
+        companyId: header.lot.companyId,
+        warehouse: header.lot.warehouse,
       },
     },
     events,

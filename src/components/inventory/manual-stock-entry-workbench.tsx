@@ -102,6 +102,8 @@ export function ManualStockEntryWorkbench({
   const [error, setError] = useState("");
   const [entries, setEntries] = useState(initialEntries);
   const [success, setSuccess] = useState<SuccessSummary | null>(null);
+  const [acknowledgeProductMismatch, setAcknowledgeProductMismatch] = useState(false);
+  const [productMismatchSerials, setProductMismatchSerials] = useState<string[]>([]);
   const submittingRef = useRef(false);
   const serialInputRef = useRef(serialInput);
   serialInputRef.current = serialInput;
@@ -133,6 +135,8 @@ export function ManualStockEntryWorkbench({
     setCondition("GOOD");
     setReason("CORRECTION");
     setError("");
+    setAcknowledgeProductMismatch(false);
+    setProductMismatchSerials([]);
   }
 
   function onModeChange(next: FormMode) {
@@ -213,6 +217,42 @@ export function ManualStockEntryWorkbench({
       }
 
       if (mode === "SERIAL_IN") {
+        if (!acknowledgeProductMismatch) {
+          const checkResponse = await fetch("/api/inventory/serials/check", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ serialNumbers, productId }),
+          });
+          const checkData = (await checkResponse.json()) as {
+            message?: string;
+            occupyingSerialNumbers?: string[];
+            existingSerialNumbers?: string[];
+            productMismatchSerialNumbers?: string[];
+            occupancies?: Array<{ serialNumber: string; kind: string; reason: string }>;
+          };
+          if (!checkResponse.ok) {
+            setError(checkData.message ?? "Failed to check serial numbers.");
+            return;
+          }
+          const occupying =
+            checkData.occupyingSerialNumbers ?? checkData.existingSerialNumbers ?? [];
+          if (occupying.length > 0) {
+            const reason =
+              checkData.occupancies?.find((row) => occupying.includes(row.serialNumber))
+                ?.reason ?? "still in stock";
+            setError(`Serial ${occupying[0]} cannot be received: ${reason}`);
+            return;
+          }
+          const mismatches = checkData.productMismatchSerialNumbers ?? [];
+          if (mismatches.length > 0) {
+            setProductMismatchSerials(mismatches);
+            setError(
+              "These serials were last recorded as a different product. Confirm below to continue.",
+            );
+            return;
+          }
+        }
+
         body = {
           action: "IN",
           productId,
@@ -221,6 +261,7 @@ export function ManualStockEntryWorkbench({
           condition,
           reason,
           notes: notes.trim() || null,
+          acknowledgeProductMismatch: acknowledgeProductMismatch || undefined,
         };
       } else if (mode === "SERIAL_OUT") {
         body = {
@@ -372,7 +413,11 @@ export function ManualStockEntryWorkbench({
               label="Product"
               options={productOptions}
               value={productId}
-              onChange={setProductId}
+              onChange={(value) => {
+                setProductId(value);
+                setAcknowledgeProductMismatch(false);
+                setProductMismatchSerials([]);
+              }}
               required
               placeholder="Search product..."
             />
@@ -468,13 +513,34 @@ export function ManualStockEntryWorkbench({
                 id="mse-serials"
                 className="min-h-32 w-full rounded-md border border-slate-200 bg-white px-3 py-2 font-mono text-sm"
                 value={serialInput}
-                onChange={(e) => setSerialInput(e.target.value)}
+                onChange={(e) => {
+                  setSerialInput(e.target.value);
+                  setAcknowledgeProductMismatch(false);
+                  setProductMismatchSerials([]);
+                }}
                 placeholder={"SN001\nSN002"}
               />
               {duplicateKeys.size > 0 ? (
                 <p className="text-xs text-red-600">
                   Duplicate serials in list: {Array.from(duplicateKeys).join(", ")}
                 </p>
+              ) : null}
+              {mode === "SERIAL_IN" && productMismatchSerials.length > 0 ? (
+                <label className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={acknowledgeProductMismatch}
+                    onChange={(event) =>
+                      setAcknowledgeProductMismatch(event.target.checked)
+                    }
+                  />
+                  <span>
+                    These serials were last recorded as a different product:{" "}
+                    {productMismatchSerials.join(", ")}. I confirm they should be received
+                    against {selectedProduct?.displayName ?? "this product"}.
+                  </span>
+                </label>
               ) : null}
             </div>
           ) : null}

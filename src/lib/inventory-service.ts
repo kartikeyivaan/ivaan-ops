@@ -34,6 +34,7 @@ import {
   getProjectReservedQtyAtWarehouse,
 } from "@/lib/project-stock-service";
 import { getPhysicalWarehouseStockForProduct } from "@/lib/inventory-stock";
+import { assertSerialsClearForNewCycle } from "@/lib/serial-lifecycle";
 
 const lotInclude = {
   company: true,
@@ -1102,10 +1103,10 @@ function isDuplicateSerialUniqueViolation(error: unknown): boolean {
     return false;
   }
   const target = error.meta?.target;
-  if (Array.isArray(target)) {
-    return target.some((value) => String(value).includes("serial_number"));
-  }
-  return String(target ?? "").includes("serial_number");
+  const haystack = Array.isArray(target)
+    ? target.map(String).join(" ")
+    : String(target ?? "");
+  return haystack.includes("serial_number") || haystack.includes("live_serial_number");
 }
 
 export async function receiveMaterial(
@@ -1117,6 +1118,7 @@ export async function receiveMaterial(
     damagedQty: number;
     serialNumbers?: string[];
     createdById: string;
+    acknowledgeProductMismatch?: boolean;
   },
 ) {
   const lot = await prisma.inventoryLot.findFirst({
@@ -1157,16 +1159,14 @@ export async function receiveMaterial(
 
   try {
     return await prisma.$transaction(async (tx) => {
-      // Re-validate serial uniqueness inside the transaction so a concurrent /
-      // double submit cannot bump lot qty while the duplicate attempt "fails".
+      // Re-validate live occupancy inside the transaction so a concurrent
+      // submit cannot bump lot qty while a duplicate live serial slips in.
       if (lot.product.serialTracking) {
-        const existing = await tx.inventorySerial.findMany({
-          where: { serialNumber: { in: normalizedSerials } },
-          select: { serialNumber: true },
+        await assertSerialsClearForNewCycle(tx, {
+          serialNumbers: normalizedSerials,
+          incomingProductId: lot.productId,
+          acknowledgeProductMismatch: input.acknowledgeProductMismatch,
         });
-        if (existing.length > 0) {
-          throw new Error("DUPLICATE_SERIAL");
-        }
 
         // Insert serials before lot qty / ledger writes so a unique violation
         // cannot leave stock counts ahead of serial rows.

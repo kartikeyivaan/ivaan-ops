@@ -129,6 +129,8 @@ describe("inventory helpers", () => {
       }),
     ).toEqual({
       newSerials: ["WS07269074147109", "WS07269074147111"],
+      reentrySerials: [],
+      productMismatchSerials: [],
       repeatSerials: ["WS07269074147109", "WS07269074147157"],
       invalidSerials: ["BAD"],
     });
@@ -143,7 +145,28 @@ describe("inventory helpers", () => {
       }),
     ).toEqual({
       newSerials: ["WPS033260710898", "WPS033260710903"],
+      reentrySerials: [],
+      productMismatchSerials: [],
       repeatSerials: ["WPS033260710898"],
+      invalidSerials: [],
+    });
+  });
+
+  it("treats exited serials as re-entry rather than repeats", () => {
+    expect(
+      classifyInwardSerials({
+        serials: ["WS07269074147109", "WS07269074147157"],
+        occupyingKeys: [],
+        reentryKeys: ["WS07269074147109"],
+        productMismatchKeys: ["WS07269074147109"],
+        brandName: "Waaree",
+        categoryName: "Modules",
+      }),
+    ).toEqual({
+      newSerials: ["WS07269074147157"],
+      reentrySerials: ["WS07269074147109"],
+      productMismatchSerials: ["WS07269074147109"],
+      repeatSerials: [],
       invalidSerials: [],
     });
   });

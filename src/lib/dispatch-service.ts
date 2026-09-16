@@ -43,6 +43,7 @@ import {
   isDispatchTodayActive,
 } from "@/lib/proforma-invoices";
 import { resolveStoredSerials } from "@/lib/serial-resolution";
+import { findLiveOrLatestSerial } from "@/lib/serial-lifecycle";
 import { clearExpiredDispatchTodayFlags } from "@/lib/pi-service";
 import { deductNonSerialStock } from "@/lib/transfer-service";
 import {
@@ -152,6 +153,7 @@ function serializeDispatch(
     dispatchDate: dispatch.dispatchDate.toISOString().slice(0, 10),
     vehicleNo: dispatch.vehicleNo,
     driverName: dispatch.driverName,
+    physicalChallanNumber: dispatch.physicalChallanNumber,
     receiverName: dispatch.receiverName,
     receiverMobile: dispatch.receiverMobile,
     signatureUrl: dispatch.signatureUrl,
@@ -323,6 +325,7 @@ export async function listDispatches(
               { vehicleNo: { contains: filters.q, mode: "insensitive" } },
               { receiverName: { contains: filters.q, mode: "insensitive" } },
               { driverName: { contains: filters.q, mode: "insensitive" } },
+              { physicalChallanNumber: { contains: filters.q, mode: "insensitive" } },
             ],
           }
         : {}),
@@ -669,9 +672,8 @@ export async function lookupSerialsForDispatch(
     });
 
     if (!serial) {
-      const existing = await prisma.inventorySerial.findFirst({
-        where: { serialNumber },
-        select: { id: true, status: true, productId: true },
+      const existing = await findLiveOrLatestSerial(prisma, serialNumber, {
+        product: { select: { id: true } },
       });
       if (!existing) {
         invalid.push({ serialNumber, reason: "Serial not found." });
@@ -849,6 +851,7 @@ export async function createDispatch(
     createdById: string;
     vehicleNo?: string;
     driverName?: string;
+    physicalChallanNumber?: string;
     receiverName?: string;
     receiverMobile?: string;
     signatureUrl?: string;
@@ -925,6 +928,7 @@ export async function createDispatch(
           dispatchDate,
           vehicleNo: input.vehicleNo,
           driverName: input.driverName,
+          physicalChallanNumber: input.physicalChallanNumber || null,
           receiverName: input.receiverName,
           receiverMobile: input.receiverMobile,
           signatureUrl: input.signatureUrl,

@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FileText, Plus } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { CollapsibleFilterCard } from "@/components/ui/collapsible-filter-card";
@@ -14,44 +13,14 @@ import { ListPaginationControls } from "@/components/ui/list-pagination-controls
 import {
   Table,
   TableBody,
-  TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatProformaStatus, isReadyForDispatch } from "@/lib/proforma-invoices";
-import { formatCurrency } from "@/lib/quotations";
+import { PiListRow, type ProformaInvoiceListItem } from "@/components/proforma-invoices/pi-list-row";
 import { FIRM_SALES_SCOPE, isFirmSalesScope } from "@/lib/report-permissions";
-import { formatDocumentDate } from "@/lib/utils";
-
-type ProformaInvoiceListItem = {
-  id: string;
-  piNo: string;
-  status: string;
-  piDate: string;
-  totalValue: number;
-  customer: { customerName: string; customerCode: string };
-  salesUser: { name: string };
-  paymentSummary: {
-    totalPaid: number;
-    outstanding: number;
-    readyForDispatch?: boolean;
-  };
-  canEdit?: boolean;
-  canUnbook?: boolean;
-};
 
 type SalesExecutive = { id: string; name: string; email?: string };
-
-function statusVariant(status: string): "default" | "success" | "warning" | "danger" {
-  if (status === "ISSUED") return "success";
-  if (status === "BOOKED") return "success";
-  if (status === "FULLY_DISPATCHED") return "success";
-  if (status === "PENDING_BOOKING" || status === "CANCEL_PENDING") return "warning";
-  if (status === "CLOSED_PARTIAL") return "warning";
-  if (status === "CANCELLED") return "danger";
-  return "default";
-}
 
 export function ProformaInvoicesList({
   initialProformaInvoices,
@@ -297,55 +266,13 @@ export function ProformaInvoicesList({
               </TableHeader>
               <TableBody>
                 {rows.map((row) => (
-                  <TableRow
+                  <PiListRow
                     key={row.id}
-                    className="cursor-pointer"
-                    onClick={() => router.push(`/sales/proforma-invoices/${row.id}`)}
-                  >
-                    <TableCell data-label="PI No" className="font-medium">{row.piNo}</TableCell>
-                    <TableCell data-label="Customer">{row.customer.customerName}</TableCell>
-                    <TableCell data-label="Executive">{row.salesUser.name}</TableCell>
-                    <TableCell data-label="Date">{formatDocumentDate(row.piDate)}</TableCell>
-                    <TableCell data-label="Status">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <Badge variant={statusVariant(row.status)}>
-                          {formatProformaStatus(row.status)}
-                        </Badge>
-                        {(row.paymentSummary.readyForDispatch ??
-                          isReadyForDispatch(row.status, row.paymentSummary.outstanding)) ? (
-                          <Badge variant="success">Ready for Dispatch</Badge>
-                        ) : null}
-                      </div>
-                    </TableCell>
-                    <TableCell data-label="Total" className="text-right">
-                      {formatCurrency(row.totalValue)}
-                    </TableCell>
-                    <TableCell data-label="Outstanding" className="text-right">
-                      {formatCurrency(row.paymentSummary.outstanding)}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
-                        {canManage && row.canEdit ? (
-                          <Button variant="outline" size="sm" asChild>
-                            <Link href={`/sales/proforma-invoices/${row.id}/edit`}>Edit</Link>
-                          </Button>
-                        ) : null}
-                        {canManage && row.canUnbook ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={loading}
-                            onClick={() => handleUnbook(row.id)}
-                          >
-                            Unbook
-                          </Button>
-                        ) : null}
-                        <Button variant="outline" size="sm" asChild>
-                          <Link href={`/sales/proforma-invoices/${row.id}`}>View</Link>
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                    row={row}
+                    canManage={canManage}
+                    loading={loading}
+                    onUnbook={handleUnbook}
+                  />
                 ))}
               </TableBody>
             </Table>

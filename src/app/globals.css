@@ -177,3 +177,73 @@ body {
     padding-left: 0;
   }
 }
+
+/*
+ * PI list hover reveal: the middle summary crossfades into compact
+ * product/quantity details. Left (PI No) and right (actions) stay put.
+ */
+.pi-list-row {
+  --pi-reveal-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --pi-reveal-in: 200ms;
+  --pi-reveal-out: 170ms;
+}
+
+.pi-list-row .pi-row-summary {
+  transition: opacity var(--pi-reveal-out) var(--pi-reveal-ease);
+}
+
+.pi-list-row .pi-row-products-overlay {
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+  transition:
+    opacity var(--pi-reveal-out) var(--pi-reveal-ease),
+    transform var(--pi-reveal-out) var(--pi-reveal-ease);
+}
+
+.pi-list-row-anchor {
+  position: relative;
+  z-index: 2;
+}
+
+@media (min-width: 768px) {
+  .pi-list-row--stacked-2 > td {
+    min-height: 4.15rem;
+  }
+
+  .pi-list-row--stacked-3 > td {
+    min-height: 5.25rem;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .pi-list-row--has-products:hover .pi-row-summary {
+      opacity: 0;
+      transition-duration: var(--pi-reveal-in);
+    }
+
+    .pi-list-row--has-products:hover .pi-row-products-overlay {
+      opacity: 1;
+      transform: translateY(0);
+      transition-duration: var(--pi-reveal-in);
+    }
+  }
+
+  .pi-list-row--has-products:focus-within .pi-row-summary {
+    opacity: 0;
+    transition-duration: var(--pi-reveal-in);
+  }
+
+  .pi-list-row--has-products:focus-within .pi-row-products-overlay {
+    opacity: 1;
+    transform: translateY(0);
+    transition-duration: var(--pi-reveal-in);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pi-list-row .pi-row-summary,
+  .pi-list-row .pi-row-products-overlay {
+    transition: opacity 80ms linear;
+    transform: none;
+  }
+}

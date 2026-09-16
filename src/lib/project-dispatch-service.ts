@@ -23,6 +23,7 @@ import {
 import { getKitComponentsForFulfillment } from "@/lib/product-service";
 import { generateProjectDispatchNumber } from "@/lib/projects";
 import { resolveStoredSerials } from "@/lib/serial-resolution";
+import { findLiveOrLatestSerial } from "@/lib/serial-lifecycle";
 import {
   buildProjectDispatchSourceWarehouseIds,
   executeProjectDispatchStockMove,
@@ -966,14 +967,11 @@ export async function lookupSerialsForProjectDispatch(
     }
     seen.add(serialNumber);
 
-    const serial = await prisma.inventorySerial.findFirst({
-      where: { serialNumber },
-      include: {
-        product: {
-          select: { id: true, displayName: true, serialTracking: true },
-        },
-        currentWarehouse: { select: { id: true, name: true } },
+    const serial = await findLiveOrLatestSerial(prisma, serialNumber, {
+      product: {
+        select: { id: true, displayName: true, serialTracking: true },
       },
+      currentWarehouse: { select: { id: true, name: true } },
     });
 
     if (!serial) {

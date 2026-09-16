@@ -23,6 +23,64 @@ enum AuditAction {
   LOGOUT
 }
 
+enum TaskType {
+  ASSIGNED
+  SELF
+  SYSTEM
+}
+
+enum TaskStatus {
+  PENDING_ACKNOWLEDGEMENT
+  ACKNOWLEDGED
+  TO_DO
+  IN_PROGRESS
+  COMPLETED
+  REJECTED
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum TaskLinkedRecordType {
+  CUSTOMER
+  PROJECT_ENQUIRY
+  QUOTATION
+  PI
+  PAYMENT
+  INVOICE
+  PROJECT
+  SERVICE_COMPLAINT
+  PURCHASE_REQUEST
+  INVENTORY_LOT
+  INVENTORY_AUDIT
+  BANK_TRANSACTION
+}
+
+enum TaskActivityType {
+  CREATED
+  ASSIGNED
+  ACKNOWLEDGED
+  REJECTED
+  STATUS_CHANGED
+  REASSIGNED
+  REASSIGNMENT_REQUESTED
+  REASSIGNMENT_DECIDED
+  COMMENT_ADDED
+  COMPLETED
+  CANCELLED
+}
+
+enum TaskReassignmentRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum CustomerType {
   DEALER
   PROJECT
@@ -648,6 +706,7 @@ model Company {
   bankAccounts            BankAccount[]
   customerRefunds         CustomerRefund[]
   officialLetters         OfficialLetter[]
+  tasks                   Task[]
 
   @@map("companies")
 }
@@ -765,6 +824,15 @@ model User {
   customerRefundsCancelled               CustomerRefund[]                  @relation("CustomerRefundCancelledBy")
   customerRefundBankAccountsCreated      CustomerRefundBankAccount[]       @relation("CustomerRefundBankAccountCreatedBy")
   officialLettersCreated                 OfficialLetter[]                  @relation("OfficialLetterCreatedBy")
+  createdTasks                           Task[]                            @relation("TaskCreatedBy")
+  assignedTasks                          Task[]                            @relation("TaskAssignedTo")
+  acknowledgedTasks                      Task[]                            @relation("TaskAcknowledgedBy")
+  completedTasks                         Task[]                            @relation("TaskCompletedBy")
+  cancelledTasks                         Task[]                            @relation("TaskCancelledBy")
+  taskComments                           TaskComment[]
+  taskActivities                         TaskActivity[]
+  taskReassignmentRequests               TaskReassignmentRequest[]         @relation("TaskReassignmentRequestedBy")
+  taskReassignmentReviews                TaskReassignmentRequest[]         @relation("TaskReassignmentReviewedBy")
 
   @@map("users")
 }
@@ -875,6 +943,7 @@ model Notification {
   title     String
   message   String
   module    String?
+  href      String?
   isRead    Boolean  @default(false) @map("is_read")
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -1123,7 +1192,9 @@ model InventorySerial {
   id                 String       @id @default(uuid()) @db.Uuid
   lotId              String       @map("lot_id") @db.Uuid
   productId          String       @map("product_id") @db.Uuid
-  serialNumber       String       @unique @map("serial_number")
+  /// Not globally unique: a completed exit may start a new cycle.
+  /// Live uniqueness (AVAILABLE/BOOKED/DAMAGED/DAMAGE_PENDING) is a partial unique index in SQL.
+  serialNumber       String       @map("serial_number")
   status             SerialStatus
   currentWarehouseId String       @map("current_warehouse_id") @db.Uuid
   createdAt          DateTime     @default(now()) @map("created_at")
@@ -1140,6 +1211,7 @@ model InventorySerial {
   crossCompanyPlanSerials    PiCrossCompanyTransferPlanSerial[]
   manualStockEntryLines      ManualStockEntryLine[]
 
+  @@index([serialNumber])
   @@index([productId, status])
   @@index([currentWarehouseId])
   @@map("inventory_serials")
@@ -1724,11 +1796,12 @@ model Dispatch {
   warehouseId         String         @map("warehouse_id") @db.Uuid
   status              DispatchStatus
   dispatchDate        DateTime       @map("dispatch_date") @db.Date
-  vehicleNo           String?        @map("vehicle_no")
-  driverName          String?        @map("driver_name")
-  receiverName        String?        @map("receiver_name")
-  receiverMobile      String?        @map("receiver_mobile")
-  signatureUrl        String?        @map("signature_url")
+  vehicleNo             String?        @map("vehicle_no")
+  driverName            String?        @map("driver_name")
+  physicalChallanNumber String?        @map("physical_challan_number")
+  receiverName          String?        @map("receiver_name")
+  receiverMobile        String?        @map("receiver_mobile")
+  signatureUrl          String?        @map("signature_url")
   plannedDispatchDate DateTime?      @map("planned_dispatch_date") @db.Date
   notes               String?
   createdById         String         @map("created_by") @db.Uuid
@@ -3086,4 +3159,107 @@ model StoredPdf {
   @@unique([documentType, documentId, variant])
   @@index([documentType, documentId])
   @@map("stored_pdfs")
+}
+
+model Task {
+  id                   String                 @id @default(uuid()) @db.Uuid
+  companyId            String?                @map("company_id") @db.Uuid
+  taskType             TaskType               @map("task_type")
+  title                String
+  description          String?
+  createdById          String?                @map("created_by") @db.Uuid
+  assignedToId         String                 @map("assigned_to") @db.Uuid
+  dueDate              DateTime?              @map("due_date") @db.Date
+  dueTime              String?                @map("due_time")
+  priority             TaskPriority           @default(NORMAL)
+  status               TaskStatus
+  linkedRecordType     TaskLinkedRecordType?  @map("linked_record_type")
+  linkedRecordId       String?                @map("linked_record_id") @db.Uuid
+  systemTriggerKey     String?                @map("system_trigger_key")
+  systemTriggerReason  String?                @map("system_trigger_reason")
+  acknowledgedAt       DateTime?              @map("acknowledged_at")
+  acknowledgedById     String?                @map("acknowledged_by") @db.Uuid
+  rejectedAt           DateTime?              @map("rejected_at")
+  rejectionReason      String?                @map("rejection_reason")
+  completedAt          DateTime?              @map("completed_at")
+  completedById        String?                @map("completed_by") @db.Uuid
+  completionNote       String?                @map("completion_note")
+  cancelledAt          DateTime?              @map("cancelled_at")
+  cancelledById        String?                @map("cancelled_by") @db.Uuid
+  cancellationReason   String?                @map("cancellation_reason")
+  dueReminderOn        DateTime?              @map("due_reminder_on") @db.Date
+  overdueReminderOn    DateTime?              @map("overdue_reminder_on") @db.Date
+  createdAt            DateTime               @default(now()) @map("created_at")
+  updatedAt            DateTime               @updatedAt @map("updated_at")
+
+  company        Company? @relation(fields: [companyId], references: [id])
+  createdBy      User?    @relation("TaskCreatedBy", fields: [createdById], references: [id])
+  assignedTo     User     @relation("TaskAssignedTo", fields: [assignedToId], references: [id])
+  acknowledgedBy User?    @relation("TaskAcknowledgedBy", fields: [acknowledgedById], references: [id])
+  completedBy    User?    @relation("TaskCompletedBy", fields: [completedById], references: [id])
+  cancelledBy    User?    @relation("TaskCancelledBy", fields: [cancelledById], references: [id])
+  comments       TaskComment[]
+  activities     TaskActivity[]
+  reassignmentRequests TaskReassignmentRequest[]
+
+  @@index([assignedToId])
+  @@index([createdById])
+  @@index([status])
+  @@index([dueDate])
+  @@index([taskType])
+  @@index([companyId])
+  @@index([linkedRecordType, linkedRecordId])
+  @@index([systemTriggerKey, linkedRecordType, linkedRecordId])
+  @@index([assignedToId, status, dueDate])
+  @@map("tasks")
+}
+
+model TaskComment {
+  id        String   @id @default(uuid()) @db.Uuid
+  taskId    String   @map("task_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  comment   String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  task Task @relation(fields: [taskId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([taskId, createdAt])
+  @@map("task_comments")
+}
+
+model TaskActivity {
+  id           String           @id @default(uuid()) @db.Uuid
+  taskId       String           @map("task_id") @db.Uuid
+  actorUserId  String?          @map("actor_user_id") @db.Uuid
+  activityType TaskActivityType @map("activity_type")
+  metadata     Json?
+  createdAt    DateTime         @default(now()) @map("created_at")
+
+  task  Task @relation(fields: [taskId], references: [id])
+  actor User? @relation(fields: [actorUserId], references: [id])
+
+  @@index([taskId, createdAt])
+  @@map("task_activity")
+}
+
+model TaskReassignmentRequest {
+  id           String                         @id @default(uuid()) @db.Uuid
+  taskId       String                         @map("task_id") @db.Uuid
+  requestedById String                        @map("requested_by") @db.Uuid
+  requestedToId String?                       @map("requested_to") @db.Uuid
+  reason       String
+  status       TaskReassignmentRequestStatus  @default(PENDING)
+  reviewedById String?                        @map("reviewed_by") @db.Uuid
+  reviewedAt   DateTime?                      @map("reviewed_at")
+  reviewNote   String?                        @map("review_note")
+  createdAt    DateTime                       @default(now()) @map("created_at")
+
+  task        Task @relation(fields: [taskId], references: [id])
+  requestedBy User @relation("TaskReassignmentRequestedBy", fields: [requestedById], references: [id])
+  reviewedBy  User? @relation("TaskReassignmentReviewedBy", fields: [reviewedById], references: [id])
+
+  @@index([taskId, status])
+  @@index([requestedById])
+  @@map("task_reassignment_requests")
 }

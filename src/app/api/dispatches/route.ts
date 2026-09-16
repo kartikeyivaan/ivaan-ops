@@ -93,6 +93,7 @@ export async function POST(request: Request) {
       createdById: session.user.id,
       vehicleNo: parsed.data.vehicleNo,
       driverName: parsed.data.driverName,
+      physicalChallanNumber: parsed.data.physicalChallanNumber,
       receiverName: parsed.data.receiverName,
       receiverMobile: parsed.data.receiverMobile,
       signatureUrl: parsed.data.signatureUrl || undefined,

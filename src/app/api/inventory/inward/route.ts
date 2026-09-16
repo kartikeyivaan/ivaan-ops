@@ -5,6 +5,7 @@ import { canInwardMaterial } from "@/lib/inventory-permissions";
 import { assertInventoryOpsAllowed } from "@/lib/inventory-audit-service";
 import { receiveMaterial } from "@/lib/inventory-service";
 import { prisma } from "@/lib/prisma";
+import { humanSerialOccupancyError } from "@/lib/serial-lifecycle";
 import { requireActiveCompany } from "@/lib/session";
 import { inwardSchema } from "@/lib/validations";
 
@@ -47,6 +48,7 @@ export async function POST(request: Request) {
       damagedQty: parsed.data.damagedQty,
       serialNumbers: parsed.data.serialNumbers,
       createdById: session.user.id,
+      acknowledgeProductMismatch: parsed.data.acknowledgeProductMismatch,
     });
 
     return NextResponse.json(lot);
@@ -72,8 +74,20 @@ export async function POST(request: Request) {
           400,
         );
       }
+      const occupancyMessage = humanSerialOccupancyError(error.message);
+      if (occupancyMessage) {
+        const status = error.message.startsWith("SERIAL_PRODUCT_MISMATCH_UNCONFIRMED")
+          ? 400
+          : 409;
+        const code = error.message.split(":")[0] ?? "SERIAL_STILL_IN_STOCK";
+        return errorResponse(code, occupancyMessage, status);
+      }
       if (error.message === "DUPLICATE_SERIAL" || error.message === "DUPLICATE_SERIAL_IN_REQUEST") {
-        return errorResponse("DUPLICATE_SERIAL", "Serial number already exists.", 409);
+        return errorResponse(
+          "DUPLICATE_SERIAL",
+          "Serial is still in stock and cannot be received again.",
+          409,
+        );
       }
       if (error.message.includes("exceed") || error.message.includes("negative")) {
         return errorResponse("NEGATIVE_STOCK_BLOCKED", error.message, 400);
@@ -84,7 +98,11 @@ export async function POST(request: Request) {
       error.code === "P2002" &&
       String(error.meta?.target ?? "").includes("serial_number")
     ) {
-      return errorResponse("DUPLICATE_SERIAL", "Serial number already exists.", 409);
+      return errorResponse(
+        "DUPLICATE_SERIAL",
+        "Serial is still in stock and cannot be received again.",
+        409,
+      );
     }
     throw error;
   }

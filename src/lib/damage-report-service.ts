@@ -10,6 +10,7 @@ import {
 import { writeAuditLogTx } from "@/lib/audit";
 import { DAMAGE_CATEGORY_LABELS } from "@/lib/damage-report-constants";
 import { normalizeSerialNumber } from "@/lib/inventory";
+import { findLiveOrLatestSerial } from "@/lib/serial-lifecycle";
 
 export { DAMAGE_CATEGORY_LABELS } from "@/lib/damage-report-constants";
 
@@ -107,19 +108,16 @@ export async function lookupDamageableSerial(
   const serialNumber = normalizeSerialNumber(input.serialNumber);
   if (!serialNumber) throw new Error("SERIAL_REQUIRED");
 
-  const serial = await prisma.inventorySerial.findUnique({
-    where: { serialNumber },
-    include: {
-      product: {
-        include: { category: { select: { name: true } } },
-      },
-      currentWarehouse: { select: { id: true, name: true, companyId: true } },
-      lot: { select: { id: true, lotNumber: true, companyId: true } },
-      damageReports: {
-        where: { status: DamageReportStatus.PENDING },
-        select: { id: true },
-        take: 1,
-      },
+  const serial = await findLiveOrLatestSerial(prisma, serialNumber, {
+    product: {
+      include: { category: { select: { name: true } } },
+    },
+    currentWarehouse: { select: { id: true, name: true, companyId: true } },
+    lot: { select: { id: true, lotNumber: true, companyId: true } },
+    damageReports: {
+      where: { status: DamageReportStatus.PENDING },
+      select: { id: true },
+      take: 1,
     },
   });
 

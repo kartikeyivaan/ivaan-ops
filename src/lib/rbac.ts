@@ -38,6 +38,7 @@ export type NavItem = {
 
 export const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", group: "Overview", roles: ALL_ROLES },
+  { label: "Tasks", href: "/tasks", group: "Overview", roles: ALL_ROLES },
   { label: "Help & Learning", href: "/help", group: "Overview", roles: ALL_ROLES },
   {
     label: "Approvals",

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   changePasswordSchema,
   companySchema,
+  createDispatchSchema,
   createQuotationSchema,
   loginSchema,
   userSchema,
@@ -117,5 +118,50 @@ describe("validations", () => {
         dispatchMaxDays: 8,
       }).success,
     ).toBe(true);
+  });
+
+  it("allows creating a dispatch without physical challan number", () => {
+    const result = createDispatchSchema.safeParse({
+      proformaInvoiceId: "550e8400-e29b-41d4-a716-446655440000",
+      vehicleNo: "MH19-CX4268",
+      receiverName: "GOVINDA PATIL",
+      receiverMobile: "9923217183",
+      confirm: true,
+      lines: [
+        {
+          proformaInvoiceItemId: "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+          productId: "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+          qty: 1,
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.physicalChallanNumber).toBeUndefined();
+    }
+  });
+
+  it("accepts an optional physical challan number on dispatch", () => {
+    const result = createDispatchSchema.safeParse({
+      proformaInvoiceId: "550e8400-e29b-41d4-a716-446655440000",
+      vehicleNo: "MH19-CX4268",
+      physicalChallanNumber: " PC-1042 ",
+      receiverName: "GOVINDA PATIL",
+      receiverMobile: "9923217183",
+      confirm: true,
+      lines: [
+        {
+          proformaInvoiceItemId: "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+          productId: "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+          qty: 1,
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.physicalChallanNumber).toBe("PC-1042");
+    }
   });
 });

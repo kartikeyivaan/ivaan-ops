@@ -255,6 +255,7 @@ export const inwardSchema = z.object({
       message: `A single entry can include at most ${MAX_SERIALS_PER_ENTRY} serial numbers.`,
     })
     .optional(),
+  acknowledgeProductMismatch: z.boolean().optional(),
 });
 
 export const damageSchema = z.object({
@@ -376,6 +377,7 @@ export const manualStockSerialInSchema = z
     condition: z.enum(["GOOD", "DAMAGED"]),
     reason: manualStockReasonSchema,
     notes: manualStockNotesSchema,
+    acknowledgeProductMismatch: z.boolean().optional(),
   })
   .superRefine(refineManualStockReasonNotes);
 
@@ -756,6 +758,7 @@ export const createQueuedDispatchSchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Dispatch date must be YYYY-MM-DD."),
   vehicleNo: z.string().trim().min(1, "Vehicle number is required."),
   driverName: z.string().optional(),
+  physicalChallanNumber: z.string().trim().max(100).optional(),
   receiverName: z.string().trim().min(1, "Receiver name is required."),
   receiverMobile: z.string().trim().min(10, "Receiver mobile is required."),
   signatureUrl: z
@@ -779,6 +782,7 @@ export const createDispatchSchema = z.object({
   proformaInvoiceId: z.string().uuid(),
   vehicleNo: z.string().trim().min(1, "Vehicle number is required."),
   driverName: z.string().optional(),
+  physicalChallanNumber: z.string().trim().max(100).optional(),
   receiverName: z.string().trim().min(1, "Receiver name is required."),
   receiverMobile: z.string().trim().min(10, "Receiver mobile is required."),
   signatureUrl: z
@@ -867,6 +871,7 @@ export const lookupDispatchSerialsSchema = z.object({
 
 export const checkInventorySerialsSchema = z.object({
   serialNumbers: serialNumbersPerEntrySchema,
+  productId: z.string().uuid().optional(),
 });
 
 export const reportSearchSchema = z.object({

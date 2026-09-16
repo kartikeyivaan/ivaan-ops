@@ -19,6 +19,7 @@ import {
   MAX_SERIALS_PER_ENTRY,
   normalizeSerialNumber,
   parseSerialInput,
+  receivableInwardSerials,
   serialsPerEntryLimitMessage,
   type InwardSerialClassification,
 } from "@/lib/inventory";
@@ -29,6 +30,7 @@ type Product = { id: string; displayName: string; gstRate: number };
 
 type SerialHighlightSets = {
   newKeys: Set<string>;
+  reentryKeys: Set<string>;
   repeatKeys: Set<string>;
   invalidKeys: Set<string>;
 };
@@ -68,6 +70,8 @@ function SerialHighlightOverlay({
             className = "bg-amber-100 text-amber-900";
           } else if (highlights.repeatKeys.has(key)) {
             className = "bg-red-100 text-red-700";
+          } else if (highlights.reentryKeys.has(key)) {
+            className = "bg-sky-100 text-sky-900";
           } else if (highlights.newKeys.has(key)) {
             className = "bg-emerald-100 text-emerald-800";
           }
@@ -91,20 +95,24 @@ function SerialCategoryBlock({
   title: string;
   qty: number;
   serials: string[];
-  tone: "new" | "repeat" | "invalid";
+  tone: "new" | "reentry" | "repeat" | "invalid";
 }) {
   const styles =
     tone === "new"
       ? "border-emerald-200 bg-emerald-50 text-emerald-950"
-      : tone === "repeat"
-        ? "border-red-200 bg-red-50 text-red-950"
-        : "border-amber-200 bg-amber-50 text-amber-950";
+      : tone === "reentry"
+        ? "border-sky-200 bg-sky-50 text-sky-950"
+        : tone === "repeat"
+          ? "border-red-200 bg-red-50 text-red-950"
+          : "border-amber-200 bg-amber-50 text-amber-950";
   const listTone =
     tone === "new"
       ? "text-emerald-800"
-      : tone === "repeat"
-        ? "text-red-800"
-        : "text-amber-900";
+      : tone === "reentry"
+        ? "text-sky-800"
+        : tone === "repeat"
+          ? "text-red-800"
+          : "text-amber-900";
 
   return (
     <div className={`rounded-md border p-3 text-sm ${styles}`}>
@@ -154,6 +162,7 @@ export function InwardForm({
   const [classification, setClassification] = useState<InwardSerialClassification | null>(
     null,
   );
+  const [acknowledgeProductMismatch, setAcknowledgeProductMismatch] = useState(false);
   const [checkingSerials, setCheckingSerials] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -179,24 +188,32 @@ export function InwardForm({
   const highlightSets: SerialHighlightSets | null = classification
     ? {
         newKeys: new Set(classification.newSerials),
+        reentryKeys: new Set(classification.reentrySerials),
         repeatKeys: new Set(classification.repeatSerials),
         invalidKeys: new Set(classification.invalidSerials),
       }
     : null;
 
-  const newSerialCount = classification?.newSerials.length ?? 0;
+  const receivableCount = classification
+    ? receivableInwardSerials(classification).length
+    : 0;
   const newMatchesExpected =
     Boolean(classification) &&
-    newSerialCount > 0 &&
-    newSerialCount === expectedSerialQty;
+    receivableCount > 0 &&
+    receivableCount === expectedSerialQty;
+  const needsProductMismatchConfirm =
+    (classification?.productMismatchSerials.length ?? 0) > 0;
   const canConfirmSerialReceipt =
     !lot.product.serialTracking ||
     damageOnlyReceipt ||
-    (newMatchesExpected && !checkingSerials);
+    (newMatchesExpected &&
+      !checkingSerials &&
+      (!needsProductMismatchConfirm || acknowledgeProductMismatch));
 
   function handleSerialChange(nextValue: string) {
     setSerialInput(nextValue);
     setClassification(null);
+    setAcknowledgeProductMismatch(false);
   }
 
   const addSerialNumbers = useCallback(async () => {
@@ -233,10 +250,19 @@ export function InwardForm({
       const response = await fetch("/api/inventory/serials/check", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ serialNumbers: uniqueForLookup }),
+        body: JSON.stringify({
+          serialNumbers: uniqueForLookup,
+          productId: lot.product.id,
+        }),
       });
 
-      let data: { message?: string; existingSerialNumbers?: string[] } = {};
+      let data: {
+        message?: string;
+        existingSerialNumbers?: string[];
+        occupyingSerialNumbers?: string[];
+        reentrySerialNumbers?: string[];
+        productMismatchSerialNumbers?: string[];
+      } = {};
       try {
         data = await response.json();
       } catch {
@@ -255,20 +281,25 @@ export function InwardForm({
         return;
       }
 
-      const existingKeys = data.existingSerialNumbers ?? [];
+      const occupyingKeys =
+        data.occupyingSerialNumbers ?? data.existingSerialNumbers ?? [];
       const next = classifyInwardSerials({
         serials,
-        existingKeys,
+        occupyingKeys,
+        reentryKeys: data.reentrySerialNumbers ?? [],
+        productMismatchKeys: data.productMismatchSerialNumbers ?? [],
         brandName,
         categoryName,
       });
       setClassification(next);
+      setAcknowledgeProductMismatch(false);
 
-      if (next.newSerials.length === 0 && expectedSerialQty > 0) {
-        setError("No new serial numbers found. Resolve repeats or invalid formats.");
-      } else if (next.newSerials.length !== expectedSerialQty) {
+      const receivable = receivableInwardSerials(next);
+      if (receivable.length === 0 && expectedSerialQty > 0) {
+        setError("No receivable serial numbers found. Resolve repeats or invalid formats.");
+      } else if (receivable.length !== expectedSerialQty) {
         setError(
-          `New serial qty (${next.newSerials.length}) must match expected qty (${expectedSerialQty}) to confirm receipt.`,
+          `Receivable serial qty (${receivable.length}) must match expected qty (${expectedSerialQty}) to confirm receipt.`,
         );
       } else {
         setError("");
@@ -283,6 +314,7 @@ export function InwardForm({
     brandName,
     categoryName,
     expectedSerialQty,
+    lot.product.id,
     lot.product.serialTracking,
     pendingChange,
   ]);
@@ -321,6 +353,7 @@ export function InwardForm({
     setSerialInput(withTrailingNewline);
     serialInputRef.current = withTrailingNewline;
     setClassification(null);
+    setAcknowledgeProductMismatch(false);
 
     return {
       ok: true,
@@ -343,10 +376,16 @@ export function InwardForm({
       } else if (!classification) {
         setError('Click "Add Serial Number" to validate serials before confirming.');
         return;
-      } else if (classification.newSerials.length !== expectedSerialQty) {
+      } else if (receivableInwardSerials(classification).length !== expectedSerialQty) {
         setError(
-          `New serial qty (${classification.newSerials.length}) must match expected qty (${expectedSerialQty}) to confirm receipt.`,
+          `Receivable serial qty (${receivableInwardSerials(classification).length}) must match expected qty (${expectedSerialQty}) to confirm receipt.`,
         );
+        return;
+      } else if (
+        classification.productMismatchSerials.length > 0 &&
+        !acknowledgeProductMismatch
+      ) {
+        setError("Confirm receiving serials that last belonged to a different product.");
         return;
       }
     }
@@ -357,7 +396,7 @@ export function InwardForm({
 
     const serialNumbers =
       lot.product.serialTracking && !damageOnlyReceipt
-        ? classification!.newSerials
+        ? receivableInwardSerials(classification!)
         : undefined;
     const qtyToReceive = Number(receivedQty);
 
@@ -370,6 +409,10 @@ export function InwardForm({
           receivedQty: qtyToReceive,
           damagedQty: Number(damagedQty),
           serialNumbers,
+          acknowledgeProductMismatch:
+            (classification?.productMismatchSerials.length ?? 0) > 0
+              ? acknowledgeProductMismatch
+              : undefined,
         }),
       });
 
@@ -477,13 +520,14 @@ export function InwardForm({
                   onChange={(e) => {
                     setReceivedQty(e.target.value);
                     setClassification(null);
+                    setAcknowledgeProductMismatch(false);
                   }}
                   required
                   disabled={Boolean(pendingChange)}
                 />
                 {lot.product.serialTracking ? (
                   <p className="text-xs text-slate-500">
-                    New serial qty must match this expected qty to confirm. Pending on lot:{" "}
+                    Receivable serial qty must match this expected qty to confirm. Pending on lot:{" "}
                     {pending}.
                   </p>
                 ) : null}
@@ -547,7 +591,8 @@ export function InwardForm({
                   {checkingSerials ? "Checking…" : "Add Serial Number"}
                 </Button>
                 <p className="text-xs text-slate-500">
-                  Checks each serial against the system. Confirm receipt only when new serial qty
+                  Checks each serial against live stock. Previously dispatched or removed serials
+                  can be received again as a new cycle. Confirm receipt only when receivable qty
                   matches expected qty ({expectedSerialQty}). Damaged units do not need serials.
                 </p>
 
@@ -560,7 +605,13 @@ export function InwardForm({
                       tone="new"
                     />
                     <SerialCategoryBlock
-                      title="Repeat Serial Number"
+                      title="Re-entry (previously exited)"
+                      qty={classification.reentrySerials.length}
+                      serials={classification.reentrySerials}
+                      tone="reentry"
+                    />
+                    <SerialCategoryBlock
+                      title="Still in stock / repeat"
                       qty={classification.repeatSerials.length}
                       serials={classification.repeatSerials}
                       tone="repeat"
@@ -571,14 +622,31 @@ export function InwardForm({
                       serials={classification.invalidSerials}
                       tone="invalid"
                     />
+                    {classification.productMismatchSerials.length > 0 ? (
+                      <label className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                        <input
+                          type="checkbox"
+                          className="mt-1"
+                          checked={acknowledgeProductMismatch}
+                          onChange={(event) =>
+                            setAcknowledgeProductMismatch(event.target.checked)
+                          }
+                        />
+                        <span>
+                          These serials were last recorded as a different product:{" "}
+                          {classification.productMismatchSerials.join(", ")}. I confirm they
+                          should be received against {lot.product.displayName}.
+                        </span>
+                      </label>
+                    ) : null}
                     {newMatchesExpected ? (
                       <p className="text-sm text-emerald-700">
-                        New serial qty matches expected qty ({expectedSerialQty}). Ready to
+                        Receivable serial qty matches expected qty ({expectedSerialQty}). Ready to
                         confirm.
                       </p>
                     ) : (
                       <p className="text-sm text-red-600">
-                        New serial qty ({newSerialCount}) must equal expected qty (
+                        Receivable serial qty ({receivableCount}) must equal expected qty (
                         {expectedSerialQty}) before confirming.
                       </p>
                     )}

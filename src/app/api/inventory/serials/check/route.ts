@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { canInwardMaterial } from "@/lib/inventory-permissions";
+import { canAdjustStock, canInwardMaterial } from "@/lib/inventory-permissions";
 import { normalizeSerialNumber } from "@/lib/inventory";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
+import {
+  loadSerialOccupancies,
+  occupyingSerialNumbers,
+  productMismatchSerialNumbers,
+  reentrySerialNumbers,
+} from "@/lib/serial-lifecycle";
 import { checkInventorySerialsSchema } from "@/lib/validations";
 
 export const maxDuration = 60;
@@ -14,7 +20,10 @@ function errorResponse(code: string, message: string, status: number, details?: 
 
 export async function POST(request: Request) {
   const session = await auth();
-  if (!session?.user || !canInwardMaterial(session.user.roles)) {
+  if (
+    !session?.user ||
+    (!canInwardMaterial(session.user.roles) && !canAdjustStock(session.user.roles))
+  ) {
     return errorResponse("FORBIDDEN", "You do not have permission for this action.", 403);
   }
 
@@ -39,12 +48,19 @@ export async function POST(request: Request) {
     new Set(parsed.data.serialNumbers.map(normalizeSerialNumber).filter(Boolean)),
   );
 
-  const existing = await prisma.inventorySerial.findMany({
-    where: { serialNumber: { in: normalized } },
-    select: { serialNumber: true },
-  });
+  const occupancies = await loadSerialOccupancies(prisma, normalized);
+  const occupying = occupyingSerialNumbers(occupancies);
+  const reentry = reentrySerialNumbers(occupancies);
+  const productMismatches = productMismatchSerialNumbers(
+    occupancies,
+    parsed.data.productId,
+  );
 
   return NextResponse.json({
-    existingSerialNumbers: existing.map((row) => row.serialNumber),
+    existingSerialNumbers: occupying,
+    occupyingSerialNumbers: occupying,
+    reentrySerialNumbers: reentry,
+    productMismatchSerialNumbers: productMismatches,
+    occupancies,
   });
 }

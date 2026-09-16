@@ -21,6 +21,8 @@ function sessionWithCompanies(
       roles: ["Accounts"],
       companies,
       activeCompanyId,
+      mustChangePassword: false,
+      passwordChangedAt: null,
       passwordChangeRequired: false,
       passwordChangeReason: null,
     },

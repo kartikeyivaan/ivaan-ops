@@ -8,6 +8,7 @@ import { ApprovalsSummaryPanel } from "@/components/dashboard/approvals-summary-
 import { TeamScoreboardPanel } from "@/components/dashboard/team-scoreboard-panel";
 import { PipelineRisksPanel } from "@/components/dashboard/pipeline-risks-panel";
 import { StockConflictsPanel } from "@/components/dashboard/stock-conflicts-panel";
+import { YourAttentionCard } from "@/components/tasks/your-attention-card";
 import {
   formatBusinessDateLong,
   formatBusinessMonthYear,
@@ -47,6 +48,8 @@ export function ManagerDashboardView({
           <DashboardPeriodSelector activePeriod={data.period} />
         </Suspense>
       </div>
+
+      <YourAttentionCard />
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">

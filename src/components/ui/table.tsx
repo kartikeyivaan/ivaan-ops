@@ -44,6 +44,12 @@ export function TableHead({ className, ...props }: React.ThHTMLAttributes<HTMLTa
   );
 }
 
-export function TableCell({ className, ...props }: React.TdHTMLAttributes<HTMLTableCellElement>) {
-  return <td className={cn("p-4 align-middle", className)} {...props} />;
+export function TableCell({
+  className,
+  ref,
+  ...props
+}: React.TdHTMLAttributes<HTMLTableCellElement> & {
+  ref?: React.Ref<HTMLTableCellElement>;
+}) {
+  return <td ref={ref} className={cn("p-4 align-middle", className)} {...props} />;
 }

@@ -11,6 +11,7 @@ import { canAccessNav, NAV_GROUPS, NAV_ITEMS } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import { CompanySwitcher } from "@/components/layout/company-switcher";
 import { IvaanLogo } from "@/components/layout/ivaan-logo";
+import { NotificationBell } from "@/components/layout/notification-bell";
 import { SignOutButton } from "@/components/layout/sign-out-button";
 import { LearningBanner } from "@/components/learning/learning-banner";
 import { LearningFirstLoginPrompt } from "@/components/learning/learning-first-login-prompt";
@@ -116,7 +117,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <NavMenuButton onClick={() => setDrawerOpen(true)} />
               <BrandBlock compact />
             </div>
-            <SignOutButton compact />
+            <div className="flex items-center gap-2">
+              <NotificationBell />
+              <SignOutButton compact />
+            </div>
           </div>
           {showCompanySwitcher ? (
             <div className="mt-2">
@@ -132,6 +136,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           <div className="flex shrink-0 items-center gap-3">
             {showCompanySwitcher ? <CompanySwitcher /> : null}
+            <NotificationBell />
             <div className="hidden text-right md:block">
               <p className="text-sm font-medium text-slate-900">{session?.user?.name}</p>
               <p className="text-xs text-slate-500">{roles.join(", ")}</p>

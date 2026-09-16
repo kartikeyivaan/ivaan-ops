@@ -21,6 +21,7 @@ import {
 } from "@/lib/inventory";
 import { getWarehouseStockForProduct } from "@/lib/inventory-service";
 import { MANUAL_STOCK_SOURCE } from "@/lib/manual-stock-constants";
+import { assertSerialsClearForNewCycle } from "@/lib/serial-lifecycle";
 
 type Tx = Prisma.TransactionClient;
 
@@ -180,6 +181,7 @@ export async function createManualStockIn(
     reason: ManualStockReason;
     notes?: string | null;
     createdById: string;
+    acknowledgeProductMismatch?: boolean;
   },
 ) {
   const serials = normalizeSerialList(input.serialNumbers);
@@ -193,27 +195,11 @@ export async function createManualStockIn(
     const product = await loadProduct(tx, input.productId);
     if (!product.serialTracking) throw new Error("SERIAL_TRACKING_REQUIRED");
 
-    const existing = await tx.inventorySerial.findMany({
-      where: { serialNumber: { in: serials } },
-      include: {
-        lot: { select: { companyId: true } },
-      },
+    await assertSerialsClearForNewCycle(tx, {
+      serialNumbers: serials,
+      incomingProductId: input.productId,
+      acknowledgeProductMismatch: input.acknowledgeProductMismatch,
     });
-    const byNumber = new Map(existing.map((row) => [row.serialNumber, row]));
-
-    for (const serialNumber of serials) {
-      const row = byNumber.get(serialNumber);
-      if (!row) continue;
-      if (row.status !== SerialStatus.REMOVED) {
-        throw new Error(`SERIAL_NOT_REMOVABLE:${serialNumber}`);
-      }
-      if (row.productId !== input.productId) {
-        throw new Error(`SERIAL_PRODUCT_MISMATCH:${serialNumber}`);
-      }
-      if (row.lot.companyId !== input.companyId) {
-        throw new Error(`SERIAL_COMPANY_MISMATCH:${serialNumber}`);
-      }
-    }
 
     const lot = await ensureManualLot(tx, {
       companyId: input.companyId,
@@ -233,39 +219,21 @@ export async function createManualStockIn(
     }> = [];
 
     for (const serialNumber of serials) {
-      const existingRow = byNumber.get(serialNumber);
-      if (existingRow) {
-        const updated = await tx.inventorySerial.update({
-          where: { id: existingRow.id },
-          data: {
-            status: targetStatus,
-            currentWarehouseId: input.warehouseId,
-            lotId: lot.id,
-          },
-        });
-        lineData.push({
-          serialId: updated.id,
-          serialNumber: updated.serialNumber,
-          fromStatus: SerialStatus.REMOVED,
-          toStatus: targetStatus,
-        });
-      } else {
-        const created = await tx.inventorySerial.create({
-          data: {
-            lotId: lot.id,
-            productId: input.productId,
-            serialNumber,
-            status: targetStatus,
-            currentWarehouseId: input.warehouseId,
-          },
-        });
-        lineData.push({
-          serialId: created.id,
-          serialNumber: created.serialNumber,
-          fromStatus: null,
-          toStatus: targetStatus,
-        });
-      }
+      const created = await tx.inventorySerial.create({
+        data: {
+          lotId: lot.id,
+          productId: input.productId,
+          serialNumber,
+          status: targetStatus,
+          currentWarehouseId: input.warehouseId,
+        },
+      });
+      lineData.push({
+        serialId: created.id,
+        serialNumber: created.serialNumber,
+        fromStatus: null,
+        toStatus: targetStatus,
+      });
     }
 
     const entryNumber = await generateManualStockEntryNumber(tx, effectiveDate);
@@ -368,7 +336,10 @@ export async function createManualStockOut(
     if (!product.serialTracking) throw new Error("SERIAL_TRACKING_REQUIRED");
 
     const rows = await tx.inventorySerial.findMany({
-      where: { serialNumber: { in: serials } },
+      where: {
+        serialNumber: { in: serials },
+        status: { in: [SerialStatus.AVAILABLE, SerialStatus.DAMAGED] },
+      },
       include: { lot: { select: { companyId: true } } },
     });
     const byNumber = new Map(rows.map((row) => [row.serialNumber, row]));
@@ -510,7 +481,10 @@ export async function createManualConditionChange(
     if (!product.serialTracking) throw new Error("SERIAL_TRACKING_REQUIRED");
 
     const rows = await tx.inventorySerial.findMany({
-      where: { serialNumber: { in: serials } },
+      where: {
+        serialNumber: { in: serials },
+        status: { in: [SerialStatus.AVAILABLE, SerialStatus.DAMAGED] },
+      },
       include: { lot: { select: { companyId: true } } },
     });
     const byNumber = new Map(rows.map((row) => [row.serialNumber, row]));

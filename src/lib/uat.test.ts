@@ -25,6 +25,14 @@ describe("UAT — navigation matrix", () => {
     }
   });
 
+  it("allows all roles to access tasks", () => {
+    const tasks = NAV_ITEMS.find((item) => item.href === "/tasks")!;
+    expect(tasks).toBeTruthy();
+    for (const role of ALL_ROLES) {
+      expect(canAccessNav([role], tasks)).toBe(true);
+    }
+  });
+
   it("blocks purchase from sales pipeline and dispatch nav", () => {
     for (const href of restrictedForPurchase) {
       const item = NAV_ITEMS.find((nav) => nav.href === href)!;

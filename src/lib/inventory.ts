@@ -122,6 +122,18 @@ export function decimalToNumber(value: { toNumber(): number } | number | string)
   return value.toNumber();
 }
 
+export function lotHasInwardActivity(lot: {
+  status: string;
+  receivedQuantity: { toNumber(): number } | number | string;
+  damagedQuantity: { toNumber(): number } | number | string;
+}): boolean {
+  return (
+    lot.status === "CLOSED" ||
+    decimalToNumber(lot.receivedQuantity) > 0 ||
+    decimalToNumber(lot.damagedQuantity) > 0
+  );
+}
+
 export function calculateTotalPurchaseCost(input: {
   quantity: number;
   unitPurchaseRate: number;

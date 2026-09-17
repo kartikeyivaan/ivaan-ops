@@ -26,6 +26,7 @@ import {
   isValidInwardSerialFormat,
   isWaareeBrand,
   isWaareePanelSerial,
+  lotHasInwardActivity,
   normalizePurchaseInvoiceNo,
   normalizeSerialNumber,
   parseSerialInput,
@@ -38,6 +39,37 @@ describe("inventory helpers", () => {
   it("computes financial year from date", () => {
     expect(getFinancialYear(new Date("2025-06-01"))).toBe("25-26");
     expect(getFinancialYear(new Date("2025-02-01"))).toBe("24-25");
+  });
+
+  it("treats closed or received lots as inwarded", () => {
+    expect(
+      lotHasInwardActivity({
+        status: LotStatus.CLOSED,
+        receivedQuantity: 0,
+        damagedQuantity: 0,
+      }),
+    ).toBe(true);
+    expect(
+      lotHasInwardActivity({
+        status: LotStatus.INCOMING,
+        receivedQuantity: 2,
+        damagedQuantity: 0,
+      }),
+    ).toBe(true);
+    expect(
+      lotHasInwardActivity({
+        status: LotStatus.INCOMING,
+        receivedQuantity: 0,
+        damagedQuantity: 1,
+      }),
+    ).toBe(true);
+    expect(
+      lotHasInwardActivity({
+        status: LotStatus.INCOMING,
+        receivedQuantity: 0,
+        damagedQuantity: 0,
+      }),
+    ).toBe(false);
   });
 
   it("normalizes serial numbers", () => {
@@ -304,6 +336,12 @@ describe("inventory permissions", () => {
   it("allows sales to view inventory but not serials", () => {
     expect(canViewInventory([ROLES.SALES_EXECUTIVE])).toBe(true);
     expect(canViewSerialNumbers([ROLES.SALES_EXECUTIVE])).toBe(false);
+  });
+
+  it("allows accounts to view inventory but not inward material", () => {
+    expect(canViewInventory([ROLES.ACCOUNTS])).toBe(true);
+    expect(canInwardMaterial([ROLES.ACCOUNTS])).toBe(false);
+    expect(canViewSerialNumbers([ROLES.ACCOUNTS])).toBe(false);
   });
 
   it("allows documentation executive to check QR history but not other serial views", () => {

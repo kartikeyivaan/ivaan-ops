@@ -260,12 +260,40 @@ export async function listStockSummary(
 export async function listIncomingLots(
   prisma: PrismaClient,
   companyId: string,
-  filters: { status?: LotStatus; warehouseId?: string } & ListPaginationInput,
+  filters: {
+    status?: LotStatus;
+    warehouseId?: string;
+    q?: string;
+    inwardedOnly?: boolean;
+  } & ListPaginationInput,
 ): Promise<PaginatedList<InventoryLotRecord>> {
+  const q = filters.q?.trim();
   const where: Prisma.InventoryLotWhereInput = {
     companyId,
-    ...(filters.status ? { status: filters.status } : {}),
     ...(filters.warehouseId ? { warehouseId: filters.warehouseId } : {}),
+    AND: [
+      filters.inwardedOnly
+        ? {
+            OR: [
+              { status: LotStatus.CLOSED },
+              { receivedQuantity: { gt: 0 } },
+              { damagedQuantity: { gt: 0 } },
+            ],
+          }
+        : filters.status
+          ? { status: filters.status }
+          : {},
+      q
+        ? {
+            OR: [
+              { lotNumber: { contains: q, mode: "insensitive" } },
+              { purchaseInvoiceNo: { contains: q, mode: "insensitive" } },
+              { vendor: { vendorName: { contains: q, mode: "insensitive" } } },
+              { product: { displayName: { contains: q, mode: "insensitive" } } },
+            ],
+          }
+        : {},
+    ],
   };
 
   const { page, pageSize, skip, take, unpaged } = resolveListPagination(filters);
@@ -275,7 +303,7 @@ export async function listIncomingLots(
     prisma.inventoryLot.findMany({
       where,
       include: lotListInclude,
-      orderBy: { createdAt: "desc" },
+      orderBy: filters.inwardedOnly ? { updatedAt: "desc" } : { createdAt: "desc" },
       ...(unpaged ? {} : { skip, take }),
     }),
   ]);

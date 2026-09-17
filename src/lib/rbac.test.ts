@@ -33,4 +33,13 @@ describe("rbac", () => {
     expect(canAccessNav([ROLES.DOCUMENTATION_EXECUTIVE], qrHistoryNav!)).toBe(true);
     expect(canAccessNav([ROLES.SALES_EXECUTIVE], qrHistoryNav!)).toBe(false);
   });
+
+  it("allows accounts to open inwarded lots", () => {
+    const inwardedLotsNav = NAV_ITEMS.find((item) => item.href === "/accounts/inwarded-lots");
+    expect(inwardedLotsNav).toBeDefined();
+    expect(canAccessNav([ROLES.ACCOUNTS], inwardedLotsNav!)).toBe(true);
+    expect(canAccessNav([ROLES.SUPER_ADMIN], inwardedLotsNav!)).toBe(true);
+    expect(canAccessNav([ROLES.WAREHOUSE], inwardedLotsNav!)).toBe(false);
+    expect(canAccessNav([ROLES.SALES_EXECUTIVE], inwardedLotsNav!)).toBe(false);
+  });
 });

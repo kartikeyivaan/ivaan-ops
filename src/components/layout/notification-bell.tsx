@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import Link from "next/link";
 import { Bell } from "lucide-react";
 import {
@@ -9,43 +9,28 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  getNotificationsInboxServerSnapshot,
+  getNotificationsInboxSnapshot,
+  markNotificationRead,
+  refreshNotificationsInbox,
+  subscribeNotificationsInbox,
+} from "@/lib/notifications-inbox";
 import { formatDate } from "@/lib/utils";
 
-type NotificationItem = {
-  id: string;
-  title: string;
-  message: string;
-  href: string | null;
-  isRead: boolean;
-  createdAt: string;
-};
-
 export function NotificationBell() {
-  const [items, setItems] = useState<NotificationItem[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
-
-  async function load() {
-    const response = await fetch("/api/notifications");
-    if (!response.ok) return;
-    const payload = await response.json();
-    setItems(payload.items ?? []);
-    setUnreadCount(payload.unreadCount ?? 0);
-  }
-
-  useEffect(() => {
-    void load();
-    const timer = window.setInterval(() => void load(), 60000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  async function markRead(id: string, href?: string | null) {
-    await fetch(`/api/notifications/${id}/read`, { method: "PATCH" });
-    await load();
-    return href;
-  }
+  const { items, unreadCount } = useSyncExternalStore(
+    subscribeNotificationsInbox,
+    getNotificationsInboxSnapshot,
+    getNotificationsInboxServerSnapshot,
+  );
 
   return (
-    <DropdownMenu>
+    <DropdownMenu
+      onOpenChange={(open) => {
+        if (open) void refreshNotificationsInbox({ list: true, force: true });
+      }}
+    >
       <DropdownMenuTrigger asChild>
         <button
           type="button"
@@ -72,7 +57,7 @@ export function NotificationBell() {
               <DropdownMenuItem key={item.id} className="items-start p-0">
                 <Link
                   href={item.href || "/tasks"}
-                  onClick={() => void markRead(item.id, item.href)}
+                  onClick={() => void markNotificationRead(item.id)}
                   className={`block w-full px-3 py-2 ${item.isRead ? "bg-white" : "bg-emerald-50"}`}
                 >
                   <p className="text-sm font-medium text-slate-900">{item.title}</p>

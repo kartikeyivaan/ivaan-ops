@@ -298,6 +298,12 @@ export const NAV_ITEMS: NavItem[] = [
     roles: [ROLES.SUPER_ADMIN, ROLES.ACCOUNTS],
   },
   {
+    label: "Inwarded Lots",
+    href: "/accounts/inwarded-lots",
+    group: "Accounts",
+    roles: [ROLES.SUPER_ADMIN, ROLES.ACCOUNTS],
+  },
+  {
     label: "Documentation",
     href: "/documentation",
     group: "Accounts",

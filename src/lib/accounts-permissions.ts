@@ -13,3 +13,7 @@ export function canViewPiPayments(roles: string[]) {
 export function canViewAccountsStockTransfers(roles: string[]) {
   return hasRole(roles, [...ACCOUNT_ROLES]);
 }
+
+export function canViewInwardedLots(roles: string[]) {
+  return hasRole(roles, [...ACCOUNT_ROLES]);
+}

@@ -1,6 +1,7 @@
 import * as XLSX from "xlsx";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { canViewInwardedLots } from "@/lib/accounts-permissions";
 import {
   canViewInventory,
   canViewSerialNumbers,
@@ -31,7 +32,10 @@ export async function GET(_request: Request, context: RouteContext) {
   if (!session?.user || !canViewInventory(session.user.roles)) {
     return errorResponse("FORBIDDEN", "You do not have permission for this action.", 403);
   }
-  if (!canViewSerialNumbers(session.user.roles)) {
+  if (
+    !canViewSerialNumbers(session.user.roles) &&
+    !canViewInwardedLots(session.user.roles)
+  ) {
     return errorResponse("FORBIDDEN", "You do not have permission to view serial numbers.", 403);
   }
 

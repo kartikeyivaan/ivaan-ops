@@ -174,6 +174,12 @@ export const NAV_ITEMS: NavItem[] = [
     ],
   },
   {
+    label: "Inwarded Lots",
+    href: "/accounts/inwarded-lots",
+    group: "Inventory",
+    roles: [ROLES.SUPER_ADMIN, ROLES.ACCOUNTS],
+  },
+  {
     label: "Product In / Out",
     href: "/inventory/product-movements",
     group: "Inventory",

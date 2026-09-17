@@ -46,7 +46,7 @@ function NavLinks({
                 pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (
                 <Link
-                  key={item.href}
+                  key={`${item.group}:${item.href}`}
                   href={item.href}
                   prefetch={false}
                   onClick={onNavigate}

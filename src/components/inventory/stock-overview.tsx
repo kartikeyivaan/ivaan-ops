@@ -12,6 +12,7 @@ import {
   PackagePlus,
   QrCode,
   PackageSearch,
+  History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,6 +37,7 @@ export function StockOverview({
   canReceiveIncoming,
   canViewDamaged,
   canManualStock,
+  canViewInwardedLots = false,
 }: {
   initialStock: ProductStockSummary[];
   warehouses: Warehouse[];
@@ -43,6 +45,7 @@ export function StockOverview({
   canReceiveIncoming: boolean;
   canViewDamaged?: boolean;
   canManualStock?: boolean;
+  canViewInwardedLots?: boolean;
 }) {
   const [stock, setStock] = useState(initialStock);
   const [q, setQ] = useState("");
@@ -88,6 +91,14 @@ export function StockOverview({
               <Link href="/inventory/incoming">
                 <Truck className="mr-2 h-4 w-4" />
                 Receive Incoming
+              </Link>
+            </Button>
+          ) : null}
+          {canViewInwardedLots ? (
+            <Button variant={canReceiveIncoming ? "outline" : "default"} asChild>
+              <Link href="/accounts/inwarded-lots">
+                <History className="mr-2 h-4 w-4" />
+                Inwarded Lots
               </Link>
             </Button>
           ) : null}

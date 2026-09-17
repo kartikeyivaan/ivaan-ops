@@ -134,10 +134,10 @@ async function fetchList() {
   return listInFlight;
 }
 
-export async function refreshNotificationsInbox(options?: {
+export async function refreshNotificationsInbox(options: {
   list?: boolean;
   force?: boolean;
-}) {
+} = {}) {
   const visible = isDocumentVisible();
 
   if (options?.list) {

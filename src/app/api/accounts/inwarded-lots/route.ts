@@ -4,10 +4,22 @@ import { canViewInwardedLots } from "@/lib/accounts-permissions";
 import { listIncomingLots, serializeLotForRole } from "@/lib/inventory-service";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
-import { inventorySearchSchema } from "@/lib/validations";
+import { inwardedLotsSearchSchema } from "@/lib/validations";
 
 function errorResponse(code: string, message: string, status: number, details?: unknown) {
   return NextResponse.json({ code, message, details }, { status });
+}
+
+function startOfUtcDay(value?: string): Date | undefined {
+  if (!value) return undefined;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+function endOfUtcDay(value?: string): Date | undefined {
+  if (!value) return undefined;
+  const date = new Date(`${value}T23:59:59.999Z`);
+  return Number.isNaN(date.getTime()) ? undefined : date;
 }
 
 export async function GET(request: Request) {
@@ -24,8 +36,11 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const parsed = inventorySearchSchema.safeParse({
+  const parsed = inwardedLotsSearchSchema.safeParse({
     q: searchParams.get("q") ?? undefined,
+    dateFrom: searchParams.get("dateFrom") || undefined,
+    dateTo: searchParams.get("dateTo") || undefined,
+    includeInternalTransfers: searchParams.get("includeInternalTransfers") ?? undefined,
     page: searchParams.get("page") ?? undefined,
     pageSize: searchParams.get("pageSize") ?? undefined,
   });
@@ -39,6 +54,9 @@ export async function GET(request: Request) {
     page: parsed.data.page,
     pageSize: parsed.data.pageSize,
     inwardedOnly: true,
+    excludeInternalTransfers: !parsed.data.includeInternalTransfers,
+    receivedFrom: startOfUtcDay(parsed.data.dateFrom || undefined),
+    receivedTo: endOfUtcDay(parsed.data.dateTo || undefined),
   });
 
   return NextResponse.json({

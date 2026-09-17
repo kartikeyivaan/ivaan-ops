@@ -23,6 +23,7 @@ import {
   classifyInwardSerials,
   findDuplicateSerialKeys,
   getFinancialYear,
+  isInternalTransferLot,
   isValidInwardSerialFormat,
   isWaareeBrand,
   isWaareePanelSerial,
@@ -70,6 +71,14 @@ describe("inventory helpers", () => {
         damagedQuantity: 0,
       }),
     ).toBe(false);
+  });
+
+  it("identifies internal transfer lots and keeps MSE/OSA system lots", () => {
+    expect(isInternalTransferLot("SYS-LOT-25-26-00001")).toBe(true);
+    expect(isInternalTransferLot("sys-lot-25-26-00001")).toBe(true);
+    expect(isInternalTransferLot("SYS-LOT-25-26-00001-MSE")).toBe(false);
+    expect(isInternalTransferLot("SYS-LOT-25-26-00001-OSA")).toBe(false);
+    expect(isInternalTransferLot("INV-123")).toBe(false);
   });
 
   it("normalizes serial numbers", () => {

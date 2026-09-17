@@ -457,6 +457,25 @@ export const inventorySearchSchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(200).default(50),
 });
 
+const optionalIsoDate = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD")
+  .optional()
+  .or(z.literal(""));
+
+export const inwardedLotsSearchSchema = z.object({
+  q: z.string().optional(),
+  dateFrom: optionalIsoDate,
+  dateTo: optionalIsoDate,
+  includeInternalTransfers: z
+    .union([z.literal("true"), z.literal("false"), z.boolean()])
+    .optional()
+    .transform((value) => value === true || value === "true"),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(200).default(50),
+});
+
 export const transferLineSchema = z.object({
   productId: z.string().uuid(),
   qty: z.coerce.number().positive(),

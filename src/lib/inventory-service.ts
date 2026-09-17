@@ -257,6 +257,31 @@ export async function listStockSummary(
   return summaries;
 }
 
+function internalTransferLotWhere(): Prisma.InventoryLotWhereInput {
+  return {
+    AND: [
+      { purchaseInvoiceNo: { startsWith: "SYS-", mode: "insensitive" } },
+      { NOT: { purchaseInvoiceNo: { endsWith: "-MSE", mode: "insensitive" } } },
+      { NOT: { purchaseInvoiceNo: { endsWith: "-OSA", mode: "insensitive" } } },
+    ],
+  };
+}
+
+function receivedDateWhere(receivedFrom?: Date, receivedTo?: Date): Prisma.InventoryLotWhereInput {
+  if (!receivedFrom && !receivedTo) return {};
+  return {
+    transactions: {
+      some: {
+        transactionType: InventoryTransactionType.INWARD,
+        createdAt: {
+          ...(receivedFrom ? { gte: receivedFrom } : {}),
+          ...(receivedTo ? { lte: receivedTo } : {}),
+        },
+      },
+    },
+  };
+}
+
 export async function listIncomingLots(
   prisma: PrismaClient,
   companyId: string,
@@ -265,6 +290,9 @@ export async function listIncomingLots(
     warehouseId?: string;
     q?: string;
     inwardedOnly?: boolean;
+    excludeInternalTransfers?: boolean;
+    receivedFrom?: Date;
+    receivedTo?: Date;
   } & ListPaginationInput,
 ): Promise<PaginatedList<InventoryLotRecord>> {
   const q = filters.q?.trim();
@@ -293,6 +321,8 @@ export async function listIncomingLots(
             ],
           }
         : {},
+      filters.excludeInternalTransfers ? { NOT: internalTransferLotWhere() } : {},
+      receivedDateWhere(filters.receivedFrom, filters.receivedTo),
     ],
   };
 

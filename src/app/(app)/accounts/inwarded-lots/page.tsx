@@ -14,6 +14,7 @@ export default async function AccountsInwardedLotsPage() {
 
   const lotsPage = await listIncomingLots(prisma, requireActiveCompany(session), {
     inwardedOnly: true,
+    excludeInternalTransfers: true,
     page: 1,
     pageSize: 50,
   });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import { parseApiJson } from "@/lib/api-response";
 import { InwardedLotDetailDialog } from "@/components/accounts/inwarded-lot-detail-dialog";
@@ -45,13 +45,22 @@ export function AccountsInwardedLotsList({
 }) {
   const [q, setQ] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [showInternalTransfers, setShowInternalTransfers] = useState(false);
   const [lots, setLots] = useState(initialLots);
   const [total, setTotal] = useState(initialTotal);
   const [page, setPage] = useState(initialPage);
   const [pageSize] = useState(initialPageSize);
   const [loading, setLoading] = useState(false);
   const [selectedLotId, setSelectedLotId] = useState<string | null>(null);
-  const skipSearchFetch = useRef(true);
+  const skipFirstFetch = useRef(true);
+  const filterSignature = `${debouncedQ}|${dateFrom}|${dateTo}|${Number(showInternalTransfers)}`;
+  const [pageForFilters, setPageForFilters] = useState(filterSignature);
+  if (pageForFilters !== filterSignature) {
+    setPageForFilters(filterSignature);
+    setPage(1);
+  }
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQ(q.trim()), 350);
@@ -64,44 +73,74 @@ export function AccountsInwardedLotsList({
     setPage(initialPage);
   }, [initialLots, initialTotal, initialPage]);
 
+  const queryString = useMemo(() => {
+    const params = new URLSearchParams();
+    if (debouncedQ) params.set("q", debouncedQ);
+    if (dateFrom) params.set("dateFrom", dateFrom);
+    if (dateTo) params.set("dateTo", dateTo);
+    if (showInternalTransfers) params.set("includeInternalTransfers", "true");
+    params.set("page", String(page));
+    params.set("pageSize", String(pageSize));
+    return params.toString();
+  }, [debouncedQ, dateFrom, dateTo, showInternalTransfers, page, pageSize]);
+
   useEffect(() => {
-    if (skipSearchFetch.current) {
-      skipSearchFetch.current = false;
+    if (skipFirstFetch.current) {
+      skipFirstFetch.current = false;
       return;
     }
-    void refreshLots(1, debouncedQ);
-    // Search changes reload from page 1; pagination calls refreshLots directly.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedQ]);
 
-  async function refreshLots(nextPage = page, search = debouncedQ) {
-    setLoading(true);
-    const params = new URLSearchParams();
-    if (search) params.set("q", search);
-    params.set("page", String(nextPage));
-    params.set("pageSize", String(pageSize));
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      try {
+        const response = await fetch(`/api/accounts/inwarded-lots?${queryString}`);
+        if (cancelled) return;
+        if (!response.ok) return;
 
-    const response = await fetch(`/api/accounts/inwarded-lots?${params.toString()}`);
-    setLoading(false);
-    if (!response.ok) return;
+        const data = await parseApiJson<InwardedLotsPage>(response);
+        const items = data.items ?? [];
+        setLots(items);
+        setTotal(data.total ?? items.length);
+        if (data.page) setPage(data.page);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
 
-    const data = await parseApiJson<InwardedLotsPage>(response);
-    const items = data.items ?? [];
-    setLots(items);
-    setTotal(data.total ?? items.length);
-    setPage(data.page ?? nextPage);
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [queryString]);
+
+  function clearDates() {
+    setDateFrom("");
+    setDateTo("");
   }
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Inwarded Lots</h1>
-        <p className="text-sm text-slate-600">
-          Purchase lots received into inventory, with invoice, cost, quantity and serial details.
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900">Inwarded Lots</h1>
+          <p className="text-sm text-slate-600">
+            External purchase lots received into inventory. Internal stock transfers stay hidden
+            unless you turn them on.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant={showInternalTransfers ? "default" : "outline"}
+          onClick={() => setShowInternalTransfers((current) => !current)}
+        >
+          {showInternalTransfers
+            ? "Hide internal transfer"
+            : "Show internal transfer as well"}
+        </Button>
       </div>
 
-      <CollapsibleFilterCard contentClassName="grid gap-4 md:grid-cols-3">
+      <CollapsibleFilterCard contentClassName="grid gap-4 md:grid-cols-4">
         <div className="space-y-2 md:col-span-2">
           <Label htmlFor="inwarded-lot-search">Search</Label>
           <div className="relative">
@@ -114,6 +153,33 @@ export function AccountsInwardedLotsList({
               onChange={(event) => setQ(event.target.value)}
             />
           </div>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="inwarded-lot-from">Received from</Label>
+          <Input
+            id="inwarded-lot-from"
+            type="date"
+            value={dateFrom}
+            onChange={(event) => setDateFrom(event.target.value)}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="inwarded-lot-to">Received to</Label>
+          <Input
+            id="inwarded-lot-to"
+            type="date"
+            value={dateTo}
+            min={dateFrom || undefined}
+            onChange={(event) => setDateTo(event.target.value)}
+          />
+        </div>
+        <div className="flex flex-wrap items-end gap-2 md:col-span-4">
+          <Button type="button" variant="outline" onClick={clearDates} disabled={!dateFrom && !dateTo}>
+            Clear dates
+          </Button>
+          <p className="text-sm text-slate-500">
+            {loading ? "Loading…" : `Showing ${lots.length} of ${total} lot${total === 1 ? "" : "s"}`}
+          </p>
         </div>
       </CollapsibleFilterCard>
 
@@ -164,7 +230,9 @@ export function AccountsInwardedLotsList({
                       <div className="text-xs text-slate-500">{lot.company.code}</div>
                     </TableCell>
                     <TableCell className="align-top">
-                      <div>{Number(lot.receivedQuantity)} / {Number(lot.quantity)}</div>
+                      <div>
+                        {Number(lot.receivedQuantity)} / {Number(lot.quantity)}
+                      </div>
                       {Number(lot.damagedQuantity) > 0 ? (
                         <div className="text-xs text-amber-700">
                           Damaged {Number(lot.damagedQuantity)}
@@ -208,10 +276,7 @@ export function AccountsInwardedLotsList({
               pageSize={pageSize}
               total={total}
               loading={loading}
-              onPageChange={(nextPage) => {
-                setPage(nextPage);
-                void refreshLots(nextPage);
-              }}
+              onPageChange={(nextPage) => setPage(nextPage)}
             />
           </div>
         </CardContent>

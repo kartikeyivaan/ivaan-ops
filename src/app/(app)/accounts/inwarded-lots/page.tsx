@@ -12,16 +12,36 @@ export default async function AccountsInwardedLotsPage() {
     redirect("/dashboard");
   }
 
-  const lotsPage = await listIncomingLots(prisma, requireActiveCompany(session), {
-    inwardedOnly: true,
-    excludeInternalTransfers: true,
-    page: 1,
-    pageSize: 50,
-  });
+  let companyId: string;
+  try {
+    companyId = requireActiveCompany(session);
+  } catch {
+    redirect("/select-company");
+  }
 
-  const sanitizedLots = JSON.parse(
-    JSON.stringify(lotsPage.items.map((lot) => serializeLotForRole(lot, false))),
-  ) as ReturnType<typeof serializeLotForRole>[];
+  let lotsPage: Awaited<ReturnType<typeof listIncomingLots>>;
+  try {
+    lotsPage = await listIncomingLots(prisma, companyId, {
+      inwardedOnly: true,
+      excludeInternalTransfers: true,
+      page: 1,
+      pageSize: 50,
+    });
+  } catch (error) {
+    console.error("[inwarded-lots] list failed", error);
+    lotsPage = { items: [], total: 0, page: 1, pageSize: 50 };
+  }
+
+  const sanitizedLots = lotsPage.items.flatMap((lot) => {
+    try {
+      return [JSON.parse(JSON.stringify(serializeLotForRole(lot, false)))] as ReturnType<
+        typeof serializeLotForRole
+      >[];
+    } catch (error) {
+      console.error("[inwarded-lots] serialize failed", lot.id, error);
+      return [];
+    }
+  });
 
   return (
     <AccountsInwardedLotsList

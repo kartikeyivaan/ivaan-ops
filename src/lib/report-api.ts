@@ -3,7 +3,7 @@ import type { Session } from "next-auth";
 import type { PrismaClient } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { buildExcelBuffer, exportFilename, type ExportColumn } from "@/lib/report-export";
-import { generateTabularReportPdf, type PdfColumn } from "@/lib/report-pdf";
+import type { PdfColumn } from "@/lib/report-pdf";
 import { operationalCompanies } from "@/lib/learning/mode";
 import { isSuperAdmin } from "@/lib/rbac";
 import { restrictSalesUserId, restrictSalesUserIds } from "@/lib/report-permissions";
@@ -140,18 +140,21 @@ export function respondWithReport<T extends Record<string, unknown>>(input: {
   }
 
   if (input.format === "pdf") {
-    return generateTabularReportPdf({
-      title: input.title,
-      subtitle: input.subtitle,
-      columns: input.pdfColumns,
-      rows: input.rows.map(input.toPdfRow),
-    }).then((buffer) =>
-      new NextResponse(new Uint8Array(buffer), {
-        headers: {
-          "Content-Type": "application/pdf",
-          "Content-Disposition": `inline; filename="${exportFilename(input.reportKey, "pdf")}"`,
-        },
-      }),
+    return import("@/lib/report-pdf").then(({ generateTabularReportPdf }) =>
+      generateTabularReportPdf({
+        title: input.title,
+        subtitle: input.subtitle,
+        columns: input.pdfColumns,
+        rows: input.rows.map(input.toPdfRow),
+      }).then(
+        (buffer) =>
+          new NextResponse(new Uint8Array(buffer), {
+            headers: {
+              "Content-Type": "application/pdf",
+              "Content-Disposition": `inline; filename="${exportFilename(input.reportKey, "pdf")}"`,
+            },
+          }),
+      ),
     );
   }
 

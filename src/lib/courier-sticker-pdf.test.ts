@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  courierStickerContentVersion,
+  courierStickerPdfVariant,
+} from "@/lib/courier-sticker-cache";
+import {
   formatCourierFromAddressLines,
   generateCourierStickerPdf,
   resolveCourierRecipient,
@@ -46,6 +50,61 @@ describe("formatCourierFromAddressLines", () => {
     ]);
   });
 });
+const stickerCustomer = {
+  customerName: "Patil Enterprises",
+  contactPersonName: "Rahul Patil",
+  address: "12, Shivaji Nagar\nNear Bus Stand",
+  city: "Jalgaon",
+  state: "Maharashtra",
+  pinCode: "425001",
+  mobile: "9876543210",
+};
+
+describe("courier sticker stored PDF keys", () => {
+  it("returns the same variant and contentVersion for identical sticker inputs", () => {
+    const input = {
+      updatedAt: "2026-09-20T10:00:00.000Z",
+      dcNo: "ISE-DC-26-27-00062",
+      invoiceNumber: "INV-1",
+      boxCount: 3,
+      customer: stickerCustomer,
+    };
+
+    expect(courierStickerPdfVariant(input.boxCount, input.customer, input.invoiceNumber)).toBe(
+      courierStickerPdfVariant(3, { ...stickerCustomer }, "INV-1"),
+    );
+    expect(courierStickerContentVersion(input)).toBe(
+      courierStickerContentVersion({ ...input, customer: { ...stickerCustomer } }),
+    );
+    expect(courierStickerPdfVariant(3, stickerCustomer, "INV-1")).toMatch(
+      /^courier-sticker:3:[0-9a-f]{16}$/,
+    );
+  });
+
+  it("changes variant when box count or printed address changes", () => {
+    const variant = courierStickerPdfVariant(3, stickerCustomer, "INV-1");
+    expect(courierStickerPdfVariant(4, stickerCustomer, "INV-1")).not.toBe(variant);
+    expect(
+      courierStickerPdfVariant(3, { ...stickerCustomer, address: "Other street" }, "INV-1"),
+    ).not.toBe(variant);
+    expect(courierStickerContentVersion({
+      updatedAt: "2026-09-20T10:00:00.000Z",
+      dcNo: "ISE-DC-26-27-00062",
+      invoiceNumber: "INV-1",
+      boxCount: 3,
+      customer: stickerCustomer,
+    })).not.toBe(
+      courierStickerContentVersion({
+        updatedAt: "2026-09-20T10:00:00.000Z",
+        dcNo: "ISE-DC-26-27-00062",
+        invoiceNumber: "INV-1",
+        boxCount: 4,
+        customer: stickerCustomer,
+      }),
+    );
+  });
+});
+
 describe("generateCourierStickerPdf", () => {
   it("builds a multi-page A4 PDF for 10 boxes (8 + 2)", async () => {
     const pdf = await generateCourierStickerPdf({

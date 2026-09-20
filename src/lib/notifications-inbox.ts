@@ -1,4 +1,4 @@
-export const NOTIFICATIONS_POLL_MS = 60_000;
+export const NOTIFICATIONS_POLL_MS = 300_000;
 export const NOTIFICATIONS_MIN_GAP_MS = 15_000;
 
 export type NotificationItem = {

@@ -15,6 +15,10 @@ function isPractice(company: SessionCompany | undefined): boolean {
   return Boolean(company.isPractice) || company.code === PRACTICE_COMPANY_CODE;
 }
 
+function asCompanies(value: unknown): SessionCompany[] {
+  return Array.isArray(value) ? (value as SessionCompany[]) : [];
+}
+
 export const authConfig = {
   trustHost: true,
   session: {
@@ -53,7 +57,7 @@ export const authConfig = {
         }
 
         if (session.activeCompanyId) {
-          const companies = (token.companies as SessionCompany[]) ?? [];
+          const companies = asCompanies(token.companies);
           const companyIds = companies.map((c) => c.id);
           if (
             session.activeCompanyId === ALL_COMPANIES_ID ||
@@ -69,9 +73,11 @@ export const authConfig = {
         }
       }
 
+      token.companies = asCompanies(token.companies);
+
       // Safety: never stay on Practice without Learning Mode.
       if (!token.learningMode) {
-        const companies = (token.companies as SessionCompany[]) ?? [];
+        const companies = asCompanies(token.companies);
         if (!isAllCompaniesScope(token.activeCompanyId as string | null)) {
           const active = companies.find((c) => c.id === token.activeCompanyId);
           if (isPractice(active)) {
@@ -89,8 +95,8 @@ export const authConfig = {
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string;
-        session.user.roles = token.roles as string[];
-        session.user.companies = (token.companies as SessionCompany[]) ?? [];
+        session.user.roles = Array.isArray(token.roles) ? (token.roles as string[]) : [];
+        session.user.companies = asCompanies(token.companies);
         session.user.activeCompanyId = token.activeCompanyId as string | null;
 
         const requirement = getPasswordChangeRequirement({

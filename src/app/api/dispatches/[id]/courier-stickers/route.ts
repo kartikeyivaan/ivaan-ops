@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
+import {
+  courierStickerContentVersion,
+  courierStickerPdfVariant,
+} from "@/lib/courier-sticker-cache";
 import { COURIER_STICKER_MAX_BOXES } from "@/lib/courier-sticker-constants";
 import {
   generateCourierStickerPdf,
@@ -8,6 +12,7 @@ import {
 } from "@/lib/courier-sticker-pdf";
 import { canViewDispatches } from "@/lib/dispatch-permissions";
 import { getDispatchRecord } from "@/lib/dispatch-service";
+import { resolveStoredPdf } from "@/lib/pdf-cache";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
 
@@ -69,12 +74,27 @@ async function buildCourierPdfResponse(
     select: { invoiceNumber: true },
   });
 
-  const pdf = await generateCourierStickerPdf({
-    dcNo: dispatch.dcNo,
-    invoiceNumber: handover?.invoiceNumber ?? null,
-    boxCount,
-    customer: customerFromOverride(dispatch.customer, toOverride),
-    company: dispatch.company,
+  const customer = customerFromOverride(dispatch.customer, toOverride);
+  const invoiceNumber = handover?.invoiceNumber ?? null;
+  const pdf = await resolveStoredPdf(prisma, {
+    documentType: "DISPATCH",
+    documentId: dispatch.id,
+    variant: courierStickerPdfVariant(boxCount, customer, invoiceNumber),
+    contentVersion: courierStickerContentVersion({
+      updatedAt: dispatch.updatedAt,
+      dcNo: dispatch.dcNo,
+      invoiceNumber,
+      boxCount,
+      customer,
+    }),
+    generate: () =>
+      generateCourierStickerPdf({
+        dcNo: dispatch.dcNo,
+        invoiceNumber,
+        boxCount,
+        customer,
+        company: dispatch.company,
+      }),
   });
 
   const safeDc = dispatch.dcNo.replace(/[^\w.-]+/g, "_");

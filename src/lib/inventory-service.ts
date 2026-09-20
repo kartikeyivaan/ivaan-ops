@@ -85,8 +85,8 @@ function serializeTimestampRecord<T extends { createdAt: Date; updatedAt: Date }
 ) {
   return {
     ...record,
-    createdAt: record.createdAt.toISOString(),
-    updatedAt: record.updatedAt.toISOString(),
+    createdAt: toIsoString(record.createdAt) ?? new Date(0).toISOString(),
+    updatedAt: toIsoString(record.updatedAt) ?? new Date(0).toISOString(),
   };
 }
 
@@ -1654,30 +1654,51 @@ export async function updateVendor(
   });
 }
 
+function toIsoString(value: Date | string | null | undefined): string | null {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function safeDecimalToNumber(value: unknown): number {
+  if (value == null) return 0;
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  if (typeof value === "object" && "toNumber" in value && typeof value.toNumber === "function") {
+    const parsed = value.toNumber();
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
 export function serializeLotForRole(
   lot: InventoryLotRecord,
   includeSerials: boolean,
 ) {
   const { transactions, serials, ...lotFields } = lot;
+  const inwardAt = transactions?.[0]?.createdAt;
   return {
     ...lotFields,
-    quantity: decimalToNumber(lot.quantity),
-    unitPurchaseRate: decimalToNumber(lot.unitPurchaseRate),
-    transportCharges: decimalToNumber(lot.transportCharges),
-    commissionCharges: decimalToNumber(lot.commissionCharges),
-    totalPurchaseCost: decimalToNumber(lot.totalPurchaseCost),
-    receivedQuantity: decimalToNumber(lot.receivedQuantity),
-    damagedQuantity: decimalToNumber(lot.damagedQuantity),
-    purchaseDate: lot.purchaseDate.toISOString(),
-    expectedMinDate: lot.expectedMinDate?.toISOString() ?? null,
-    expectedMaxDate: lot.expectedMaxDate?.toISOString() ?? null,
-    receivedAt: transactions[0]?.createdAt.toISOString() ?? null,
-    createdAt: lot.createdAt.toISOString(),
-    updatedAt: lot.updatedAt.toISOString(),
+    quantity: safeDecimalToNumber(lot.quantity),
+    unitPurchaseRate: safeDecimalToNumber(lot.unitPurchaseRate),
+    transportCharges: safeDecimalToNumber(lot.transportCharges),
+    commissionCharges: safeDecimalToNumber(lot.commissionCharges),
+    totalPurchaseCost: safeDecimalToNumber(lot.totalPurchaseCost),
+    receivedQuantity: safeDecimalToNumber(lot.receivedQuantity),
+    damagedQuantity: safeDecimalToNumber(lot.damagedQuantity),
+    purchaseDate: toIsoString(lot.purchaseDate) ?? new Date(0).toISOString(),
+    expectedMinDate: toIsoString(lot.expectedMinDate),
+    expectedMaxDate: toIsoString(lot.expectedMaxDate),
+    receivedAt: toIsoString(inwardAt),
+    createdAt: toIsoString(lot.createdAt) ?? new Date(0).toISOString(),
+    updatedAt: toIsoString(lot.updatedAt) ?? new Date(0).toISOString(),
     product: {
       ...serializeTimestampRecord(lot.product),
-      capacity: decimalToNumber(lot.product.capacity),
-      gstRate: decimalToNumber(lot.product.gstRate),
+      capacity: safeDecimalToNumber(lot.product.capacity),
+      gstRate: safeDecimalToNumber(lot.product.gstRate),
       category: serializeTimestampRecord(lot.product.category),
       brand: serializeTimestampRecord(lot.product.brand),
     },
@@ -1686,7 +1707,7 @@ export function serializeLotForRole(
     vendor: lot.vendor ? serializeTimestampRecord(lot.vendor) : null,
     createdBy: lot.createdBy,
     serials: includeSerials
-      ? serials.map((serial) => serializeTimestampRecord(serial))
+      ? (serials ?? []).map((serial) => serializeTimestampRecord(serial))
       : [],
   };
 }

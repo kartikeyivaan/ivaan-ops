@@ -20,7 +20,7 @@ export function getActiveSessionCompany(
 ): SessionCompany | null {
   if (!session?.user?.activeCompanyId) return null;
   return (
-    session.user.companies.find((c) => c.id === session.user.activeCompanyId) ??
+    (session.user.companies ?? []).find((c) => c.id === session.user.activeCompanyId) ??
     null
   );
 }

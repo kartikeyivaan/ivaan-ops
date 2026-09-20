@@ -34,6 +34,21 @@ export function formatBusinessMonthYear(value: string): string {
   }).format(new Date(`${value}T12:00:00.000Z`));
 }
 
+export function formatDashboardUpdatedAt(iso: string, now = new Date()): string {
+  const then = new Date(iso);
+  if (Number.isNaN(then.getTime())) return "";
+  const deltaMs = now.getTime() - then.getTime();
+  if (deltaMs >= 0 && deltaMs < 60_000) return "just now";
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(then);
+}
+
 export function getBusinessGreeting(asOf = new Date()): string {
   const hour = Number(
     new Intl.DateTimeFormat("en-IN", {

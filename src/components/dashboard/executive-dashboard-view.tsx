@@ -9,6 +9,7 @@ import { StockWatchPanel } from "@/components/dashboard/stock-watch-panel";
 import { SalesPerformancePanel } from "@/components/dashboard/sales-performance-panel";
 import { QuickActionsBar } from "@/components/dashboard/quick-actions-bar";
 import { DashboardPeriodSelector } from "@/components/dashboard/dashboard-period-selector";
+import { DashboardRefreshControls } from "@/components/dashboard/dashboard-refresh-controls";
 import { ModuleTargetCard } from "@/components/dashboard/module-target-card";
 import { ModuleMasteryCard } from "@/components/dashboard/module-mastery-card";
 import { ModuleMasteryCelebration } from "@/components/dashboard/module-mastery-celebration";
@@ -64,9 +65,18 @@ export function ExecutiveDashboardView({
             KPI period: {PERIOD_LABELS[data.period]} ({formatBusinessMonthYear(data.fromDate)})
           </p>
         </div>
-        <Suspense fallback={<div className="h-10 w-64 animate-pulse rounded-md bg-slate-100" />}>
-          <DashboardPeriodSelector activePeriod={data.period} />
-        </Suspense>
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Suspense fallback={<div className="h-10 w-64 animate-pulse rounded-md bg-slate-100" />}>
+              <DashboardPeriodSelector activePeriod={data.period} />
+            </Suspense>
+            <DashboardRefreshControls
+              kind="executive"
+              generatedAt={data.generatedAt}
+              viewedUserId={salesUserId}
+            />
+          </div>
+        </div>
       </div>
 
       <QuickActionsBar />

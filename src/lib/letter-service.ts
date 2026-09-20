@@ -14,7 +14,7 @@ import {
   formatLetterSerialNumber,
   getLetterFinancialYear,
 } from "@/lib/letter-number";
-import { generateOfficialLetterPdf } from "@/lib/letter-pdf";
+import type { LetterPdfMode, LetterPdfSource } from "@/lib/letter-pdf";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -385,13 +385,18 @@ export async function createOfficialLetter(
   return storeIssuedPdf(prisma, created.id);
 }
 
+async function renderOfficialLetterPdf(letter: LetterPdfSource, mode?: LetterPdfMode) {
+  const { generateOfficialLetterPdf } = await import("@/lib/letter-pdf");
+  return generateOfficialLetterPdf(letter, mode);
+}
+
 async function storeIssuedPdf(prisma: PrismaClient, letterId: string) {
   const letter = await prisma.officialLetter.findFirstOrThrow({
     where: { id: letterId },
     include: letterDetailInclude,
   });
 
-  const pdf = await generateOfficialLetterPdf({
+  const pdf = await renderOfficialLetterPdf({
     letterDate: letter.letterDate,
     content: letter.content,
     signatoryName: letter.signatoryName,
@@ -592,7 +597,7 @@ export async function buildPrintLetterPdf(db: Db, id: string): Promise<Buffer> {
     throw new LetterServiceError("NOT_FOUND", "Letter not found.", 404);
   }
 
-  return generateOfficialLetterPdf(
+  return renderOfficialLetterPdf(
     {
       letterDate: letter.letterDate,
       content: letter.content,

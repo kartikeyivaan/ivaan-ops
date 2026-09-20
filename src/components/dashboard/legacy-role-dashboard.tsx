@@ -1,182 +1,53 @@
 import Link from "next/link";
-import type { Session } from "next-auth";
-import { canAccessApprovalsInbox } from "@/lib/approvals-permissions";
-import { countPendingApprovalsForUser } from "@/lib/approvals-service";
-import { resolveDashboardCompanyIds } from "@/lib/company-scope";
-import { ROLES } from "@/lib/rbac";
-import { countOpenQuotations } from "@/lib/quotation-service";
-import { countBookedOrders, countPendingPayments } from "@/lib/pi-service";
-import { countTodaysDispatches } from "@/lib/dispatch-service";
-import { countPendingIncomingTransfers } from "@/lib/transfer-service";
-import { prisma } from "@/lib/prisma";
-import { requireActiveCompany } from "@/lib/session";
+import type { LegacyDashboardDto } from "@/lib/sales-dashboard/dashboard-types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { DashboardRefreshControls } from "@/components/dashboard/dashboard-refresh-controls";
 import { YourAttentionCard } from "@/components/tasks/your-attention-card";
 
-export async function LegacyRoleDashboard({ session }: { session: Session }) {
-  const roles = session.user.roles ?? [];
-  const activeCompany = session.user.companies.find(
-    (company) => company.id === session.user.activeCompanyId,
-  );
-
-  let pendingTransfers: number | null = null;
-  let openQuotations: number | null = null;
-  let pendingApprovals: number | null = null;
-  let bookedOrders: number | null = null;
-  let pendingPayments: number | null = null;
-  let todaysDispatches: number | null = null;
-
-  if (session.user.activeCompanyId) {
-    const companyId = requireActiveCompany(session);
-    const approvalCompanyIds = resolveDashboardCompanyIds(session);
-
-    const isWarehouse = roles.includes(ROLES.WAREHOUSE);
-    const isSalesish =
-      roles.includes(ROLES.SALES_EXECUTIVE) ||
-      roles.includes(ROLES.SALES_MANAGER) ||
-      roles.includes(ROLES.SUPER_ADMIN);
-    const canSeeApprovals = canAccessApprovalsInbox(roles);
-    const isAccountsish =
-      roles.includes(ROLES.SUPER_ADMIN) || roles.includes(ROLES.ACCOUNTS);
-
-    const [
-      pendingTransfersResult,
-      todaysDispatchesResult,
-      openQuotationsResult,
-      pendingApprovalsResult,
-      bookedOrdersResult,
-      pendingPaymentsResult,
-    ] = await Promise.all([
-      isWarehouse ? countPendingIncomingTransfers(prisma, companyId) : Promise.resolve(null),
-      isWarehouse ? countTodaysDispatches(prisma, companyId) : Promise.resolve(null),
-      isSalesish
-        ? countOpenQuotations(
-            prisma,
-            companyId,
-            roles.includes(ROLES.SALES_EXECUTIVE) ? session.user.id : undefined,
-          )
-        : Promise.resolve(null),
-      canSeeApprovals
-        ? countPendingApprovalsForUser(prisma, approvalCompanyIds, roles)
-        : Promise.resolve(null),
-      isSalesish ? countBookedOrders(prisma, companyId) : Promise.resolve(null),
-      isAccountsish ? countPendingPayments(prisma, companyId) : Promise.resolve(null),
-    ]);
-
-    pendingTransfers = pendingTransfersResult;
-    todaysDispatches = todaysDispatchesResult;
-    openQuotations = openQuotationsResult;
-    pendingApprovals = pendingApprovalsResult;
-    bookedOrders = bookedOrdersResult;
-    pendingPayments = pendingPaymentsResult;
-  }
-
-  const widgets = roles.includes(ROLES.SUPER_ADMIN)
-    ? [
-        "Sales by Executive",
-        "This Month Sales Value",
-        "Pending Approvals",
-        "Inventory Value",
-        "Pending Payments",
-      ]
-    : roles.includes(ROLES.SALES_MANAGER)
-      ? ["Open Quotations", "Booked Orders", "Order Value This Month", "Pending Approvals"]
-      : roles.includes(ROLES.PROJECTS_MANAGER)
-        ? ["Pending Approvals"]
-        : roles.includes(ROLES.WAREHOUSE)
-          ? ["Today's Dispatches", "Pending Inwarding", "Low Stock", "Transfer Requests"]
-          : ["Role-based dashboard"];
-
-  function widgetValue(widget: string): string {
-    if (widget === "Transfer Requests" && pendingTransfers !== null) {
-      return String(pendingTransfers);
-    }
-    if (widget === "Open Quotations" && openQuotations !== null) {
-      return String(openQuotations);
-    }
-    if (widget === "Pending Approvals" && pendingApprovals !== null) {
-      return String(pendingApprovals);
-    }
-    if (widget === "Booked Orders" && bookedOrders !== null) {
-      return String(bookedOrders);
-    }
-    if (widget === "Pending Payments" && pendingPayments !== null) {
-      return String(pendingPayments);
-    }
-    if (widget === "Today's Dispatches" && todaysDispatches !== null) {
-      return String(todaysDispatches);
-    }
-    return "—";
-  }
-
-  function widgetDescription(widget: string): string {
-    if (widget === "Transfer Requests" && pendingTransfers !== null) {
-      return "Incoming transfers awaiting receipt";
-    }
-    if (widget === "Open Quotations" && openQuotations !== null) {
-      return "Sent quotations still within validity";
-    }
-    if (widget === "Pending Approvals" && pendingApprovals !== null) {
-      return "Items awaiting your approval — click to review";
-    }
-    if (widget === "Booked Orders" && bookedOrders !== null) {
-      return "Orders with approved booking and reserved stock";
-    }
-    if (widget === "Pending Payments" && pendingPayments !== null) {
-      return "Issued PIs with outstanding balance";
-    }
-    if (widget === "Today's Dispatches" && todaysDispatches !== null) {
-      return "Delivery challans dispatched today";
-    }
-    return "Placeholder for Sprint 1 module data";
-  }
-
-  function widgetHref(widget: string): string | null {
-    if (widget === "Pending Approvals") return "/approvals";
-    return null;
-  }
-
+export function LegacyRoleDashboard({ data }: { data: LegacyDashboardDto }) {
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
-        <p className="text-sm text-slate-500">
-          {activeCompany
-            ? `Working in ${activeCompany.name} (${activeCompany.code})`
-            : "No active company selected"}
-        </p>
-        {roles.includes(ROLES.SALES_MANAGER) || roles.includes(ROLES.SUPER_ADMIN) ? (
-          <p className="mt-2 text-sm text-amber-700">
-            Team sales dashboard UI is coming in the next phase. Showing summary widgets for now.
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
+          <p className="text-sm text-slate-500">
+            {data.companyLabel
+              ? `Working in ${data.companyLabel}`
+              : "No active company selected"}
           </p>
-        ) : null}
+          {data.showTeamComingSoon ? (
+            <p className="mt-2 text-sm text-amber-700">
+              Team sales dashboard UI is coming in the next phase. Showing summary widgets for now.
+            </p>
+          ) : null}
+        </div>
+        <DashboardRefreshControls kind="legacy" generatedAt={data.generatedAt} />
       </div>
 
       <YourAttentionCard />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {widgets.map((widget) => {
-          const href = widgetHref(widget);
+        {data.widgets.map((widget) => {
           const card = (
-            <Card className={href ? "h-full transition hover:border-emerald-300" : undefined}>
+            <Card className={widget.href ? "h-full transition hover:border-emerald-300" : undefined}>
               <CardHeader>
-                <CardTitle className="text-base">{widget}</CardTitle>
-                <CardDescription>{widgetDescription(widget)}</CardDescription>
+                <CardTitle className="text-base">{widget.title}</CardTitle>
+                <CardDescription>{widget.description}</CardDescription>
               </CardHeader>
               <CardContent>
-                <p className="text-3xl font-semibold text-slate-900">{widgetValue(widget)}</p>
+                <p className="text-3xl font-semibold text-slate-900">{widget.value}</p>
               </CardContent>
             </Card>
           );
 
-          if (href) {
+          if (widget.href) {
             return (
-              <Link key={widget} href={href} className="block">
+              <Link key={widget.title} href={widget.href} className="block">
                 {card}
               </Link>
             );
           }
-          return <div key={widget}>{card}</div>;
+          return <div key={widget.title}>{card}</div>;
         })}
       </div>
     </div>

@@ -3,6 +3,8 @@ import type { AgeingBucket } from "@/lib/reports";
 import type { ApprovalType } from "@/lib/approvals-service";
 import type { ExecutiveKpiSummary, KpiStripDto } from "@/lib/report-builders";
 
+export type DashboardKind = "manager" | "executive" | "legacy";
+
 export type SalesDashboardScope = {
   /** One or more company IDs included in this dashboard view. */
   companyIds: string[];
@@ -225,6 +227,7 @@ export type ModuleMasteryProgressDto = {
 
 export type ExecutiveDashboardDto = {
   role: "executive";
+  generatedAt: string;
   businessDate: string;
   period: DashboardPeriod;
   fromDate: string;
@@ -243,6 +246,7 @@ export type ExecutiveDashboardDto = {
 
 export type ManagerDashboardDto = {
   role: "manager";
+  generatedAt: string;
   businessDate: string;
   period: DashboardPeriod;
   fromDate: string;
@@ -259,3 +263,27 @@ export type ManagerDashboardDto = {
 };
 
 export type SalesDashboardDto = ExecutiveDashboardDto | ManagerDashboardDto;
+
+export type LegacyDashboardWidgetDto = {
+  title: string;
+  value: string;
+  description: string;
+  href: string | null;
+};
+
+export type LegacyDashboardDto = {
+  role: "legacy";
+  generatedAt: string;
+  companyLabel: string | null;
+  showTeamComingSoon: boolean;
+  widgets: LegacyDashboardWidgetDto[];
+};
+
+export type LegacyDashboardScope = {
+  userId: string;
+  roles: string[];
+  companyIds: string[];
+  allCompanies: boolean;
+  activeCompanyId: string | null;
+  companyLabel: string | null;
+};

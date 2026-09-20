@@ -4,6 +4,7 @@ import { DispatchTodayHero } from "@/components/dashboard/dispatch-today-hero";
 import { KpiStrip } from "@/components/dashboard/kpi-strip";
 import { SalesPerformancePanel } from "@/components/dashboard/sales-performance-panel";
 import { DashboardPeriodSelector } from "@/components/dashboard/dashboard-period-selector";
+import { DashboardRefreshControls } from "@/components/dashboard/dashboard-refresh-controls";
 import { ApprovalsSummaryPanel } from "@/components/dashboard/approvals-summary-panel";
 import { TeamScoreboardPanel } from "@/components/dashboard/team-scoreboard-panel";
 import { PipelineRisksPanel } from "@/components/dashboard/pipeline-risks-panel";
@@ -44,9 +45,14 @@ export function ManagerDashboardView({
             KPI period: {PERIOD_LABELS[data.period]} ({formatBusinessMonthYear(data.fromDate)})
           </p>
         </div>
-        <Suspense fallback={<div className="h-10 w-64 animate-pulse rounded-md bg-slate-100" />}>
-          <DashboardPeriodSelector activePeriod={data.period} />
-        </Suspense>
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Suspense fallback={<div className="h-10 w-64 animate-pulse rounded-md bg-slate-100" />}>
+              <DashboardPeriodSelector activePeriod={data.period} />
+            </Suspense>
+            <DashboardRefreshControls kind="manager" generatedAt={data.generatedAt} />
+          </div>
+        </div>
       </div>
 
       <YourAttentionCard />

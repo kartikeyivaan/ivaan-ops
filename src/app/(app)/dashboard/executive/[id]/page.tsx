@@ -16,7 +16,7 @@ import {
   canViewExecutivePerformanceDetail,
   canViewTeamSalesDashboard,
 } from "@/lib/sales-dashboard/dashboard-permissions";
-import { getExecutiveDashboard } from "@/lib/sales-dashboard/dashboard-service";
+import { getCachedExecutiveDashboard } from "@/lib/sales-dashboard/dashboard-cache";
 import { ExecutiveDashboardView } from "@/components/dashboard/executive-dashboard-view";
 
 type PageProps = {
@@ -99,18 +99,22 @@ export default async function ExecutivePerformancePage({ params, searchParams }:
     restrictToUserId: executiveId,
   };
 
-  const dashboard = await getExecutiveDashboard(prisma, executiveScope, {
-    period,
-    fromDate: queryParams.fromDate,
-    toDate: queryParams.toDate,
-    trendMetric:
-      queryParams.trendMetric === "dispatch" ||
-      queryParams.trendMetric === "collection" ||
-      queryParams.trendMetric === "pi" ||
-      queryParams.trendMetric === "modules"
-        ? queryParams.trendMetric
-        : "modules",
-  });
+  const dashboard = await getCachedExecutiveDashboard(
+    executiveScope,
+    {
+      period,
+      fromDate: queryParams.fromDate,
+      toDate: queryParams.toDate,
+      trendMetric:
+        queryParams.trendMetric === "dispatch" ||
+        queryParams.trendMetric === "collection" ||
+        queryParams.trendMetric === "pi" ||
+        queryParams.trendMetric === "modules"
+          ? queryParams.trendMetric
+          : "modules",
+    },
+    isAllCompaniesScope(session.user.activeCompanyId),
+  );
 
   return (
     <ExecutiveDashboardView

@@ -103,7 +103,7 @@ export function assertProjectsCompany(company: CompanyScopeFields | null | undef
 export function getActiveSessionCompany(session: Session | null) {
   const companyId = session?.user?.activeCompanyId ?? null;
   if (!companyId || !session?.user || isAllCompaniesScope(companyId)) return null;
-  return session.user.companies.find((company) => company.id === companyId) ?? null;
+  return (session.user.companies ?? []).find((company) => company.id === companyId) ?? null;
 }
 
 export function requireProjectsCompany(session: Session | null): string {

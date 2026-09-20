@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   NOTIFICATIONS_MIN_GAP_MS,
+  NOTIFICATIONS_POLL_MS,
   shouldFetchNotifications,
 } from "@/lib/notifications-inbox";
+
+describe("notification poll interval", () => {
+  it("idles at 5 minutes instead of every 60 seconds", () => {
+    expect(NOTIFICATIONS_POLL_MS).toBe(300_000);
+  });
+});
 
 describe("shouldFetchNotifications", () => {
   it("allows the first fetch when the tab is visible", () => {

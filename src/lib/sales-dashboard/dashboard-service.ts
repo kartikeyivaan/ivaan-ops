@@ -143,6 +143,7 @@ export async function getExecutiveDashboard(
 
   return {
     role: "executive",
+    generatedAt: new Date().toISOString(),
     businessDate,
     period,
     fromDate: range.fromDate,
@@ -204,6 +205,7 @@ export async function getManagerDashboard(
 
   return {
     role: "manager",
+    generatedAt: new Date().toISOString(),
     businessDate,
     period,
     fromDate: range.fromDate,

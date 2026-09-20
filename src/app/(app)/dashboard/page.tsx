@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import type { Session } from "next-auth";
 import { auth } from "@/lib/auth";
 import { ROLES } from "@/lib/rbac";
-import { prisma } from "@/lib/prisma";
 import type { DashboardPeriod } from "@/lib/business-dates";
 import {
   formatAllCompaniesLabel,
@@ -18,9 +17,11 @@ import {
   canViewTeamSalesDashboard,
 } from "@/lib/sales-dashboard/dashboard-permissions";
 import {
-  getExecutiveDashboard,
-  getManagerDashboard,
-} from "@/lib/sales-dashboard/dashboard-service";
+  getCachedExecutiveDashboard,
+  getCachedLegacyDashboard,
+  getCachedManagerDashboard,
+  legacyDashboardScopeFromSession,
+} from "@/lib/sales-dashboard/dashboard-cache";
 import { ExecutiveDashboardView } from "@/components/dashboard/executive-dashboard-view";
 import { ManagerDashboardView } from "@/components/dashboard/manager-dashboard-view";
 import { LegacyRoleDashboard } from "@/components/dashboard/legacy-role-dashboard";
@@ -62,12 +63,17 @@ function resolveCompanyLabel(session: Session) {
   if (isAllCompaniesScope(session.user.activeCompanyId) && ops.length > 1) {
     return formatAllCompaniesLabel(ops);
   }
-  const activeCompany = session.user.companies.find(
+  const activeCompany = (session.user.companies ?? []).find(
     (company) => company.id === session.user.activeCompanyId,
   );
   return activeCompany
     ? `${activeCompany.name} (${activeCompany.code})`
     : undefined;
+}
+
+async function renderLegacyDashboard(session: Session) {
+  const data = await getCachedLegacyDashboard(legacyDashboardScopeFromSession(session));
+  return <LegacyRoleDashboard data={data} />;
 }
 
 export default async function DashboardPage({ searchParams }: PageProps) {
@@ -80,7 +86,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   const roles = session.user.roles ?? [];
 
   if (!canViewSalesDashboard(roles)) {
-    return <LegacyRoleDashboard session={session} />;
+    return await renderLegacyDashboard(session);
   }
 
   let scope;
@@ -88,7 +94,7 @@ export default async function DashboardPage({ searchParams }: PageProps) {
     scope = resolveSalesDashboardScope(session);
   } catch (error) {
     if (error instanceof SalesDashboardAccessError) {
-      return <LegacyRoleDashboard session={session} />;
+      return await renderLegacyDashboard(session);
     }
     throw error;
   }
@@ -105,29 +111,40 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   };
 
   const companyLabel = resolveCompanyLabel(session);
+  const allCompanies = isAllCompaniesScope(session.user.activeCompanyId);
 
   if (scope.canViewTeam && !scope.restrictToUserId) {
-    const dashboard = await getManagerDashboard(prisma, scope, query);
-    return (
-      <ManagerDashboardView
-        data={dashboard}
-        userName={session.user.name ?? "there"}
-        companyLabel={companyLabel}
-      />
-    );
+    try {
+      const dashboard = await getCachedManagerDashboard(scope, query, allCompanies);
+      return (
+        <ManagerDashboardView
+          data={dashboard}
+          userName={session.user.name ?? "there"}
+          companyLabel={companyLabel}
+        />
+      );
+    } catch (error) {
+      console.error("[dashboard] manager dashboard failed", error);
+      return await renderLegacyDashboard(session);
+    }
   }
 
   if (isSalesExecutiveOnly(roles)) {
-    const dashboard = await getExecutiveDashboard(prisma, scope, query);
-    return (
-      <ExecutiveDashboardView
-        data={dashboard}
-        userName={session.user.name ?? "there"}
-        salesUserId={scope.userId}
-        companyLabel={companyLabel}
-      />
-    );
+    try {
+      const dashboard = await getCachedExecutiveDashboard(scope, query, allCompanies);
+      return (
+        <ExecutiveDashboardView
+          data={dashboard}
+          userName={session.user.name ?? "there"}
+          salesUserId={scope.userId}
+          companyLabel={companyLabel}
+        />
+      );
+    } catch (error) {
+      console.error("[dashboard] executive dashboard failed", error);
+      return await renderLegacyDashboard(session);
+    }
   }
 
-  return <LegacyRoleDashboard session={session} />;
+  return await renderLegacyDashboard(session);
 }

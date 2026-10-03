@@ -27,7 +27,7 @@ function getTableFromSelection(root: HTMLDivElement | null): HTMLTableElement | 
   let node: Node | null = selection.anchorNode;
   if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
   while (node && node instanceof HTMLElement) {
-    if (node.tagName === "TABLE") return node;
+    if (node instanceof HTMLTableElement) return node;
     if (node === root) break;
     node = node.parentElement;
   }
@@ -49,7 +49,7 @@ function selectedTableCell(table: HTMLTableElement): HTMLTableCellElement | null
   let node: Node | null = selection.anchorNode;
   if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
   while (node && node instanceof HTMLElement) {
-    if (node.tagName === "TD" || node.tagName === "TH") return node;
+    if (node instanceof HTMLTableCellElement) return node;
     if (node === table) break;
     node = node.parentElement;
   }
@@ -164,7 +164,7 @@ export function LetterRichTextEditor({
           onClick={() =>
             withTable((table, cell) => {
               const index = cell?.cellIndex ?? table.rows[0]!.cells.length - 1;
-              table.rows.forEach((row) => {
+              Array.from(table.rows).forEach((row) => {
                 const clone = row.cells[index] ?? row.cells[row.cells.length - 1];
                 const next = row.insertCell(index + 1);
                 next.innerHTML = clone?.innerHTML || "&nbsp;";
@@ -182,7 +182,7 @@ export function LetterRichTextEditor({
             withTable((table, cell) => {
               if (table.rows[0]!.cells.length <= 1) return;
               const index = cell?.cellIndex ?? table.rows[0]!.cells.length - 1;
-              table.rows.forEach((row) => {
+              Array.from(table.rows).forEach((row) => {
                 if (row.cells.length > index) row.deleteCell(index);
               });
             })

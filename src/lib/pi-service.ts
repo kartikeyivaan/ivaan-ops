@@ -2682,7 +2682,7 @@ export async function markDispatchToday(
 
   const pi = await prisma.proformaInvoice.findFirst({
     where: { id: input.piId, companyId: input.companyId },
-    include: { ...piInclude, payments: true, items: true },
+    include: { ...piInclude, payments: true },
   });
   if (!pi) throw new Error("NOT_FOUND");
 

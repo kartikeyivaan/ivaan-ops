@@ -1,24 +1,28 @@
 import type { Prisma } from "@prisma/client";
 import { getRemainingQty } from "@/lib/dispatches";
 import { decimalToNumber } from "@/lib/inventory";
-import { isKitCategory, resolveKitDispatchQty } from "@/lib/kit-fulfillment";
+import { type KitBomComponent, resolveKitDispatchQty } from "@/lib/kit-fulfillment";
+import { isKitCategory } from "@/lib/products";
 
 export type DispatchTodayPlannedLineInput = {
   proformaInvoiceItemId: string;
   plannedQty: number;
 };
 
-type PiItemForPlanned = {
+type PiItemForPlannedQty = {
   id: string;
   productId: string;
   qty: { toNumber(): number } | number | string;
   dispatchedQty: { toNumber(): number } | number | string;
   dispatchTodayPlannedQty?: { toNumber(): number } | number | string | null;
+};
+
+type PiItemForPlannedCap = PiItemForPlannedQty & {
   product: { category: { name: string } };
 };
 
 export function resolveDispatchTodayPlannedQtyMap(
-  items: PiItemForPlanned[],
+  items: PiItemForPlannedQty[],
   lines?: DispatchTodayPlannedLineInput[],
 ): Map<string, number> {
   const byId = new Map(items.map((item) => [item.id, item]));
@@ -123,9 +127,9 @@ export function piUsesDispatchTodayPlannedCap(
 }
 
 export function assertLineWithinPlannedCap(input: {
-  piItem: PiItemForPlanned;
+  piItem: PiItemForPlannedCap;
   lineQty: number;
-  kitBomMap?: Map<string, Array<{ componentProductId: string; qty: number }>>;
+  kitBomMap?: ReadonlyMap<string, KitBomComponent[]>;
   groupLines?: Array<{ productId: string; qty: number }>;
 }) {
   const plannedRaw = input.piItem.dispatchTodayPlannedQty;

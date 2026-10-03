@@ -100,25 +100,39 @@ export default async function ReviseQuotationPage({ params }: PageProps) {
     rate: String(item.rate),
   }));
 
+  const productOptions = products.map((product) => ({
+    id: product.id,
+    displayName: product.displayName,
+    pricingType: product.pricingType,
+    capacity: Number(product.capacity),
+    gstRate: Number(product.gstRate),
+    currentPrice: product.currentPrice
+      ? {
+          standardPrice: Number(product.currentPrice.standardPrice),
+          minimumPrice: Number(product.currentPrice.minimumPrice),
+        }
+      : null,
+  }));
+  for (const item of quotation.items) {
+    if (!productOptions.some((product) => product.id === item.product.id)) {
+      productOptions.push({
+        id: item.product.id,
+        displayName: item.product.displayName,
+        pricingType: item.product.pricingType,
+        capacity: Number(item.product.capacity),
+        gstRate: Number(item.product.gstRate),
+        currentPrice: null,
+      });
+    }
+  }
+
   return (
     <QuotationForm
       mode="revise"
       quotationId={quotation.id}
       quotationNo={quotation.quotationNo}
       customers={customerOptions}
-      products={products.map((product) => ({
-        id: product.id,
-        displayName: product.displayName,
-        pricingType: product.pricingType,
-        capacity: Number(product.capacity),
-        gstRate: Number(product.gstRate),
-        currentPrice: product.currentPrice
-          ? {
-              standardPrice: Number(product.currentPrice.standardPrice),
-              minimumPrice: Number(product.currentPrice.minimumPrice),
-            }
-          : null,
-      }))}
+      products={productOptions}
       defaultCustomerId={quotation.customer.id}
       salesExecutives={salesExecutiveOptions}
       defaultSalesUserId={quotation.salesUser.id}

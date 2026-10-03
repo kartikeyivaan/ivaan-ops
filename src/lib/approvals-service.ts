@@ -9,6 +9,7 @@ import {
   PiCreditStatus,
   PiEditRequestStatus,
   PrismaClient,
+  ProductRateChangeBatchStatus,
   ProformaInvoiceStatus,
   ProjectProposalApprovalStatus,
   ProjectProposalStatus,
@@ -23,7 +24,17 @@ import {
 import { canApproveBooking, canApproveDispatchToday, canApprovePiCancel, canApprovePiCreditAccounts, canApprovePiCreditSm } from "@/lib/pi-permissions";
 import { canApproveProjectProposals } from "@/lib/project-proposal-permissions";
 import { canEditProjectMaterial } from "@/lib/project-permissions";
+import { canApproveProductRateChange } from "@/lib/product-rate-change-permissions";
 import { canApproveQuotationPricing } from "@/lib/quotation-permissions";
+import { buildCrossCompanyTransferApprovalReasonMap } from "@/lib/cross-company-transfer-approval-reason";
+import { buildDispatchTodayPlannedReasonMap } from "@/lib/dispatch-today-approval-reason";
+import { decimalToNumber } from "@/lib/inventory";
+import { buildOpeningStockApprovalReasonMap } from "@/lib/opening-stock-approval-reason";
+import { buildPiEditApprovalReasonMap } from "@/lib/pi-edit-approval-reason";
+import { buildProductRateChangeApprovalReasonMap } from "@/lib/product-rate-change-approval-reason";
+import { buildProjectMaterialReasonFromRemarks } from "@/lib/project-material-approval-reason";
+import { calculateOutstanding } from "@/lib/proforma-invoices";
+import { buildQuotationPriceApprovalReasonMap } from "@/lib/quotation-approval-reason";
 
 export type ApprovalType =
   | "QUOTATION_PRICE"
@@ -39,7 +50,8 @@ export type ApprovalType =
   | "OPENING_STOCK"
   | "PANEL_DAMAGE"
   | "CROSS_COMPANY_TRANSFER"
-  | "INCOMING_LOT_EDIT";
+  | "INCOMING_LOT_EDIT"
+  | "PRODUCT_RATE_CHANGE";
 
 export type PendingApprovalItem = {
   id: string;
@@ -84,6 +96,7 @@ const TYPE_LABELS: Record<ApprovalType, string> = {
   PANEL_DAMAGE: "Panel damage",
   CROSS_COMPANY_TRANSFER: "Cross-company transfer",
   INCOMING_LOT_EDIT: "Incoming lot edit",
+  PRODUCT_RATE_CHANGE: "Product rate change",
 };
 
 export function approvalTypeLabel(type: ApprovalType): string {
@@ -92,6 +105,38 @@ export function approvalTypeLabel(type: ApprovalType): string {
 
 function formatInr(amount: number): string {
   return `₹${amount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+}
+
+function remarksOrFallback(remarks: string | null | undefined, fallback: string): string {
+  return remarks?.trim() || fallback;
+}
+
+function formatPiBookingFallbackReason(
+  totalValue: number,
+  warehouseName: string | null,
+): string {
+  const parts = [`Booking ${formatInr(totalValue)}`];
+  if (warehouseName) parts.push(warehouseName);
+  return parts.join(" · ");
+}
+
+async function resolveApprovalHistoryReason(
+  prisma: PrismaClient,
+  moduleType: ApprovalModuleType,
+  approval: { remarks: string | null },
+  info: { reason: string },
+): Promise<string> {
+  if (
+    moduleType === ApprovalModuleType.QUOTATION ||
+    moduleType === ApprovalModuleType.PI_EDIT ||
+    moduleType === ApprovalModuleType.CROSS_COMPANY_TRANSFER
+  ) {
+    return info.reason;
+  }
+  if (moduleType === ApprovalModuleType.PROJECT_MATERIAL) {
+    return buildProjectMaterialReasonFromRemarks(prisma, approval.remarks);
+  }
+  return remarksOrFallback(approval.remarks, info.reason);
 }
 
 function toIso(value: Date): string {
@@ -493,12 +538,16 @@ export async function countPendingApprovalsForUser(
   prisma: PrismaClient,
   companyIds: string | string[],
   userRoles: string[],
+  userId?: string,
 ): Promise<number> {
   const ids = resolveCompanyIds(companyIds);
-  const buckets = await Promise.all(
-    ids.map((companyId) => listPendingApprovalCounts(prisma, companyId, userRoles)),
-  );
-  return buckets.flat().reduce((sum, row) => sum + row.count, 0);
+  const [companyBuckets, rateChangeBucket] = await Promise.all([
+    Promise.all(ids.map((companyId) => listPendingApprovalCounts(prisma, companyId, userRoles))),
+    canApproveProductRateChange(userRoles) && userId
+      ? countPendingProductRateChangeApprovals(prisma, userId)
+      : Promise.resolve(emptyCount("PRODUCT_RATE_CHANGE")),
+  ]);
+  return [...companyBuckets.flat(), rateChangeBucket].reduce((sum, row) => sum + row.count, 0);
 }
 
 async function listPendingApprovalsForCompany(
@@ -555,12 +604,17 @@ export async function listPendingApprovals(
   prisma: PrismaClient,
   companyIds: string | string[],
   userRoles: string[],
+  userId?: string,
 ): Promise<PendingApprovalItem[]> {
   const ids = resolveCompanyIds(companyIds);
   const groups = await Promise.all(
     ids.map((companyId) => listPendingApprovalsForCompany(prisma, companyId, userRoles)),
   );
-  return groups.flat().sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
+  let items = groups.flat();
+  if (canApproveProductRateChange(userRoles) && userId) {
+    items = [...items, ...(await listPendingProductRateChangeApprovals(prisma, userId))];
+  }
+  return items.sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
 }
 
 async function listApprovalHistoryForCompany(
@@ -626,8 +680,11 @@ export async function listApprovalHistory(
       listApprovalHistoryForCompany(prisma, companyId, userRoles, limit),
     ),
   );
-  return groups
-    .flat()
+  let items = groups.flat();
+  if (canApproveProductRateChange(userRoles)) {
+    items = [...items, ...(await listProductRateChangeApprovalHistory(prisma))];
+  }
+  return items
     .sort((a, b) => b.decidedAt.localeCompare(a.decidedAt))
     .slice(0, limit);
 }
@@ -654,19 +711,18 @@ async function listPendingQuotationApprovals(
     },
     include: {
       customer: { select: { customerName: true } },
-      salesUser: { select: { name: true } },
-      items: {
-        where: { approvalStatus: ItemApprovalStatus.PENDING },
-        select: { id: true },
-      },
     },
   });
   const quotationMap = new Map(rows.map((row) => [row.id, row]));
+  const reasonMap = await buildQuotationPriceApprovalReasonMap(
+    prisma,
+    rows.map((row) => row.id),
+    "pending",
+  );
 
   return approvals.flatMap((approval) => {
     const row = quotationMap.get(approval.moduleId);
     if (!row) return [];
-    const pendingCount = row.items.length;
     return [
       {
         id: `QUOTATION_PRICE:${row.id}`,
@@ -674,10 +730,7 @@ async function listPendingQuotationApprovals(
         moduleId: row.id,
         documentNo: row.quotationNo,
         subjectName: row.customer.customerName,
-        reason:
-          pendingCount === 1
-            ? "Below-minimum price on 1 line"
-            : `Below-minimum price on ${pendingCount} lines`,
+        reason: reasonMap.get(row.id) ?? "Below-minimum pricing",
         requestedByName: approval.requestedBy.name,
         requestedAt: toIso(approval.createdAt),
         href: `/sales/quotations/${row.id}`,
@@ -710,6 +763,7 @@ async function listPendingBookingApprovals(
     include: {
       customer: { select: { customerName: true } },
       salesUser: { select: { name: true } },
+      warehouse: { select: { name: true } },
     },
   });
   const piMap = new Map(rows.map((row) => [row.id, row]));
@@ -724,8 +778,13 @@ async function listPendingBookingApprovals(
         moduleId: row.id,
         documentNo: row.piNo,
         subjectName: row.customer.customerName,
-        reason:
-          approval.remarks?.trim() || "Stock booking approval requested",
+        reason: remarksOrFallback(
+          approval.remarks,
+          formatPiBookingFallbackReason(
+            decimalToNumber(row.totalValue),
+            row.warehouse?.name ?? null,
+          ),
+        ),
         requestedByName: approval.requestedBy.name,
         requestedAt: toIso(approval.createdAt),
         href: `/sales/proforma-invoices/${row.id}`,
@@ -760,6 +819,10 @@ async function listPendingDispatchTodayApprovals(
     },
   });
   const piMap = new Map(pis.map((pi) => [pi.id, pi]));
+  const plannedReasonMap = await buildDispatchTodayPlannedReasonMap(
+    prisma,
+    pis.map((pi) => pi.id),
+  );
 
   return approvals.flatMap((approval) => {
     const pi = piMap.get(approval.moduleId);
@@ -771,7 +834,10 @@ async function listPendingDispatchTodayApprovals(
         moduleId: pi.id,
         documentNo: pi.piNo,
         subjectName: pi.customer.customerName,
-        reason: approval.remarks?.trim() || "Dispatch today approval requested",
+        reason: remarksOrFallback(
+          approval.remarks,
+          plannedReasonMap.get(pi.id) ?? "Dispatch today approval requested",
+        ),
         requestedByName: approval.requestedBy.name,
         requestedAt: toIso(approval.createdAt),
         href: `/sales/proforma-invoices/${pi.id}`,
@@ -810,6 +876,10 @@ async function listPendingCrossCompanyTransferApprovals(
     },
   });
   const planMap = new Map(plans.map((plan) => [plan.id, plan]));
+  const transferReasonMap = await buildCrossCompanyTransferApprovalReasonMap(
+    prisma,
+    plans.map((plan) => plan.id),
+  );
 
   // Hide standalone transfer rows when a DISPATCH_TODAY approval already
   // covers the same PI (single combined message path).
@@ -841,9 +911,11 @@ async function listPendingCrossCompanyTransferApprovals(
         moduleId: plan.id,
         documentNo: plan.pi.piNo,
         subjectName: plan.pi.customer.customerName,
-        reason:
-          approval.remarks?.trim() ||
-          `Transfer shortfall stock from ${plan.fromCompany.code}`,
+        reason: remarksOrFallback(
+          approval.remarks,
+          transferReasonMap.get(plan.id) ??
+            `Transfer shortfall stock from ${plan.fromCompany.code}`,
+        ),
         requestedByName: approval.requestedBy.name,
         requestedAt: toIso(approval.createdAt),
         href: `/sales/proforma-invoices/${plan.piId}`,
@@ -890,7 +962,10 @@ async function listPendingDcCancelApprovals(
         moduleId: row.id,
         documentNo: row.dcNo,
         subjectName: row.customer.customerName,
-        reason: "Delivery challan cancellation requested",
+        reason: remarksOrFallback(
+          approval.remarks,
+          "Delivery challan cancellation requested",
+        ),
         requestedByName: approval.requestedBy.name,
         requestedAt: toIso(approval.createdAt),
         href: `/inventory/dispatches/${row.id}`,
@@ -937,7 +1012,10 @@ async function listPendingPiCancelApprovals(
         moduleId: row.id,
         documentNo: row.piNo,
         subjectName: row.customer.customerName,
-        reason: "Proforma invoice cancellation requested",
+        reason: remarksOrFallback(
+          approval.remarks,
+          "Proforma invoice cancellation requested",
+        ),
         requestedByName: approval.requestedBy.name,
         requestedAt: toIso(approval.createdAt),
         href: `/sales/proforma-invoices/${row.id}`,
@@ -960,6 +1038,10 @@ async function listPendingPiEditApprovals(
     },
     orderBy: { createdAt: "desc" },
   });
+  const reasonMap = await buildPiEditApprovalReasonMap(
+    prisma,
+    rows.map((row) => row.id),
+  );
 
   return rows.map((row) => ({
     id: `PI_EDIT:${row.id}`,
@@ -967,7 +1049,7 @@ async function listPendingPiEditApprovals(
     moduleId: row.id,
     documentNo: row.proformaInvoice.piNo,
     subjectName: row.proposedCustomer.customerName,
-    reason: `Proposed total ${formatInr(Number(row.proposedTotalValue))}`,
+    reason: reasonMap.get(row.id) ?? "Proforma invoice edit",
     requestedByName: row.requestedBy.name,
     requestedAt: toIso(row.createdAt),
     href: `/sales/proforma-invoices/${row.piId}`,
@@ -1028,6 +1110,7 @@ async function listPendingPiCreditApprovals(
     include: {
       customer: { select: { customerName: true } },
       salesUser: { select: { name: true } },
+      payments: { select: { amount: true } },
     },
   });
   const piMap = new Map(rows.map((row) => [row.id, row]));
@@ -1035,6 +1118,13 @@ async function listPendingPiCreditApprovals(
   return approvals.flatMap((approval) => {
     const row = piMap.get(approval.moduleId);
     if (!row) return [];
+    const totalValue = decimalToNumber(row.totalValue);
+    const totalPaid = row.payments.reduce(
+      (sum, payment) => sum + decimalToNumber(payment.amount),
+      0,
+    );
+    const outstanding = calculateOutstanding(totalValue, totalPaid);
+    const creditFallback = `${options.reasonFallback} · Outstanding ${formatInr(outstanding)} of ${formatInr(totalValue)}`;
     return [
       {
         id: `${options.type}:${row.id}`,
@@ -1042,7 +1132,7 @@ async function listPendingPiCreditApprovals(
         moduleId: row.id,
         documentNo: row.piNo,
         subjectName: row.customer.customerName,
-        reason: approval.remarks?.trim() || options.reasonFallback,
+        reason: remarksOrFallback(approval.remarks, creditFallback),
         requestedByName: approval.requestedBy.name,
         requestedAt: toIso(approval.createdAt),
         href: `/sales/proforma-invoices/${row.id}`,
@@ -1123,17 +1213,17 @@ async function listPendingProjectMaterialApprovals(
   });
   const projectMap = new Map(projects.map((row) => [row.id, row]));
 
+  const reasonEntries = await Promise.all(
+    approvals.map(async (approval) => [
+      approval.id,
+      await buildProjectMaterialReasonFromRemarks(prisma, approval.remarks),
+    ] as const),
+  );
+  const reasonMap = new Map(reasonEntries);
+
   return approvals.flatMap((approval) => {
     const project = projectMap.get(approval.moduleId);
     if (!project) return [];
-
-    let lineCount = 0;
-    try {
-      const payload = JSON.parse(approval.remarks ?? "{}") as { lineIds?: string[] };
-      lineCount = payload.lineIds?.length ?? 0;
-    } catch {
-      lineCount = 0;
-    }
 
     return [
       {
@@ -1142,7 +1232,7 @@ async function listPendingProjectMaterialApprovals(
         moduleId: project.id,
         documentNo: project.projectNo,
         subjectName: `${project.customerName} · ${project.proposal.proposalNo}`,
-        reason: `${lineCount} line(s) changed or added for material assignment`,
+        reason: reasonMap.get(approval.id) ?? "Project material assignment",
         requestedByName: approval.requestedBy.name,
         requestedAt: toIso(approval.createdAt),
         href: `/projects/execution/${project.id}`,
@@ -1165,6 +1255,10 @@ async function listPendingOpeningStockApprovals(
     },
     orderBy: { submittedAt: "desc" },
   });
+  const reasonMap = await buildOpeningStockApprovalReasonMap(
+    prisma,
+    rows.map((row) => row.id),
+  );
 
   return rows.map((row) => ({
     id: `OPENING_STOCK:${row.id}`,
@@ -1172,7 +1266,7 @@ async function listPendingOpeningStockApprovals(
     moduleId: row.id,
     documentNo: row.auditNumber,
     subjectName: row.warehouse.name,
-    reason: "Opening stock audit submitted for approval",
+    reason: reasonMap.get(row.id) ?? "Opening stock audit submitted for approval",
     requestedByName: row.submittedBy?.name ?? row.createdBy.name,
     requestedAt: toIso(row.submittedAt ?? row.updatedAt),
     href: `/inventory/audits/opening/${row.id}`,
@@ -1352,26 +1446,29 @@ async function listApprovalRequestHistory(
   const moduleIds = approvals.map((row) => row.moduleId);
   const meta = await loadModuleMeta(prisma, companyId, moduleType, moduleIds);
 
-  return approvals.flatMap((approval) => {
-    const info = meta.get(approval.moduleId);
-    if (!info) return [];
-    return [
-      {
+  const items = await Promise.all(
+    approvals.map(async (approval) => {
+      const info = meta.get(approval.moduleId);
+      if (!info) return null;
+      return {
         id: `${type}:${approval.id}`,
         type,
         moduleId: approval.moduleId,
         documentNo: info.documentNo,
         subjectName: info.subjectName,
-        reason: approval.remarks?.trim() || info.reason,
-        decision: approval.status === ApprovalRequestStatus.APPROVED ? "APPROVED" : "REJECTED",
+        reason: await resolveApprovalHistoryReason(prisma, moduleType, approval, info),
+        decision:
+          approval.status === ApprovalRequestStatus.APPROVED ? ("APPROVED" as const) : ("REJECTED" as const),
         requestedByName: approval.requestedBy.name,
         decidedByName: approval.approvedBy?.name ?? null,
         requestedAt: toIso(approval.createdAt),
         decidedAt: toIso(approval.updatedAt),
         href: info.href,
-      },
-    ];
-  });
+      };
+    }),
+  );
+
+  return items.flatMap((item) => (item ? [item] : []));
 }
 
 async function listProposalApprovalHistory(
@@ -1453,13 +1550,18 @@ async function listOpeningStockApprovalHistory(
     }),
   ]);
 
+  const openingReasonMap = await buildOpeningStockApprovalReasonMap(
+    prisma,
+    approved.map((row) => row.id),
+  );
+
   const approvedItems: ApprovalHistoryItem[] = approved.map((row) => ({
     id: `OPENING_STOCK:${row.id}`,
     type: "OPENING_STOCK" as const,
     moduleId: row.id,
     documentNo: row.auditNumber,
     subjectName: row.warehouse.name,
-    reason: "Opening stock audit",
+    reason: openingReasonMap.get(row.id) ?? "Opening stock audit",
     decision: "APPROVED" as const,
     requestedByName: row.submittedBy?.name ?? row.createdBy.name,
     decidedByName: row.approvedBy?.name ?? null,
@@ -1556,11 +1658,16 @@ async function loadModuleMeta(
       where: { companyId, id: { in: moduleIds } },
       include: { customer: { select: { customerName: true } } },
     });
+    const reasonMap = await buildQuotationPriceApprovalReasonMap(
+      prisma,
+      rows.map((row) => row.id),
+      "below_minimum",
+    );
     for (const row of rows) {
       map.set(row.id, {
         documentNo: row.quotationNo,
         subjectName: row.customer.customerName,
-        reason: "Below-minimum pricing",
+        reason: reasonMap.get(row.id) ?? "Below-minimum pricing",
         href: `/sales/quotations/${row.id}`,
       });
     }
@@ -1573,22 +1680,41 @@ async function loadModuleMeta(
   ) {
     const rows = await prisma.proformaInvoice.findMany({
       where: { companyId, id: { in: moduleIds } },
-      include: { customer: { select: { customerName: true } } },
+      include: {
+        customer: { select: { customerName: true } },
+        warehouse: { select: { name: true } },
+        payments: { select: { amount: true } },
+      },
     });
+    const dispatchTodayReasonMap =
+      moduleType === ApprovalModuleType.DISPATCH_TODAY
+        ? await buildDispatchTodayPlannedReasonMap(prisma, moduleIds)
+        : new Map<string, string>();
     for (const row of rows) {
+      const totalValue = decimalToNumber(row.totalValue);
+      const totalPaid = row.payments.reduce(
+        (sum, payment) => sum + decimalToNumber(payment.amount),
+        0,
+      );
+      const outstanding = calculateOutstanding(totalValue, totalPaid);
+      let reason = "PI cancellation";
+      if (moduleType === ApprovalModuleType.BOOKING) {
+        reason = formatPiBookingFallbackReason(
+          totalValue,
+          row.warehouse?.name ?? null,
+        );
+      } else if (moduleType === ApprovalModuleType.DISPATCH_TODAY) {
+        reason =
+          dispatchTodayReasonMap.get(row.id) ?? "Dispatch today approval";
+      } else if (moduleType === ApprovalModuleType.PI_CREDIT) {
+        reason = `PI credit (Sales Manager) · Outstanding ${formatInr(outstanding)} of ${formatInr(totalValue)}`;
+      } else if (moduleType === ApprovalModuleType.PI_CREDIT_ACCOUNTS) {
+        reason = `PI credit (Accounts) · Outstanding ${formatInr(outstanding)} of ${formatInr(totalValue)}`;
+      }
       map.set(row.id, {
         documentNo: row.piNo,
         subjectName: row.customer.customerName,
-        reason:
-          moduleType === ApprovalModuleType.BOOKING
-            ? "Stock booking"
-            : moduleType === ApprovalModuleType.DISPATCH_TODAY
-              ? "Dispatch today approval"
-              : moduleType === ApprovalModuleType.PI_CREDIT
-                ? "PI credit (Sales Manager)"
-                : moduleType === ApprovalModuleType.PI_CREDIT_ACCOUNTS
-                  ? "PI credit (Accounts)"
-                  : "PI cancellation",
+        reason,
         href: `/sales/proforma-invoices/${row.id}`,
       });
     }
@@ -1613,11 +1739,17 @@ async function loadModuleMeta(
         fromCompany: { select: { code: true } },
       },
     });
+    const transferReasonMap = await buildCrossCompanyTransferApprovalReasonMap(
+      prisma,
+      rows.map((row) => row.id),
+    );
     for (const row of rows) {
       map.set(row.id, {
         documentNo: row.pi.piNo,
         subjectName: row.pi.customer.customerName,
-        reason: `Cross-company transfer from ${row.fromCompany.code}`,
+        reason:
+          transferReasonMap.get(row.id) ??
+          `Cross-company transfer from ${row.fromCompany.code}`,
         href: `/sales/proforma-invoices/${row.piId}`,
       });
     }
@@ -1642,14 +1774,31 @@ async function loadModuleMeta(
       where: { companyId, id: { in: moduleIds } },
       include: {
         lot: { select: { lotNumber: true, warehouse: { select: { name: true } } } },
+        previousProduct: { select: { displayName: true } },
         proposedProduct: { select: { displayName: true } },
       },
     });
     for (const row of rows) {
+      const parts: string[] = [];
+      if (row.previousProductId !== row.proposedProductId) {
+        parts.push(
+          `Product: ${row.previousProduct.displayName} → ${row.proposedProduct.displayName}`,
+        );
+      }
+      if (Number(row.previousQuantity) !== Number(row.proposedQuantity)) {
+        parts.push(
+          `Qty: ${Number(row.previousQuantity)} → ${Number(row.proposedQuantity)}`,
+        );
+      }
+      if (row.previousPurchaseInvoiceNo !== row.proposedPurchaseInvoiceNo) {
+        parts.push(
+          `Invoice: ${row.previousPurchaseInvoiceNo} → ${row.proposedPurchaseInvoiceNo}`,
+        );
+      }
       map.set(row.id, {
         documentNo: row.lot.lotNumber,
         subjectName: `${row.proposedProduct.displayName} · ${row.lot.warehouse.name}`,
-        reason: "Receive-time lot edit",
+        reason: parts.join(" · ") || "Receive-time lot edit",
         href: `/inventory/incoming/${row.lotId}`,
       });
     }
@@ -1661,11 +1810,15 @@ async function loadModuleMeta(
         proposedCustomer: { select: { customerName: true } },
       },
     });
+    const reasonMap = await buildPiEditApprovalReasonMap(
+      prisma,
+      rows.map((row) => row.id),
+    );
     for (const row of rows) {
       map.set(row.id, {
         documentNo: row.proformaInvoice.piNo,
         subjectName: row.proposedCustomer.customerName,
-        reason: "Proforma invoice edit",
+        reason: reasonMap.get(row.id) ?? "Proforma invoice edit",
         href: `/sales/proforma-invoices/${row.piId}`,
       });
     }
@@ -1685,4 +1838,128 @@ async function loadModuleMeta(
   }
 
   return map;
+}
+
+async function countPendingProductRateChangeApprovals(
+  prisma: PrismaClient,
+  userId: string,
+): Promise<PendingCountBucket> {
+  const count = await prisma.productRateChangeBatch.count({
+    where: {
+      status: ProductRateChangeBatchStatus.PENDING,
+      signOffs: { none: { userId } },
+    },
+  });
+  if (count === 0) return emptyCount("PRODUCT_RATE_CHANGE");
+
+  const oldest = await prisma.productRateChangeBatch.findFirst({
+    where: {
+      status: ProductRateChangeBatchStatus.PENDING,
+      signOffs: { none: { userId } },
+    },
+    orderBy: { submittedAt: "asc" },
+    select: { submittedAt: true },
+  });
+
+  return {
+    type: "PRODUCT_RATE_CHANGE",
+    count,
+    oldestAt: oldest?.submittedAt ?? null,
+  };
+}
+
+async function listPendingProductRateChangeApprovals(
+  prisma: PrismaClient,
+  userId: string,
+): Promise<PendingApprovalItem[]> {
+  const batches = await prisma.productRateChangeBatch.findMany({
+    where: {
+      status: ProductRateChangeBatchStatus.PENDING,
+      signOffs: { none: { userId } },
+    },
+    include: {
+      createdBy: { select: { name: true } },
+      lines: { select: { id: true } },
+      signOffs: { select: { id: true } },
+    },
+    orderBy: { submittedAt: "desc" },
+  });
+  const signOffCounts = new Map(
+    batches.map((batch) => [batch.id, batch.signOffs.length] as const),
+  );
+  const reasonMap = await buildProductRateChangeApprovalReasonMap(
+    prisma,
+    batches.map((batch) => batch.id),
+    { signOffCounts },
+  );
+
+  return batches.map((batch) => ({
+    id: `PRODUCT_RATE_CHANGE:${batch.id}`,
+    type: "PRODUCT_RATE_CHANGE" as const,
+    moduleId: batch.id,
+    documentNo: batch.requestNumber,
+    subjectName: `${batch.lines.length} product${batch.lines.length === 1 ? "" : "s"}`,
+    reason: reasonMap.get(batch.id) ?? `Sign-off ${batch.signOffs.length}/2`,
+    requestedByName: batch.createdBy.name,
+    requestedAt: toIso(batch.submittedAt ?? batch.createdAt),
+    href: `/masters/products/rate-changes/${batch.id}`,
+    canReject: true,
+  }));
+}
+
+async function listProductRateChangeApprovalHistory(
+  prisma: PrismaClient,
+): Promise<ApprovalHistoryItem[]> {
+  const batches = await prisma.productRateChangeBatch.findMany({
+    where: {
+      status: {
+        in: [ProductRateChangeBatchStatus.APPROVED, ProductRateChangeBatchStatus.REJECTED],
+      },
+    },
+    include: {
+      createdBy: { select: { name: true } },
+      rejectedBy: { select: { name: true } },
+      lines: { select: { id: true } },
+      signOffs: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        include: { user: { select: { name: true } } },
+      },
+    },
+    orderBy: { updatedAt: "desc" },
+    take: 50,
+  });
+  const reasonMap = await buildProductRateChangeApprovalReasonMap(
+    prisma,
+    batches.map((batch) => batch.id),
+  );
+
+  return batches.map((batch) => {
+    const approved = batch.status === ProductRateChangeBatchStatus.APPROVED;
+    const decidedAt = approved
+      ? (batch.appliedAt ?? batch.updatedAt)
+      : (batch.rejectedAt ?? batch.updatedAt);
+    const decidedByName = approved
+      ? (batch.signOffs[0]?.user.name ?? null)
+      : (batch.rejectedBy?.name ?? null);
+
+    return {
+      id: `PRODUCT_RATE_CHANGE:${batch.id}:${batch.status}`,
+      type: "PRODUCT_RATE_CHANGE" as const,
+      moduleId: batch.id,
+      documentNo: batch.requestNumber,
+      subjectName: `${batch.lines.length} product${batch.lines.length === 1 ? "" : "s"}`,
+      reason: approved
+        ? (reasonMap.get(batch.id) ?? "Product rates updated")
+        : batch.rejectionReason
+          ? `Rejected: ${batch.rejectionReason}`
+          : (reasonMap.get(batch.id) ?? "Product rate change rejected"),
+      decision: approved ? ("APPROVED" as const) : ("REJECTED" as const),
+      requestedByName: batch.createdBy.name,
+      decidedByName,
+      requestedAt: toIso(batch.submittedAt ?? batch.createdAt),
+      decidedAt: toIso(decidedAt),
+      href: `/masters/products/rate-changes/${batch.id}`,
+    };
+  });
 }

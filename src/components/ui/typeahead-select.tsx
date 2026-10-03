@@ -57,13 +57,17 @@ export function TypeaheadSelect({
 
   function selectOption(option: TypeaheadOption | null) {
     if (!option) {
-      onChange("");
+      if (value) {
+        onChange("");
+      }
       setQuery("");
       setOpen(false);
       return;
     }
 
-    onChange(option.value);
+    if (option.value !== value) {
+      onChange(option.value);
+    }
     setQuery(option.label);
     setOpen(false);
   }
@@ -135,7 +139,9 @@ export function TypeaheadSelect({
             (option) => option.label.toLowerCase() === nextQuery.trim().toLowerCase(),
           );
           if (exactMatch) {
-            onChange(exactMatch.value);
+            if (exactMatch.value !== value) {
+              onChange(exactMatch.value);
+            }
             return;
           }
 

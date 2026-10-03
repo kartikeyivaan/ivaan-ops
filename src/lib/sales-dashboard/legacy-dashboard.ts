@@ -127,7 +127,7 @@ export async function getLegacyDashboard(
             )
           : Promise.resolve(null),
         canSeeApprovals
-          ? countPendingApprovalsForUser(prisma, scope.companyIds, roles)
+          ? countPendingApprovalsForUser(prisma, scope.companyIds, roles, scope.userId)
           : Promise.resolve(null),
         isSalesish ? countBookedOrders(prisma, countCompanyId) : Promise.resolve(null),
         isAccountsish ? countPendingPayments(prisma, countCompanyId) : Promise.resolve(null),

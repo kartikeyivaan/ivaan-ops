@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { canCreateProductRateChange } from "@/lib/product-rate-change-permissions";
 import {
   canEditProducts,
   canViewProducts,
@@ -27,6 +28,7 @@ export default async function ProductsPage() {
       categories={masters.categories}
       brands={masters.brands}
       canEdit={canEditProducts(session.user.roles)}
+      canCreateRateChange={canCreateProductRateChange(session.user.roles)}
     />
   );
 }

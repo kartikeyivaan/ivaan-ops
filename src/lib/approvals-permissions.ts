@@ -11,6 +11,7 @@ import {
   canApprovePiCredit,
 } from "@/lib/pi-permissions";
 import { canApproveProjectProposals } from "@/lib/project-proposal-permissions";
+import { canApproveProductRateChange } from "@/lib/product-rate-change-permissions";
 import { canApproveQuotationPricing } from "@/lib/quotation-permissions";
 import { ROLES, type RoleName } from "@/lib/rbac";
 
@@ -34,6 +35,7 @@ export function canAccessApprovalsInbox(userRoles: string[]): boolean {
     canApproveProjectProposals(userRoles) ||
     canApproveOpeningStock(userRoles) ||
     canApprovePanelDamage(userRoles) ||
-    canApproveIncomingLotEdit(userRoles)
+    canApproveIncomingLotEdit(userRoles) ||
+    canApproveProductRateChange(userRoles)
   );
 }

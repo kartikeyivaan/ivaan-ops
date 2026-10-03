@@ -265,6 +265,11 @@ export function QuotationForm({
   }
 
   function handleProductChange(index: number, productId: string) {
+    const existing = lines[index];
+    if (existing?.productId === productId) {
+      return;
+    }
+
     const product = products.find((item) => item.id === productId);
     updateLine(index, {
       productId,

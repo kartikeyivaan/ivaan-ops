@@ -19,7 +19,12 @@ export default async function ApprovalsPage() {
     redirect("/select-company");
   }
 
-  const items = await listPendingApprovals(prisma, companyIds, session.user.roles);
+  const items = await listPendingApprovals(
+    prisma,
+    companyIds,
+    session.user.roles,
+    session.user.id,
+  );
 
   return <PendingApprovalsList initialItems={JSON.parse(JSON.stringify(items))} />;
 }

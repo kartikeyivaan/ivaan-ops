@@ -79,6 +79,11 @@ function approveEndpoint(item: PendingApprovalItem): { url: string; body?: objec
         url: `/api/inventory/incoming/change-requests/${item.moduleId}/approve`,
         body: {},
       };
+    case "PRODUCT_RATE_CHANGE":
+      return {
+        url: `/api/product-rate-changes/${item.moduleId}/approve`,
+        body: {},
+      };
   }
 }
 
@@ -133,6 +138,11 @@ function rejectEndpoint(
     case "INCOMING_LOT_EDIT":
       return {
         url: `/api/inventory/incoming/change-requests/${item.moduleId}/reject`,
+        body: { reason },
+      };
+    case "PRODUCT_RATE_CHANGE":
+      return {
+        url: `/api/product-rate-changes/${item.moduleId}/reject`,
         body: { reason },
       };
   }

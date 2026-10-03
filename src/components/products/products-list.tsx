@@ -36,11 +36,13 @@ export function ProductsList({
   categories,
   brands,
   canEdit,
+  canCreateRateChange,
 }: {
   initialProducts: ProductListItem[];
   categories: MasterOption[];
   brands: MasterOption[];
   canEdit: boolean;
+  canCreateRateChange: boolean;
 }) {
   const router = useRouter();
   const [products, setProducts] = useState(initialProducts);
@@ -109,14 +111,21 @@ export function ProductsList({
             Modules, inverters and other products with company-wise pricing.
           </p>
         </div>
-        {canEdit ? (
-          <Button asChild>
-            <Link href="/masters/products/new">
-              <Plus className="h-4 w-4" />
-              New Product
-            </Link>
-          </Button>
-        ) : null}
+        <div className="flex flex-wrap gap-2">
+          {canCreateRateChange ? (
+            <Button variant="outline" asChild>
+              <Link href="/masters/products/rate-changes">Rate changes</Link>
+            </Button>
+          ) : null}
+          {canEdit ? (
+            <Button asChild>
+              <Link href="/masters/products/new">
+                <Plus className="h-4 w-4" />
+                New Product
+              </Link>
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <CollapsibleFilterCard title="Search & Filter" contentClassName="grid gap-4 md:grid-cols-3">

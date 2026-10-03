@@ -508,8 +508,8 @@ export async function updateProduct(
   });
 }
 
-export async function addProductPrice(
-  prisma: PrismaClient,
+async function createProductPriceRow(
+  tx: Prisma.TransactionClient,
   productId: string,
   input: {
     landingCost: number;
@@ -518,7 +518,7 @@ export async function addProductPrice(
     effectiveFrom?: Date;
   },
 ) {
-  const product = await prisma.product.findUnique({ where: { id: productId } });
+  const product = await tx.product.findUnique({ where: { id: productId } });
   if (!product) throw new Error("NOT_FOUND");
 
   if (input.minimumPrice > input.standardPrice) {
@@ -527,33 +527,47 @@ export async function addProductPrice(
 
   const effectiveFrom = input.effectiveFrom ?? new Date();
 
-  return prisma.$transaction(async (tx) => {
-    const activePrices = await tx.productPrice.findMany({
-      where: {
-        productId,
-        OR: [{ effectiveTo: null }, { effectiveTo: { gte: effectiveFrom } }],
-      },
-    });
-
-    for (const price of activePrices) {
-      const closeDate = new Date(effectiveFrom);
-      closeDate.setDate(closeDate.getDate() - 1);
-      await tx.productPrice.update({
-        where: { id: price.id },
-        data: { effectiveTo: closeDate },
-      });
-    }
-
-    return tx.productPrice.create({
-      data: {
-        productId,
-        landingCost: input.landingCost,
-        standardPrice: input.standardPrice,
-        minimumPrice: input.minimumPrice,
-        effectiveFrom,
-      },
-    });
+  const activePrices = await tx.productPrice.findMany({
+    where: {
+      productId,
+      OR: [{ effectiveTo: null }, { effectiveTo: { gte: effectiveFrom } }],
+    },
   });
+
+  for (const price of activePrices) {
+    const closeDate = new Date(effectiveFrom);
+    closeDate.setDate(closeDate.getDate() - 1);
+    await tx.productPrice.update({
+      where: { id: price.id },
+      data: { effectiveTo: closeDate },
+    });
+  }
+
+  return tx.productPrice.create({
+    data: {
+      productId,
+      landingCost: input.landingCost,
+      standardPrice: input.standardPrice,
+      minimumPrice: input.minimumPrice,
+      effectiveFrom,
+    },
+  });
+}
+
+export async function addProductPrice(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  productId: string,
+  input: {
+    landingCost: number;
+    standardPrice: number;
+    minimumPrice: number;
+    effectiveFrom?: Date;
+  },
+) {
+  if ("$transaction" in prisma) {
+    return prisma.$transaction((tx) => createProductPriceRow(tx, productId, input));
+  }
+  return createProductPriceRow(prisma, productId, input);
 }
 
 export async function listMasters(prisma: PrismaClient) {

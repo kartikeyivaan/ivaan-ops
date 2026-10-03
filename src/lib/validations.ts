@@ -188,6 +188,18 @@ export const productPriceSchema = z.object({
   effectiveFrom: z.string().optional(),
 });
 
+export const productRateChangeLineSchema = z.object({
+  productId: z.string().uuid(),
+  standardPrice: z.coerce.number().min(0),
+  minimumPrice: z.coerce.number().min(0),
+});
+
+export const productRateChangeBatchSchema = z.object({
+  lines: z.array(productRateChangeLineSchema).min(1),
+});
+
+export type ProductRateChangeLineInput = z.infer<typeof productRateChangeLineSchema>;
+
 export const productSearchSchema = z.object({
   q: z.string().optional(),
   categoryId: z.string().uuid().optional(),

@@ -1,9 +1,13 @@
 import {
-  DispatchStatus,
   DocumentationStatus,
   InvoiceHandoverStatus,
+  type Prisma,
   type PrismaClient,
 } from "@prisma/client";
+import {
+  assertDispatchEligibleForDownstreamProcessing,
+  dispatchEligibleForDownstreamWhere,
+} from "@/lib/dispatch-workflow-eligibility";
 import {
   notifyDocumentationAssigned,
   notifyDocumentationStatusChanged,
@@ -19,7 +23,7 @@ function pendingInvoiceDocumentationWhere(companyId: string) {
     companyId,
     status: { in: PENDING_INVOICE_STATUSES },
     documentation: { is: null },
-    dispatch: { status: DispatchStatus.DISPATCHED },
+    dispatch: dispatchEligibleForDownstreamWhere,
   };
 }
 
@@ -44,6 +48,7 @@ const include = {
     select: {
       id: true,
       dcNo: true,
+      status: true,
       dispatchDate: true,
       receiverName: true,
       receiverMobile: true,
@@ -81,6 +86,7 @@ function withAgeing<T extends { createdAt: Date; completedDate: Date | null }>(r
 const HISTORY_STATUSES: DocumentationStatus[] = [
   DocumentationStatus.DCR_ISSUED,
   DocumentationStatus.NOT_REQUIRED,
+  DocumentationStatus.DCR_REVOKED,
 ];
 
 export async function listDocumentation(
@@ -108,6 +114,7 @@ export async function listDocumentation(
     where: {
       companyId,
       ...statusFilter,
+      ...(filters.scope === "active" ? { dispatch: dispatchEligibleForDownstreamWhere } : {}),
       ...(filters.assignedToId ? { assignedToId: filters.assignedToId } : {}),
       ...(filters.q ? { OR: [
         { dispatch: { dcNo: { contains: filters.q, mode: "insensitive" } } },
@@ -169,7 +176,12 @@ export async function markDispatchForDcr(
     });
     if (!handover) throw new Error("NOT_FOUND");
     if (handover.documentation) throw new Error("ALREADY_EXISTS");
-    if (handover.dispatch.status !== DispatchStatus.DISPATCHED) {
+    try {
+      assertDispatchEligibleForDownstreamProcessing(handover.dispatch.status);
+    } catch (cause) {
+      if (cause instanceof Error && cause.message === "DISPATCH_CANCELLED") {
+        throw new Error("DISPATCH_CANCELLED");
+      }
       throw new Error("DISPATCH_NOT_DISPATCHED");
     }
     if (!PENDING_INVOICE_STATUSES.includes(handover.status)) {
@@ -214,9 +226,10 @@ export async function updateDocumentationStatus(
   return prisma.$transaction(async (tx) => {
     const current = await tx.documentationRecord.findFirst({
       where: { id: input.id, companyId: input.companyId },
-      include: { dispatch: { select: { dcNo: true } } },
+      include: { dispatch: { select: { dcNo: true, status: true } } },
     });
     if (!current) throw new Error("NOT_FOUND");
+    assertDispatchEligibleForDownstreamProcessing(current.dispatch.status);
     const complete = input.status === DocumentationStatus.DCR_ISSUED || input.status === DocumentationStatus.NOT_REQUIRED;
     const updated = await tx.documentationRecord.update({
       where: { id: input.id },
@@ -260,9 +273,10 @@ export async function assignDocumentation(
   return prisma.$transaction(async (tx) => {
     const current = await tx.documentationRecord.findFirst({
       where: { id: input.id, companyId: input.companyId },
-      include: { dispatch: { select: { dcNo: true } } },
+      include: { dispatch: { select: { dcNo: true, status: true } } },
     });
     if (!current) throw new Error("NOT_FOUND");
+    assertDispatchEligibleForDownstreamProcessing(current.dispatch.status);
     if (input.toUserId) {
       const user = await tx.user.findFirst({
         where: { id: input.toUserId, status: "ACTIVE", companies: { some: { companyId: input.companyId } } },
@@ -290,5 +304,39 @@ export async function assignDocumentation(
       });
     }
     return withAgeing(updated);
+  });
+}
+
+/** Close in-progress documentation when a DC is cancelled (terminal state). */
+export async function voidDocumentationForCancelledDispatch(
+  tx: Prisma.TransactionClient,
+  input: { dispatchId: string; performedById: string; dcNo: string },
+) {
+  const doc = await tx.documentationRecord.findUnique({
+    where: { dispatchId: input.dispatchId },
+  });
+  if (!doc || HISTORY_STATUSES.includes(doc.status)) return;
+  if (doc.status === DocumentationStatus.DCR_ISSUED) return;
+
+  await tx.documentationRecord.update({
+    where: { id: doc.id },
+    data: {
+      status: DocumentationStatus.NOT_REQUIRED,
+      completedDate: new Date(),
+      completedById: input.performedById,
+      internalNotes: doc.internalNotes
+        ? `${doc.internalNotes}\nVoided: DC ${input.dcNo} cancelled.`
+        : `Voided: DC ${input.dcNo} cancelled.`,
+    },
+  });
+
+  await tx.documentationStatusHistory.create({
+    data: {
+      documentationRecordId: doc.id,
+      fromStatus: doc.status,
+      toStatus: DocumentationStatus.NOT_REQUIRED,
+      remarks: `Delivery challan ${input.dcNo} cancelled — documentation stopped`,
+      changedById: input.performedById,
+    },
   });
 }

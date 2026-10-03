@@ -200,7 +200,7 @@ describe("mark dispatch for DCR", () => {
       companyId: "company-1",
       handoverId: "handover-1",
       changedById: "user-1",
-    })).rejects.toThrow("DISPATCH_NOT_DISPATCHED");
+    })).rejects.toThrow("DISPATCH_CANCELLED");
     expect(client.documentationRecord.create).not.toHaveBeenCalled();
   });
 

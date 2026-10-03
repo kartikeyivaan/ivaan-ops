@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { DocumentationStatus, InvoiceHandoverStatus, type PrismaClient } from "@prisma/client";
+import {
+  DispatchStatus,
+  DocumentationStatus,
+  InvoiceHandoverStatus,
+  type PrismaClient,
+} from "@prisma/client";
 import { recordInvoice } from "@/lib/invoice-handover-service";
 
 function mockClient() {
@@ -26,6 +31,7 @@ const handover = {
   companyId: "company-1",
   customerId: "customer-1",
   status: InvoiceHandoverStatus.PENDING_INVOICE,
+  dispatch: { status: DispatchStatus.DISPATCHED, dcNo: "DC-1" },
 };
 
 describe("recordInvoice documentation attach", () => {
@@ -118,5 +124,26 @@ describe("recordInvoice documentation attach", () => {
         changedById: "user-1",
       }),
     });
+  });
+
+  it("rejects invoice recording when the delivery challan was cancelled", async () => {
+    const client = mockClient();
+    vi.mocked(client.invoiceHandover.findFirst).mockResolvedValue({
+      ...handover,
+      dispatch: { status: DispatchStatus.CANCELLED, dcNo: "DC-1" },
+    } as never);
+
+    await expect(
+      recordInvoice(client, {
+        companyId: "company-1",
+        handoverId: "handover-1",
+        invoiceNumber: "INV-100",
+        invoiceDate: new Date("2026-08-18"),
+        recordedById: "user-1",
+      }),
+    ).rejects.toThrow("DISPATCH_CANCELLED");
+
+    expect(client.invoiceHandover.update).not.toHaveBeenCalled();
+    expect(client.documentationRecord.create).not.toHaveBeenCalled();
   });
 });

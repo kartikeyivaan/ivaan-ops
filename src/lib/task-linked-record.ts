@@ -21,6 +21,7 @@ export const LINKED_RECORD_LABELS: Record<TaskLinkedRecordType, string> = {
   PI: "Proforma Invoice",
   PAYMENT: "Payment",
   INVOICE: "Invoice",
+  DOCUMENTATION: "Documentation",
   PROJECT: "Project",
   SERVICE_COMPLAINT: "Service Complaint",
   PURCHASE_REQUEST: "Purchase Request",
@@ -134,6 +135,24 @@ export async function resolveLinkedRecord(
         id: record.id,
         label: record.invoiceNumber ?? "Invoice handover",
         href: "/accounts/invoice-queue",
+        companyId: record.companyId,
+      };
+    }
+    case TaskLinkedRecordType.DOCUMENTATION: {
+      const record = await client.documentationRecord.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          companyId: true,
+          dispatch: { select: { dcNo: true } },
+        },
+      });
+      if (!record) return null;
+      return {
+        type,
+        id: record.id,
+        label: `Documentation · ${record.dispatch.dcNo}`,
+        href: `/documentation/${record.id}`,
         companyId: record.companyId,
       };
     }

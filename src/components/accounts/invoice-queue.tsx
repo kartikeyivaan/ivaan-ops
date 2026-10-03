@@ -16,6 +16,7 @@ type QueueRow = {
   invoiceNumber: string | null;
   dispatch: {
     dcNo: string;
+    status: string;
     dispatchDate: string;
     notes: string | null;
     proformaInvoice: { piNo: string };
@@ -89,7 +90,11 @@ export function InvoiceQueue({ rows }: { rows: QueueRow[] }) {
         />
       </div>
       <div className="grid gap-3">
-        {filteredRows.map((row) => (
+        {filteredRows.map((row) => {
+          const canRecordInvoice =
+            row.dispatch.status === "DISPATCHED" &&
+            (row.status === "PENDING_INVOICE" || row.status === "CORRECTION_REQUIRED");
+          return (
           <Card key={row.id}>
             <CardHeader className="pb-3">
               <CardTitle className="flex flex-wrap justify-between gap-2 text-base">
@@ -115,7 +120,7 @@ export function InvoiceQueue({ rows }: { rows: QueueRow[] }) {
                   {row.dispatch.notes}
                 </p>
               ) : null}
-              {row.status === "PENDING_INVOICE" || row.status === "CORRECTION_REQUIRED" ? (
+              {canRecordInvoice ? (
                 editing === row.id ? (
                   <div className="mt-4 grid gap-3 sm:grid-cols-3">
                     <div className="space-y-1"><Label>Invoice number</Label><Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} /></div>
@@ -123,10 +128,15 @@ export function InvoiceQueue({ rows }: { rows: QueueRow[] }) {
                     <div className="flex items-end gap-2"><Button onClick={save}>Record invoice</Button><Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button></div>
                   </div>
                 ) : <Button className="mt-3" onClick={() => { setEditing(row.id); setError(""); }}>Record invoice</Button>
+              ) : row.dispatch.status === "CANCELLED" || row.dispatch.status === "CANCEL_PENDING" ? (
+                <p className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
+                  This delivery challan was cancelled or is pending cancellation. Invoicing is not allowed.
+                </p>
               ) : null}
             </CardContent>
           </Card>
-        ))}
+        );
+        })}
         {!rows.length ? (
           <p className="rounded-lg border border-dashed p-8 text-center text-slate-500">No pending invoice handovers.</p>
         ) : !filteredRows.length ? (

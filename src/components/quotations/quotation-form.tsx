@@ -563,9 +563,7 @@ export function QuotationForm({
                 <div className="space-y-2">
                   <Label>Qty</Label>
                   <Input
-                    type="number"
-                    min="0"
-                    step="any"
+                    inputMode="decimal"
                     value={line.qty}
                     onChange={(event) => updateLine(index, { qty: event.target.value })}
                   />
@@ -573,16 +571,9 @@ export function QuotationForm({
                 <div className="space-y-2">
                   <Label>Rate ({computed?.pricingLabel ?? "Rate"})</Label>
                   <Input
-                    type="number"
-                    min="0"
-                    step="any"
+                    inputMode="decimal"
                     value={line.rate}
                     onChange={(event) => updateLine(index, { rate: event.target.value })}
-                    onKeyDown={(event) => {
-                      if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-                        event.preventDefault();
-                      }
-                    }}
                   />
                 </div>
                 <div className="space-y-2">

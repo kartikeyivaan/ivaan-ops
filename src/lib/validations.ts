@@ -703,10 +703,16 @@ export const dispatchTodayDraftSchema = z.object({
   notes: z.string().trim().max(500).optional(),
 });
 
+export const dispatchTodayPlannedLineSchema = z.object({
+  proformaInvoiceItemId: z.string().uuid(),
+  plannedQty: z.number().min(0),
+});
+
 export const markDispatchTodaySchema = dispatchTodayDraftSchema.extend({
   confirmEarly: z.boolean().optional(),
   confirmCrossCompany: z.boolean().optional(),
   fromCompanyId: z.string().uuid().optional(),
+  lines: z.array(dispatchTodayPlannedLineSchema).optional(),
 });
 
 export const approveDispatchTodaySchema = z.object({

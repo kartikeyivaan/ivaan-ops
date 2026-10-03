@@ -51,6 +51,15 @@ export async function POST(request: Request) {
   } catch (cause) {
     if (cause instanceof Error && cause.message === "NOT_FOUND") return error("Handover not found.", 404);
     if (cause instanceof Error && cause.message === "INVOICE_NUMBER_REQUIRED") return error("Invoice number is required.", 400);
+    if (cause instanceof Error && cause.message === "DISPATCH_CANCELLED") {
+      return error("This delivery challan was cancelled and cannot be invoiced.", 400);
+    }
+    if (cause instanceof Error && cause.message === "DISPATCH_NOT_ELIGIBLE") {
+      return error("This delivery challan is not eligible for invoicing.", 400);
+    }
+    if (cause instanceof Error && cause.message === "NOT_PENDING_INVOICE") {
+      return error("Invoice is already recorded or this handover is closed.", 400);
+    }
     throw cause;
   }
 }

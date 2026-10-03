@@ -88,7 +88,7 @@ export function LetterPreview({
       )}
 
       <div
-        className="min-h-[160px] leading-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6"
+        className="min-h-[160px] leading-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6 [&_table]:my-2 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-slate-300 [&_td]:p-2 [&_td]:align-top [&_th]:border [&_th]:border-slate-300 [&_th]:bg-slate-50 [&_th]:p-2 [&_th]:align-top [&_th]:font-semibold"
         dangerouslySetInnerHTML={{ __html: sanitizeLetterHtml(content || "<p></p>") }}
       />
 

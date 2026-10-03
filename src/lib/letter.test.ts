@@ -85,6 +85,24 @@ describe("official letter helpers", () => {
     expect(letterHtmlHasText("<p>Letter body</p>")).toBe(true);
   });
 
+  it("keeps tables in sanitized HTML and converts them to table blocks", () => {
+    const html = sanitizeLetterHtml(
+      `<table><tr><th>Item</th><th>Qty</th></tr><tr><td>Module</td><td style="text-align:center">12</td></tr></table>`,
+    );
+    expect(html).toContain("<table>");
+    expect(html).toContain("<th>");
+    expect(html).toContain("text-align:center");
+    const blocks = letterHtmlToBlocks(html);
+    expect(blocks[0]).toMatchObject({
+      type: "table",
+      rows: [
+        [{ header: true, children: [{ text: "Item" }] }, { header: true, children: [{ text: "Qty" }] }],
+        [{ children: [{ text: "Module" }] }, { align: "center", children: [{ text: "12" }] }],
+      ],
+    });
+    expect(letterHtmlHasText(html)).toBe(true);
+  });
+
   it("loads bundled ISE and PCMV stamps", () => {
     expect(companyStamp("ISE")?.byteLength).toBeGreaterThan(1000);
     expect(companyStamp("PCMV")?.byteLength).toBeGreaterThan(1000);

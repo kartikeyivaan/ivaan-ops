@@ -3,6 +3,7 @@ import { formatLetterDate } from "@/lib/utils";
 import {
   letterHtmlToBlocks,
   type LetterInline,
+  type LetterTableCell,
 } from "@/lib/letter-content";
 import {
   CONTENT_LEFT,
@@ -108,6 +109,125 @@ function ensureSpace(ctx: DocContext, pageBottom: number, needed: number, top: n
   ctx.doc.y = top;
 }
 
+const TABLE_CELL_PAD = 4;
+const TABLE_FONT_SIZE = 10;
+
+function inlinesPlain(parts: LetterInline[]): string {
+  return parts.map((part) => part.text).join("");
+}
+
+function measureTableCellHeight(
+  ctx: DocContext,
+  cell: LetterTableCell,
+  width: number,
+): number {
+  const { doc, fonts } = ctx;
+  const innerW = Math.max(12, width - TABLE_CELL_PAD * 2);
+  doc.font(cell.header ? fonts.bold : fonts.regular).fontSize(TABLE_FONT_SIZE);
+  const text = inlinesPlain(cell.children).trim() || " ";
+  return doc.heightOfString(text, { width: innerW }) + TABLE_CELL_PAD * 2;
+}
+
+type TableSlot = {
+  cell: LetterTableCell;
+  col: number;
+  row: number;
+  colSpan: number;
+  rowSpan: number;
+};
+
+function layoutLetterTable(rows: LetterTableCell[][]): {
+  colCount: number;
+  rowCount: number;
+  slots: TableSlot[];
+  rowHeights: number[];
+} {
+  const colCount = Math.max(
+    1,
+    ...rows.map((row) => row.reduce((sum, cell) => sum + (cell.colspan ?? 1), 0)),
+  );
+  const rowCount = rows.length;
+  const occupied = new Set<string>();
+  const slots: TableSlot[] = [];
+
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+    let colIndex = 0;
+    for (const cell of rows[rowIndex]!) {
+      while (occupied.has(`${rowIndex},${colIndex}`)) colIndex += 1;
+      const colSpan = cell.colspan ?? 1;
+      const rowSpan = cell.rowspan ?? 1;
+      slots.push({ cell, col: colIndex, row: rowIndex, colSpan, rowSpan });
+      for (let dr = 0; dr < rowSpan; dr += 1) {
+        for (let dc = 0; dc < colSpan; dc += 1) {
+          occupied.add(`${rowIndex + dr},${colIndex + dc}`);
+        }
+      }
+      colIndex += colSpan;
+    }
+  }
+
+  return { colCount, rowCount, slots, rowHeights: new Array(rowCount).fill(0) };
+}
+
+function drawLetterTable(
+  ctx: DocContext,
+  rows: LetterTableCell[][],
+  pageBottom: number,
+  contentTop: number,
+) {
+  const { doc, palette } = ctx;
+  if (rows.length === 0) return;
+
+  const layout = layoutLetterTable(rows);
+  const colWidth = CONTENT_WIDTH / layout.colCount;
+
+  layout.slots.forEach((slot) => {
+    const cellWidth = colWidth * slot.colSpan;
+    const minSlice = measureTableCellHeight(ctx, slot.cell, cellWidth) / slot.rowSpan;
+    for (let dr = 0; dr < slot.rowSpan; dr += 1) {
+      const rowIndex = slot.row + dr;
+      layout.rowHeights[rowIndex] = Math.max(layout.rowHeights[rowIndex]!, minSlice);
+    }
+  });
+
+  let y = doc.y;
+  for (let rowIndex = 0; rowIndex < layout.rowCount; rowIndex += 1) {
+    const rowHeight = layout.rowHeights[rowIndex]!;
+    ensureSpace(ctx, pageBottom, rowHeight + 2, contentTop);
+    y = doc.y;
+
+    layout.slots
+      .filter((slot) => slot.row === rowIndex)
+      .forEach((slot) => {
+        const x = CONTENT_LEFT + slot.col * colWidth;
+        const width = colWidth * slot.colSpan;
+        const height = layout.rowHeights
+          .slice(slot.row, slot.row + slot.rowSpan)
+          .reduce((sum, value) => sum + value, 0);
+        doc
+          .rect(x, y, width, height)
+          .lineWidth(0.5)
+          .strokeColor(palette.border)
+          .stroke();
+        const cellParts = slot.cell.header
+          ? slot.cell.children.map((part) => ({ ...part, bold: part.bold ?? true }))
+          : slot.cell.children;
+        drawInlines(
+          ctx,
+          cellParts,
+          x + TABLE_CELL_PAD,
+          y + TABLE_CELL_PAD,
+          width - TABLE_CELL_PAD * 2,
+          slot.cell.align,
+        );
+      });
+
+    doc.y = y + rowHeight;
+    y = doc.y;
+  }
+  doc.y += 6;
+}
+
 function drawLetterBody(
   ctx: DocContext,
   html: string,
@@ -127,6 +247,12 @@ function drawLetterBody(
       const y = doc.y;
       drawInlines(ctx, block.children, CONTENT_LEFT, y, CONTENT_WIDTH, block.align);
       if (!isLast) doc.y += 8;
+      continue;
+    }
+
+    if (block.type === "table") {
+      drawLetterTable(ctx, block.rows, pageBottom, contentTop);
+      if (!isLast) doc.y += 4;
       continue;
     }
 

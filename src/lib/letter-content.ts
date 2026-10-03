@@ -13,7 +13,27 @@ export const IMAGE_DATA_URL_MAX = 400_000;
 export const LETTER_CONTENT_MAX = 200_000;
 
 const IMAGE_DATA_URL_PATTERN = /^data:image\/(png|jpeg|jpg|webp);base64,/i;
-const ALLOWED_TAGS = new Set(["p", "br", "div", "span", "strong", "b", "em", "i", "u", "ul", "ol", "li"]);
+const ALLOWED_TAGS = new Set([
+  "p",
+  "br",
+  "div",
+  "span",
+  "strong",
+  "b",
+  "em",
+  "i",
+  "u",
+  "ul",
+  "ol",
+  "li",
+  "table",
+  "thead",
+  "tbody",
+  "tfoot",
+  "tr",
+  "th",
+  "td",
+]);
 const ALIGN_VALUES = new Set(["left", "center", "right", "justify"]);
 
 export function isLetterheadCompanyCode(code: string): code is LetterheadCompanyCode {
@@ -75,6 +95,25 @@ function parseTextAlign(attrs: string): string | undefined {
   return undefined;
 }
 
+function parseTableSpan(attrs: string, name: "colspan" | "rowspan"): number | undefined {
+  const match = attrs.match(new RegExp(`\\b${name}\\s*=\\s*["']?(\\d+)`, "i"));
+  if (!match) return undefined;
+  const value = Number.parseInt(match[1]!, 10);
+  if (!Number.isFinite(value) || value < 2 || value > 20) return undefined;
+  return value;
+}
+
+function openTableCellTag(tag: "td" | "th", attrs: string): string {
+  const parts: string[] = [];
+  const colspan = parseTableSpan(attrs, "colspan");
+  const rowspan = parseTableSpan(attrs, "rowspan");
+  if (colspan) parts.push(`colspan="${colspan}"`);
+  if (rowspan) parts.push(`rowspan="${rowspan}"`);
+  const align = parseTextAlign(attrs);
+  if (align) parts.push(`style="text-align:${align}"`);
+  return parts.length ? `<${tag} ${parts.join(" ")}>` : `<${tag}>`;
+}
+
 export function sanitizeLetterHtml(html: string): string {
   const withoutJunk = html
     .replace(/<!--[\s\S]*?-->/g, "")
@@ -86,6 +125,7 @@ export function sanitizeLetterHtml(html: string): string {
     if (!ALLOWED_TAGS.has(tag)) return "";
     if (closing) return tag === "br" ? "" : `</${tag}>`;
     if (tag === "br") return "<br>";
+    if (tag === "td" || tag === "th") return openTableCellTag(tag, attrs);
     const align = parseTextAlign(attrs);
     if (align && (tag === "p" || tag === "div" || tag === "li")) {
       return `<${tag} style="text-align:${align}">`;
@@ -101,10 +141,19 @@ export type LetterInline = {
   underline?: boolean;
 };
 
+export type LetterTableCell = {
+  header?: boolean;
+  align?: string;
+  colspan?: number;
+  rowspan?: number;
+  children: LetterInline[];
+};
+
 export type LetterBlock =
   | { type: "p"; align?: string; children: LetterInline[] }
   | { type: "ul"; items: LetterInline[][] }
-  | { type: "ol"; items: LetterInline[][] };
+  | { type: "ol"; items: LetterInline[][] }
+  | { type: "table"; rows: LetterTableCell[][] };
 
 type Marks = { bold: boolean; italic: boolean; underline: boolean };
 
@@ -138,8 +187,27 @@ export function letterHtmlToBlocks(html: string): LetterBlock[] {
   let listType: "ul" | "ol" | null = null;
   let listItems: LetterInline[][] = [];
   let listItem: LetterInline[] | null = null;
+  let inTable = false;
+  let tableRows: LetterTableCell[][] = [];
+  let tableRow: LetterTableCell[] | null = null;
+  let tableCell: LetterInline[] | null = null;
+  let tableCellMeta: Omit<LetterTableCell, "children"> = {};
+
+  function inlineTarget(): LetterInline[] | null {
+    if (tableCell) return tableCell;
+    if (listItem) return listItem;
+    return current;
+  }
+
+  function ensureInlineTarget(): LetterInline[] {
+    if (tableCell) return tableCell;
+    if (listItem) return listItem;
+    if (!current) current = [];
+    return current;
+  }
 
   function flushParagraph() {
+    if (tableCell || inTable) return;
     if (!current) return;
     const hasText = current.some((part) => part.text.trim());
     if (hasText) {
@@ -150,6 +218,7 @@ export function letterHtmlToBlocks(html: string): LetterBlock[] {
   }
 
   function flushList() {
+    if (inTable) return;
     if (listType && listItems.length > 0) {
       blocks.push({ type: listType, items: listItems });
     }
@@ -158,13 +227,48 @@ export function letterHtmlToBlocks(html: string): LetterBlock[] {
     listItem = null;
   }
 
+  function finishTableCell() {
+    if (!tableRow || !tableCell) return;
+    const hasText = tableCell.some((part) => part.text.trim());
+    if (hasText || tableCellMeta.header) {
+      tableRow.push({ ...tableCellMeta, children: tableCell });
+    }
+    tableCell = null;
+    tableCellMeta = {};
+  }
+
+  function finishTableRow() {
+    finishTableCell();
+    if (tableRow && tableRow.length > 0) {
+      tableRows.push(tableRow);
+    }
+    tableRow = null;
+  }
+
+  function flushTable() {
+    finishTableRow();
+    if (tableRows.length > 0) {
+      blocks.push({ type: "table", rows: tableRows });
+    }
+    tableRows = [];
+    inTable = false;
+  }
+
+  function cellLineBreak() {
+    if (!tableCell) return;
+    const hasText = tableCell.some((part) => part.text.trim());
+    if (hasText) pushText(tableCell, "\n", marks);
+  }
+
   const tokenRe = /<\/?([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>|([^<]+)/g;
   let match: RegExpExecArray | null;
   while ((match = tokenRe.exec(sanitized))) {
     if (match[3] != null) {
       const text = match[3];
-      if (listItem) pushText(listItem, text, marks);
-      else {
+      if (inTable && !tableCell) continue;
+      const target = inlineTarget();
+      if (target) pushText(target, text, marks);
+      else if (!inTable) {
         if (!current) current = [];
         pushText(current, text, marks);
       }
@@ -176,10 +280,11 @@ export function letterHtmlToBlocks(html: string): LetterBlock[] {
     const attrs = match[2] ?? "";
 
     if (tag === "br") {
-      if (listItem) pushText(listItem, "\n", marks);
+      if (tableCell) pushText(tableCell, "\n", marks);
+      else if (listItem) pushText(listItem, "\n", marks);
       else {
-        if (!current) current = [];
-        pushText(current, "\n", marks);
+        ensureInlineTarget();
+        pushText(current!, "\n", marks);
       }
       continue;
     }
@@ -198,7 +303,55 @@ export function letterHtmlToBlocks(html: string): LetterBlock[] {
     }
     if (tag === "span") continue;
 
+    if (tag === "table") {
+      if (closing) {
+        flushTable();
+      } else {
+        flushParagraph();
+        flushList();
+        flushTable();
+        inTable = true;
+        tableRows = [];
+      }
+      continue;
+    }
+
+    if (tag === "thead" || tag === "tbody" || tag === "tfoot") continue;
+
+    if (tag === "tr") {
+      if (!inTable) continue;
+      if (closing) {
+        finishTableRow();
+      } else {
+        finishTableRow();
+        tableRow = [];
+      }
+      continue;
+    }
+
+    if (tag === "td" || tag === "th") {
+      if (!inTable) continue;
+      if (closing) {
+        finishTableCell();
+      } else {
+        finishTableCell();
+        if (!tableRow) tableRow = [];
+        tableCell = [];
+        tableCellMeta = {
+          header: tag === "th",
+          align: parseTextAlign(attrs),
+          colspan: parseTableSpan(attrs, "colspan"),
+          rowspan: parseTableSpan(attrs, "rowspan"),
+        };
+      }
+      continue;
+    }
+
     if (tag === "ul" || tag === "ol") {
+      if (inTable) {
+        if (!closing && tableCell) cellLineBreak();
+        continue;
+      }
       if (closing) {
         if (listItem) {
           listItems.push(listItem);
@@ -215,6 +368,10 @@ export function letterHtmlToBlocks(html: string): LetterBlock[] {
     }
 
     if (tag === "li") {
+      if (inTable && tableCell) {
+        if (!closing) cellLineBreak();
+        continue;
+      }
       if (closing) {
         if (listItem) listItems.push(listItem);
         listItem = null;
@@ -226,6 +383,10 @@ export function letterHtmlToBlocks(html: string): LetterBlock[] {
     }
 
     if (tag === "p" || tag === "div") {
+      if (inTable && tableCell) {
+        if (!closing) cellLineBreak();
+        continue;
+      }
       if (closing) {
         flushParagraph();
       } else {
@@ -237,6 +398,7 @@ export function letterHtmlToBlocks(html: string): LetterBlock[] {
   }
 
   if (listItem) listItems.push(listItem);
+  flushTable();
   flushList();
   flushParagraph();
   return blocks;

@@ -1,8 +1,10 @@
 import {
   DocumentationStatus,
+  DispatchStatus,
   InvoiceHandoverStatus,
   type PrismaClient,
 } from "@prisma/client";
+import { assertDispatchEligibleForDownstreamProcessing } from "@/lib/dispatch-workflow-eligibility";
 import {
   commercialValuesByDispatchLine,
   loadKitBomMapForDispatches,
@@ -25,6 +27,7 @@ const include = {
     select: {
       id: true,
       dcNo: true,
+      status: true,
       dispatchDate: true,
       vehicleNo: true,
       notes: true,
@@ -118,9 +121,19 @@ export async function listInvoiceQueue(
     where: {
       companyId,
       ...(filters.scope === "completed"
-        ? { status: InvoiceHandoverStatus.INVOICE_RECORDED }
+        ? {
+            status: {
+              in: [
+                InvoiceHandoverStatus.INVOICE_RECORDED,
+                InvoiceHandoverStatus.INVOICE_CANCELLED,
+              ],
+            },
+          }
         : filters.scope === "pending"
-          ? { status: { in: PENDING_STATUSES } }
+          ? {
+              status: { in: PENDING_STATUSES },
+              dispatch: { status: DispatchStatus.DISPATCHED },
+            }
           : {}),
     },
     include,
@@ -245,8 +258,13 @@ export async function recordInvoice(
   return prisma.$transaction(async (tx) => {
     const handover = await tx.invoiceHandover.findFirst({
       where: { id: input.handoverId, companyId: input.companyId },
+      include: { dispatch: { select: { status: true, dcNo: true } } },
     });
     if (!handover) throw new Error("NOT_FOUND");
+    assertDispatchEligibleForDownstreamProcessing(handover.dispatch.status);
+    if (!PENDING_STATUSES.includes(handover.status)) {
+      throw new Error("NOT_PENDING_INVOICE");
+    }
 
     const updated = await tx.invoiceHandover.update({
       where: { id: handover.id },

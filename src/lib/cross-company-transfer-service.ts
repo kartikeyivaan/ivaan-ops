@@ -147,6 +147,7 @@ export async function resolveSystemUserId(
 async function remainingFulfillmentLines(
   prisma: DbClient,
   piId: string,
+  plannedQtyByItemId?: Map<string, number>,
 ): Promise<
   Array<{
     productId: string;
@@ -172,9 +173,14 @@ async function remainingFulfillmentLines(
         decimalToNumber(item.qty),
         decimalToNumber(item.dispatchedQty),
       );
+      const planned = plannedQtyByItemId?.get(item.id);
+      const qty =
+        plannedQtyByItemId != null
+          ? Math.min(remaining, Math.max(0, planned ?? 0))
+          : remaining;
       return {
         productId: item.productId,
-        qty: remaining,
+        qty,
         serialTracking: item.product.serialTracking,
         displayName: item.product.displayName,
         categoryName: item.product.category.name,
@@ -220,9 +226,13 @@ export async function getCompanyAvailableQty(
 
 export async function computeDispatchTodayStockCheck(
   prisma: DbClient,
-  input: { companyId: string; piId: string },
+  input: { companyId: string; piId: string; plannedQtyByItemId?: Map<string, number> },
 ): Promise<DispatchTodayStockCheck> {
-  const remaining = await remainingFulfillmentLines(prisma, input.piId);
+  const remaining = await remainingFulfillmentLines(
+    prisma,
+    input.piId,
+    input.plannedQtyByItemId,
+  );
   const lines: ShortfallLine[] = [];
 
   for (const item of remaining) {
@@ -1234,11 +1244,13 @@ export async function prepareDispatchTodayCrossCompany(
     companyId: string;
     piId: string;
     fromCompanyId?: string;
+    plannedQtyByItemId?: Map<string, number>;
   },
 ) {
   const check = await computeDispatchTodayStockCheck(prisma, {
     companyId: input.companyId,
     piId: input.piId,
+    plannedQtyByItemId: input.plannedQtyByItemId,
   });
 
   const shortfallLines = check.lines.filter((line) => line.shortfallQty > 0);

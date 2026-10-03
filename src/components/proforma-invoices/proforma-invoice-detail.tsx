@@ -120,6 +120,7 @@ type ProformaInvoiceDetailData = {
     qty: number;
     dispatchedQty?: number;
     remainingQty?: number;
+    dispatchTodayPlannedQty?: number | null;
     rate: number;
     gstRate: number;
     lineTotal: number;
@@ -268,6 +269,18 @@ export function ProformaInvoiceDetail({
     pi.dispatchToday?.draft.receiverMobile ?? "",
   );
   const [dispatchNotes, setDispatchNotes] = useState(pi.dispatchToday?.draft.notes ?? "");
+  const [dispatchTodayQtyByItem, setDispatchTodayQtyByItem] = useState<Record<string, string>>(
+    () =>
+      Object.fromEntries(
+        pi.items.map((item) => {
+          const remaining = item.remainingQty ?? item.qty - (item.dispatchedQty ?? 0);
+          const planned = item.dispatchTodayPlannedQty;
+          const value =
+            planned != null ? String(planned) : remaining > 0 ? String(remaining) : "0";
+          return [item.id, value];
+        }),
+      ),
+  );
   const [fromCompanyId, setFromCompanyId] = useState("");
   const [shortfallCandidates, setShortfallCandidates] = useState<
     Array<{ companyId: string; companyCode: string; companyName: string; canCoverAll: boolean }>
@@ -571,10 +584,28 @@ export function ProformaInvoiceDetail({
     router.refresh();
   }
 
+  function buildDispatchTodayPlannedLines() {
+    return pi.items
+      .map((item) => {
+        const remaining = item.remainingQty ?? item.qty - (item.dispatchedQty ?? 0);
+        if (remaining <= 0) return null;
+        const raw = dispatchTodayQtyByItem[item.id] ?? String(remaining);
+        const plannedQty = Number(raw);
+        return {
+          proformaInvoiceItemId: item.id,
+          plannedQty: Number.isFinite(plannedQty) ? plannedQty : remaining,
+        };
+      })
+      .filter((line): line is { proformaInvoiceItemId: string; plannedQty: number } =>
+        Boolean(line),
+      );
+  }
+
   async function submitDispatchToday(confirmEarly = false, confirmCrossCompany = false) {
     setLoading(true);
     setError("");
     setWarning("");
+    const lines = buildDispatchTodayPlannedLines();
     const response = await fetch(`/api/proforma-invoices/${pi.id}/dispatch-today`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -587,12 +618,17 @@ export function ProformaInvoiceDetail({
         receiverName: receiverName || undefined,
         receiverMobile: receiverMobile || undefined,
         notes: dispatchNotes || undefined,
+        lines,
       }),
     });
     const data = await response.json();
     setLoading(false);
     if (response.status === 409 && data.code === "SHORTFALL_SOURCE_REQUIRED") {
-      const checkRes = await fetch(`/api/proforma-invoices/${pi.id}/dispatch-today/stock-check`);
+      const checkRes = await fetch(`/api/proforma-invoices/${pi.id}/dispatch-today/stock-check`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lines: buildDispatchTodayPlannedLines() }),
+      });
       const check = await checkRes.json();
       if (checkRes.ok) {
         setShortfallLines(
@@ -1910,8 +1946,57 @@ export function ProformaInvoiceDetail({
             {canMarkDispatchToday && !dispatchToday?.pendingApproval ? (
               <>
                 <p className="text-sm text-slate-600">
-                  Optional dispatch details below are saved for warehouse and can be updated there.
+                  Set qty to dispatch today per line (0 = skip). Defaults to full remaining qty.
+                  Vehicle and receiver details are saved for warehouse.
                 </p>
+                <div className="space-y-2 rounded-md border border-slate-200 p-3">
+                  <p className="text-sm font-medium text-slate-800">Qty for dispatch today</p>
+                  <ul className="space-y-2">
+                    {pi.items
+                      .filter((item) => {
+                        const remaining =
+                          item.remainingQty ?? item.qty - (item.dispatchedQty ?? 0);
+                        return remaining > 0;
+                      })
+                      .map((item) => {
+                        const remaining =
+                          item.remainingQty ?? item.qty - (item.dispatchedQty ?? 0);
+                        return (
+                          <li
+                            key={item.id}
+                            className="flex flex-wrap items-center justify-between gap-2 text-sm"
+                          >
+                            <span className="min-w-0 flex-1 text-slate-700">
+                              {item.product.displayName}
+                              <span className="block text-xs text-slate-500">
+                                Remaining: {remaining}
+                              </span>
+                            </span>
+                            <Input
+                              type="number"
+                              min={0}
+                              max={remaining}
+                              step="any"
+                              className="h-10 w-28"
+                              value={dispatchTodayQtyByItem[item.id] ?? String(remaining)}
+                              onChange={(e) => {
+                                const raw = e.target.value;
+                                const numeric = Number(raw);
+                                const capped =
+                                  Number.isFinite(numeric) && numeric > remaining
+                                    ? String(remaining)
+                                    : raw;
+                                setDispatchTodayQtyByItem((current) => ({
+                                  ...current,
+                                  [item.id]: capped,
+                                }));
+                              }}
+                            />
+                          </li>
+                        );
+                      })}
+                  </ul>
+                </div>
                 {shortfallCandidates.length > 0 ? (
                   <div className="space-y-2 rounded-md border border-slate-200 p-3">
                     <p className="text-sm font-medium text-slate-800">Shortfall items</p>

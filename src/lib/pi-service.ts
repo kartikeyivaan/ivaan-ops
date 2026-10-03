@@ -27,6 +27,13 @@ import {
   prepareDispatchTodayCrossCompany,
   type SerializedPlan,
 } from "@/lib/cross-company-transfer-service";
+import {
+  assertDispatchTodayPlannedQtyTotal,
+  clearDispatchTodayPlannedQtyForPi,
+  persistDispatchTodayPlannedQty,
+  resolveDispatchTodayPlannedQtyMap,
+  type DispatchTodayPlannedLineInput,
+} from "@/lib/dispatch-today-planned-qty";
 import { decimalToNumber } from "@/lib/inventory";
 import { createEvent } from "@/lib/inventory-event-service";
 import { findFeasibleReservationStartDate } from "@/lib/inventory-projection";
@@ -365,6 +372,10 @@ function serializePi(
         qty,
         dispatchedQty,
         remainingQty: getPiRemainingQty(qty, dispatchedQty),
+        dispatchTodayPlannedQty:
+          item.dispatchTodayPlannedQty == null
+            ? null
+            : decimalToNumber(item.dispatchTodayPlannedQty),
         rate: decimalToNumber(item.rate),
         gstRate: decimalToNumber(item.gstRate),
         lineTotal: decimalToNumber(item.lineTotal),
@@ -2426,6 +2437,7 @@ type DispatchTodayDraftInput = {
   receiverName?: string;
   receiverMobile?: string;
   notes?: string;
+  plannedLines?: DispatchTodayPlannedLineInput[];
 };
 
 function draftFieldsFromInput(draft?: DispatchTodayDraftInput) {
@@ -2452,7 +2464,7 @@ export async function clearExpiredDispatchTodayFlags(
   companyId: string,
   piId?: string,
 ) {
-  await prisma.proformaInvoice.updateMany({
+  const expired = await prisma.proformaInvoice.findMany({
     where: {
       companyId,
       ...(piId ? { id: piId } : {}),
@@ -2461,6 +2473,17 @@ export async function clearExpiredDispatchTodayFlags(
         in: [ProformaInvoiceStatus.BOOKED, ProformaInvoiceStatus.PARTIALLY_DISPATCHED],
       },
     },
+    select: { id: true },
+  });
+  if (expired.length === 0) return;
+
+  const expiredIds = expired.map((row) => row.id);
+  await prisma.proformaInvoiceItem.updateMany({
+    where: { piId: { in: expiredIds } },
+    data: { dispatchTodayPlannedQty: null },
+  });
+  await prisma.proformaInvoice.updateMany({
+    where: { id: { in: expiredIds } },
     data: {
       dispatchTodayDate: null,
       dispatchTodayMarkedAt: null,
@@ -2494,7 +2517,7 @@ async function pullBookingReservationToToday(
   });
 }
 
-async function restoreBookingReservationDates(
+export async function restoreBookingReservationDates(
   tx: Prisma.TransactionClient,
   input: {
     companyId: string;
@@ -2652,6 +2675,7 @@ export async function markDispatchToday(
     confirmCrossCompany?: boolean;
     fromCompanyId?: string;
     draft?: DispatchTodayDraftInput;
+    plannedLines?: DispatchTodayPlannedLineInput[];
   },
 ) {
   await clearExpiredDispatchTodayFlags(prisma, input.companyId, input.piId);
@@ -2681,19 +2705,37 @@ export async function markDispatchToday(
   }
 
   const todayString = toDateOnly(new Date()).toISOString().slice(0, 10);
-  if (isDispatchTodayActive(pi.dispatchTodayDate, new Date(), pi.dispatchTodayMarkedAt)) {
-    const updated = await prisma.proformaInvoice.update({
-      where: { id: pi.id },
-      data: draftFieldsFromInput(input.draft),
-      include: piInclude,
-    });
-    return serializePi(updated, { pendingDispatchTodayApproval: false });
+  const plannedLines = input.plannedLines ?? input.draft?.plannedLines;
+  let plannedByItem: Map<string, number>;
+  try {
+    plannedByItem = resolveDispatchTodayPlannedQtyMap(pi.items, plannedLines);
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.message === "INVALID_PLANNED_LINE") throw error;
+      if (error.message === "INVALID_PLANNED_QTY") throw error;
+    }
+    throw error;
   }
+
+  if (isDispatchTodayActive(pi.dispatchTodayDate, new Date(), pi.dispatchTodayMarkedAt)) {
+    return prisma.$transaction(async (tx) => {
+      await persistDispatchTodayPlannedQty(tx, pi.id, plannedByItem);
+      const updated = await tx.proformaInvoice.update({
+        where: { id: pi.id },
+        data: draftFieldsFromInput(input.draft),
+        include: piInclude,
+      });
+      return serializePi(updated, { pendingDispatchTodayApproval: false });
+    });
+  }
+
+  assertDispatchTodayPlannedQtyTotal(plannedByItem, { requirePositiveTotal: true });
 
   const prepared = await prepareDispatchTodayCrossCompany(prisma, {
     companyId: input.companyId,
     piId: pi.id,
     fromCompanyId: input.fromCompanyId,
+    plannedQtyByItemId: plannedByItem,
   });
 
   const daysUntil = daysUntilCommittedDispatch(pi.requiredDispatchMinDate, todayString);
@@ -2750,6 +2792,7 @@ export async function markDispatchToday(
     const copy = buildDispatchTodayApprovalCopy(approvalReasons);
 
     return prisma.$transaction(async (tx) => {
+      await persistDispatchTodayPlannedQty(tx, pi.id, plannedByItem);
       if (input.draft) {
         await tx.proformaInvoice.update({
           where: { id: pi.id },
@@ -2837,6 +2880,7 @@ export async function markDispatchToday(
 
   // No early/cross-company gate — activate immediately for any role that can mark.
   return prisma.$transaction(async (tx) => {
+    await persistDispatchTodayPlannedQty(tx, pi.id, plannedByItem);
     const updated = await activateDispatchToday(tx, {
       companyId: input.companyId,
       piId: pi.id,
@@ -3056,6 +3100,8 @@ export async function rejectDispatchToday(
       });
     }
 
+    await clearDispatchTodayPlannedQtyForPi(tx, pi.id);
+
     const updated = await tx.proformaInvoice.findUniqueOrThrow({
       where: { id: pi.id },
       include: piInclude,
@@ -3181,6 +3227,8 @@ export async function recallDispatchToday(
       },
       include: piInclude,
     });
+
+    await clearDispatchTodayPlannedQtyForPi(tx, pi.id);
 
     await writeAuditLogTx(tx, {
       tableName: "proforma_invoices",

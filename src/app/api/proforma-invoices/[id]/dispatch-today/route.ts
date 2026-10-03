@@ -52,6 +52,7 @@ export async function POST(request: Request, context: RouteContext) {
         receiverMobile: parsed.data.receiverMobile,
         notes: parsed.data.notes,
       },
+      plannedLines: parsed.data.lines,
     });
     return NextResponse.json(pi);
   } catch (error) {
@@ -63,6 +64,20 @@ export async function POST(request: Request, context: RouteContext) {
         return errorResponse(
           "NOT_READY_FOR_DISPATCH",
           "PI must be booked and fully paid (or have approved credit) before dispatch today.",
+          400,
+        );
+      }
+      if (error.message === "DISPATCH_TODAY_QTY_REQUIRED") {
+        return errorResponse(
+          "DISPATCH_TODAY_QTY_REQUIRED",
+          "Enter dispatch quantity on at least one line.",
+          400,
+        );
+      }
+      if (error.message === "INVALID_PLANNED_QTY" || error.message === "INVALID_PLANNED_LINE") {
+        return errorResponse(
+          "INVALID_PLANNED_QTY",
+          "Dispatch quantity must be between 0 and the remaining booked quantity for each line.",
           400,
         );
       }

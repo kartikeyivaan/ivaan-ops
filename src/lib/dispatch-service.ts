@@ -2,6 +2,7 @@ import {
   ApprovalModuleType,
   ApprovalRequestStatus,
   DispatchStatus,
+  InvoiceHandoverStatus,
   InventoryEventStatus,
   InventoryEventType,
   InventoryTransactionType,
@@ -32,6 +33,8 @@ import {
   resolveKitDispatchQty,
   type KitBomComponent,
 } from "@/lib/kit-fulfillment";
+import { createRevokeTasksForCancelledDispatch } from "@/lib/dispatch-cancel-revoke-service";
+import { voidDocumentationForCancelledDispatch } from "@/lib/documentation-service";
 import {
   notifyDispatchCompleted,
   notifyInvoicePending,
@@ -44,7 +47,13 @@ import {
 } from "@/lib/proforma-invoices";
 import { resolveStoredSerials } from "@/lib/serial-resolution";
 import { findLiveOrLatestSerial } from "@/lib/serial-lifecycle";
-import { clearExpiredDispatchTodayFlags } from "@/lib/pi-service";
+import {
+  assertLineWithinPlannedCap,
+  maxDispatchQtyForFormRow,
+  piUsesDispatchTodayPlannedCap,
+  clearDispatchTodayPlannedQtyForPi,
+} from "@/lib/dispatch-today-planned-qty";
+import { clearExpiredDispatchTodayFlags, restoreBookingReservationDates } from "@/lib/pi-service";
 import { deductNonSerialStock } from "@/lib/transfer-service";
 import {
   loadKitBomMapForDispatches,
@@ -504,7 +513,9 @@ export async function listDispatchableProformaInvoices(
   }
 
   // SE already gated payment/credit when marking Dispatch Today — do not re-block on outstanding.
-  return result.filter((pi) => pi.items.some((item) => item.remainingQty > 0));
+  return result.filter((pi) =>
+    pi.items.some((item) => item.remainingQty > 0 && item.maxDispatchQty > 0),
+  );
 }
 
 export type DispatchFormItem = {
@@ -516,6 +527,7 @@ export type DispatchFormItem = {
   orderedQty: number;
   dispatchedQty: number;
   remainingQty: number;
+  maxDispatchQty: number;
   isKitComponent: boolean;
   kitBomQty: number | null;
 };
@@ -527,6 +539,7 @@ export async function buildDispatchFormItems(
     productId: string;
     qty: { toNumber(): number } | number | string;
     dispatchedQty: { toNumber(): number } | number | string;
+    dispatchTodayPlannedQty?: { toNumber(): number } | number | string | null;
     product: {
       displayName: string;
       serialTracking: boolean;
@@ -534,6 +547,7 @@ export async function buildDispatchFormItems(
     };
   }>,
 ): Promise<DispatchFormItem[]> {
+  const usesPlannedCap = piUsesDispatchTodayPlannedCap(items);
   const result: DispatchFormItem[] = [];
   for (const item of items) {
     const remainingKits = getRemainingQty(
@@ -542,9 +556,21 @@ export async function buildDispatchFormItems(
     );
     if (remainingKits <= 0) continue;
 
+    const plannedKitQty =
+      item.dispatchTodayPlannedQty == null
+        ? null
+        : decimalToNumber(item.dispatchTodayPlannedQty);
+
     if (isKitCategory(item.product.category.name)) {
       const components = await getKitComponentsForFulfillment(prisma, item.productId);
       for (const component of components) {
+        const remainingQty = componentRemainingQty(remainingKits, component.qty);
+        const maxDispatchQty = maxDispatchQtyForFormRow({
+          remainingQty,
+          kitBomQty: component.qty,
+          piItemPlannedKitQty: plannedKitQty,
+          usesPlannedCap,
+        });
         result.push({
           id: item.id,
           productId: component.componentProductId,
@@ -553,12 +579,19 @@ export async function buildDispatchFormItems(
           serialTracking: component.serialTracking,
           orderedQty: decimalToNumber(item.qty) * component.qty,
           dispatchedQty: decimalToNumber(item.dispatchedQty) * component.qty,
-          remainingQty: componentRemainingQty(remainingKits, component.qty),
+          remainingQty,
+          maxDispatchQty,
           isKitComponent: true,
           kitBomQty: component.qty,
         });
       }
     } else {
+      const maxDispatchQty = maxDispatchQtyForFormRow({
+        remainingQty: remainingKits,
+        kitBomQty: null,
+        piItemPlannedKitQty: plannedKitQty,
+        usesPlannedCap,
+      });
       result.push({
         id: item.id,
         productId: item.productId,
@@ -568,6 +601,7 @@ export async function buildDispatchFormItems(
         orderedQty: decimalToNumber(item.qty),
         dispatchedQty: decimalToNumber(item.dispatchedQty),
         remainingQty: remainingKits,
+        maxDispatchQty,
         isKitComponent: false,
         kitBomQty: null,
       });
@@ -721,10 +755,15 @@ async function validateDispatchLines(
   const pi = await prisma.proformaInvoice.findFirst({
     where: { id: input.piId, companyId: input.companyId },
     include: {
-      items: { include: { product: { include: { category: true } } } },
+      items: {
+        include: {
+          product: { include: { category: true } },
+        },
+      },
     },
   });
   if (!pi) throw new Error("NOT_FOUND");
+  const usesPlannedCap = piUsesDispatchTodayPlannedCap(pi.items);
   if (
     pi.status !== ProformaInvoiceStatus.BOOKED &&
     pi.status !== ProformaInvoiceStatus.PARTIALLY_DISPATCHED
@@ -779,6 +818,17 @@ async function validateDispatchLines(
           qty: line.qty,
         })),
       });
+      if (usesPlannedCap) {
+        assertLineWithinPlannedCap({
+          piItem: piItem,
+          lineQty: 0,
+          kitBomMap,
+          groupLines: groupLines.map((line) => ({
+            productId: line.productId,
+            qty: line.qty,
+          })),
+        });
+      }
 
       for (const line of groupLines) {
         if (line.qty <= 0) throw new Error("INVALID_QUANTITY");
@@ -818,10 +868,22 @@ async function validateDispatchLines(
       decimalToNumber(piItem.dispatchedQty),
     );
     if (line.qty > remaining) throw new Error("EXCEEDS_REMAINING_QTY");
+    if (usesPlannedCap) {
+      assertLineWithinPlannedCap({
+        piItem: piItem,
+        lineQty: line.qty,
+        kitBomMap,
+      });
+    }
 
     if (piItem.product.serialTracking) {
       const serialIds = line.serialIds ?? [];
       if (serialIds.length !== Math.ceil(line.qty)) throw new Error("SERIAL_REQUIRED");
+      const plannedMax =
+        piItem.dispatchTodayPlannedQty == null
+          ? remaining
+          : decimalToNumber(piItem.dispatchTodayPlannedQty);
+      if (serialIds.length > plannedMax) throw new Error("EXCEEDS_PLANNED_DISPATCH_QTY");
 
       const selectable = await prisma.inventorySerial.findMany({
         where: {
@@ -1319,6 +1381,40 @@ async function confirmDispatchTx(
 
   await refreshPiDispatchStatus(tx, dispatch.proformaInvoiceId);
 
+  const piDispatchToday = await tx.proformaInvoice.findUniqueOrThrow({
+    where: { id: dispatch.proformaInvoiceId },
+    select: {
+      dispatchTodayDate: true,
+      dispatchTodayMarkedAt: true,
+      requiredDispatchMinDate: true,
+      requiredDispatchMaxDate: true,
+    },
+  });
+  if (
+    isDispatchTodayActive(
+      piDispatchToday.dispatchTodayDate,
+      new Date(),
+      piDispatchToday.dispatchTodayMarkedAt,
+    )
+  ) {
+    await restoreBookingReservationDates(tx, {
+      companyId: input.companyId,
+      piId: dispatch.proformaInvoiceId,
+      minDate: piDispatchToday.requiredDispatchMinDate,
+      maxDate: piDispatchToday.requiredDispatchMaxDate,
+      updatedById: input.performedById,
+    });
+    await tx.proformaInvoice.update({
+      where: { id: dispatch.proformaInvoiceId },
+      data: {
+        dispatchTodayDate: null,
+        dispatchTodayMarkedAt: null,
+        dispatchTodayMarkedById: null,
+      },
+    });
+    await clearDispatchTodayPlannedQtyForPi(tx, dispatch.proformaInvoiceId);
+  }
+
   await tx.invoiceHandover.upsert({
     where: { dispatchId: dispatch.id },
     create: {
@@ -1556,6 +1652,37 @@ export async function approveDispatchCancel(
     });
 
     await refreshPiDispatchStatus(tx, dispatch.proformaInvoiceId);
+
+    await tx.invoiceHandover.updateMany({
+      where: {
+        dispatchId: dispatch.id,
+        status: {
+          in: [InvoiceHandoverStatus.PENDING_INVOICE, InvoiceHandoverStatus.CORRECTION_REQUIRED],
+        },
+      },
+      data: {
+        remarks: `Voided: delivery challan ${dispatch.dcNo} was cancelled.`,
+      },
+    });
+
+    await voidDocumentationForCancelledDispatch(tx, {
+      dispatchId: dispatch.id,
+      performedById: input.approvedById,
+      dcNo: dispatch.dcNo,
+    });
+
+    const piRow = await tx.proformaInvoice.findUnique({
+      where: { id: dispatch.proformaInvoiceId },
+      select: { piNo: true },
+    });
+
+    await createRevokeTasksForCancelledDispatch(tx, {
+      companyId: input.companyId,
+      dispatchId: dispatch.id,
+      dcNo: dispatch.dcNo,
+      piNo: piRow?.piNo ?? "—",
+      fallbackAssigneeId: input.approvedById,
+    });
 
     await tx.approvalRequest.updateMany({
       where: {

@@ -13,6 +13,10 @@ import {
   canViewDispatches,
 } from "@/lib/dispatch-permissions";
 import { ROLES } from "@/lib/rbac";
+import {
+  assertDispatchEligibleForDownstreamProcessing,
+  isDispatchEligibleForDownstreamProcessing,
+} from "@/lib/dispatch-workflow-eligibility";
 
 describe("dispatch helpers", () => {
   it("calculates remaining qty for partial dispatch", () => {
@@ -112,5 +116,23 @@ describe("dispatch permissions", () => {
   it("allows manager to approve DC cancellation", () => {
     expect(canApproveDispatchCancel([ROLES.SALES_MANAGER])).toBe(true);
     expect(canApproveDispatchCancel([ROLES.WAREHOUSE])).toBe(false);
+  });
+});
+
+describe("dispatch downstream eligibility", () => {
+  it("allows only fully dispatched DCs", () => {
+    expect(isDispatchEligibleForDownstreamProcessing("DISPATCHED")).toBe(true);
+    expect(isDispatchEligibleForDownstreamProcessing("CANCELLED")).toBe(false);
+    expect(isDispatchEligibleForDownstreamProcessing("CANCEL_PENDING")).toBe(false);
+    expect(isDispatchEligibleForDownstreamProcessing("DRAFT")).toBe(false);
+  });
+
+  it("throws explicit errors for blocked statuses", () => {
+    expect(() => assertDispatchEligibleForDownstreamProcessing("CANCELLED")).toThrow(
+      "DISPATCH_CANCELLED",
+    );
+    expect(() => assertDispatchEligibleForDownstreamProcessing("CANCEL_PENDING")).toThrow(
+      "DISPATCH_NOT_ELIGIBLE",
+    );
   });
 });

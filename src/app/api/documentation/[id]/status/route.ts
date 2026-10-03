@@ -34,9 +34,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       NOT_FOUND: "Documentation record not found.",
       HOLD_REASON_REQUIRED: "Hold reason is required.",
       REVIEW_REASON_REQUIRED: "Review reason is required.",
+      DISPATCH_CANCELLED: "This delivery challan was cancelled. Documentation cannot be updated.",
+      DISPATCH_NOT_ELIGIBLE: "This delivery challan is not eligible for documentation updates.",
     };
     if (cause instanceof Error && messages[cause.message]) {
-      return NextResponse.json({ message: messages[cause.message] }, { status: cause.message === "NOT_FOUND" ? 404 : 400 });
+      const status = cause.message === "NOT_FOUND" ? 404 : 400;
+      return NextResponse.json({ message: messages[cause.message] }, { status });
     }
     throw cause;
   }

@@ -59,6 +59,7 @@ export async function POST(request: Request) {
       NOT_FOUND: { message: "Handover not found.", status: 404 },
       ALREADY_EXISTS: { message: "Documentation is already open for this dispatch.", status: 409 },
       DISPATCH_NOT_DISPATCHED: { message: "Only dispatched challans can be sent for DCR.", status: 400 },
+      DISPATCH_CANCELLED: { message: "This delivery challan was cancelled and cannot be sent for DCR.", status: 400 },
       NOT_PENDING_INVOICE: { message: "Invoice is already recorded for this dispatch.", status: 400 },
     };
     if (cause instanceof Error && messages[cause.message]) {

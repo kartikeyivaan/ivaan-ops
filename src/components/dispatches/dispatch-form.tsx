@@ -55,6 +55,7 @@ type BookablePi = {
     orderedQty: number;
     dispatchedQty: number;
     remainingQty: number;
+    maxDispatchQty: number;
   }>;
 };
 
@@ -68,6 +69,7 @@ type LineDraft = {
   productName: string;
   serialTracking: boolean;
   remainingQty: number;
+  maxDispatchQty: number;
   qty: string;
   serials: SelectedSerial[];
   pasteText: string;
@@ -143,14 +145,15 @@ export function DispatchForm({
 
     setLines(
       pi.items
-        .filter((item) => item.remainingQty > 0)
+        .filter((item) => item.remainingQty > 0 && item.maxDispatchQty > 0)
         .map((item) => ({
           proformaInvoiceItemId: item.id,
           productId: item.productId,
           productName: item.productName,
           serialTracking: item.serialTracking,
           remainingQty: item.remainingQty,
-          qty: item.serialTracking ? "0" : String(item.remainingQty),
+          maxDispatchQty: item.maxDispatchQty,
+          qty: item.serialTracking ? "0" : String(item.maxDispatchQty),
           serials: [],
           pasteText: "",
           invalidSerials: [],
@@ -263,7 +266,15 @@ export function DispatchForm({
         existingNumbers.add(found.serialNumber.toUpperCase());
       }
 
-      const serials = [...latest.serials, ...added];
+      const merged = [...latest.serials, ...added];
+      const serials = merged.slice(0, latest.maxDispatchQty);
+      const dropped = merged.length - serials.length;
+      if (dropped > 0) {
+        invalid.push({
+          serialNumber: "",
+          reason: `Only ${latest.maxDispatchQty} serial(s) allowed for today's dispatch.`,
+        });
+      }
       updateLine(lineIndex, {
         lookingUp: false,
         serials,
@@ -552,6 +563,11 @@ export function DispatchForm({
                 <p className="font-medium">{line.productName}</p>
                 <p className="text-sm text-slate-500">
                   Remaining booked qty: {line.remainingQty}
+                  {line.maxDispatchQty < line.remainingQty ? (
+                    <span className="block text-xs text-emerald-700">
+                      Planned for today: up to {line.maxDispatchQty}
+                    </span>
+                  ) : null}
                   {line.productName.includes("(from ") ? (
                     <span className="block text-xs text-slate-500">
                       Kit component — dispatch full BOM together
@@ -563,20 +579,28 @@ export function DispatchForm({
                   <Input
                     type="number"
                     min="0"
-                    max={line.remainingQty}
+                    max={line.maxDispatchQty}
                     step="any"
                     className="h-12 text-base"
                     value={line.serialTracking ? String(line.serials.length) : line.qty}
-                    onChange={(event) => updateLine(index, { qty: event.target.value })}
+                    onChange={(event) => {
+                      const raw = event.target.value;
+                      const numeric = Number(raw);
+                      const capped =
+                        Number.isFinite(numeric) && numeric > line.maxDispatchQty
+                          ? String(line.maxDispatchQty)
+                          : raw;
+                      updateLine(index, { qty: capped });
+                    }}
                     disabled={line.serialTracking}
                   />
                   {line.serialTracking ? (
                     <p className="text-xs text-slate-500">
-                      Qty follows accepted serials
-                      {line.serials.length > 0 && line.serials.length < line.remainingQty
-                        ? ` (${line.serials.length} of ${line.remainingQty}; remaining stay booked)`
+                      Qty follows accepted serials (max {line.maxDispatchQty} for today)
+                      {line.serials.length > 0 && line.serials.length < line.maxDispatchQty
+                        ? ` (${line.serials.length} of ${line.maxDispatchQty}; remaining stay booked)`
                         : line.serials.length === 0
-                          ? ` (scan to dispatch; ${line.remainingQty} remaining)`
+                          ? ` (scan to dispatch; up to ${line.maxDispatchQty} today)`
                           : ""}
                       .
                     </p>

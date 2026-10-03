@@ -15,6 +15,8 @@ export const SYSTEM_TASK_TRIGGERS = {
   SERVICE_FOLLOW_UP: "SERVICE_FOLLOW_UP",
   PURCHASE_REQUEST_PENDING: "PURCHASE_REQUEST_PENDING",
   INVENTORY_AUDIT_DUE: "INVENTORY_AUDIT_DUE",
+  DC_CANCEL_INVOICE_REVOKE: "DC_CANCEL_INVOICE_REVOKE",
+  DC_CANCEL_DCR_REVOKE: "DC_CANCEL_DCR_REVOKE",
 } as const;
 
 export type SystemTaskTriggerKey =
@@ -97,6 +99,20 @@ registerSystemTaskRule({
   sourceType: "INVENTORY_AUDIT",
   title: (input) => input.title ?? "Inventory audit due",
   reason: (input) => input.reason ?? "Inventory audit is due.",
+});
+
+registerSystemTaskRule({
+  triggerKey: SYSTEM_TASK_TRIGGERS.DC_CANCEL_INVOICE_REVOKE,
+  sourceType: "INVOICE",
+  title: (input) => input.title ?? "Revoke invoice — DC cancelled",
+  reason: (input) => input.reason ?? "Invoice must be cancelled after DC cancel.",
+});
+
+registerSystemTaskRule({
+  triggerKey: SYSTEM_TASK_TRIGGERS.DC_CANCEL_DCR_REVOKE,
+  sourceType: "DOCUMENTATION",
+  title: (input) => input.title ?? "Revoke DCR — DC cancelled",
+  reason: (input) => input.reason ?? "DCR may need to be revoked after DC cancel.",
 });
 
 export async function createSystemTaskIdempotent(

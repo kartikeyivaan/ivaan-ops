@@ -26,8 +26,21 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       changedById: session.user.id,
     }));
   } catch (cause) {
-    if (cause instanceof Error && ["NOT_FOUND", "ASSIGNEE_NOT_FOUND"].includes(cause.message)) {
-      return NextResponse.json({ message: cause.message === "NOT_FOUND" ? "Record not found." : "Assignee not found." }, { status: 404 });
+    const messages: Record<string, { message: string; status: number }> = {
+      NOT_FOUND: { message: "Record not found.", status: 404 },
+      ASSIGNEE_NOT_FOUND: { message: "Assignee not found.", status: 404 },
+      DISPATCH_CANCELLED: {
+        message: "This delivery challan was cancelled. Documentation cannot be assigned.",
+        status: 400,
+      },
+      DISPATCH_NOT_ELIGIBLE: {
+        message: "This delivery challan is not eligible for documentation updates.",
+        status: 400,
+      },
+    };
+    if (cause instanceof Error && messages[cause.message]) {
+      const entry = messages[cause.message];
+      return NextResponse.json({ message: entry.message }, { status: entry.status });
     }
     throw cause;
   }

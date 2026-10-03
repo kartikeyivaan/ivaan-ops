@@ -14,6 +14,7 @@ type RecordData = {
   holdReason: string | null; reviewReason: string | null;
   dispatch: {
     dcNo: string;
+    status: string;
     dispatchDate: string;
     receiverName: string | null;
     receiverMobile: string | null;
@@ -55,6 +56,9 @@ export function DocumentationRecordView({ record, canManage }: {
   }
 
   const invoicePending = !record.invoiceHandover.invoiceNumber;
+  const dispatchClosed =
+    record.dispatch.status === "CANCELLED" || record.dispatch.status === "CANCEL_PENDING";
+  const canUpdateWorkflow = canManage && !dispatchClosed;
 
   return (
     <div className="space-y-5">
@@ -62,7 +66,13 @@ export function DocumentationRecordView({ record, canManage }: {
         <div><h1 className="text-2xl font-bold text-slate-900">{record.customer.customerName}</h1><p className="text-sm text-slate-500">{record.dispatch.dcNo} · {record.ageingDays} days</p></div>
         <Button variant="outline" asChild><Link href="/documentation">Back</Link></Button>
       </div>
-      {invoicePending ? (
+      {dispatchClosed ? (
+        <p className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+          Delivery challan {record.dispatch.status === "CANCELLED" ? "was cancelled" : "is pending cancellation"}.
+          Documentation workflow is closed for this dispatch.
+        </p>
+      ) : null}
+      {invoicePending && !dispatchClosed ? (
         <p className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           Invoice is not recorded yet. DCR can still be completed.
         </p>
@@ -101,8 +111,8 @@ export function DocumentationRecordView({ record, canManage }: {
           )}
         </div>
       </CardContent></Card>
-      {canManage ? <Card><CardHeader><CardTitle className="text-base">Update workflow</CardTitle></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1"><Label>Status</Label><select className="h-10 w-full rounded-md border bg-white px-3" value={status} onChange={(e) => setStatus(e.target.value)}>{["PENDING","HOLD","FOR_REVIEW","DCR_ISSUED","NOT_REQUIRED"].map((value) => <option key={value}>{value}</option>)}</select></div>
+      {canUpdateWorkflow ? <Card><CardHeader><CardTitle className="text-base">Update workflow</CardTitle></CardHeader><CardContent className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1"><Label>Status</Label><select className="h-10 w-full rounded-md border bg-white px-3" value={status} onChange={(e) => setStatus(e.target.value)}>{["PENDING","HOLD","FOR_REVIEW","DCR_ISSUED","NOT_REQUIRED","DCR_REVOKED"].map((value) => <option key={value}>{value}</option>)}</select></div>
         {(status === "HOLD" || status === "FOR_REVIEW") ? <div className="space-y-1"><Label>{status === "HOLD" ? "Hold reason" : "Review reason"}</Label><Input value={reason} onChange={(e) => setReason(e.target.value)} /></div> : null}
         <div className="space-y-1 sm:col-span-2"><Label>Remarks</Label><Input value={remarks} onChange={(e) => setRemarks(e.target.value)} /></div>
         <Button onClick={updateStatus}>Save status</Button>

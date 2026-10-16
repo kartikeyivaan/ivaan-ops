@@ -330,6 +330,8 @@ describe("inventory timeline day breakdown pairs", () => {
       actualDispatchInOutgoing: 0,
       received: 72,
       dispatched: 0,
+      manualAdjustmentOut: 0,
+      manualAdjustmentIn: 0,
       physicalBaseline: true,
     });
 
@@ -342,7 +344,11 @@ describe("inventory timeline day breakdown pairs", () => {
       closing: 794,
     });
     expect(
-      day.opening + day.incoming + day.received - day.outgoing - day.dispatched,
+      day.opening +
+        day.incoming +
+        day.received -
+        day.outgoing -
+        day.dispatched,
     ).toBe(day.closing);
   });
 
@@ -354,6 +360,8 @@ describe("inventory timeline day breakdown pairs", () => {
       actualDispatchInOutgoing: 0,
       received: 0,
       dispatched: 324,
+      manualAdjustmentOut: 0,
+      manualAdjustmentIn: 0,
       physicalBaseline: true,
     });
 
@@ -366,7 +374,11 @@ describe("inventory timeline day breakdown pairs", () => {
       closing: 146,
     });
     expect(
-      day.opening + day.incoming + day.received - day.outgoing - day.dispatched,
+      day.opening +
+        day.incoming +
+        day.received -
+        day.outgoing -
+        day.dispatched,
     ).toBe(day.closing);
   });
 
@@ -379,6 +391,8 @@ describe("inventory timeline day breakdown pairs", () => {
       actualDispatchInOutgoing: 0,
       received: 0,
       dispatched: 0,
+      manualAdjustmentOut: 0,
+      manualAdjustmentIn: 0,
       physicalBaseline: true,
     });
     const after = buildInventoryTimelineDayBreakdown({
@@ -388,6 +402,8 @@ describe("inventory timeline day breakdown pairs", () => {
       actualDispatchInOutgoing: 0,
       received: 50,
       dispatched: 0,
+      manualAdjustmentOut: 0,
+      manualAdjustmentIn: 0,
       physicalBaseline: true,
     });
     expect(before.closing).toBe(160);
@@ -402,12 +418,32 @@ describe("inventory timeline day breakdown pairs", () => {
       actualDispatchInOutgoing: 15,
       received: 0,
       dispatched: 15,
+      manualAdjustmentOut: 0,
+      manualAdjustmentIn: 0,
       physicalBaseline: false,
     });
 
     expect(day.outgoing).toBe(25);
     expect(day.dispatched).toBe(15);
     expect(day.closing).toBe(160);
+  });
+
+  it("restores start-of-day opening when manual stock out already reduced live physical", () => {
+    const day = buildInventoryTimelineDayBreakdown({
+      projectionOpening: 28,
+      incoming: 0,
+      projectionOutgoing: 0,
+      actualDispatchInOutgoing: 0,
+      received: 0,
+      dispatched: 6,
+      manualAdjustmentOut: 50,
+      manualAdjustmentIn: 0,
+      physicalBaseline: true,
+    });
+
+    expect(day.opening).toBe(84);
+    expect(day.outgoing).toBe(0);
+    expect(day.closing).toBe(28);
   });
 
   it("sums actual dispatch quantities inside day events", () => {

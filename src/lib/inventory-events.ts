@@ -243,7 +243,7 @@ export function applyRemainingPiQtyToBookingReservations(
  * Prepare inventory events for projection against a *live* physical baseline
  * (available + booked already excludes dispatched stock).
  *
- * - Drops ACTUAL_DISPATCH: those units already left physical stock.
+ * - Drops ACTUAL_DISPATCH and manual adjustments: already reflected in physical stock.
  * - Drops BOOKING_RESERVATION once dispatched qty for that PI covers it
  *   (dispatch confirm historically did not always emit BOOKING_RELEASE).
  * - Still honors PLANNED_DISPATCH / BOOKING_RELEASE supersession links.
@@ -269,7 +269,9 @@ export function filterEventsForLivePhysicalProjection(
     (event) =>
       eventAffectsProjection(event.status) &&
       !superseded.has(event.id) &&
-      event.eventType !== "ACTUAL_DISPATCH",
+      event.eventType !== "ACTUAL_DISPATCH" &&
+      event.eventType !== "MANUAL_ADJUSTMENT_IN" &&
+      event.eventType !== "MANUAL_ADJUSTMENT_OUT",
   );
 }
 

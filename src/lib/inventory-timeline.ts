@@ -222,7 +222,9 @@ export function selectTimelineProjectionEvents(
     if (
       event.eventType !== "BOOKING_RESERVATION" &&
       event.eventType !== "BOOKING_RELEASE" &&
-      event.eventType !== "ACTUAL_DISPATCH"
+      event.eventType !== "ACTUAL_DISPATCH" &&
+      event.eventType !== "MANUAL_ADJUSTMENT_IN" &&
+      event.eventType !== "MANUAL_ADJUSTMENT_OUT"
     ) {
       selected.push(event);
     }
@@ -258,6 +260,8 @@ export function enrichTimelineDayEvents(
       .map((event) => event.sourceId as string),
   );
 
+  const seenEventIds = new Set(enriched.map((event) => event.id));
+
   // Dispatched Dispatch Today rows are excluded from projection math but still
   // listed in today’s details so the warehouse can see completed marks.
   for (const event of allEvents) {
@@ -268,6 +272,7 @@ export function enrichTimelineDayEvents(
     if (getInventoryEventProjectionDate(event) > startDate) continue;
 
     seenPiIds.add(event.sourceId);
+    seenEventIds.add(event.id);
     enriched.push({
       ...event,
       dispatchTodayStatus: "Dispatched",
@@ -275,6 +280,21 @@ export function enrichTimelineDayEvents(
       customerName: dispatchToday.customerName,
       sourceNumber: dispatchToday.piNo,
     });
+  }
+
+  // Manual stock adjustments already moved physical stock; show on today only.
+  for (const event of allEvents) {
+    if (superseded.has(event.id)) continue;
+    if (seenEventIds.has(event.id)) continue;
+    if (
+      event.eventType !== "MANUAL_ADJUSTMENT_IN" &&
+      event.eventType !== "MANUAL_ADJUSTMENT_OUT"
+    ) {
+      continue;
+    }
+    if (getInventoryEventProjectionDate(event) !== startDate) continue;
+    seenEventIds.add(event.id);
+    enriched.push(event);
   }
 
   // Order: pending reservations first, then dispatched (dispatch sequence).
@@ -314,17 +334,59 @@ export function sumActualDispatchInDayEvents(
   return total;
 }
 
+function sumManualAdjustmentQuantityForDay(
+  events: readonly InventoryEvent[],
+  superseded: ReadonlySet<string>,
+  dayDate: string,
+  eventType: "MANUAL_ADJUSTMENT_IN" | "MANUAL_ADJUSTMENT_OUT",
+): number {
+  let total = 0;
+  for (const event of events) {
+    if (superseded.has(event.id)) continue;
+    if (event.eventType !== eventType) continue;
+    if (getInventoryEventProjectionDate(event) !== dayDate) continue;
+    total += event.quantity;
+  }
+  return total;
+}
+
+export function sumManualAdjustmentOutForDay(
+  events: readonly InventoryEvent[],
+  superseded: ReadonlySet<string>,
+  dayDate: string,
+): number {
+  return sumManualAdjustmentQuantityForDay(
+    events,
+    superseded,
+    dayDate,
+    "MANUAL_ADJUSTMENT_OUT",
+  );
+}
+
+export function sumManualAdjustmentInForDay(
+  events: readonly InventoryEvent[],
+  superseded: ReadonlySet<string>,
+  dayDate: string,
+): number {
+  return sumManualAdjustmentQuantityForDay(
+    events,
+    superseded,
+    dayDate,
+    "MANUAL_ADJUSTMENT_IN",
+  );
+}
+
 /**
  * Day roll-forward with Incoming↔Received and Outgoing↔Dispatched pairs.
  *
- * Opening + Incoming + Received − Outgoing − Dispatched = Closing
+ * Opening + Incoming + Received − Outgoing − Dispatched − Manual out + Manual in = Closing
  *
- * When `physicalBaseline` is true (today), physical stock already includes
- * Received and already excludes Dispatched, so Opening is adjusted back to
- * start-of-day before applying the full formula.
+ * When `physicalBaseline` is true (today), live physical already includes
+ * Received and Manual in and already excludes Dispatched and Manual out, so
+ * Opening is adjusted back to start-of-day before applying the full formula.
  *
- * ACTUAL_DISPATCH already counted in projection outgoing is stripped so it
- * appears only under Dispatched (not double-counted).
+ * ACTUAL_DISPATCH / manual adjustments already counted in projection totals
+ * are stripped so they are not double-counted against live physical stock.
  */
 export function buildInventoryTimelineDayBreakdown(input: {
   projectionOpening: number;
@@ -333,6 +395,8 @@ export function buildInventoryTimelineDayBreakdown(input: {
   actualDispatchInOutgoing: number;
   received: number;
   dispatched: number;
+  manualAdjustmentOut: number;
+  manualAdjustmentIn: number;
   physicalBaseline: boolean;
 }): Omit<InventoryTimelineDay, "date" | "events"> {
   const outgoing = Math.max(
@@ -340,10 +404,20 @@ export function buildInventoryTimelineDayBreakdown(input: {
     input.projectionOutgoing - input.actualDispatchInOutgoing,
   );
   const opening = input.physicalBaseline
-    ? input.projectionOpening - input.received + input.dispatched
+    ? input.projectionOpening -
+      input.received +
+      input.dispatched +
+      input.manualAdjustmentOut -
+      input.manualAdjustmentIn
     : input.projectionOpening;
   const closing =
-    opening + input.incoming + input.received - outgoing - input.dispatched;
+    opening +
+    input.incoming +
+    input.received -
+    outgoing -
+    input.dispatched -
+    input.manualAdjustmentOut +
+    input.manualAdjustmentIn;
 
   return {
     opening,
@@ -794,6 +868,16 @@ export async function loadInventoryTimeline(
           superseded,
           day.date,
         );
+        const manualAdjustmentOut = sumManualAdjustmentOutForDay(
+          events,
+          superseded,
+          day.date,
+        );
+        const manualAdjustmentIn = sumManualAdjustmentInForDay(
+          events,
+          superseded,
+          day.date,
+        );
         const received = receivedForDay(day.date);
         const breakdown = buildInventoryTimelineDayBreakdown({
           projectionOpening: day.openingQuantity,
@@ -802,6 +886,8 @@ export async function loadInventoryTimeline(
           actualDispatchInOutgoing: sumActualDispatchInDayEvents(day.events),
           received,
           dispatched,
+          manualAdjustmentOut,
+          manualAdjustmentIn,
           physicalBaseline: day.date === input.startDate,
         });
         return {

@@ -75,6 +75,7 @@ function mapModuleOption(
 export function serializeProposalPackage(
   pkg: Prisma.ProposalPackageMasterGetPayload<{
     include: {
+      inverterUpgrades: true;
       moduleOptions: {
         include: {
           product: {

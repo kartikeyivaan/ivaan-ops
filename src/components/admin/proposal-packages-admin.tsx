@@ -670,9 +670,9 @@ export function ProposalPackagesAdmin() {
                     <TableCell>{pkg.moduleOptions.length || "—"}</TableCell>
                     <TableCell>
                       {!pkg.isActive ? (
-                        <Badge variant="secondary">Inactive</Badge>
+                        <Badge variant="default">Inactive</Badge>
                       ) : pkg.isComingSoon ? (
-                        <Badge variant="outline">Coming soon</Badge>
+                        <Badge variant="warning">Coming soon</Badge>
                       ) : (
                         <Badge>Active</Badge>
                       )}

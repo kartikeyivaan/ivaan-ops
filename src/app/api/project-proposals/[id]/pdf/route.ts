@@ -7,7 +7,8 @@ import {
 } from "@/lib/project-proposal-pdf";
 import { assertProjectProposalAccess } from "@/lib/project-proposal-service";
 import { canViewProjectProposals } from "@/lib/project-proposal-permissions";
-import { pdfContentVersion, pdfInlineResponse, resolveStoredPdf } from "@/lib/pdf-cache";
+import { projectProposalPdfContentVersion } from "@/lib/pdf-content-versions";
+import { pdfInlineResponse, resolveStoredPdf } from "@/lib/pdf-cache";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
 
@@ -57,12 +58,7 @@ export async function GET(request: Request, context: RouteContext) {
       documentType: "PROJECT_PROPOSAL",
       documentId: proposal.id,
       variant: format,
-      contentVersion: pdfContentVersion([
-        proposal.updatedAt.toISOString(),
-        proposal.status,
-        proposal.currentRevisionNo,
-        format,
-      ]),
+      contentVersion: projectProposalPdfContentVersion(proposal),
       generate: () => generateProjectProposalPdfByFormat(proposal, format),
     });
     const revision =

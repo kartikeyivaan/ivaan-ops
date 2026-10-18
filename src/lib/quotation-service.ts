@@ -943,6 +943,11 @@ export async function approveQuotationPricing(
       data: { approvalStatus: ItemApprovalStatus.APPROVED },
     });
 
+    await tx.quotation.update({
+      where: { id: quotation.id },
+      data: { updatedAt: new Date() },
+    });
+
     await tx.approvalRequest.updateMany({
       where: {
         moduleType: ApprovalModuleType.QUOTATION,

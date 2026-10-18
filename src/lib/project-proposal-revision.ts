@@ -23,6 +23,7 @@ type RevisionLike = {
   moduleProductId?: string | null;
   moduleQty?: number | null;
   inverterCapacityKw?: number | null;
+  batteryCount?: number;
   discountAmount: number;
   additionalCostAmount: number;
   notes?: string | null;
@@ -103,6 +104,7 @@ export function mapRevisionToFormValues(
     inverterCapacityKw: revision.inverterCapacityKw
       ? String(revision.inverterCapacityKw)
       : "",
+    batteryCount: String(revision.batteryCount ?? 0),
     discountAmount: String(revision.discountAmount),
     additionalCostAmount: String(revision.additionalCostAmount),
     notes: revision.notes ?? "",

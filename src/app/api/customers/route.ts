@@ -47,6 +47,7 @@ export async function GET(request: Request) {
     customerType: searchParams.get("customerType") ?? undefined,
     assignedSalesUserId: searchParams.get("assignedSalesUserId") ?? undefined,
     status: searchParams.get("status") ?? undefined,
+    outstandingOnly: searchParams.get("outstandingOnly") ?? undefined,
     page: searchParams.get("page") ?? undefined,
     pageSize: searchParams.get("pageSize") ?? undefined,
   });
@@ -61,6 +62,7 @@ export async function GET(request: Request) {
     customerType: parsed.data.customerType as CustomerType | undefined,
     assignedSalesUserId: parsed.data.assignedSalesUserId,
     status: parsed.data.status as CustomerStatus | undefined,
+    outstandingOnly: parsed.data.outstandingOnly,
     page: parsed.data.page,
     pageSize: parsed.data.pageSize,
   });

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Clock, History } from "lucide-react";
+import { Clock, History, Bot } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -17,9 +17,11 @@ type Row = {
 export function DocumentationList({
   rows,
   pendingInvoiceCount,
+  showAutomationLink = false,
 }: {
   rows: Row[];
   pendingInvoiceCount: number;
+  showAutomationLink?: boolean;
 }) {
   return (
     <div className="space-y-5">
@@ -41,6 +43,14 @@ export function DocumentationList({
               History
             </Link>
           </Button>
+          {showAutomationLink ? (
+            <Button variant="outline" asChild className="h-12">
+              <Link href="/documentation/automation">
+                <Bot className="h-4 w-4" />
+                DCR Automation
+              </Link>
+            </Button>
+          ) : null}
         </div>
       </div>
       <div className="grid gap-3 md:grid-cols-2">

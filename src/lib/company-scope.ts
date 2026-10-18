@@ -129,3 +129,39 @@ export function mapProjectsCompanySessionError(error: unknown): {
   }
   return null;
 }
+
+export const DOC_GEN_ISE_ONLY_MESSAGE =
+  "MSEB Document Generator is available only for Ivaan Solar Energy. Switch company to ISE to continue.";
+
+export function assertDocGenCompany(company: CompanyScopeFields | null | undefined): void {
+  if (!company) {
+    throw new Error("COMPANY_NOT_FOUND");
+  }
+  if (!isIseCompany(company)) {
+    throw new Error("DOC_GEN_ISE_ONLY");
+  }
+}
+
+export function requireDocGenCompany(session: Session | null): string {
+  const company = getActiveSessionCompany(session);
+  if (!company) {
+    throw new Error("COMPANY_REQUIRED");
+  }
+  assertDocGenCompany(company);
+  return company.id;
+}
+
+export function mapDocGenCompanySessionError(error: unknown): {
+  code: string;
+  message: string;
+  status: number;
+} | null {
+  if (!(error instanceof Error)) return null;
+  if (error.message === "COMPANY_REQUIRED") {
+    return { code: "COMPANY_REQUIRED", message: "Select Ivaan Solar Energy to continue.", status: 400 };
+  }
+  if (error.message === "DOC_GEN_ISE_ONLY") {
+    return { code: "DOC_GEN_ISE_ONLY", message: DOC_GEN_ISE_ONLY_MESSAGE, status: 403 };
+  }
+  return null;
+}

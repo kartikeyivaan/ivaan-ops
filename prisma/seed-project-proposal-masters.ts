@@ -1,8 +1,9 @@
-import type { PrismaClient } from "@prisma/client";
+import { ProposalPackageType, type PrismaClient } from "@prisma/client";
 
 const PACKAGE_MASTERS = [
   {
     code: "P1",
+    packageType: ProposalPackageType.SUBSIDY_DCR,
     name: "530+Wp × 6 Panels, 3.3kW",
     description: "530+Wp × 6 Panels, 3.3kW Polycab/Deye",
     panelWp: 530,
@@ -16,6 +17,7 @@ const PACKAGE_MASTERS = [
   },
   {
     code: "P2",
+    packageType: ProposalPackageType.SUBSIDY_DCR,
     name: "570+Wp × 6 Panels, 3.3kW",
     description: "570+Wp × 6 Panels, 3.3kW Polycab/Deye",
     panelWp: 570,
@@ -29,6 +31,7 @@ const PACKAGE_MASTERS = [
   },
   {
     code: "P3",
+    packageType: ProposalPackageType.SUBSIDY_DCR,
     name: "530+Wp × 9 Panels, 5kW",
     description: "530+Wp × 9 Panels, 5kW Polycab/Deye",
     panelWp: 530,
@@ -42,6 +45,7 @@ const PACKAGE_MASTERS = [
   },
   {
     code: "P4",
+    packageType: ProposalPackageType.SUBSIDY_DCR,
     name: "570+Wp × 9 Panels, 5kW",
     description: "570+Wp × 9 Panels, 5kW Polycab/Deye",
     panelWp: 570,
@@ -55,6 +59,7 @@ const PACKAGE_MASTERS = [
   },
   {
     code: "P610",
+    packageType: ProposalPackageType.SUBSIDY_DCR,
     name: "610+Wp Package",
     description: "610+Wp Package — Coming Soon",
     panelWp: 610,
@@ -68,6 +73,7 @@ const PACKAGE_MASTERS = [
   },
   {
     code: "NDCR_COMPLETE",
+    packageType: ProposalPackageType.NON_SUBSIDY_CUSTOM,
     name: "Non-subsidy Projects",
     description: "Custom NDCR system — select module product, inverter capacity, and enter total cost in additional cost.",
     panelWp: 0,
@@ -166,6 +172,7 @@ export async function seedProjectProposalMasters(prisma: PrismaClient) {
       update: {
         name: pkg.name,
         description: pkg.description,
+        packageType: pkg.packageType,
         panelWp: pkg.panelWp,
         panelCount: pkg.panelCount,
         systemKw: pkg.systemKw,
@@ -179,6 +186,7 @@ export async function seedProjectProposalMasters(prisma: PrismaClient) {
         code: pkg.code,
         name: pkg.name,
         description: pkg.description,
+        packageType: pkg.packageType,
         panelWp: pkg.panelWp,
         panelCount: pkg.panelCount,
         systemKw: pkg.systemKw,

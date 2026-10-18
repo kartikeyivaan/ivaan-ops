@@ -106,6 +106,12 @@ export const NAV_ITEMS: NavItem[] = [
     ],
   },
   {
+    label: "Projects Quotation",
+    href: "/projects/quotations",
+    group: "Projects",
+    roles: [ROLES.SUPER_ADMIN],
+  },
+  {
     label: "Project Enquiries",
     href: "/projects/enquiries",
     group: "Projects",
@@ -312,6 +318,26 @@ export const NAV_ITEMS: NavItem[] = [
   {
     label: "Documentation",
     href: "/documentation",
+    group: "Accounts",
+    roles: [
+      ROLES.SUPER_ADMIN,
+      ROLES.ACCOUNTS,
+      ROLES.DOCUMENTATION_EXECUTIVE,
+    ],
+  },
+  {
+    label: "DCR Automation",
+    href: "/documentation/automation",
+    group: "Accounts",
+    roles: [
+      ROLES.SUPER_ADMIN,
+      ROLES.ACCOUNTS,
+      ROLES.DOCUMENTATION_EXECUTIVE,
+    ],
+  },
+  {
+    label: "Document Generator",
+    href: "/documentation/document-generator",
     group: "Accounts",
     roles: [
       ROLES.SUPER_ADMIN,

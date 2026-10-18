@@ -3,6 +3,7 @@ import {
   DispatchStatus,
   DocumentationStatus,
   InvoiceHandoverStatus,
+  PiCreditStatus,
   type PrismaClient,
 } from "@prisma/client";
 import {
@@ -28,15 +29,26 @@ function mockClient() {
   return client as unknown as PrismaClient;
 }
 
-const pendingHandover = {
-  id: "handover-1",
-  dispatchId: "dispatch-1",
-  companyId: "company-1",
-  customerId: "customer-1",
-  status: InvoiceHandoverStatus.PENDING_INVOICE,
-  documentation: null,
-  dispatch: { status: DispatchStatus.DISPATCHED },
-};
+function pendingHandoverWith(
+  lines: { displayName: string }[],
+  creditStatus: PiCreditStatus = PiCreditStatus.NONE,
+) {
+  return {
+    id: "handover-1",
+    dispatchId: "dispatch-1",
+    companyId: "company-1",
+    customerId: "customer-1",
+    status: InvoiceHandoverStatus.PENDING_INVOICE,
+    documentation: null,
+    dispatch: {
+      status: DispatchStatus.DISPATCHED,
+      lines: lines.map((line) => ({ product: { displayName: line.displayName } })),
+      proformaInvoice: { creditStatus },
+    },
+  };
+}
+
+const pendingHandover = pendingHandoverWith([{ displayName: "Waaree 590W DCR" }]);
 
 describe("documentation status rules", () => {
   it("requires a reason when putting a record on hold", () => {
@@ -162,6 +174,32 @@ describe("mark dispatch for DCR", () => {
     expect(created.id).toBe("doc-1");
   });
 
+  it("creates NOT_REQUIRED when early mark is used on a non-DCR dispatch", async () => {
+    const client = mockClient();
+    vi.mocked(client.invoiceHandover.findFirst).mockResolvedValue(
+      pendingHandoverWith([{ displayName: "Inverter 5kW" }]) as never,
+    );
+    vi.mocked(client.documentationRecord.create).mockResolvedValue({
+      id: "doc-1",
+      status: DocumentationStatus.NOT_REQUIRED,
+      createdAt: new Date("2026-08-18T00:00:00.000Z"),
+      completedDate: new Date("2026-08-18T00:00:00.000Z"),
+    } as never);
+
+    await markDispatchForDcr(client, {
+      companyId: "company-1",
+      handoverId: "handover-1",
+      changedById: "user-1",
+    });
+
+    expect(client.documentationRecord.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        status: DocumentationStatus.NOT_REQUIRED,
+        completedById: "user-1",
+      }),
+    }));
+  });
+
   it("rejects a missing handover", async () => {
     const client = mockClient();
     vi.mocked(client.invoiceHandover.findFirst).mockResolvedValue(null);
@@ -193,7 +231,7 @@ describe("mark dispatch for DCR", () => {
     const client = mockClient();
     vi.mocked(client.invoiceHandover.findFirst).mockResolvedValue({
       ...pendingHandover,
-      dispatch: { status: DispatchStatus.CANCELLED },
+      dispatch: { ...pendingHandover.dispatch, status: DispatchStatus.CANCELLED },
     } as never);
 
     await expect(markDispatchForDcr(client, {

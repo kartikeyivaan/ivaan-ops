@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { generateQuotationPdf } from "@/lib/quotation-pdf";
-import { pdfContentVersion, pdfInlineResponse, resolveStoredPdf } from "@/lib/pdf-cache";
+import { quotationPdfContentVersion } from "@/lib/pdf-content-versions";
+import { pdfInlineResponse, resolveStoredPdf } from "@/lib/pdf-cache";
 import { prisma } from "@/lib/prisma";
 import { quotationInclude } from "@/lib/quotation-service";
 import { verifyQuotationShareToken } from "@/lib/share-token";
@@ -42,11 +43,7 @@ export async function GET(request: Request) {
   const pdf = await resolveStoredPdf(prisma, {
     documentType: "QUOTATION",
     documentId: quotation.id,
-    contentVersion: pdfContentVersion([
-      quotation.updatedAt.toISOString(),
-      quotation.status,
-      quotation.revisionNo,
-    ]),
+    contentVersion: quotationPdfContentVersion(quotation),
     generate: () => generateQuotationPdf(quotation),
   });
 
@@ -55,7 +52,6 @@ export async function GET(request: Request) {
 
   const response = pdfInlineResponse(pdf, safeName, {
     asciiName: safeName.replace(/[^\x20-\x7E]/g, "_"),
-    privateCache: false,
   });
   response.headers.set("X-Robots-Tag", "noindex, nofollow");
   return response;

@@ -5,6 +5,11 @@ import {
   type PrismaClient,
 } from "@prisma/client";
 import {
+  documentationCreateCompletionFields,
+  documentationCreateHistoryRemarks,
+  resolveDocumentationInitialStatus,
+} from "@/lib/dcr-documentation-eligibility";
+import {
   assertDispatchEligibleForDownstreamProcessing,
   dispatchEligibleForDownstreamWhere,
 } from "@/lib/dispatch-workflow-eligibility";
@@ -171,7 +176,13 @@ export async function markDispatchForDcr(
       where: { id: input.handoverId, companyId: input.companyId },
       include: {
         documentation: { select: { id: true } },
-        dispatch: { select: { status: true } },
+        dispatch: {
+          select: {
+            status: true,
+            lines: { select: { product: { select: { displayName: true } } } },
+            proformaInvoice: { select: { creditStatus: true } },
+          },
+        },
       },
     });
     if (!handover) throw new Error("NOT_FOUND");
@@ -188,18 +199,26 @@ export async function markDispatchForDcr(
       throw new Error("NOT_PENDING_INVOICE");
     }
 
+    const initialStatus = resolveDocumentationInitialStatus({
+      creditStatus: handover.dispatch.proformaInvoice.creditStatus,
+      lines: handover.dispatch.lines.map((line) => ({
+        productDisplayName: line.product.displayName,
+      })),
+    });
+    const historyRemarks = documentationCreateHistoryRemarks(initialStatus, "early_dcr");
     const created = await tx.documentationRecord.create({
       data: {
         dispatchId: handover.dispatchId,
         invoiceHandoverId: handover.id,
         companyId: handover.companyId,
         customerId: handover.customerId,
-        status: DocumentationStatus.PENDING,
+        status: initialStatus,
+        ...documentationCreateCompletionFields(initialStatus, input.changedById),
         statusHistory: {
           create: {
-            toStatus: DocumentationStatus.PENDING,
+            toStatus: initialStatus,
             changedById: input.changedById,
-            remarks: "Marked to send DCR before invoice recording",
+            remarks: historyRemarks,
           },
         },
       },

@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { canViewQuotations } from "@/lib/quotation-permissions";
 import { generateQuotationPdf } from "@/lib/quotation-pdf";
-import { pdfContentVersion, pdfInlineResponse, resolveStoredPdf } from "@/lib/pdf-cache";
+import { quotationPdfContentVersion } from "@/lib/pdf-content-versions";
+import { pdfInlineResponse, resolveStoredPdf } from "@/lib/pdf-cache";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
 
@@ -102,11 +103,7 @@ export async function GET(_request: Request, context: RouteContext) {
   const pdf = await resolveStoredPdf(prisma, {
     documentType: "QUOTATION",
     documentId: quotation.id,
-    contentVersion: pdfContentVersion([
-      quotation.updatedAt.toISOString(),
-      quotation.status,
-      quotation.revisionNo,
-    ]),
+    contentVersion: quotationPdfContentVersion(quotation),
     generate: () => generateQuotationPdf(quotation),
   });
 

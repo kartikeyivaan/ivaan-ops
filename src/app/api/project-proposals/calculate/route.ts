@@ -54,6 +54,7 @@ export async function POST(request: Request) {
       moduleProductId: parsed.data.moduleProductId,
       moduleQty: parsed.data.moduleQty,
       inverterCapacityKw: parsed.data.inverterCapacityKw,
+      batteryCount: parsed.data.batteryCount,
     });
 
     return NextResponse.json({

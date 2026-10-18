@@ -59,6 +59,25 @@ export async function resolveStoredPdf(
   return pdf;
 }
 
+export async function invalidateStoredPdf(
+  prisma: PrismaClient,
+  input: {
+    documentType: PdfDocumentType;
+    documentId: string;
+    variant?: string;
+  },
+): Promise<boolean> {
+  const variant = input.variant ?? "";
+  const result = await prisma.storedPdf.deleteMany({
+    where: {
+      documentType: input.documentType,
+      documentId: input.documentId,
+      variant,
+    },
+  });
+  return result.count > 0;
+}
+
 export function pdfInlineResponse(
   pdf: Buffer,
   filename: string,
@@ -75,7 +94,7 @@ export function pdfInlineResponse(
       "Content-Disposition": `${disposition}; filename="${asciiName}.pdf"; filename*=UTF-8''${encodeURIComponent(
         `${safeName}.pdf`,
       )}`,
-      "Cache-Control": options?.privateCache === false ? "private, no-store" : "private, max-age=3600",
+      "Cache-Control": "private, no-store",
     },
   });
 }

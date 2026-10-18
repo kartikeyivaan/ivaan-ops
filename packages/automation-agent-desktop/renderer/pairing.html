@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pair Ivaan Ops DCR Agent</title>
+    <style>
+      :root {
+        font-family: "Segoe UI", system-ui, sans-serif;
+        color: #0f172a;
+        background: #f8fafc;
+      }
+      body {
+        margin: 0;
+        padding: 1.5rem;
+      }
+      h1 {
+        font-size: 1.125rem;
+        margin: 0 0 0.25rem;
+      }
+      p {
+        margin: 0 0 1rem;
+        font-size: 0.875rem;
+        color: #475569;
+        line-height: 1.45;
+      }
+      label {
+        display: block;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        margin-bottom: 0.35rem;
+      }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 0.55rem 0.65rem;
+        border: 1px solid #cbd5e1;
+        border-radius: 0.375rem;
+        font-size: 0.9375rem;
+        margin-bottom: 0.85rem;
+      }
+      button {
+        width: 100%;
+        padding: 0.65rem;
+        border: none;
+        border-radius: 0.375rem;
+        background: #059669;
+        color: white;
+        font-weight: 600;
+        font-size: 0.9375rem;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      .error {
+        color: #b91c1c;
+        font-size: 0.8125rem;
+        min-height: 1.25rem;
+        margin-bottom: 0.5rem;
+      }
+      .version {
+        margin-top: 1rem;
+        font-size: 0.75rem;
+        color: #94a3b8;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Pair this computer</h1>
+    <p>
+      In Ivaan Ops, open <strong>DCR Automation</strong> → <strong>Pair agent</strong>, then enter the
+      6-digit code below. Keep this app running in the tray while you work.
+    </p>
+    <form id="pair-form">
+      <label for="code">Pairing code</label>
+      <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required />
+
+      <label for="baseUrl">Ivaan Ops URL</label>
+      <input id="baseUrl" name="baseUrl" type="url" required />
+
+      <label for="label">Device label (optional)</label>
+      <input id="label" name="label" placeholder="Office PC" />
+
+      <div class="error" id="error" role="alert"></div>
+      <button type="submit" id="submit">Pair and start</button>
+    </form>
+    <p class="version" id="version"></p>
+    <script src="pairing.js"></script>
+  </body>
+</html>

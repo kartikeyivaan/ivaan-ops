@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { generateDispatchPdf } from "@/lib/dispatch-pdf";
 import { dispatchInclude } from "@/lib/dispatch-service";
-import { pdfContentVersion, pdfInlineResponse, resolveStoredPdf } from "@/lib/pdf-cache";
+import { dispatchPdfContentVersion } from "@/lib/pdf-content-versions";
+import { pdfInlineResponse, resolveStoredPdf } from "@/lib/pdf-cache";
 import { prisma } from "@/lib/prisma";
 import { verifyDispatchShareToken } from "@/lib/share-token";
 
@@ -40,7 +41,7 @@ export async function GET(request: Request) {
   const pdf = await resolveStoredPdf(prisma, {
     documentType: "DISPATCH",
     documentId: dispatch.id,
-    contentVersion: pdfContentVersion([dispatch.updatedAt.toISOString(), dispatch.status]),
+    contentVersion: dispatchPdfContentVersion(dispatch),
     generate: () => generateDispatchPdf(dispatch),
   });
 

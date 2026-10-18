@@ -80,8 +80,11 @@ export async function listCustomers(
     customerType?: CustomerType;
     assignedSalesUserId?: string;
     status?: CustomerStatus;
+    outstandingOnly?: boolean;
   } & ListPaginationInput,
 ): Promise<PaginatedList<CustomerListItem>> {
+  const { page, pageSize, skip, take, unpaged } = resolveListPagination(filters);
+
   const where: Prisma.CustomerWhereInput = {
     ...(filters.status ? { status: filters.status } : {}),
     ...(filters.customerType ? { customerType: filters.customerType } : {}),
@@ -103,7 +106,14 @@ export async function listCustomers(
       : {}),
   };
 
-  const { page, pageSize, skip, take, unpaged } = resolveListPagination(filters);
+  if (filters.outstandingOnly) {
+    const { listCustomerIdsWithOutstanding } = await import("@/lib/pi-service");
+    const outstandingCustomerIds = await listCustomerIdsWithOutstanding(prisma, companyId);
+    if (outstandingCustomerIds.length === 0) {
+      return toPaginatedList([], 0, page, unpaged ? 1 : pageSize);
+    }
+    where.id = { in: outstandingCustomerIds };
+  }
 
   const [total, customers] = await Promise.all([
     prisma.customer.count({ where }),

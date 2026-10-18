@@ -60,6 +60,7 @@ const solaredgeBrand = {
 
 const package530x6 = {
   code: "P1",
+  packageType: "SUBSIDY_DCR" as const,
   panelWp: 530,
   panelCount: 6,
   systemKw: 3.3,
@@ -70,6 +71,7 @@ const package530x6 = {
 
 const package570x6 = {
   code: "P2",
+  packageType: "SUBSIDY_DCR" as const,
   panelWp: 570,
   panelCount: 6,
   systemKw: 3.3,
@@ -132,6 +134,14 @@ function createMockPrisma(options: {
       findUnique: vi.fn().mockResolvedValue({
         ...options.pkg,
         id: options.pkg.id ?? "pkg-id",
+        packageType: options.pkg.packageType ?? "SUBSIDY_DCR",
+        dcrAdditionalPanelRate: null,
+        ndcrAdditionalPanelRate: null,
+        futureStructurePanelRate: null,
+        hybridBasePrice: null,
+        hybridPerInverterKwRate: null,
+        hybridPerBatteryUnitRate: null,
+        moduleOptions: [],
       }),
     },
     proposalInverterBrandMaster: {

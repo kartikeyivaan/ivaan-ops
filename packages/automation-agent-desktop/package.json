@@ -1,0 +1,62 @@
+{
+  "name": "@ivaan/automation-agent-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Windows tray app for the Ivaan Ops DCR automation agent",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "electron .",
+    "dist": "electron-builder --win --x64",
+    "dist:dir": "electron-builder --win --x64 --dir"
+  },
+  "dependencies": {
+    "@ivaan/automation-agent": "file:../automation-agent"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.29",
+    "electron": "^35.1.5",
+    "electron-builder": "^26.0.12",
+    "typescript": "^5.8.3"
+  },
+  "build": {
+    "appId": "com.ivaan.ops.dcr-agent",
+    "productName": "Ivaan Ops DCR Agent",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "renderer/**/*",
+      "package.json",
+      "node_modules/@ivaan/automation-agent/dist/**/*",
+      "node_modules/@ivaan/automation-agent/node_modules/playwright/**/*",
+      "node_modules/@ivaan/automation-agent/node_modules/playwright-core/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../automation-agent/playwright-browsers",
+        "to": "playwright-browsers",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "artifactName": "IvaanOpsDCRAgentSetup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Ivaan Ops DCR Agent"
+    }
+  }
+}

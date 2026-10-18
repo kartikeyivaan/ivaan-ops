@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { canViewAutomation } from "@/lib/automation-permissions";
 import { canViewDocumentation } from "@/lib/documentation-permissions";
 import { countPendingInvoiceDocumentation, listDocumentation } from "@/lib/documentation-service";
 import { prisma } from "@/lib/prisma";
@@ -18,6 +19,7 @@ export default async function DocumentationPage() {
     <DocumentationList
       rows={JSON.parse(JSON.stringify(rows))}
       pendingInvoiceCount={pendingInvoiceCount}
+      showAutomationLink={canViewAutomation(session.user.roles)}
     />
   );
 }

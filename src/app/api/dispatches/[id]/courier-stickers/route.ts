@@ -102,6 +102,7 @@ async function buildCourierPdfResponse(
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": `attachment; filename="${safeDc}-courier-stickers-${boxCount}boxes.pdf"`,
+      "Cache-Control": "private, no-store",
     },
   });
 }

@@ -2380,6 +2380,53 @@ export async function countPendingPayments(prisma: PrismaClient, companyId: stri
   }).length;
 }
 
+function activeProformaInvoiceStatusFilter(): Prisma.EnumProformaInvoiceStatusFilter {
+  return {
+    notIn: [
+      ProformaInvoiceStatus.DRAFT,
+      ProformaInvoiceStatus.CANCEL_PENDING,
+      ProformaInvoiceStatus.CANCELLED,
+    ],
+  };
+}
+
+/** Customer IDs with total PI outstanding > 0 for the company (same rules as list metrics). */
+export async function listCustomerIdsWithOutstanding(
+  prisma: PrismaClient,
+  companyId: string,
+): Promise<string[]> {
+  const pis = await prisma.proformaInvoice.findMany({
+    where: {
+      companyId,
+      status: activeProformaInvoiceStatusFilter(),
+    },
+    select: {
+      customerId: true,
+      totalValue: true,
+      payments: { select: { amount: true } },
+    },
+  });
+
+  const outstandingByCustomer = new Map<string, number>();
+  for (const pi of pis) {
+    const totalValue = decimalToNumber(pi.totalValue);
+    const totalPaid = pi.payments.reduce(
+      (sum, payment) => sum + decimalToNumber(payment.amount),
+      0,
+    );
+    const outstanding = calculateOutstanding(totalValue, totalPaid);
+    if (outstanding <= 0) continue;
+    outstandingByCustomer.set(
+      pi.customerId,
+      roundMoney((outstandingByCustomer.get(pi.customerId) ?? 0) + outstanding),
+    );
+  }
+
+  return [...outstandingByCustomer.entries()]
+    .filter(([, value]) => value > 0)
+    .map(([customerId]) => customerId);
+}
+
 export async function getCustomerPiMetrics(
   prisma: PrismaClient,
   companyId: string,
@@ -2389,13 +2436,7 @@ export async function getCustomerPiMetrics(
     where: {
       companyId,
       customerId,
-      status: {
-        notIn: [
-          ProformaInvoiceStatus.DRAFT,
-          ProformaInvoiceStatus.CANCEL_PENDING,
-          ProformaInvoiceStatus.CANCELLED,
-        ],
-      },
+      status: activeProformaInvoiceStatusFilter(),
     },
     include: { payments: true },
   });

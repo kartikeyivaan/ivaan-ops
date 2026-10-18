@@ -1,8 +1,10 @@
 import {
   ProposalBuildingType,
   ProposalConnectionPhase,
+  ProposalPackageType,
   ProposalStructureType,
 } from "@prisma/client";
+import { isSubsidyEligibleProposalPackage } from "@/lib/project-proposal-packages";
 import { roundMoney } from "@/lib/quotations";
 
 export const PROJECT_PROPOSAL_VALIDITY_DAYS = 5;
@@ -36,10 +38,17 @@ export type ProjectProposalBrandInput = {
 
 export type ProjectProposalPackageInput = {
   code: string;
+  packageType: ProposalPackageType;
   panelWp: number;
   panelCount: number;
   systemKw: number;
   basePrice: number;
+  dcrAdditionalPanelRate?: number | null;
+  ndcrAdditionalPanelRate?: number | null;
+  futureStructurePanelRate?: number | null;
+  hybridBasePrice?: number | null;
+  hybridPerInverterKwRate?: number | null;
+  hybridPerBatteryUnitRate?: number | null;
   isActive: boolean;
   isComingSoon: boolean;
 };
@@ -65,7 +74,9 @@ export type ProjectProposalPricingInput = {
   discountAmount: number;
   additionalCostAmount: number;
   ndcrComplete?: boolean;
+  hybridPackage?: boolean;
   inverterCapacityKw?: number;
+  batteryCount?: number;
 };
 
 export type ProjectProposalGstPdfBreakdown = {
@@ -140,21 +151,27 @@ export function calculateExtraFloorAmount(extraFloors: number): number {
   return roundMoney(extraFloors * EXTRA_FLOOR_CHARGE);
 }
 
-export function calculateFutureStructureAmount(futureStructurePanels: number): number {
+export function calculateFutureStructureAmount(
+  futureStructurePanels: number,
+  rateOverride?: number | null,
+): number {
   if (futureStructurePanels <= 0) {
     return 0;
   }
-  return roundMoney(futureStructurePanels * FUTURE_STRUCTURE_CHARGE_PER_PANEL);
+  const rate = rateOverride ?? FUTURE_STRUCTURE_CHARGE_PER_PANEL;
+  return roundMoney(futureStructurePanels * rate);
 }
 
 export function calculateNdcrPanelAmount(
   panelWp: number,
   ndcrAdditionalPanels: number,
+  rateOverride?: number | null,
 ): number {
   if (panelWp < NDCR_MIN_PANEL_WP || ndcrAdditionalPanels <= 0) {
     return 0;
   }
-  return roundMoney(ndcrAdditionalPanels * NDCR_PANEL_CHARGE);
+  const rate = rateOverride ?? NDCR_PANEL_CHARGE;
+  return roundMoney(ndcrAdditionalPanels * rate);
 }
 
 export function getDcrPanelCharge(panelWp: number): number {
@@ -170,12 +187,24 @@ export function getDcrPanelCharge(panelWp: number): number {
 export function calculateDcrPanelAmount(
   panelWp: number,
   dcrAdditionalPanels: number,
+  rateOverride?: number | null,
 ): number {
-  const charge = getDcrPanelCharge(panelWp);
+  const charge = rateOverride ?? getDcrPanelCharge(panelWp);
   if (charge <= 0 || dcrAdditionalPanels <= 0) {
     return 0;
   }
   return roundMoney(dcrAdditionalPanels * charge);
+}
+
+export function calculateHybridBasePackageAmount(
+  pkg: ProjectProposalPackageInput,
+  inverterCapacityKw: number,
+  batteryCount: number,
+): number {
+  const base = pkg.hybridBasePrice ?? 0;
+  const perKw = pkg.hybridPerInverterKwRate ?? 0;
+  const perBattery = pkg.hybridPerBatteryUnitRate ?? 0;
+  return roundMoney(base + inverterCapacityKw * perKw + batteryCount * perBattery);
 }
 
 export function calculateSubsidyEstimate(systemKw: number): number {
@@ -213,29 +242,63 @@ export function calculateProjectProposalPricing(
   input: ProjectProposalPricingInput,
 ): ProjectProposalPricingBreakdown {
   const ndcrComplete = input.ndcrComplete === true;
-  const systemKw = ndcrComplete
+  const hybridPackage = input.hybridPackage === true;
+  const systemKw = ndcrComplete || hybridPackage
     ? (input.inverterCapacityKw ?? 0)
     : input.package.systemKw;
-  const basePackageAmount = ndcrComplete ? 0 : roundMoney(input.package.basePrice);
-  const brandUpgradeAmount = calculateBrandUpgradeAmount(input.inverterBrands);
-  const inverterUpgradeAmount = ndcrComplete
+
+  let basePackageAmount = ndcrComplete
     ? 0
-    : roundMoney(input.inverterUpgrade?.upgradeAmount ?? 0);
+    : hybridPackage
+      ? calculateHybridBasePackageAmount(
+          input.package,
+          input.inverterCapacityKw ?? 0,
+          input.batteryCount ?? 0,
+        )
+      : roundMoney(input.package.basePrice);
+
+  if (
+    !ndcrComplete &&
+    !hybridPackage &&
+    input.package.packageType === ProposalPackageType.NON_SUBSIDY_FIXED
+  ) {
+    basePackageAmount = roundMoney(input.package.basePrice);
+  }
+
+  const brandUpgradeAmount = calculateBrandUpgradeAmount(input.inverterBrands);
+  const inverterUpgradeAmount =
+    ndcrComplete || hybridPackage
+      ? 0
+      : roundMoney(input.inverterUpgrade?.upgradeAmount ?? 0);
   const threePhaseAmount = calculateThreePhaseAmount(input.connectionPhase);
   const structureAdjustmentAmount = calculateStructureAdjustmentAmount(
     input.structureType,
     systemKw,
   );
   const extraFloorAmount = calculateExtraFloorAmount(input.extraFloors);
-  const futureStructureAmount = ndcrComplete
-    ? 0
-    : calculateFutureStructureAmount(input.futureStructurePanels);
-  const ndcrPanelAmount = ndcrComplete
-    ? 0
-    : calculateNdcrPanelAmount(input.package.panelWp, input.ndcrAdditionalPanels);
-  const dcrPanelAmount = ndcrComplete
-    ? 0
-    : calculateDcrPanelAmount(input.package.panelWp, input.dcrAdditionalPanels);
+  const futureStructureAmount =
+    ndcrComplete || hybridPackage
+      ? 0
+      : calculateFutureStructureAmount(
+          input.futureStructurePanels,
+          input.package.futureStructurePanelRate,
+        );
+  const ndcrPanelAmount =
+    ndcrComplete || hybridPackage
+      ? 0
+      : calculateNdcrPanelAmount(
+          input.package.panelWp,
+          input.ndcrAdditionalPanels,
+          input.package.ndcrAdditionalPanelRate,
+        );
+  const dcrPanelAmount =
+    ndcrComplete || hybridPackage
+      ? 0
+      : calculateDcrPanelAmount(
+          input.package.panelWp,
+          input.dcrAdditionalPanels,
+          input.package.dcrAdditionalPanelRate,
+        );
   const discountAmount = roundMoney(Math.max(0, input.discountAmount));
   const additionalCostAmount = roundMoney(Math.max(0, input.additionalCostAmount));
 
@@ -254,7 +317,13 @@ export function calculateProjectProposalPricing(
   const finalAmount = roundMoney(
     Math.max(0, subtotalBeforeDiscount - discountAmount + additionalCostAmount),
   );
-  const subsidyEstimate = ndcrComplete ? 0 : calculateSubsidyEstimate(systemKw);
+
+  const subsidyEstimate =
+    ndcrComplete ||
+    hybridPackage ||
+    !isSubsidyEligibleProposalPackage(input.package)
+      ? 0
+      : calculateSubsidyEstimate(systemKw);
   const effectiveCustomerInvestment = roundMoney(
     Math.max(0, finalAmount - subsidyEstimate),
   );

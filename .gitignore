@@ -18,6 +18,15 @@
 # production
 /build
 
+# DCR desktop agent build artifacts
+packages/automation-agent/playwright-browsers/
+packages/automation-agent-desktop/release/
+packages/automation-agent-desktop/dist/
+packages/automation-agent-desktop/node_modules/
+packages/automation-agent/node_modules/
+packages/**/node_modules/
+packages/**/dist/
+
 # misc
 .DS_Store
 *.pem

@@ -22,6 +22,7 @@ import {
 
 const basePackage = {
   code: "P2",
+  packageType: "SUBSIDY_DCR" as const,
   panelWp: 570,
   panelCount: 6,
   systemKw: 3.3,

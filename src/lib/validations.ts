@@ -121,6 +121,14 @@ export const customerSearchSchema = z.object({
   customerType: z.enum(["DEALER", "PROJECT"]).optional(),
   assignedSalesUserId: z.string().uuid().optional(),
   status: z.enum(["ACTIVE", "INACTIVE"]).optional(),
+  outstandingOnly: z
+    .union([z.boolean(), z.enum(["true", "false", "1", "0"])])
+    .optional()
+    .transform((value) => {
+      if (value === undefined) return undefined;
+      if (typeof value === "boolean") return value;
+      return value === "true" || value === "1";
+    }),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(50),
 });
@@ -951,27 +959,19 @@ const projectProposalPricingBaseSchema = z.object({
   moduleProductId: z.string().uuid().nullable().optional(),
   moduleQty: z.coerce.number().int().min(0).nullable().optional(),
   inverterCapacityKw: z.coerce.number().min(0).nullable().optional(),
+  batteryCount: z.coerce.number().int().min(0).default(0),
   discountAmount: z.coerce.number().min(0).default(0),
   additionalCostAmount: z.coerce.number().min(0).default(0),
 });
 
 function withStructureProvisionRule<T extends z.ZodTypeAny>(schema: T) {
   return schema.superRefine((data, ctx) => {
-    if (data.moduleProductId) {
-      return;
-    }
-    if (data.ndcrAdditionalPanels > 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "Additional NDCR panels cannot be added to a proposal.",
-        path: ["ndcrAdditionalPanels"],
-      });
-    }
-    const minStructureProvision = data.dcrAdditionalPanels;
+    const minStructureProvision =
+      data.dcrAdditionalPanels + data.ndcrAdditionalPanels;
     if (data.futureStructurePanels < minStructureProvision) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: `Additional structure provision must be at least ${minStructureProvision} (additional DCR panels).`,
+        message: `Additional structure provision must be at least ${minStructureProvision} (additional DCR and NDCR panels).`,
         path: ["futureStructurePanels"],
       });
     }
@@ -1031,6 +1031,50 @@ export const approveProjectProposalSchema = z.object({
 export const rejectProjectProposalSchema = rejectApprovalSchema;
 
 export const reviseProjectProposalSchema = updateProjectProposalSchema;
+
+const proposalPackageModuleOptionSchema = z.object({
+  productId: z.string().uuid(),
+  isDefault: z.boolean().optional(),
+  sortOrder: z.coerce.number().int().min(0).optional(),
+});
+
+const proposalPackageInverterUpgradeSchema = z.object({
+  upgradeKw: z.coerce.number().min(0),
+  label: z.string().min(1).max(120),
+  upgradeAmount: z.coerce.number().min(0),
+  isActive: z.boolean().optional(),
+  sortOrder: z.coerce.number().int().min(0).optional(),
+});
+
+export const upsertProposalPackageSchema = z.object({
+  code: z.string().min(1).max(32),
+  name: z.string().min(2).max(120),
+  description: z.string().max(500).nullable().optional(),
+  packageType: z.enum([
+    "SUBSIDY_DCR",
+    "NON_SUBSIDY_FIXED",
+    "NON_SUBSIDY_CUSTOM",
+    "HYBRID",
+  ]),
+  panelWp: z.coerce.number().int().min(0),
+  panelCount: z.coerce.number().int().min(0),
+  systemKw: z.coerce.number().min(0),
+  defaultInverterBrands: z.array(z.string().min(1)).min(1),
+  basePrice: z.coerce.number().min(0),
+  dcrAdditionalPanelRate: z.coerce.number().min(0).nullable().optional(),
+  ndcrAdditionalPanelRate: z.coerce.number().min(0).nullable().optional(),
+  futureStructurePanelRate: z.coerce.number().min(0).nullable().optional(),
+  moduleSegmentLabel: z.string().max(120).nullable().optional(),
+  hybridBasePrice: z.coerce.number().min(0).nullable().optional(),
+  hybridPerInverterKwRate: z.coerce.number().min(0).nullable().optional(),
+  hybridPerBatteryUnitRate: z.coerce.number().min(0).nullable().optional(),
+  batteryUnitKwh: z.coerce.number().min(0).nullable().optional(),
+  isActive: z.boolean().optional(),
+  isComingSoon: z.boolean().optional(),
+  sortOrder: z.coerce.number().int().min(0).optional(),
+  moduleOptions: z.array(proposalPackageModuleOptionSchema).optional(),
+  inverterUpgrades: z.array(proposalPackageInverterUpgradeSchema).optional(),
+});
 
 export const projectSearchSchema = z.object({
   q: z.string().optional(),
@@ -1286,6 +1330,19 @@ export const officialLetterSearchSchema = z.object({
 
 export const duplicateOfficialLetterSchema = z.object({
   letterDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+
+export const regenerateStoredPdfSchema = z.object({
+  documentType: z.enum([
+    "PROFORMA_INVOICE",
+    "QUOTATION",
+    "DISPATCH",
+    "PROJECT_DISPATCH",
+    "PROJECT_PROPOSAL",
+    "OFFICIAL_LETTER_PRINT",
+  ]),
+  documentId: z.string().uuid(),
+  variant: z.string().max(500).optional(),
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;

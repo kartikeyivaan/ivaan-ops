@@ -1,0 +1,124 @@
+import {
+  DocGenEntityStatus,
+  DocGenFieldInputType,
+  Prisma,
+  type PrismaClient,
+} from "@prisma/client";
+import { fieldKeyValidationMessage, isValidDocGenFieldKey, normalizeDocGenFieldKey } from "@/lib/doc-gen-field-key";
+
+export type DocGenFieldInput = {
+  fieldKey: string;
+  label: string;
+  inputType: DocGenFieldInputType;
+  configurationJson?: Prisma.InputJsonValue;
+  isRequiredDefault?: boolean;
+  defaultValue?: string | null;
+  helpText?: string | null;
+  placeholder?: string | null;
+  status?: DocGenEntityStatus;
+};
+
+export function validateDocGenFieldInput(input: DocGenFieldInput): string | null {
+  const fieldKey = normalizeDocGenFieldKey(input.fieldKey);
+  if (!fieldKey) return "Field key is required.";
+  if (!isValidDocGenFieldKey(fieldKey)) return fieldKeyValidationMessage();
+  if (!input.label.trim()) return "Display label is required.";
+  return null;
+}
+
+export async function listDocGenFields(
+  prisma: PrismaClient,
+  companyId: string,
+  filters?: { q?: string; status?: DocGenEntityStatus },
+) {
+  const q = filters?.q?.trim();
+  return prisma.docGenField.findMany({
+    where: {
+      companyId,
+      ...(filters?.status ? { status: filters.status } : {}),
+      ...(q
+        ? {
+            OR: [
+              { fieldKey: { contains: q, mode: "insensitive" } },
+              { label: { contains: q, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    },
+    orderBy: [{ status: "asc" }, { fieldKey: "asc" }],
+  });
+}
+
+export async function createDocGenField(
+  prisma: PrismaClient,
+  input: {
+    companyId: string;
+    userId: string;
+    data: DocGenFieldInput;
+  },
+) {
+  const validationError = validateDocGenFieldInput(input.data);
+  if (validationError) throw new Error(`VALIDATION:${validationError}`);
+
+  const fieldKey = normalizeDocGenFieldKey(input.data.fieldKey);
+  try {
+    return await prisma.docGenField.create({
+      data: {
+        companyId: input.companyId,
+        fieldKey,
+        label: input.data.label.trim(),
+        inputType: input.data.inputType,
+        configurationJson: input.data.configurationJson ?? {},
+        isRequiredDefault: input.data.isRequiredDefault ?? false,
+        defaultValue: input.data.defaultValue ?? null,
+        helpText: input.data.helpText ?? null,
+        placeholder: input.data.placeholder ?? null,
+        status: input.data.status ?? DocGenEntityStatus.ACTIVE,
+        createdById: input.userId,
+      },
+    });
+  } catch (cause) {
+    if (cause instanceof Prisma.PrismaClientKnownRequestError && cause.code === "P2002") {
+      throw new Error("DUPLICATE_FIELD_KEY");
+    }
+    throw cause;
+  }
+}
+
+export async function updateDocGenField(
+  prisma: PrismaClient,
+  input: {
+    companyId: string;
+    fieldId: string;
+    userId: string;
+    data: Partial<DocGenFieldInput> & { fieldKey?: never };
+  },
+) {
+  const existing = await prisma.docGenField.findFirst({
+    where: { id: input.fieldId, companyId: input.companyId },
+  });
+  if (!existing) throw new Error("NOT_FOUND");
+
+  if (input.data.label !== undefined && !input.data.label.trim()) {
+    throw new Error("VALIDATION:Display label is required.");
+  }
+
+  return prisma.docGenField.update({
+    where: { id: existing.id },
+    data: {
+      ...(input.data.label !== undefined ? { label: input.data.label.trim() } : {}),
+      ...(input.data.inputType !== undefined ? { inputType: input.data.inputType } : {}),
+      ...(input.data.configurationJson !== undefined
+        ? { configurationJson: input.data.configurationJson }
+        : {}),
+      ...(input.data.isRequiredDefault !== undefined
+        ? { isRequiredDefault: input.data.isRequiredDefault }
+        : {}),
+      ...(input.data.defaultValue !== undefined ? { defaultValue: input.data.defaultValue } : {}),
+      ...(input.data.helpText !== undefined ? { helpText: input.data.helpText } : {}),
+      ...(input.data.placeholder !== undefined ? { placeholder: input.data.placeholder } : {}),
+      ...(input.data.status !== undefined ? { status: input.data.status } : {}),
+      updatedById: input.userId,
+    },
+  });
+}

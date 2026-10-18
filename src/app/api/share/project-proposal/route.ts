@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { generateProjectProposalPdf, projectProposalPdfInclude } from "@/lib/project-proposal-pdf";
 import { assertProjectProposalShareable } from "@/lib/project-proposal-service";
 import { verifyProjectProposalShareToken } from "@/lib/share-token";
-import { pdfContentVersion, pdfInlineResponse, resolveStoredPdf } from "@/lib/pdf-cache";
+import { projectProposalPdfContentVersion } from "@/lib/pdf-content-versions";
+import { pdfInlineResponse, resolveStoredPdf } from "@/lib/pdf-cache";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -44,12 +45,7 @@ export async function GET(request: Request) {
     documentType: "PROJECT_PROPOSAL",
     documentId: proposal.id,
     variant: "full",
-    contentVersion: pdfContentVersion([
-      proposal.updatedAt.toISOString(),
-      proposal.status,
-      proposal.currentRevisionNo,
-      "full",
-    ]),
+    contentVersion: projectProposalPdfContentVersion(proposal),
     generate: () => generateProjectProposalPdf(proposal),
   });
   const revision =
@@ -61,6 +57,5 @@ export async function GET(request: Request) {
 
   return pdfInlineResponse(pdf, safeName, {
     asciiName: safeName.replace(/[^\x20-\x7E]/g, "_"),
-    privateCache: false,
   });
 }

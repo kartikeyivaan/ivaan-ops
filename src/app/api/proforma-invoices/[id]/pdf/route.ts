@@ -3,7 +3,8 @@ import { auth } from "@/lib/auth";
 import { canViewProformaInvoices } from "@/lib/pi-permissions";
 import { generateProformaInvoicePdf } from "@/lib/pi-pdf";
 import { getProformaInvoiceRecord } from "@/lib/pi-service";
-import { pdfContentVersion, pdfInlineResponse, resolveStoredPdf } from "@/lib/pdf-cache";
+import { proformaInvoicePdfContentVersion } from "@/lib/pdf-content-versions";
+import { pdfInlineResponse, resolveStoredPdf } from "@/lib/pdf-cache";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
 
@@ -38,11 +39,7 @@ export async function GET(_request: Request, context: RouteContext) {
   const pdf = await resolveStoredPdf(prisma, {
     documentType: "PROFORMA_INVOICE",
     documentId: pi.id,
-    contentVersion: pdfContentVersion([
-      pi.updatedAt.toISOString(),
-      pi.status,
-      pi.totalValue.toString(),
-    ]),
+    contentVersion: proformaInvoicePdfContentVersion(pi),
     generate: () => generateProformaInvoicePdf(pi),
   });
 

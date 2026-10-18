@@ -16,6 +16,9 @@ const PRICING_ERRORS: Record<string, string> = {
   NDCR_INVERTER_CAPACITY_REQUIRED: "Enter inverter capacity for the NDCR project.",
   NDCR_MODULE_NOT_FOUND: "Selected module product was not found.",
   NDCR_MODULE_INVALID: "Selected product must be from the Modules category.",
+  PACKAGE_MODULE_REQUIRED: "Select a module for this package.",
+  PACKAGE_MODULE_INVALID: "Selected module is not allowed for this package.",
+  HYBRID_INVERTER_CAPACITY_REQUIRED: "Enter inverter capacity for the hybrid system.",
 };
 
 const SERVICE_ERRORS: Record<string, { message: string; status: number }> = {

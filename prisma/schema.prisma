@@ -167,6 +167,64 @@ enum DocumentationStatus {
   DCR_REVOKED
 }
 
+// Local browser automation (DCR portal workflows)
+enum AutomationWorkflow {
+  SHARE_DCR_TO_CUSTOMERS
+}
+
+enum AutomationQueueItemStatus {
+  READY
+  PROCESSING
+  DCR_ISSUED
+  FAILED
+  REQUIRES_ATTENTION
+  SKIPPED
+  ALREADY_ISSUED
+  REQUIRES_MANUAL
+}
+
+enum DcrPortalTarget {
+  PCMV
+  ISE
+}
+
+enum DcrPortalStrategy {
+  PCMV_THEN_ISE
+  ISE_THEN_PCMV
+  PCMV_ONLY
+  ISE_ONLY
+}
+
+enum AutomationExecutionStatus {
+  QUEUED
+  RUNNING
+  AWAITING_LOGIN
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum AutomationDeviceStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum AutomationPortalAttemptStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  SKIPPED
+}
+
+enum AutomationExecutionEventType {
+  INFO
+  STEP
+  ERROR
+  PORTAL_SWITCH
+  LOGIN_REQUIRED
+}
+
 enum SerialStatus {
   AVAILABLE
   BOOKED
@@ -268,6 +326,50 @@ enum PdfDocumentType {
   DISPATCH
   PROJECT_DISPATCH
   PROJECT_PROPOSAL
+  OFFICIAL_LETTER_PRINT
+  DOC_GEN_TEMPLATE_BACKGROUND
+  DOC_GEN_OUTPUT
+  DOC_GEN_COMBINED
+}
+
+enum DocGenFieldInputType {
+  TEXT
+  NUMBER
+  DROPDOWN
+  RADIO
+  MULTI_SELECT
+  DATE
+  TEXTAREA
+}
+
+enum DocGenEntityStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum DocGenVersionStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum DocGenTemplateEditorType {
+  RICH_TEXT
+  CANVAS
+  PDF_BACKGROUND
+}
+
+enum DocGenLayoutMode {
+  FIXED_PAGE
+  FLOWING
+}
+
+enum DocGenGenerationStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  PARTIAL
+  FAILED
 }
 
 enum OfficialLetterStatus {
@@ -505,6 +607,13 @@ enum ProposalBuildingType {
   BUNGALOW
 }
 
+enum ProposalPackageType {
+  SUBSIDY_DCR
+  NON_SUBSIDY_FIXED
+  NON_SUBSIDY_CUSTOM
+  HYBRID
+}
+
 enum ApprovalRequestStatus {
   PENDING
   APPROVED
@@ -717,6 +826,13 @@ model Company {
   customerRefunds         CustomerRefund[]
   officialLetters         OfficialLetter[]
   tasks                   Task[]
+  automationQueueItems    AutomationQueueItem[]
+  automationExecutionCompanies AutomationExecutionCompany[]
+  docGenFields              DocGenField[]
+  docGenTemplates           DocGenTemplate[]
+  docGenDocumentSets        DocGenDocumentSet[]
+  docGenProfiles            DocGenProfile[]
+  docGenGenerations         DocGenGeneration[]
 
   @@map("companies")
 }
@@ -846,6 +962,23 @@ model User {
   productRateChangesCreated              ProductRateChangeBatch[]          @relation("ProductRateChangeCreatedBy")
   productRateChangesRejected             ProductRateChangeBatch[]          @relation("ProductRateChangeRejectedBy")
   productRateChangeSignOffs              ProductRateChangeSignOff[]        @relation("ProductRateChangeSignOffBy")
+  automationDevices                      AutomationDevice[]                @relation("AutomationDeviceOwner")
+  automationDevicesRevoked               AutomationDevice[]                @relation("AutomationDeviceRevokedBy")
+  automationDevicePairingCodes           AutomationDevicePairingCode[]
+  automationExecutionsInitiated          AutomationExecution[]             @relation("AutomationExecutionInitiatedBy")
+  automationExecutionsCancelled          AutomationExecution[]             @relation("AutomationExecutionCancelledBy")
+  docGenFieldsCreated                    DocGenField[]                     @relation("DocGenFieldCreatedBy")
+  docGenFieldsUpdated                    DocGenField[]                     @relation("DocGenFieldUpdatedBy")
+  docGenTemplatesCreated                 DocGenTemplate[]                  @relation("DocGenTemplateCreatedBy")
+  docGenTemplatesUpdated                 DocGenTemplate[]                  @relation("DocGenTemplateUpdatedBy")
+  docGenTemplateVersionsCreated          DocGenTemplateVersion[]           @relation("DocGenTemplateVersionCreatedBy")
+  docGenTemplateVersionsPublished        DocGenTemplateVersion[]           @relation("DocGenTemplateVersionPublishedBy")
+  docGenDocumentSetsCreated              DocGenDocumentSet[]               @relation("DocGenDocumentSetCreatedBy")
+  docGenDocumentSetsUpdated              DocGenDocumentSet[]               @relation("DocGenDocumentSetUpdatedBy")
+  docGenSetVersionsPublished             DocGenDocumentSetVersion[]        @relation("DocGenSetVersionPublishedBy")
+  docGenProfilesCreated                  DocGenProfile[]                   @relation("DocGenProfileCreatedBy")
+  docGenProfilesUpdated                  DocGenProfile[]                   @relation("DocGenProfileUpdatedBy")
+  docGenGenerationsCreated               DocGenGeneration[]                @relation("DocGenGenerationCreatedBy")
 
   @@map("users")
 }
@@ -1013,6 +1146,7 @@ model Customer {
   bankPaymentAllocations BankPaymentAllocation[]
   refundBankAccounts     CustomerRefundBankAccount[]
   refunds                CustomerRefund[]
+  docGenProfiles         DocGenProfile[]
 
   @@index([customerName])
   @@index([city])
@@ -1107,6 +1241,7 @@ model Product {
   proformaInvoiceItems       ProformaInvoiceItem[]
   dispatchLines              DispatchLine[]
   projectProposalRevisions   ProjectProposalRevision[]
+  proposalPackageModuleOptions ProposalPackageModuleOption[]
   openingAuditLines          InventoryOpeningAuditLine[]
   dailyAuditLines            InventoryDailyAuditLine[]
   purchaseRequestLines       PurchaseRequestLine[]
@@ -1891,6 +2026,7 @@ model Dispatch {
   documentation      DocumentationRecord?
   inventoryTransfers InventoryTransfer[]
   crossCompanyPlans  PiCrossCompanyTransferPlan[]
+  automationQueueItems AutomationQueueItem[]
 
   @@index([companyId, status])
   @@index([customerId])
@@ -1915,6 +2051,7 @@ model DispatchLine {
   proformaInvoiceItem ProformaInvoiceItem  @relation(fields: [proformaInvoiceItemId], references: [id])
   product             Product              @relation(fields: [productId], references: [id])
   serials             DispatchLineSerial[]
+  automationQueueItem AutomationQueueItem?
 
   @@index([dispatchId])
   @@map("dispatch_lines")
@@ -1933,28 +2070,57 @@ model DispatchLineSerial {
 }
 
 model ProposalPackageMaster {
-  id                    String   @id @default(uuid()) @db.Uuid
-  code                  String   @unique
-  name                  String
-  description           String?
-  panelWp               Int      @map("panel_wp")
-  panelCount            Int      @map("panel_count")
-  systemKw              Decimal  @map("system_kw") @db.Decimal(6, 2)
-  defaultInverterBrands Json     @map("default_inverter_brands")
-  basePrice             Decimal  @map("base_price") @db.Decimal(14, 2)
-  isActive              Boolean  @default(true) @map("is_active")
-  isComingSoon          Boolean  @default(false) @map("is_coming_soon")
-  sortOrder             Int      @default(0) @map("sort_order")
-  createdAt             DateTime @default(now()) @map("created_at")
-  updatedAt             DateTime @updatedAt @map("updated_at")
+  id                         String              @id @default(uuid()) @db.Uuid
+  code                       String              @unique
+  name                       String
+  description                String?
+  packageType                ProposalPackageType @default(SUBSIDY_DCR) @map("package_type")
+  panelWp                    Int                 @map("panel_wp")
+  panelCount                 Int                 @map("panel_count")
+  systemKw                   Decimal             @map("system_kw") @db.Decimal(6, 2)
+  defaultInverterBrands      Json                @map("default_inverter_brands")
+  basePrice                  Decimal             @map("base_price") @db.Decimal(14, 2)
+  dcrAdditionalPanelRate     Decimal?            @map("dcr_additional_panel_rate") @db.Decimal(14, 2)
+  ndcrAdditionalPanelRate    Decimal?            @map("ndcr_additional_panel_rate") @db.Decimal(14, 2)
+  futureStructurePanelRate   Decimal?            @map("future_structure_panel_rate") @db.Decimal(14, 2)
+  moduleSegmentLabel         String?             @map("module_segment_label")
+  hybridBasePrice            Decimal?            @map("hybrid_base_price") @db.Decimal(14, 2)
+  hybridPerInverterKwRate    Decimal?            @map("hybrid_per_inverter_kw_rate") @db.Decimal(14, 2)
+  hybridPerBatteryUnitRate   Decimal?            @map("hybrid_per_battery_unit_rate") @db.Decimal(14, 2)
+  batteryUnitKwh             Decimal?            @map("battery_unit_kwh") @db.Decimal(6, 2)
+  isActive                   Boolean             @default(true) @map("is_active")
+  isComingSoon               Boolean             @default(false) @map("is_coming_soon")
+  sortOrder                  Int                 @default(0) @map("sort_order")
+  createdAt                  DateTime            @default(now()) @map("created_at")
+  updatedAt                  DateTime            @updatedAt @map("updated_at")
 
-  revisions ProjectProposalRevision[]
+  revisions        ProjectProposalRevision[]
+  moduleOptions    ProposalPackageModuleOption[]
+  inverterUpgrades ProposalInverterUpgradeMaster[]
 
   @@map("proposal_package_master")
 }
 
+model ProposalPackageModuleOption {
+  id        String   @id @default(uuid()) @db.Uuid
+  packageId String   @map("package_id") @db.Uuid
+  productId String   @map("product_id") @db.Uuid
+  isDefault Boolean  @default(false) @map("is_default")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  package ProposalPackageMaster @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  product Product                 @relation(fields: [productId], references: [id])
+
+  @@unique([packageId, productId])
+  @@index([packageId])
+  @@map("proposal_package_module_options")
+}
+
 model ProposalInverterUpgradeMaster {
   id                String   @id @default(uuid()) @db.Uuid
+  packageId         String?  @map("package_id") @db.Uuid
   packagePanelCount Int      @map("package_panel_count")
   upgradeKw         Decimal  @map("upgrade_kw") @db.Decimal(6, 2)
   label             String
@@ -1964,8 +2130,10 @@ model ProposalInverterUpgradeMaster {
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
+  package   ProposalPackageMaster?      @relation(fields: [packageId], references: [id], onDelete: Cascade)
   revisions ProjectProposalRevision[]
 
+  @@index([packageId])
   @@map("proposal_inverter_upgrade_master")
 }
 
@@ -2222,6 +2390,7 @@ model ProjectProposalRevision {
   moduleProductId             String?                 @map("module_product_id") @db.Uuid
   moduleQty                   Int?                    @map("module_qty")
   inverterCapacityKw          Decimal?                @map("inverter_capacity_kw") @db.Decimal(6, 2)
+  batteryCount                Int                     @default(0) @map("battery_count")
   basePackageAmount           Decimal                 @map("base_package_amount") @db.Decimal(14, 2)
   brandUpgradeAmount          Decimal                 @default(0) @map("brand_upgrade_amount") @db.Decimal(14, 2)
   inverterUpgradeAmount       Decimal                 @default(0) @map("inverter_upgrade_amount") @db.Decimal(14, 2)
@@ -2366,6 +2535,7 @@ model ServiceRequest {
   updates     ServiceUpdate[]
   attachments ServiceAttachment[]
   payments    ServicePayment[]
+  docGenProfiles DocGenProfile[]
 
   @@index([companyId, status])
   @@index([mobileNumber])
@@ -2634,6 +2804,7 @@ model DocumentationRecord {
   completedBy       User?                            @relation("DocumentationCompletedBy", fields: [completedById], references: [id])
   statusHistory     DocumentationStatusHistory[]
   assignmentHistory DocumentationAssignmentHistory[]
+  automationQueueItems AutomationQueueItem[]
 
   @@index([companyId, status])
   @@index([assignedToId, status])
@@ -3332,4 +3503,383 @@ model TaskReassignmentRequest {
   @@index([taskId, status])
   @@index([requestedById])
   @@map("task_reassignment_requests")
+}
+
+// ---------------------------------------------------------------------------
+// DCR browser automation (local agent + cloud orchestration)
+// ---------------------------------------------------------------------------
+
+model AutomationDevice {
+  id           String                 @id @default(uuid()) @db.Uuid
+  userId       String                 @map("user_id") @db.Uuid
+  label        String?
+  secretHash   String                 @map("secret_hash")
+  agentVersion String?                @map("agent_version")
+  status       AutomationDeviceStatus @default(ACTIVE)
+  lastSeenAt   DateTime?              @map("last_seen_at")
+  revokedAt    DateTime?              @map("revoked_at")
+  revokedById  String?                @map("revoked_by") @db.Uuid
+  createdAt    DateTime               @default(now()) @map("created_at")
+  updatedAt    DateTime               @updatedAt @map("updated_at")
+
+  user        User                      @relation("AutomationDeviceOwner", fields: [userId], references: [id])
+  revokedBy   User?                     @relation("AutomationDeviceRevokedBy", fields: [revokedById], references: [id])
+  pairingCode AutomationDevicePairingCode?
+  executions  AutomationExecution[]
+
+  @@index([userId, status])
+  @@map("automation_devices")
+}
+
+model AutomationDevicePairingCode {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  codeHash  String    @map("code_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  deviceId  String?   @unique @map("device_id") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user   User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device AutomationDevice? @relation(fields: [deviceId], references: [id])
+
+  @@index([userId, expiresAt])
+  @@map("automation_device_pairing_codes")
+}
+
+model AutomationExecution {
+  id               String                    @id @default(uuid()) @db.Uuid
+  workflow         AutomationWorkflow        @default(SHARE_DCR_TO_CUSTOMERS)
+  portalStrategy   DcrPortalStrategy         @map("portal_strategy")
+  includeEarlyDcr  Boolean                   @default(false) @map("include_early_dcr")
+  status           AutomationExecutionStatus @default(QUEUED)
+  initiatedById    String                    @map("initiated_by") @db.Uuid
+  deviceId         String?                   @map("device_id") @db.Uuid
+  startedAt        DateTime?                 @map("started_at")
+  finishedAt       DateTime?                 @map("finished_at")
+  progressDone     Int                       @default(0) @map("progress_done")
+  progressTotal    Int                       @default(0) @map("progress_total")
+  cancelReason     String?                   @map("cancel_reason")
+  cancelledById    String?                   @map("cancelled_by") @db.Uuid
+  cancelledAt      DateTime?                 @map("cancelled_at")
+  createdAt        DateTime                  @default(now()) @map("created_at")
+  updatedAt        DateTime                  @updatedAt @map("updated_at")
+
+  initiatedBy    User                         @relation("AutomationExecutionInitiatedBy", fields: [initiatedById], references: [id])
+  device         AutomationDevice?            @relation(fields: [deviceId], references: [id])
+  cancelledBy    User?                        @relation("AutomationExecutionCancelledBy", fields: [cancelledById], references: [id])
+  companies      AutomationExecutionCompany[]
+  portalAttempts AutomationPortalAttempt[]
+  events         AutomationExecutionEvent[]
+  queueItems     AutomationQueueItem[]        @relation("AutomationQueueItemLastExecution")
+
+  @@index([status, createdAt])
+  @@index([initiatedById, createdAt])
+  @@index([deviceId])
+  @@map("automation_executions")
+}
+
+model AutomationExecutionCompany {
+  executionId String @map("execution_id") @db.Uuid
+  companyId   String @map("company_id") @db.Uuid
+
+  execution AutomationExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  company   Company             @relation(fields: [companyId], references: [id])
+
+  @@id([executionId, companyId])
+  @@index([companyId])
+  @@map("automation_execution_companies")
+}
+
+model AutomationQueueItem {
+  id                     String                      @id @default(uuid()) @db.Uuid
+  companyId              String                      @map("company_id") @db.Uuid
+  dispatchId             String                      @map("dispatch_id") @db.Uuid
+  dispatchLineId         String                      @unique @map("dispatch_line_id") @db.Uuid
+  documentationRecordId  String                      @map("documentation_record_id") @db.Uuid
+  workflow               AutomationWorkflow          @default(SHARE_DCR_TO_CUSTOMERS)
+  status                 AutomationQueueItemStatus   @default(READY)
+  externalDcrNumber      String?                     @map("external_dcr_number")
+  externalDcrIssuedAt    DateTime?                   @map("external_dcr_issued_at")
+  externalPortalStatus   String?                     @map("external_portal_status")
+  lastPortal             DcrPortalTarget?            @map("last_portal")
+  requiresManual         Boolean                     @default(false) @map("requires_manual")
+  lastExecutionId        String?                     @map("last_execution_id") @db.Uuid
+  lastError              String?                     @map("last_error")
+  lastAttemptAt          DateTime?                   @map("last_attempt_at")
+  attemptCount           Int                         @default(0) @map("attempt_count")
+  createdAt              DateTime                    @default(now()) @map("created_at")
+  updatedAt              DateTime                    @updatedAt @map("updated_at")
+
+  company             Company             @relation(fields: [companyId], references: [id])
+  dispatch            Dispatch            @relation(fields: [dispatchId], references: [id], onDelete: Cascade)
+  dispatchLine        DispatchLine        @relation(fields: [dispatchLineId], references: [id], onDelete: Cascade)
+  documentationRecord DocumentationRecord @relation(fields: [documentationRecordId], references: [id], onDelete: Cascade)
+  lastExecution       AutomationExecution? @relation("AutomationQueueItemLastExecution", fields: [lastExecutionId], references: [id])
+  portalAttempts      AutomationPortalAttempt[]
+
+  @@index([companyId, status])
+  @@index([dispatchId])
+  @@index([documentationRecordId])
+  @@index([lastExecutionId])
+  @@map("automation_queue_items")
+}
+
+model AutomationPortalAttempt {
+  id                String                        @id @default(uuid()) @db.Uuid
+  queueItemId       String                        @map("queue_item_id") @db.Uuid
+  executionId       String                        @map("execution_id") @db.Uuid
+  portal            DcrPortalTarget
+  sequenceNo        Int                           @map("sequence_no")
+  status            AutomationPortalAttemptStatus @default(PENDING)
+  externalDcrNumber String?                       @map("external_dcr_number")
+  errorMessage      String?                       @map("error_message")
+  workflowStep      String?                       @map("workflow_step")
+  startedAt         DateTime?                     @map("started_at")
+  completedAt       DateTime?                     @map("completed_at")
+  createdAt         DateTime                      @default(now()) @map("created_at")
+
+  queueItem    AutomationQueueItem      @relation(fields: [queueItemId], references: [id], onDelete: Cascade)
+  execution    AutomationExecution      @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  events       AutomationExecutionEvent[]
+  screenshots  AutomationScreenshot[]
+
+  @@unique([queueItemId, executionId, portal, sequenceNo])
+  @@index([executionId, status])
+  @@map("automation_portal_attempts")
+}
+
+model AutomationExecutionEvent {
+  id              String                       @id @default(uuid()) @db.Uuid
+  executionId     String                       @map("execution_id") @db.Uuid
+  portalAttemptId String?                      @map("portal_attempt_id") @db.Uuid
+  eventType       AutomationExecutionEventType @map("event_type")
+  message         String
+  metadata        Json?
+  createdAt       DateTime                     @default(now()) @map("created_at")
+
+  execution     AutomationExecution      @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  portalAttempt AutomationPortalAttempt? @relation(fields: [portalAttemptId], references: [id], onDelete: Cascade)
+
+  @@index([executionId, createdAt])
+  @@index([portalAttemptId])
+  @@map("automation_execution_events")
+}
+
+model AutomationScreenshot {
+  id              String   @id @default(uuid()) @db.Uuid
+  portalAttemptId String   @map("portal_attempt_id") @db.Uuid
+  storageUrl      String   @map("storage_url")
+  fileName        String?  @map("file_name")
+  capturedAt      DateTime @default(now()) @map("captured_at")
+
+  portalAttempt AutomationPortalAttempt @relation(fields: [portalAttemptId], references: [id], onDelete: Cascade)
+
+  @@index([portalAttemptId, capturedAt])
+  @@map("automation_screenshots")
+}
+
+model DocGenField {
+  id                  String               @id @default(uuid()) @db.Uuid
+  companyId           String               @map("company_id") @db.Uuid
+  fieldKey            String               @map("field_key")
+  label               String
+  inputType           DocGenFieldInputType @map("input_type")
+  configurationJson   Json                 @default("{}") @map("configuration_json")
+  isRequiredDefault   Boolean              @default(false) @map("is_required_default")
+  defaultValue        String?              @map("default_value")
+  helpText            String?              @map("help_text")
+  placeholder         String?
+  status              DocGenEntityStatus   @default(ACTIVE)
+  createdById         String               @map("created_by") @db.Uuid
+  updatedById         String?              @map("updated_by") @db.Uuid
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+
+  company   Company @relation(fields: [companyId], references: [id])
+  createdBy User    @relation("DocGenFieldCreatedBy", fields: [createdById], references: [id])
+  updatedBy User?   @relation("DocGenFieldUpdatedBy", fields: [updatedById], references: [id])
+
+  @@unique([companyId, fieldKey])
+  @@index([companyId, status])
+  @@map("doc_gen_fields")
+}
+
+model DocGenTemplate {
+  id                        String                   @id @default(uuid()) @db.Uuid
+  companyId                 String                   @map("company_id") @db.Uuid
+  name                      String
+  description               String?
+  editorType                DocGenTemplateEditorType @map("editor_type")
+  layoutMode                DocGenLayoutMode         @map("layout_mode")
+  status                    DocGenEntityStatus       @default(ACTIVE)
+  currentPublishedVersionId String?                  @unique @map("current_published_version_id") @db.Uuid
+  createdById               String                   @map("created_by") @db.Uuid
+  updatedById               String?                  @map("updated_by") @db.Uuid
+  createdAt                 DateTime                 @default(now()) @map("created_at")
+  updatedAt                 DateTime                 @updatedAt @map("updated_at")
+
+  company                 Company                 @relation(fields: [companyId], references: [id])
+  createdBy               User                    @relation("DocGenTemplateCreatedBy", fields: [createdById], references: [id])
+  updatedBy               User?                   @relation("DocGenTemplateUpdatedBy", fields: [updatedById], references: [id])
+  versions                DocGenTemplateVersion[] @relation("DocGenTemplateVersions")
+  currentPublishedVersion DocGenTemplateVersion?  @relation("DocGenTemplateCurrentPublished", fields: [currentPublishedVersionId], references: [id])
+  generatedDocuments      DocGenGeneratedDocument[]
+
+  @@index([companyId, status])
+  @@map("doc_gen_templates")
+}
+
+model DocGenTemplateVersion {
+  id                     String                @id @default(uuid()) @db.Uuid
+  templateId             String                @map("template_id") @db.Uuid
+  versionNumber          Int                   @map("version_number")
+  templateContentJson    Json                  @map("template_content_json")
+  pageConfigurationJson  Json                  @default("{}") @map("page_configuration_json")
+  backgroundStoredPdfId  String?               @map("background_stored_pdf_id") @db.Uuid
+  status                 DocGenVersionStatus   @default(DRAFT)
+  createdById            String                @map("created_by") @db.Uuid
+  publishedById          String?               @map("published_by") @db.Uuid
+  createdAt              DateTime              @default(now()) @map("created_at")
+  publishedAt            DateTime?             @map("published_at")
+
+  template              DocGenTemplate           @relation("DocGenTemplateVersions", fields: [templateId], references: [id], onDelete: Cascade)
+  currentForTemplate    DocGenTemplate?          @relation("DocGenTemplateCurrentPublished")
+  createdBy             User                     @relation("DocGenTemplateVersionCreatedBy", fields: [createdById], references: [id])
+  publishedBy           User?                    @relation("DocGenTemplateVersionPublishedBy", fields: [publishedById], references: [id])
+  setVersionItems       DocGenDocumentSetVersionItem[]
+  generatedDocuments    DocGenGeneratedDocument[]
+
+  @@unique([templateId, versionNumber])
+  @@index([templateId, status])
+  @@map("doc_gen_template_versions")
+}
+
+model DocGenDocumentSet {
+  id                        String             @id @default(uuid()) @db.Uuid
+  companyId                 String             @map("company_id") @db.Uuid
+  name                      String
+  description               String?
+  status                    DocGenEntityStatus @default(ACTIVE)
+  currentPublishedVersionId String?            @unique @map("current_published_version_id") @db.Uuid
+  createdById               String             @map("created_by") @db.Uuid
+  updatedById               String?            @map("updated_by") @db.Uuid
+  createdAt                 DateTime           @default(now()) @map("created_at")
+  updatedAt                 DateTime           @updatedAt @map("updated_at")
+
+  company                 Company                    @relation(fields: [companyId], references: [id])
+  createdBy               User                       @relation("DocGenDocumentSetCreatedBy", fields: [createdById], references: [id])
+  updatedBy               User?                      @relation("DocGenDocumentSetUpdatedBy", fields: [updatedById], references: [id])
+  versions                DocGenDocumentSetVersion[] @relation("DocGenDocumentSetVersions")
+  currentPublishedVersion DocGenDocumentSetVersion?  @relation("DocGenDocumentSetCurrentPublished", fields: [currentPublishedVersionId], references: [id])
+  generations             DocGenGeneration[]
+
+  @@index([companyId, status])
+  @@map("doc_gen_document_sets")
+}
+
+model DocGenDocumentSetVersion {
+  id              String              @id @default(uuid()) @db.Uuid
+  documentSetId   String              @map("document_set_id") @db.Uuid
+  versionNumber   Int                 @map("version_number")
+  fieldConfigJson Json                @default("{}") @map("field_config_json")
+  status          DocGenVersionStatus @default(DRAFT)
+  publishedById   String?             @map("published_by") @db.Uuid
+  publishedAt     DateTime?           @map("published_at")
+
+  documentSet      DocGenDocumentSet              @relation("DocGenDocumentSetVersions", fields: [documentSetId], references: [id], onDelete: Cascade)
+  currentForSet    DocGenDocumentSet?             @relation("DocGenDocumentSetCurrentPublished")
+  publishedBy      User?                          @relation("DocGenSetVersionPublishedBy", fields: [publishedById], references: [id])
+  items            DocGenDocumentSetVersionItem[]
+  generations      DocGenGeneration[]
+
+  @@unique([documentSetId, versionNumber])
+  @@index([documentSetId, status])
+  @@map("doc_gen_document_set_versions")
+}
+
+model DocGenDocumentSetVersionItem {
+  id                String @id @default(uuid()) @db.Uuid
+  setVersionId      String @map("set_version_id") @db.Uuid
+  templateVersionId String @map("template_version_id") @db.Uuid
+  sortOrder         Int    @map("sort_order")
+  displayName       String @map("display_name")
+
+  setVersion      DocGenDocumentSetVersion @relation(fields: [setVersionId], references: [id], onDelete: Cascade)
+  templateVersion DocGenTemplateVersion    @relation(fields: [templateVersionId], references: [id])
+
+  @@unique([setVersionId, sortOrder])
+  @@index([templateVersionId])
+  @@map("doc_gen_document_set_version_items")
+}
+
+model DocGenProfile {
+  id                String   @id @default(uuid()) @db.Uuid
+  companyId         String   @map("company_id") @db.Uuid
+  displayName       String   @map("display_name")
+  mobileNumber      String?  @map("mobile_number")
+  consumerNumber    String?  @map("consumer_number")
+  fieldValuesJson   Json     @default("{}") @map("field_values_json")
+  linkedCustomerId  String?  @map("linked_customer_id") @db.Uuid
+  linkedServiceId   String?  @map("linked_service_request_id") @db.Uuid
+  createdById       String   @map("created_by") @db.Uuid
+  updatedById       String?  @map("updated_by") @db.Uuid
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  company     Company            @relation(fields: [companyId], references: [id])
+  linkedCustomer Customer?       @relation(fields: [linkedCustomerId], references: [id])
+  linkedService  ServiceRequest?  @relation(fields: [linkedServiceId], references: [id])
+  createdBy   User               @relation("DocGenProfileCreatedBy", fields: [createdById], references: [id])
+  updatedBy   User?              @relation("DocGenProfileUpdatedBy", fields: [updatedById], references: [id])
+  generations DocGenGeneration[]
+
+  @@index([companyId, displayName])
+  @@index([companyId, mobileNumber])
+  @@index([companyId, consumerNumber])
+  @@map("doc_gen_profiles")
+}
+
+model DocGenGeneration {
+  id                   String                 @id @default(uuid()) @db.Uuid
+  companyId            String                 @map("company_id") @db.Uuid
+  documentSetId        String                 @map("document_set_id") @db.Uuid
+  documentSetVersionId String                 @map("document_set_version_id") @db.Uuid
+  profileId            String?                @map("profile_id") @db.Uuid
+  customerSnapshotJson Json                   @map("customer_snapshot_json")
+  status               DocGenGenerationStatus @default(PENDING)
+  combinedStoredPdfId  String?                @map("combined_stored_pdf_id") @db.Uuid
+  errorMessage         String?                @map("error_message")
+  generatedById        String                 @map("generated_by") @db.Uuid
+  generatedAt          DateTime               @default(now()) @map("generated_at")
+
+  company            Company                  @relation(fields: [companyId], references: [id])
+  documentSet        DocGenDocumentSet        @relation(fields: [documentSetId], references: [id])
+  documentSetVersion DocGenDocumentSetVersion @relation(fields: [documentSetVersionId], references: [id])
+  profile            DocGenProfile?           @relation(fields: [profileId], references: [id])
+  generatedBy        User                     @relation("DocGenGenerationCreatedBy", fields: [generatedById], references: [id])
+  documents          DocGenGeneratedDocument[]
+
+  @@index([companyId, generatedAt])
+  @@index([profileId])
+  @@map("doc_gen_generations")
+}
+
+model DocGenGeneratedDocument {
+  id                String                 @id @default(uuid()) @db.Uuid
+  generationId      String                 @map("generation_id") @db.Uuid
+  templateId        String                 @map("template_id") @db.Uuid
+  templateVersionId String                 @map("template_version_id") @db.Uuid
+  documentName      String                 @map("document_name")
+  storedPdfId       String?                @map("stored_pdf_id") @db.Uuid
+  pageCount         Int?                   @map("page_count")
+  status            DocGenGenerationStatus @default(PENDING)
+  createdAt         DateTime               @default(now()) @map("created_at")
+
+  generation      DocGenGeneration      @relation(fields: [generationId], references: [id], onDelete: Cascade)
+  template        DocGenTemplate          @relation(fields: [templateId], references: [id])
+  templateVersion DocGenTemplateVersion   @relation(fields: [templateVersionId], references: [id])
+
+  @@index([generationId])
+  @@map("doc_gen_generated_documents")
 }

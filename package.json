@@ -18,6 +18,13 @@
     "db:backfill:opening-stock": "tsx scripts/backfill-opening-stock.ts",
     "db:fix:sbi-on-hdfc": "tsx scripts/remove-sbi-parsed-hdfc-transactions.ts",
     "db:setup:local": "powershell -ExecutionPolicy Bypass -File scripts/setup-local-db.ps1",
+    "automation-agent:install": "npm install --prefix packages/automation-agent",
+    "automation-agent:build": "npm run build --prefix packages/automation-agent",
+    "automation-agent:playwright-chromium": "npm run playwright:install-chromium --prefix packages/automation-agent",
+    "automation-agent-desktop:install": "npm install --prefix packages/automation-agent-desktop",
+    "automation-agent-desktop:build": "npm run build --prefix packages/automation-agent-desktop",
+    "automation-agent-desktop:start": "npm run start --prefix packages/automation-agent-desktop",
+    "automation-agent-desktop:dist": "npm run dist --prefix packages/automation-agent-desktop",
     "postinstall": "node scripts/prisma-generate.mjs"
   },
   "prisma": {
@@ -43,6 +50,7 @@
     "lucide-react": "^0.511.0",
     "next": "15.3.8",
     "next-auth": "^5.0.0-beta.28",
+    "pdf-lib": "^1.17.1",
     "pdfkit": "^0.19.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

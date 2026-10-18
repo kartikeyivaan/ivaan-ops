@@ -10,16 +10,39 @@ import { listCustomers } from "@/lib/customer-service";
 import { prisma } from "@/lib/prisma";
 import { ROLES } from "@/lib/rbac";
 import { requireActiveCompany } from "@/lib/session";
+import { customerSearchSchema } from "@/lib/validations";
 import { CustomersList } from "@/components/customers/customers-list";
 
-export default async function CustomersPage() {
+type PageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+function first(value: string | string[] | undefined): string | undefined {
+  if (Array.isArray(value)) return value[0];
+  return value;
+}
+
+export default async function CustomersPage({ searchParams }: PageProps) {
   const session = await auth();
   if (!session?.user || !canViewCustomers(session.user.roles)) {
     redirect("/dashboard");
   }
 
   const companyId = requireActiveCompany(session);
-  const customersPage = await listCustomers(prisma, companyId, {});
+  const params = await searchParams;
+  const parsed = customerSearchSchema.safeParse({
+    q: first(params.q),
+    city: first(params.city),
+    customerType: first(params.customerType),
+    assignedSalesUserId: first(params.assignedSalesUserId),
+    status: first(params.status),
+    outstandingOnly: first(params.outstandingOnly),
+    page: first(params.page),
+    pageSize: first(params.pageSize),
+  });
+  const filters = parsed.success ? parsed.data : customerSearchSchema.parse({});
+
+  const customersPage = await listCustomers(prisma, companyId, filters);
   const customers = customersPage.items;
 
   const salesExecutives = await prisma.user.findMany({
@@ -50,6 +73,7 @@ export default async function CustomersPage() {
         salesExecutives={salesExecutives}
         canEdit={canEditCustomers(session.user.roles)}
         canReassign={canReassignCustomers(session.user.roles)}
+        initialOutstandingOnly={Boolean(filters.outstandingOnly)}
       />
     </Suspense>
   );

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { generateProformaInvoicePdf } from "@/lib/pi-pdf";
 import { piInclude } from "@/lib/pi-service";
-import { pdfContentVersion, pdfInlineResponse, resolveStoredPdf } from "@/lib/pdf-cache";
+import { proformaInvoicePdfContentVersion } from "@/lib/pdf-content-versions";
+import { pdfInlineResponse, resolveStoredPdf } from "@/lib/pdf-cache";
 import { prisma } from "@/lib/prisma";
 import { verifyProformaInvoiceShareToken } from "@/lib/share-token";
 
@@ -40,11 +41,7 @@ export async function GET(request: Request) {
   const pdf = await resolveStoredPdf(prisma, {
     documentType: "PROFORMA_INVOICE",
     documentId: pi.id,
-    contentVersion: pdfContentVersion([
-      pi.updatedAt.toISOString(),
-      pi.status,
-      pi.totalValue.toString(),
-    ]),
+    contentVersion: proformaInvoicePdfContentVersion(pi),
     generate: () => generateProformaInvoicePdf(pi),
   });
 
@@ -53,6 +50,5 @@ export async function GET(request: Request) {
 
   return pdfInlineResponse(pdf, safeName, {
     asciiName: safeName.replace(/[^\x20-\x7E]/g, "_"),
-    privateCache: false,
   });
 }

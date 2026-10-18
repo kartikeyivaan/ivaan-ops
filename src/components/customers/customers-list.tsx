@@ -34,6 +34,7 @@ export function CustomersList({
   salesExecutives,
   canEdit,
   canReassign,
+  initialOutstandingOnly = false,
 }: {
   initialCustomers: CustomerListItem[];
   initialTotal?: number;
@@ -42,6 +43,7 @@ export function CustomersList({
   salesExecutives: SalesExecutive[];
   canEdit: boolean;
   canReassign: boolean;
+  initialOutstandingOnly?: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -53,6 +55,7 @@ export function CustomersList({
   const [city, setCity] = useState("");
   const [customerType, setCustomerType] = useState("");
   const [assignedSalesUserId, setAssignedSalesUserId] = useState("");
+  const [outstandingOnly, setOutstandingOnly] = useState(initialOutstandingOnly);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showImport, setShowImport] = useState(false);
   const [showReassign, setShowReassign] = useState(false);
@@ -78,10 +81,14 @@ export function CustomersList({
     if (city) params.set("city", city);
     if (customerType) params.set("customerType", customerType);
     if (assignedSalesUserId) params.set("assignedSalesUserId", assignedSalesUserId);
+    if (outstandingOnly) params.set("outstandingOnly", "true");
     params.set("page", String(nextPage));
     params.set("pageSize", String(pageSize));
 
-    const response = await fetch(`/api/customers?${params.toString()}`);
+    const query = params.toString();
+    router.replace(query ? `/sales/customers?${query}` : "/sales/customers", { scroll: false });
+
+    const response = await fetch(`/api/customers?${query}`);
     const data = await response.json();
     setLoading(false);
     if (response.ok) {
@@ -185,7 +192,16 @@ export function CustomersList({
               ))}
             </select>
           </div>
-          <div className="md:col-span-4">
+          <div className="md:col-span-4 flex flex-wrap items-end gap-3">
+            <label className="flex h-10 items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={outstandingOnly}
+                onChange={(event) => setOutstandingOnly(event.target.checked)}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              Outstanding only
+            </label>
             <Button onClick={applyFilters} disabled={loading}>
               {loading ? "Searching..." : "Apply filters"}
             </Button>

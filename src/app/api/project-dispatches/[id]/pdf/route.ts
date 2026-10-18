@@ -3,7 +3,8 @@ import { canViewProjectDispatches } from "@/lib/project-permissions";
 import { generateProjectDispatchPdf } from "@/lib/project-dispatch-pdf";
 import { getProjectDispatchRecord } from "@/lib/project-dispatch-service";
 import { projectDispatchErrorResponse } from "@/lib/project-dispatch-api";
-import { pdfContentVersion, pdfInlineResponse, resolveStoredPdf } from "@/lib/pdf-cache";
+import { projectDispatchPdfContentVersion } from "@/lib/pdf-content-versions";
+import { pdfInlineResponse, resolveStoredPdf } from "@/lib/pdf-cache";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
 
@@ -38,7 +39,7 @@ export async function GET(_request: Request, context: RouteContext) {
   const pdf = await resolveStoredPdf(prisma, {
     documentType: "PROJECT_DISPATCH",
     documentId: dispatch.id,
-    contentVersion: pdfContentVersion([dispatch.updatedAt.toISOString(), dispatch.status]),
+    contentVersion: projectDispatchPdfContentVersion(dispatch),
     generate: () => generateProjectDispatchPdf(dispatch),
   });
 

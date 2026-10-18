@@ -4,6 +4,11 @@ import {
   InvoiceHandoverStatus,
   type PrismaClient,
 } from "@prisma/client";
+import {
+  documentationCreateCompletionFields,
+  documentationCreateHistoryRemarks,
+  resolveDocumentationInitialStatus,
+} from "@/lib/dcr-documentation-eligibility";
 import { assertDispatchEligibleForDownstreamProcessing } from "@/lib/dispatch-workflow-eligibility";
 import {
   commercialValuesByDispatchLine,
@@ -258,7 +263,16 @@ export async function recordInvoice(
   return prisma.$transaction(async (tx) => {
     const handover = await tx.invoiceHandover.findFirst({
       where: { id: input.handoverId, companyId: input.companyId },
-      include: { dispatch: { select: { status: true, dcNo: true } } },
+      include: {
+        dispatch: {
+          select: {
+            status: true,
+            dcNo: true,
+            lines: { select: { product: { select: { displayName: true } } } },
+            proformaInvoice: { select: { creditStatus: true } },
+          },
+        },
+      },
     });
     if (!handover) throw new Error("NOT_FOUND");
     assertDispatchEligibleForDownstreamProcessing(handover.dispatch.status);
@@ -297,18 +311,25 @@ export async function recordInvoice(
         });
       }
     } else {
+      const initialStatus = resolveDocumentationInitialStatus({
+        creditStatus: handover.dispatch.proformaInvoice.creditStatus,
+        lines: handover.dispatch.lines.map((line) => ({
+          productDisplayName: line.product.displayName,
+        })),
+      });
       await tx.documentationRecord.create({
         data: {
           dispatchId: handover.dispatchId,
           invoiceHandoverId: handover.id,
           companyId: handover.companyId,
           customerId: handover.customerId,
-          status: DocumentationStatus.PENDING,
+          status: initialStatus,
+          ...documentationCreateCompletionFields(initialStatus, input.recordedById),
           statusHistory: {
             create: {
-              toStatus: DocumentationStatus.PENDING,
+              toStatus: initialStatus,
               changedById: input.recordedById,
-              remarks: "Created after invoice recording",
+              remarks: documentationCreateHistoryRemarks(initialStatus, "invoice_recorded"),
             },
           },
         },

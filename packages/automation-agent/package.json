@@ -1,0 +1,27 @@
+{
+  "name": "@ivaan/automation-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local Ivaan Ops browser automation agent (Playwright)",
+  "type": "module",
+  "bin": {
+    "ivaan-automation-agent": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/cli.js serve",
+    "serve": "node dist/cli.js serve",
+    "pair": "node dist/cli.js pair",
+    "dev": "tsx src/cli.ts serve",
+    "dev:pair": "tsx src/cli.ts pair",
+    "playwright:install-chromium": "playwright install chromium"
+  },
+  "dependencies": {
+    "playwright": "^1.55.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.29",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}

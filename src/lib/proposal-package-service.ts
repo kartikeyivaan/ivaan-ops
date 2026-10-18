@@ -366,7 +366,7 @@ export async function updateProposalPackage(
   const updated = await prisma.$transaction(async (tx) => {
     await tx.proposalPackageModuleOption.deleteMany({ where: { packageId: id } });
 
-    const row = await tx.proposalPackageMaster.update({
+    await tx.proposalPackageMaster.update({
       where: { id },
       data: {
         code: nextCode,

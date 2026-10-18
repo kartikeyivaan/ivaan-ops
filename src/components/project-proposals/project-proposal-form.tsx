@@ -227,7 +227,10 @@ export function ProjectProposalForm({
     ? isCustomPricingProposalPackage(selectedPackage)
     : false;
   const isHybrid = selectedPackage ? isHybridProposalPackage(selectedPackage) : false;
-  const packageModuleOptions = selectedPackage?.moduleOptions ?? [];
+  const packageModuleOptions = useMemo(
+    () => selectedPackage?.moduleOptions ?? [],
+    [selectedPackage],
+  );
   const hasPackageModuleOptions = packageModuleOptions.length > 0;
   const dcrApplicable =
     !isCustomPricing && !isHybrid && (selectedPackage?.panelWp ?? 0) >= 530;

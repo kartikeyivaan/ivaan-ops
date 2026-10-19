@@ -45,6 +45,7 @@ type PackageMaster = {
   panelWp: number;
   panelCount: number;
   systemKw: number;
+  defaultInverterKw: number;
   basePrice: number;
   dcrAdditionalPanelRate: number | null;
   ndcrAdditionalPanelRate: number | null;
@@ -331,6 +332,7 @@ export function ProjectProposalForm({
     const inverterKw = resolveInverterKw(
       selectedInverterUpgrade?.upgradeKw ?? null,
       selectedPackage.panelCount,
+      selectedPackage.defaultInverterKw,
     );
 
     return {

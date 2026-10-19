@@ -28,6 +28,7 @@ export type UpsertProposalPackageInput = {
   panelWp: number;
   panelCount: number;
   systemKw: number;
+  defaultInverterKw: number;
   defaultInverterBrands: string[];
   basePrice: number;
   dcrAdditionalPanelRate?: number | null;
@@ -101,6 +102,7 @@ export function serializeProposalPackage(
     panelWp: pkg.panelWp,
     panelCount: pkg.panelCount,
     systemKw: decimalToNumber(pkg.systemKw),
+    defaultInverterKw: decimalToNumber(pkg.defaultInverterKw),
     defaultInverterBrands: pkg.defaultInverterBrands as string[],
     basePrice: decimalToNumber(pkg.basePrice),
     dcrAdditionalPanelRate:
@@ -286,6 +288,7 @@ export async function createProposalPackage(
       panelWp: input.panelWp,
       panelCount: input.panelCount,
       systemKw: input.systemKw,
+      defaultInverterKw: input.defaultInverterKw,
       defaultInverterBrands: input.defaultInverterBrands,
       basePrice: input.basePrice,
       dcrAdditionalPanelRate: input.dcrAdditionalPanelRate ?? null,
@@ -377,6 +380,7 @@ export async function updateProposalPackage(
         panelWp: input.panelWp,
         panelCount: input.panelCount,
         systemKw: input.systemKw,
+        defaultInverterKw: input.defaultInverterKw,
         defaultInverterBrands: input.defaultInverterBrands,
         basePrice: input.basePrice,
         dcrAdditionalPanelRate: input.dcrAdditionalPanelRate ?? null,

@@ -2078,6 +2078,7 @@ model ProposalPackageMaster {
   panelWp                    Int                 @map("panel_wp")
   panelCount                 Int                 @map("panel_count")
   systemKw                   Decimal             @map("system_kw") @db.Decimal(6, 2)
+  defaultInverterKw          Decimal             @default(0) @map("default_inverter_kw") @db.Decimal(6, 2)
   defaultInverterBrands      Json                @map("default_inverter_brands")
   basePrice                  Decimal             @map("base_price") @db.Decimal(14, 2)
   dcrAdditionalPanelRate     Decimal?            @map("dcr_additional_panel_rate") @db.Decimal(14, 2)

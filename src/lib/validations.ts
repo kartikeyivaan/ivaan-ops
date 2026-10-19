@@ -1059,6 +1059,7 @@ export const upsertProposalPackageSchema = z.object({
   panelWp: z.coerce.number().int().min(0),
   panelCount: z.coerce.number().int().min(0),
   systemKw: z.coerce.number().min(0),
+  defaultInverterKw: z.coerce.number().min(0),
   defaultInverterBrands: z.array(z.string().min(1)).min(1),
   basePrice: z.coerce.number().min(0),
   dcrAdditionalPanelRate: z.coerce.number().min(0).nullable().optional(),

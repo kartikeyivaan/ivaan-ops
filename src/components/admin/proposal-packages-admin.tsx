@@ -36,6 +36,7 @@ type PackageRecord = {
   panelWp: number;
   panelCount: number;
   systemKw: number;
+  defaultInverterKw: number;
   defaultInverterBrands: string[];
   basePrice: number;
   dcrAdditionalPanelRate: number | null;
@@ -78,6 +79,7 @@ const emptyForm = {
   panelWp: "530",
   panelCount: "6",
   systemKw: "3.3",
+  defaultInverterKw: "3.3",
   defaultInverterBrands: "Polycab,Deye",
   basePrice: "0",
   dcrAdditionalPanelRate: "",
@@ -168,6 +170,7 @@ export function ProposalPackagesAdmin() {
       panelWp: String(pkg.panelWp),
       panelCount: String(pkg.panelCount),
       systemKw: String(pkg.systemKw),
+      defaultInverterKw: String(pkg.defaultInverterKw),
       defaultInverterBrands: pkg.defaultInverterBrands.join(","),
       basePrice: String(pkg.basePrice),
       dcrAdditionalPanelRate:
@@ -228,6 +231,7 @@ export function ProposalPackagesAdmin() {
       panelWp: Number(form.panelWp) || 0,
       panelCount: Number(form.panelCount) || 0,
       systemKw: Number(form.systemKw) || 0,
+      defaultInverterKw: Number(form.defaultInverterKw) || 0,
       defaultInverterBrands: form.defaultInverterBrands
         .split(",")
         .map((entry) => entry.trim())
@@ -397,6 +401,22 @@ export function ProposalPackagesAdmin() {
                 value={form.systemKw}
                 onChange={(event) => setForm({ ...form, systemKw: event.target.value })}
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="defaultInverterKw">Default inverter (kW)</Label>
+              <Input
+                id="defaultInverterKw"
+                type="number"
+                step="0.1"
+                min="0"
+                value={form.defaultInverterKw}
+                onChange={(event) =>
+                  setForm({ ...form, defaultInverterKw: event.target.value })
+                }
+              />
+              <p className="text-xs text-slate-500">
+                Shown on System Summary and proposal PDF when no inverter upgrade is selected.
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="basePrice">Base price</Label>
@@ -661,7 +681,7 @@ export function ProposalPackagesAdmin() {
                     <TableCell>{PROPOSAL_PACKAGE_TYPE_LABELS[pkg.packageType]}</TableCell>
                     <TableCell>
                       {pkg.panelCount > 0
-                        ? `${pkg.panelWp}+ Wp × ${pkg.panelCount} · ${pkg.systemKw} kW`
+                        ? `${pkg.panelWp}+ Wp × ${pkg.panelCount} · ${pkg.systemKw} kW · Inv ${pkg.defaultInverterKw} kW`
                         : pkg.packageType === ProposalPackageType.HYBRID
                           ? "Hybrid"
                           : "Custom"}

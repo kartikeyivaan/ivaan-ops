@@ -127,6 +127,7 @@ function serializeRevision(
     package: {
       ...revision.package,
       systemKw: decimalToNumber(revision.package.systemKw),
+      defaultInverterKw: decimalToNumber(revision.package.defaultInverterKw),
       basePrice: decimalToNumber(revision.package.basePrice),
     },
     inverterUpgrade: revision.inverterUpgrade

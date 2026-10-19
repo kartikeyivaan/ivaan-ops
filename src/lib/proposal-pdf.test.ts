@@ -44,14 +44,17 @@ describe("proposal generation", () => {
 });
 
 describe("proposal bom", () => {
-  it("resolves inverter capacity from package base, then upgrade", () => {
+  it("resolves inverter capacity from upgrade, package default, then panel fallback", () => {
     expect(resolveInverterKw(null)).toBe(3);
     expect(resolveInverterKw(undefined)).toBe(3);
     expect(resolveInverterKw(0)).toBe(3);
     expect(resolveInverterKw(null, 6)).toBe(3);
     expect(resolveInverterKw(undefined, 9)).toBe(5);
     expect(resolveInverterKw(0, 9)).toBe(5);
-    expect(resolveInverterKw(4, 6)).toBe(4);
+    expect(resolveInverterKw(null, 6, 5)).toBe(5);
+    expect(resolveInverterKw(null, 6, 3.3)).toBe(3.3);
+    expect(resolveInverterKw(0, 9, 5)).toBe(5);
+    expect(resolveInverterKw(4, 6, 3.3)).toBe(4);
     expect(resolveInverterKw(5, 6)).toBe(5);
     expect(resolveInverterKw(6, 9)).toBe(6);
   });

@@ -98,6 +98,7 @@ function buildProposalFixture(): ProjectProposalPdfRecord {
           panelWp: 570,
           panelCount: 6,
           systemKw: new Prisma.Decimal(3.3),
+          defaultInverterKw: new Prisma.Decimal(3.3),
           defaultInverterBrands: ["Polycab", "Deye"],
           basePrice: new Prisma.Decimal(195000),
           sortOrder: 2,

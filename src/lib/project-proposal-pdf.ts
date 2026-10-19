@@ -221,8 +221,11 @@ function prepareProposal(proposal: ProjectProposalPdfRecord, money: (v: number) 
     : resolveInverterKw(
         revision.inverterUpgrade
           ? decimalToNumber(revision.inverterUpgrade.upgradeKw)
-          : null,
+          : revision.inverterCapacityKw != null
+            ? decimalToNumber(revision.inverterCapacityKw)
+            : null,
         panelCount,
+        decimalToNumber(revision.package.defaultInverterKw),
       );
   const finalAmount = decimalToNumber(revision.finalAmount);
   const subsidyEstimate = decimalToNumber(revision.subsidyEstimate);

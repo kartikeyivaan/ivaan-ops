@@ -58,6 +58,7 @@ export async function deriveMaterialLinesFromRevision(
         ? decimalToNumber(revision.inverterUpgrade.upgradeKw)
         : null,
     revision.package.panelCount,
+    decimalToNumber(revision.package.defaultInverterKw),
   );
 
   const inverter = await prisma.product.findFirst({

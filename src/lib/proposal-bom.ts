@@ -24,15 +24,15 @@ export function structureDescription(structureType: ProposalStructureType | stri
   }
 }
 
-/** Default on-grid inverter for 6-panel DCR packages when no upgrade is selected. */
+/** Fallback on-grid inverter for 6-panel DCR packages when package default is unset. */
 export const DEFAULT_INVERTER_CAPACITY_KW = 3;
 
-/** Base on-grid inverter for 9-panel DCR packages (P3 / P4) when no upgrade is selected. */
+/** Fallback on-grid inverter for 9-panel DCR packages when package default is unset. */
 export const NINE_PANEL_INVERTER_CAPACITY_KW = 5;
 
 /**
- * Package-included inverter AC capacity (before optional upgrade).
- * 6-panel packages include 3 kW; 9-panel packages include 5 kW.
+ * Legacy panel-count fallback when a package has no defaultInverterKw.
+ * Prefer package.defaultInverterKw via resolveInverterKw.
  */
 export function baseInverterKwForPanelCount(panelCount: number | null | undefined): number {
   if (panelCount != null && panelCount >= 9) {
@@ -43,15 +43,19 @@ export function baseInverterKwForPanelCount(panelCount: number | null | undefine
 
 /**
  * Inverter AC capacity for DCR package proposals.
- * Uses the selected inverter upgrade when present; otherwise the package base inverter.
+ * Priority: selected upgrade → package default inverter → panel-count fallback.
  * DC kWp from additional panels must not change inverter size.
  */
 export function resolveInverterKw(
   upgradeKw: number | null | undefined,
   panelCount?: number | null,
+  packageDefaultInverterKw?: number | null,
 ): number {
   if (upgradeKw != null && upgradeKw > 0) {
     return upgradeKw;
+  }
+  if (packageDefaultInverterKw != null && packageDefaultInverterKw > 0) {
+    return packageDefaultInverterKw;
   }
   return baseInverterKwForPanelCount(panelCount);
 }

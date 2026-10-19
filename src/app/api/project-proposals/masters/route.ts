@@ -86,6 +86,7 @@ export async function GET() {
       panelWp: pkg.panelWp,
       panelCount: pkg.panelCount,
       systemKw: decimalToNumber(pkg.systemKw),
+      defaultInverterKw: decimalToNumber(pkg.defaultInverterKw),
       basePrice: decimalToNumber(pkg.basePrice),
       dcrAdditionalPanelRate:
         pkg.dcrAdditionalPanelRate != null

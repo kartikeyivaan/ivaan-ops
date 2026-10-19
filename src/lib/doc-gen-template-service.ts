@@ -15,6 +15,11 @@ import {
   type TemplateContent,
 } from "@/lib/doc-gen-template-content";
 import { PDFDocument } from "pdf-lib";
+import {
+  DOC_GEN_AUDIT_EVENTS,
+  DOC_GEN_AUDIT_TABLES,
+  writeDocGenAuditTx,
+} from "@/lib/doc-gen-audit";
 import { assertPdfUpload, DOC_GEN_BACKGROUND_MAX_PAGES } from "@/lib/doc-gen-background-upload";
 import { validateTemplateContent } from "@/lib/doc-gen-template-validation";
 
@@ -200,6 +205,7 @@ export async function publishTemplateVersion(
       templateId: input.templateId,
       status: DocGenVersionStatus.DRAFT,
     },
+    include: { template: { select: { name: true } } },
   });
   if (!draft) throw new Error("DRAFT_NOT_FOUND");
 
@@ -233,6 +239,22 @@ export async function publishTemplateVersion(
         backgroundStoredPdfId: published.backgroundStoredPdfId,
         status: DocGenVersionStatus.DRAFT,
         createdById: input.userId,
+      },
+    });
+
+    await writeDocGenAuditTx(tx, {
+      eventType: DOC_GEN_AUDIT_EVENTS.TEMPLATE_PUBLISHED,
+      tableName: DOC_GEN_AUDIT_TABLES.templateVersions,
+      recordId: published.id,
+      action: "UPDATE",
+      performedBy: input.userId,
+      companyId: input.companyId,
+      reference: draft.template.name,
+      newValue: {
+        templateId: input.templateId,
+        templateName: draft.template.name,
+        versionNumber: published.versionNumber,
+        status: published.status,
       },
     });
 

@@ -36,5 +36,13 @@ export function mapDocGenRouteError(error: unknown): NextResponse | null {
     const issues = (error as Error & { issues?: unknown }).issues;
     return NextResponse.json({ message: "Template validation failed.", issues }, { status: 400 });
   }
+  if (error.message === "SET_VALIDATION_ISSUES") {
+    const issues = (error as Error & { issues?: unknown }).issues;
+    return NextResponse.json({ message: "Document set validation failed.", issues }, { status: 400 });
+  }
+  if (error.message === "FIELD_VALIDATION") {
+    const issues = (error as Error & { issues?: unknown }).issues;
+    return NextResponse.json({ message: "Field validation failed.", issues }, { status: 400 });
+  }
   return null;
 }

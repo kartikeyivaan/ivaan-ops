@@ -4,6 +4,11 @@ import {
   Prisma,
   type PrismaClient,
 } from "@prisma/client";
+import {
+  DOC_GEN_AUDIT_EVENTS,
+  DOC_GEN_AUDIT_TABLES,
+  writeDocGenAudit,
+} from "@/lib/doc-gen-audit";
 import { fieldKeyValidationMessage, isValidDocGenFieldKey, normalizeDocGenFieldKey } from "@/lib/doc-gen-field-key";
 
 export type DocGenFieldInput = {
@@ -62,7 +67,7 @@ export async function createDocGenField(
 
   const fieldKey = normalizeDocGenFieldKey(input.data.fieldKey);
   try {
-    return await prisma.docGenField.create({
+    const field = await prisma.docGenField.create({
       data: {
         companyId: input.companyId,
         fieldKey,
@@ -77,6 +82,22 @@ export async function createDocGenField(
         createdById: input.userId,
       },
     });
+    await writeDocGenAudit({
+      eventType: DOC_GEN_AUDIT_EVENTS.FIELD_CREATED,
+      tableName: DOC_GEN_AUDIT_TABLES.fields,
+      recordId: field.id,
+      action: "CREATE",
+      performedBy: input.userId,
+      companyId: input.companyId,
+      reference: field.fieldKey,
+      newValue: {
+        fieldKey: field.fieldKey,
+        label: field.label,
+        inputType: field.inputType,
+        status: field.status,
+      },
+    });
+    return field;
   } catch (cause) {
     if (cause instanceof Prisma.PrismaClientKnownRequestError && cause.code === "P2002") {
       throw new Error("DUPLICATE_FIELD_KEY");
@@ -103,7 +124,7 @@ export async function updateDocGenField(
     throw new Error("VALIDATION:Display label is required.");
   }
 
-  return prisma.docGenField.update({
+  const field = await prisma.docGenField.update({
     where: { id: existing.id },
     data: {
       ...(input.data.label !== undefined ? { label: input.data.label.trim() } : {}),
@@ -121,4 +142,25 @@ export async function updateDocGenField(
       updatedById: input.userId,
     },
   });
+  await writeDocGenAudit({
+    eventType: DOC_GEN_AUDIT_EVENTS.FIELD_UPDATED,
+    tableName: DOC_GEN_AUDIT_TABLES.fields,
+    recordId: field.id,
+    action: "UPDATE",
+    performedBy: input.userId,
+    companyId: input.companyId,
+    reference: field.fieldKey,
+    oldValue: {
+      label: existing.label,
+      inputType: existing.inputType,
+      status: existing.status,
+    },
+    newValue: {
+      fieldKey: field.fieldKey,
+      label: field.label,
+      inputType: field.inputType,
+      status: field.status,
+    },
+  });
+  return field;
 }

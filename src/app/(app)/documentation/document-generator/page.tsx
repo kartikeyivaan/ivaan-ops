@@ -45,13 +45,19 @@ export default async function DocumentGeneratorPage() {
       ) : (
         <>
           <div className="flex flex-wrap gap-3">
-            <Button asChild disabled>
+            <Button asChild>
               <Link href="/documentation/document-generator/generate">Generate documents</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/documentation/document-generator/history">Generation history</Link>
             </Button>
             {isAdmin ? (
               <>
                 <Button asChild variant="outline">
                   <Link href="/documentation/document-generator/admin/templates">Manage templates</Link>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link href="/documentation/document-generator/admin/sets">Manage document sets</Link>
                 </Button>
                 <Button asChild variant="outline">
                   <Link href="/documentation/document-generator/admin/fields">Manage data fields</Link>
@@ -60,9 +66,9 @@ export default async function DocumentGeneratorPage() {
             ) : null}
           </div>
           <p className="text-sm text-slate-500">
-            Super Admin can configure fields and templates (PDF background, canvas, or rich text),
-            validate, preview, and publish versions. Document sets and customer generation arrive in
-            Phase 3.
+            Super Admin publishes templates and document sets. Documentation and Accounts users can
+            search customers, fill the shared form once, download PDFs, and re-open past generations
+            with the exact template/set versions that were used.
           </p>
         </>
       )}

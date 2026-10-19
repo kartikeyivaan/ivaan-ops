@@ -5,7 +5,11 @@ import {
   ProformaInvoiceStatus,
   type PrismaClient,
 } from "@prisma/client";
-import { commercialValuesByDispatchLine, loadKitBomMapForDispatches } from "@/lib/dispatch-value";
+import {
+  commercialValuesByDispatchLine,
+  loadKitBomMapForDispatches,
+  sumCommercialValueFromDispatchLines,
+} from "@/lib/dispatch-value";
 import { formatCostSource } from "@/lib/dispatch-profit";
 import { decimalToNumber } from "@/lib/inventory";
 import { getWarehouseStockForProduct } from "@/lib/inventory-service";
@@ -90,6 +94,10 @@ export type DispatchReportFilters = ReportDateFilters & {
 };
 
 export type ExecutiveSalesReportFilters = ReportDateFilters & {
+  salesUserIds?: string[];
+};
+
+export type CustomerSalesRevenueReportFilters = ReportDateFilters & {
   salesUserIds?: string[];
 };
 
@@ -1006,6 +1014,126 @@ export async function getExecutiveSalesReport(
   }
 
   return rows;
+}
+
+export async function getCustomerSalesRevenueReport(
+  prisma: PrismaClient,
+  companyIds: string[],
+  filters: CustomerSalesRevenueReportFilters,
+) {
+  const fromDate = parseReportDate(filters.fromDate);
+  const toDate = endOfReportDay(filters.toDate);
+
+  const dispatches = await prisma.dispatch.findMany({
+    where: {
+      companyId: toCompanyIdFilter(companyIds),
+      status: DispatchStatus.DISPATCHED,
+      ...(filters.salesUserIds?.length
+        ? { customer: { assignedSalesUserId: { in: filters.salesUserIds } } }
+        : {}),
+      ...(fromDate || toDate
+        ? {
+            dispatchDate: {
+              ...(fromDate ? { gte: fromDate } : {}),
+              ...(toDate ? { lte: toDate } : {}),
+            },
+          }
+        : {}),
+    },
+    select: {
+      customerId: true,
+      customer: {
+        select: {
+          customerCode: true,
+          customerName: true,
+          customerType: true,
+          city: true,
+          state: true,
+          mobile: true,
+          assignedSalesUser: { select: { name: true } },
+        },
+      },
+      lines: {
+        select: {
+          productId: true,
+          qty: true,
+          proformaInvoiceItem: {
+            select: {
+              id: true,
+              rate: true,
+              gstRate: true,
+              product: {
+                select: {
+                  id: true,
+                  pricingType: true,
+                  capacity: true,
+                  category: { select: { name: true } },
+                },
+              },
+            },
+          },
+          product: {
+            select: {
+              pricingType: true,
+              capacity: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const kitBomMap = await loadKitBomMapForDispatches(prisma, dispatches);
+
+  type Aggregate = {
+    customerCode: string;
+    customerName: string;
+    customerType: string;
+    city: string;
+    state: string;
+    mobile: string;
+    salesExecutive: string;
+    salesRevenue: number;
+    dispatchCount: number;
+  };
+
+  const byCustomer = new Map<string, Aggregate>();
+
+  for (const dispatch of dispatches) {
+    const revenue = roundMoney(
+      sumCommercialValueFromDispatchLines(dispatch.lines, kitBomMap),
+    );
+    const existing = byCustomer.get(dispatch.customerId);
+    if (existing) {
+      existing.salesRevenue = roundMoney(existing.salesRevenue + revenue);
+      existing.dispatchCount += 1;
+      continue;
+    }
+    byCustomer.set(dispatch.customerId, {
+      customerCode: dispatch.customer.customerCode,
+      customerName: dispatch.customer.customerName,
+      customerType: dispatch.customer.customerType,
+      city: dispatch.customer.city ?? "",
+      state: dispatch.customer.state ?? "",
+      mobile: dispatch.customer.mobile ?? "",
+      salesExecutive: dispatch.customer.assignedSalesUser.name,
+      salesRevenue: revenue,
+      dispatchCount: 1,
+    });
+  }
+
+  return Array.from(byCustomer.values())
+    .filter((row) => row.salesRevenue > 0)
+    .sort((a, b) => {
+      if (b.salesRevenue !== a.salesRevenue) {
+        return b.salesRevenue - a.salesRevenue;
+      }
+      return a.customerName.localeCompare(b.customerName);
+    })
+    .map((row, index) => ({
+      srNo: index + 1,
+      ...row,
+    }));
 }
 
 export async function getSalesPerformanceReport(

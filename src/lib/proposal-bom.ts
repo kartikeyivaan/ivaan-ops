@@ -207,6 +207,16 @@ export function buildProposalBom(input: {
       capacity: capacityLabel,
       make: input.moduleMake?.trim() || "Waaree",
     });
+  } else if (input.moduleDisplayName?.trim()) {
+    // Fixed package with a selected module alternate (e.g. 610 Wp option).
+    lines.push({
+      sr: 1,
+      item: "Solar PV Module",
+      description: formatNdcrPanelModuleDescription(input.panelWp, input.moduleDisplayName),
+      qty: String(totalDcrPanels),
+      capacity: input.panelWp > 0 ? `${input.panelWp}Wp` : "—",
+      make: input.moduleMake?.trim() || "Waaree",
+    });
   } else {
     lines.push({
       sr: 1,

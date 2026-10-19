@@ -34,7 +34,8 @@ type ReportKey =
   | "reserved-qty"
   | "dispatch"
   | "dispatch-profit"
-  | "executive-sales";
+  | "executive-sales"
+  | "customer-sales-revenue";
 
 type ReportDefinition = {
   key: ReportKey;
@@ -126,6 +127,13 @@ const REPORTS: ReportDefinition[] = [
     description:
       "Dispatched sales by executive for the selected period — customer firm, product, qty, PI and DC numbers.",
   },
+  {
+    key: "customer-sales-revenue",
+    label: "Customer Sales Revenue",
+    endpoint: "/api/reports/customer-sales-revenue",
+    description:
+      "Customers with dispatched sales revenue in the selected period, including the linked sales executive.",
+  },
 ];
 
 const RESERVED_QTY_COLUMNS = [
@@ -150,8 +158,26 @@ const EXECUTIVE_SALES_COLUMNS = [
   "dcNumber",
 ] as const;
 
+const CUSTOMER_SALES_REVENUE_COLUMNS = [
+  "srNo",
+  "customerCode",
+  "customerName",
+  "customerType",
+  "salesExecutive",
+  "salesRevenue",
+  "dispatchCount",
+  "city",
+  "state",
+  "mobile",
+] as const;
+
+const MULTI_COMPANY_REPORTS = new Set<ReportKey>([
+  "executive-sales",
+  "customer-sales-revenue",
+]);
+
 function isMoneyColumn(key: string): boolean {
-  return /value|paid|outstanding|amount|ratePerWp|collectionAmount|revenueExGst|cogsExGst|profitExGst/i.test(
+  return /value|paid|outstanding|amount|ratePerWp|collectionAmount|revenue|cogsExGst|profitExGst/i.test(
     key,
   );
 }
@@ -175,6 +201,11 @@ function formatHeader(key: string) {
   if (key === "dcNo") return "DC No";
   if (key === "committedDate") return "Committed Date";
   if (key === "customerName") return "Customer Name";
+  if (key === "customerCode") return "Customer Code";
+  if (key === "customerType") return "Customer Type";
+  if (key === "salesExecutive") return "Sales Executive";
+  if (key === "salesRevenue") return "Sales Revenue";
+  if (key === "dispatchCount") return "Dispatch Count";
   if (key === "firmName") return "Firm Name";
   if (key === "firmCode") return "Firm Code";
   if (key === "firmGst") return "Firm GST";
@@ -261,6 +292,9 @@ export function ReportsHub({
     if (activeReport === "executive-sales") {
       return [...EXECUTIVE_SALES_COLUMNS];
     }
+    if (activeReport === "customer-sales-revenue") {
+      return [...CUSTOMER_SALES_REVENUE_COLUMNS];
+    }
     if (activeReport === "reserved-qty" && rows.length > 0) {
       return [...RESERVED_QTY_COLUMNS];
     }
@@ -276,10 +310,10 @@ export function ReportsHub({
     if (fromDate) params.set("fromDate", fromDate);
     if (toDate) params.set("toDate", toDate);
     if (salesUserId) params.set("salesUserId", salesUserId);
-    if (activeReport === "executive-sales" && selectedSalesUserIds.length) {
+    if (MULTI_COMPANY_REPORTS.has(activeReport) && selectedSalesUserIds.length) {
       params.set("salesUserIds", selectedSalesUserIds.join(","));
     }
-    if (activeReport === "executive-sales" && selectedCompanyIds.length) {
+    if (MULTI_COMPANY_REPORTS.has(activeReport) && selectedCompanyIds.length) {
       params.set("companyIds", selectedCompanyIds.join(","));
     }
     if (warehouseId) params.set("warehouseId", warehouseId);
@@ -469,7 +503,7 @@ export function ReportsHub({
               </>
             ) : null}
 
-            {activeReport === "executive-sales" && companies.length > 0 ? (
+            {MULTI_COMPANY_REPORTS.has(activeReport) && companies.length > 0 ? (
               <div className="space-y-2 md:col-span-2 xl:col-span-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <Label>Companies</Label>
@@ -517,10 +551,14 @@ export function ReportsHub({
               </div>
             ) : null}
 
-            {activeReport === "executive-sales" && canFilterByExecutive ? (
+            {MULTI_COMPANY_REPORTS.has(activeReport) && canFilterByExecutive ? (
               <div className="space-y-2 md:col-span-2 xl:col-span-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <Label>Sales Executives</Label>
+                  <Label>
+                    {activeReport === "customer-sales-revenue"
+                      ? "Linked Sales Executives"
+                      : "Sales Executives"}
+                  </Label>
                   <div className="flex gap-2 text-xs">
                     <button
                       type="button"
@@ -562,7 +600,7 @@ export function ReportsHub({
 
             {canFilterByExecutive &&
             executiveFilterReports.has(activeReport) &&
-            activeReport !== "executive-sales" ? (
+            !MULTI_COMPANY_REPORTS.has(activeReport) ? (
               <div className="space-y-2">
                 <Label htmlFor="salesUserId">Sales Executive</Label>
                 <select
@@ -718,7 +756,7 @@ export function ReportsHub({
             <p className="text-sm text-slate-500">
               {loading
                 ? "Loading results…"
-                : activeReport === "executive-sales"
+                : MULTI_COMPANY_REPORTS.has(activeReport)
                   ? "Run the report to preview results. Export Excel or PDF anytime."
                   : "Run a report to see results. Export works even before previewing."}
             </p>

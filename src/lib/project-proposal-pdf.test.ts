@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ProposalBuildingType,
   ProposalConnectionPhase,
+  ProposalPackageType,
   ProposalStructureType,
 } from "@prisma/client";
 import { Prisma } from "@prisma/client";
@@ -95,12 +96,21 @@ function buildProposalFixture(): ProjectProposalPdfRecord {
           code: "P2",
           name: "570+Wp × 6 panels",
           description: "570+Wp × 6 Panels, 3.3kW Polycab/Deye",
+          packageType: ProposalPackageType.SUBSIDY_DCR,
           panelWp: 570,
           panelCount: 6,
           systemKw: new Prisma.Decimal(3.3),
           defaultInverterKw: new Prisma.Decimal(3.3),
           defaultInverterBrands: ["Polycab", "Deye"],
           basePrice: new Prisma.Decimal(195000),
+          dcrAdditionalPanelRate: null,
+          ndcrAdditionalPanelRate: null,
+          futureStructurePanelRate: null,
+          moduleSegmentLabel: null,
+          hybridBasePrice: null,
+          hybridPerInverterKwRate: null,
+          hybridPerBatteryUnitRate: null,
+          batteryUnitKwh: null,
           sortOrder: 2,
           isActive: true,
           isComingSoon: false,
@@ -155,9 +165,11 @@ describe("project proposal pdf", () => {
       ...revision.package,
       code: "NDCR_COMPLETE",
       name: "Non-subsidy Projects",
+      packageType: ProposalPackageType.NON_SUBSIDY_CUSTOM,
       panelWp: 0,
       panelCount: 0,
       systemKw: new Prisma.Decimal(0),
+      defaultInverterKw: new Prisma.Decimal(0),
     };
     revision.moduleQty = 18;
     revision.inverterCapacityKw = new Prisma.Decimal(10);
@@ -175,5 +187,34 @@ describe("project proposal pdf", () => {
     const pdf = await generateProjectProposalQuoteCardPdf(proposal);
     expect(pdf.subarray(0, 4).toString()).toBe("%PDF");
     expect(countPdfPages(pdf)).toBe(1);
+  });
+
+  it("generates PDF for DCR package with module alternate and package default inverter", async () => {
+    const proposal = buildProposalFixture();
+    const revision = proposal.revisions[0]!;
+    revision.package = {
+      ...revision.package,
+      code: "P610_5KW",
+      name: "610+Wp × 8 Panels, 5kW",
+      panelWp: 610,
+      panelCount: 8,
+      systemKw: new Prisma.Decimal(5),
+      defaultInverterKw: new Prisma.Decimal(5),
+    };
+    revision.inverterCapacityKw = null;
+    revision.moduleQty = 8;
+    revision.moduleProduct = {
+      id: "66666666-6666-6666-6666-666666666666",
+      displayName: "Waaree - TOPCon DCR - 610 Wp",
+      capacity: new Prisma.Decimal(610),
+      capacityUnit: "WP",
+      brand: { name: "Waaree" },
+    };
+
+    // Previously this path treated moduleProduct as NDCR-complete and wrote 0 kW.
+    const pdf = await generateProjectProposalPdf(proposal);
+    expect(pdf).toBeInstanceOf(Buffer);
+    expect(pdf.length).toBeGreaterThan(1000);
+    expect(pdf.subarray(0, 4).toString()).toBe("%PDF");
   });
 });

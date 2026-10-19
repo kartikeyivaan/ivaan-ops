@@ -59,6 +59,28 @@ describe("proposal bom", () => {
     expect(resolveInverterKw(6, 9)).toBe(6);
   });
 
+  it("uses package default inverter on DCR BOM when module alternate is selected", () => {
+    const bom = buildProposalBom({
+      panelWp: 610,
+      panelCount: 8,
+      systemKw: 4.9,
+      dcrAdditionalPanels: 0,
+      ndcrAdditionalPanels: 0,
+      ndcrPanelWp: 580,
+      inverterBrand: "Polycab",
+      inverterKw: 5,
+      connectionPhase: "SINGLE_PHASE",
+      structureType: "CUSTOM_FABRICATED",
+      ndcrComplete: false,
+      moduleDisplayName: "Waaree - TOPCon DCR - 610 Wp",
+      moduleMake: "Waaree",
+    });
+
+    const inverter = bom.find((line) => line.item === "Solar Inverter");
+    expect(inverter?.capacity).toBe("5 kW (Single Phase)");
+    expect(bom[0]?.description).toContain("610");
+  });
+
   it("includes separate DCR and NDCR module rows", () => {
     const bom = buildProposalBom({
       panelWp: 570,

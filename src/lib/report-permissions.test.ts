@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canViewAnyReport,
+  canViewCustomerSalesRevenueReport,
   canViewDispatchReport,
   canViewPaymentFollowupReport,
   canViewProductMovementReport,
@@ -44,6 +45,13 @@ describe("report-permissions", () => {
   it("detects any report access", () => {
     expect(canViewAnyReport([ROLES.SUPER_ADMIN])).toBe(true);
     expect(canViewAnyReport([ROLES.PURCHASE])).toBe(true);
+  });
+
+  it("restricts customer sales revenue report to Super Admin", () => {
+    expect(canViewCustomerSalesRevenueReport([ROLES.SUPER_ADMIN])).toBe(true);
+    expect(canViewCustomerSalesRevenueReport([ROLES.SALES_MANAGER])).toBe(false);
+    expect(canViewCustomerSalesRevenueReport([ROLES.SALES_EXECUTIVE])).toBe(false);
+    expect(canViewCustomerSalesRevenueReport([ROLES.ACCOUNTS])).toBe(false);
   });
 
   it("restricts sales executive to own data by default", () => {

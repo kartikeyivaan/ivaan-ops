@@ -1,5 +1,11 @@
 import { writeFileSync } from "node:fs";
-import { Prisma, ProposalBuildingType, ProposalConnectionPhase, ProposalStructureType } from "@prisma/client";
+import {
+  Prisma,
+  ProposalBuildingType,
+  ProposalConnectionPhase,
+  ProposalPackageType,
+  ProposalStructureType,
+} from "@prisma/client";
 import { ISE_BANK_DETAILS } from "@/lib/proposal-pdf-content";
 import { generateProjectProposalPdf, type ProjectProposalPdfRecord } from "@/lib/project-proposal-pdf";
 
@@ -85,12 +91,21 @@ const fixture: ProjectProposalPdfRecord = {
         code: "P2",
         name: "570+Wp × 6 panels",
         description: "570+Wp × 6 Panels, 3.3kW Polycab/Deye",
+        packageType: ProposalPackageType.SUBSIDY_DCR,
         panelWp: 570,
         panelCount: 6,
         systemKw: new Prisma.Decimal(3.3),
         defaultInverterKw: new Prisma.Decimal(3.3),
         defaultInverterBrands: ["Polycab", "Deye"],
         basePrice: new Prisma.Decimal(195000),
+        dcrAdditionalPanelRate: null,
+        ndcrAdditionalPanelRate: null,
+        futureStructurePanelRate: null,
+        moduleSegmentLabel: null,
+        hybridBasePrice: null,
+        hybridPerInverterKwRate: null,
+        hybridPerBatteryUnitRate: null,
+        batteryUnitKwh: null,
         sortOrder: 2,
         isActive: true,
         isComingSoon: false,

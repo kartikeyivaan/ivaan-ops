@@ -33,6 +33,7 @@ const pdfTraceRoutes = [
   "/api/reports/dispatch",
   "/api/reports/sales-funnel",
   "/api/reports/executive-sales",
+  "/api/reports/customer-sales-revenue",
   "/api/reports/collection",
   "/api/reports/booked-available",
   "/api/reports/executive-performance",

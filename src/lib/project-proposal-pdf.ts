@@ -8,7 +8,10 @@ import {
   GST_SPLIT_LOW_RATE,
   GST_SPLIT_LOW_WEIGHT,
 } from "@/lib/project-proposal-pricing";
-import { isNdcrCompletePackage } from "@/lib/project-proposal-packages";
+import {
+  isCustomPricingProposalPackage,
+  isHybridProposalPackage,
+} from "@/lib/project-proposal-packages";
 import { formatProposalDocumentNumber } from "@/lib/project-proposals";
 import {
   buildProposalBom,
@@ -197,12 +200,15 @@ function prepareProposal(proposal: ProjectProposalPdfRecord, money: (v: number) 
     throw new Error("REVISION_NOT_FOUND");
   }
 
-  const ndcrComplete =
-    isNdcrCompletePackage(revision.package.code) || Boolean(revision.moduleProduct);
+  // Module product on a fixed DCR package is a module alternate — not custom/NDCR pricing.
+  // Treating it as NDCR-complete incorrectly zeros inverter kW (inverterCapacityKw is null).
+  const ndcrComplete = isCustomPricingProposalPackage(revision.package);
+  const hybridPackage = isHybridProposalPackage(revision.package);
   const moduleWp = revision.moduleProduct
     ? decimalToNumber(revision.moduleProduct.capacity)
     : 0;
-  const panelWp = ndcrComplete ? moduleWp : revision.package.panelWp;
+  const panelWp =
+    ndcrComplete || moduleWp > 0 ? moduleWp : revision.package.panelWp;
   const panelCount = ndcrComplete
     ? (revision.moduleQty ?? 0)
     : revision.package.panelCount;
@@ -216,17 +222,16 @@ function prepareProposal(proposal: ProjectProposalPdfRecord, money: (v: number) 
   });
   const brands = (revision.inverterBrands as string[]) ?? [];
   const inverterBrand = brands.length > 0 ? brands.join("/") : "—";
-  const inverterKw = ndcrComplete
-    ? decimalToNumber(revision.inverterCapacityKw ?? 0)
-    : resolveInverterKw(
-        revision.inverterUpgrade
-          ? decimalToNumber(revision.inverterUpgrade.upgradeKw)
-          : revision.inverterCapacityKw != null
-            ? decimalToNumber(revision.inverterCapacityKw)
+  const inverterKw =
+    ndcrComplete || hybridPackage
+      ? decimalToNumber(revision.inverterCapacityKw ?? 0)
+      : resolveInverterKw(
+          revision.inverterUpgrade
+            ? decimalToNumber(revision.inverterUpgrade.upgradeKw)
             : null,
-        panelCount,
-        decimalToNumber(revision.package.defaultInverterKw),
-      );
+          revision.package.panelCount,
+          decimalToNumber(revision.package.defaultInverterKw),
+        );
   const finalAmount = decimalToNumber(revision.finalAmount);
   const subsidyEstimate = decimalToNumber(revision.subsidyEstimate);
   const effectiveInvestment = decimalToNumber(revision.effectiveCustomerInvestment);

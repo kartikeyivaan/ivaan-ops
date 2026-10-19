@@ -93,6 +93,10 @@ export function canViewExecutivePerformanceReport(userRoles: string[]): boolean 
   return canViewSalesExecutiveReport(userRoles);
 }
 
+export function canViewCustomerSalesRevenueReport(userRoles: string[]): boolean {
+  return isSuperAdmin(userRoles);
+}
+
 export function canViewAnyReport(userRoles: string[]): boolean {
   return (
     canViewSalesExecutiveReport(userRoles) ||
@@ -106,7 +110,8 @@ export function canViewAnyReport(userRoles: string[]): boolean {
     canViewSalesFunnelReport(userRoles) ||
     canViewCollectionReport(userRoles) ||
     canViewExecutivePerformanceReport(userRoles) ||
-    canViewExecutiveSalesReport(userRoles)
+    canViewExecutiveSalesReport(userRoles) ||
+    canViewCustomerSalesRevenueReport(userRoles)
   );
 }
 

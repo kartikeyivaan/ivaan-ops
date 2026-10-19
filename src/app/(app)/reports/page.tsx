@@ -5,6 +5,7 @@ import {
   canViewAnyReport,
   canViewBookedAvailableReport,
   canViewCollectionReport,
+  canViewCustomerSalesRevenueReport,
   canViewDispatchReport,
   canViewDispatchProfitReport,
   canViewExecutivePerformanceReport,
@@ -54,6 +55,7 @@ export default async function ReportsPage() {
     canViewDispatchReport(roles) ? "dispatch" : null,
     canViewDispatchProfitReport(roles) ? "dispatch-profit" : null,
     canViewExecutiveSalesReport(roles) ? "executive-sales" : null,
+    canViewCustomerSalesRevenueReport(roles) ? "customer-sales-revenue" : null,
   ].filter(Boolean) as Array<
     | "sales-executive"
     | "sales-performance"
@@ -67,6 +69,7 @@ export default async function ReportsPage() {
     | "dispatch"
     | "dispatch-profit"
     | "executive-sales"
+    | "customer-sales-revenue"
   >;
 
   const [warehouses, products, salesExecutives] = await Promise.all([

@@ -183,7 +183,7 @@ export async function deleteDocGenField(
     eventType: DOC_GEN_AUDIT_EVENTS.FIELD_DELETED,
     tableName: DOC_GEN_AUDIT_TABLES.fields,
     recordId: existing.id,
-    action: "DELETE",
+    action: "CANCEL",
     performedBy: input.userId,
     companyId: input.companyId,
     reference: existing.fieldKey,

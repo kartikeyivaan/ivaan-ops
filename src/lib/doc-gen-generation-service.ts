@@ -15,6 +15,7 @@ import {
   mergeFieldValuesWithDefaults,
 } from "@/lib/doc-gen-shared-fields";
 import { parseSetFieldConfig } from "@/lib/doc-gen-set-field-config";
+import { formatDocGenFieldValuesForOutput } from "@/lib/doc-gen-date";
 import { validateFieldValues } from "@/lib/doc-gen-field-values";
 import { mergePdfBuffers } from "@/lib/doc-gen-pdf-merge";
 import { renderTemplatePreviewPdf } from "@/lib/doc-gen-pdf-render";
@@ -162,7 +163,7 @@ export async function runDocGenGeneration(
       const pdfBuffer = await renderTemplatePreviewPdf({
         content,
         pageConfiguration,
-        fieldValues: mergedValues,
+        fieldValues: formatDocGenFieldValuesForOutput(mergedValues, compiled),
         backgroundBytes,
       });
       const pageCount = await countPdfPages(pdfBuffer);

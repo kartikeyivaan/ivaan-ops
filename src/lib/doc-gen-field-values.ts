@@ -49,7 +49,10 @@ export function validateFieldValues(
       }
       case "DATE": {
         if (!isIsoDate(value)) {
-          issues.push({ fieldKey: row.fieldKey, message: `${field.label} must be a valid date (YYYY-MM-DD).` });
+          issues.push({
+            fieldKey: row.fieldKey,
+            message: `${field.label} must be a valid date (stored as YYYY-MM-DD, printed as DD/MMM/YYYY).`,
+          });
         }
         break;
       }

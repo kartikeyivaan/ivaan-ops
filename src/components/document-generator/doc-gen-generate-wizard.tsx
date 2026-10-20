@@ -11,6 +11,7 @@ import {
   type DocGenFormField,
 } from "@/components/document-generator/doc-gen-field-input";
 import { prefillFieldValuesFromCustomerSource } from "@/lib/doc-gen-customer-prefill";
+import { formatDocGenDateDisplay } from "@/lib/doc-gen-date";
 
 type PublishedSet = {
   id: string;
@@ -83,7 +84,7 @@ function validateFormClient(
       errors[field.fieldKey] = `${field.label} must be a number.`;
     }
     if (field.inputType === "DATE" && !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-      errors[field.fieldKey] = `${field.label} must be a valid date (YYYY-MM-DD).`;
+      errors[field.fieldKey] = `${field.label} must be a valid date.`;
     }
   }
   return errors;
@@ -509,12 +510,16 @@ export function DocGenGenerateWizard({ publishedSets }: { publishedSets: Publish
             {formSchema.documents.map((doc) => doc.displayName).join(", ")}
           </p>
           <ul className="text-sm text-slate-700">
-            {formSchema.fields.map((field) => (
-              <li key={field.fieldId}>
-                <span className="text-slate-500">{field.label}:</span>{" "}
-                {fieldValues[field.fieldKey] || "—"}
-              </li>
-            ))}
+            {formSchema.fields.map((field) => {
+              const raw = fieldValues[field.fieldKey] || "";
+              const display =
+                field.inputType === "DATE" && raw ? formatDocGenDateDisplay(raw) : raw || "—";
+              return (
+                <li key={field.fieldId}>
+                  <span className="text-slate-500">{field.label}:</span> {display}
+                </li>
+              );
+            })}
           </ul>
           <label className="flex items-center gap-2 text-sm">
             <input

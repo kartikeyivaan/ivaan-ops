@@ -23,11 +23,31 @@ export type DocGenFieldInput = {
   status?: DocGenEntityStatus;
 };
 
+function choiceOptionsFromConfig(configurationJson: unknown): string[] {
+  if (!configurationJson || typeof configurationJson !== "object") return [];
+  const options = (configurationJson as { options?: unknown }).options;
+  if (!Array.isArray(options)) return [];
+  return options
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 export function validateDocGenFieldInput(input: DocGenFieldInput): string | null {
   const fieldKey = normalizeDocGenFieldKey(input.fieldKey);
   if (!fieldKey) return "Field key is required.";
   if (!isValidDocGenFieldKey(fieldKey)) return fieldKeyValidationMessage();
   if (!input.label.trim()) return "Display label is required.";
+  if (
+    input.inputType === DocGenFieldInputType.DROPDOWN ||
+    input.inputType === DocGenFieldInputType.RADIO ||
+    input.inputType === DocGenFieldInputType.MULTI_SELECT
+  ) {
+    const options = choiceOptionsFromConfig(input.configurationJson);
+    if (!options.length) {
+      return "Add at least one option for Dropdown, Radio, or Multi Select fields.";
+    }
+  }
   return null;
 }
 
@@ -123,6 +143,22 @@ export async function updateDocGenField(
   if (input.data.label !== undefined && !input.data.label.trim()) {
     throw new Error("VALIDATION:Display label is required.");
   }
+
+  const nextInputType = input.data.inputType ?? existing.inputType;
+  const nextConfiguration =
+    input.data.configurationJson !== undefined
+      ? input.data.configurationJson
+      : existing.configurationJson;
+  const optionsError = validateDocGenFieldInput({
+    fieldKey: existing.fieldKey,
+    label: input.data.label?.trim() || existing.label,
+    inputType: nextInputType,
+    configurationJson:
+      nextConfiguration === null || nextConfiguration === undefined
+        ? {}
+        : (nextConfiguration as Prisma.InputJsonValue),
+  });
+  if (optionsError) throw new Error(`VALIDATION:${optionsError}`);
 
   const field = await prisma.docGenField.update({
     where: { id: existing.id },

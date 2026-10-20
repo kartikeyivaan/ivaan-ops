@@ -8,6 +8,8 @@ import {
   parsePageConfiguration,
   parseTemplateContent,
 } from "@/lib/doc-gen-template-service";
+import { formatDocGenFieldValuesForOutput } from "@/lib/doc-gen-date";
+import { listDocGenFields } from "@/lib/doc-gen-field-service";
 import { renderTemplatePreviewPdf } from "@/lib/doc-gen-pdf-render";
 import { pdfInlineResponse } from "@/lib/pdf-cache";
 import { prisma } from "@/lib/prisma";
@@ -40,11 +42,12 @@ export async function POST(request: Request, context: RouteContext) {
     const content = parseTemplateContent(version.templateContentJson);
     const pageConfiguration = parsePageConfiguration(version.pageConfigurationJson);
     const backgroundBytes = await loadBackgroundPdfBytes(prisma, version);
+    const fields = await listDocGenFields(prisma, companyId, { status: "ACTIVE" });
 
     const pdf = await renderTemplatePreviewPdf({
       content,
       pageConfiguration,
-      fieldValues: parsed.data.fieldValues,
+      fieldValues: formatDocGenFieldValuesForOutput(parsed.data.fieldValues, fields),
       backgroundBytes,
     });
 

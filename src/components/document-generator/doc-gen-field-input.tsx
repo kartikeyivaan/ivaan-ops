@@ -69,7 +69,12 @@ export function DocGenFieldInput({
       );
       break;
     case "DATE":
-      control = <Input id={id} type="date" value={value} onChange={(e) => onChange(e.target.value)} />;
+      control = (
+        <div className="space-y-1">
+          <Input id={id} type="date" value={value} onChange={(e) => onChange(e.target.value)} />
+          <p className="text-[11px] text-slate-500">Printed on documents as DD/MMM/YYYY (e.g. 21/Oct/2026).</p>
+        </div>
+      );
       break;
     case "DROPDOWN":
       control = (

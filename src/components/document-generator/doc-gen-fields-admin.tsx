@@ -19,6 +19,7 @@ type FieldRow = {
   helpText?: string | null;
   placeholder?: string | null;
   defaultValue?: string | null;
+  configurationJson?: unknown;
 };
 
 const INPUT_TYPES = [
@@ -31,6 +32,75 @@ const INPUT_TYPES = [
   "TEXTAREA",
 ] as const;
 
+type InputType = (typeof INPUT_TYPES)[number];
+
+function needsOptions(inputType: string): boolean {
+  return inputType === "DROPDOWN" || inputType === "RADIO" || inputType === "MULTI_SELECT";
+}
+
+function optionsFromConfig(configurationJson: unknown): string[] {
+  if (!configurationJson || typeof configurationJson !== "object") return [];
+  const options = (configurationJson as { options?: unknown }).options;
+  if (!Array.isArray(options)) return [];
+  return options.filter((item): item is string => typeof item === "string");
+}
+
+function FieldOptionsEditor({
+  options,
+  onChange,
+}: {
+  options: string[];
+  onChange: (options: string[]) => void;
+}) {
+  return (
+    <div className="space-y-2 rounded-md border border-slate-200 bg-slate-50 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <Label>Options</Label>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => onChange([...options, ""])}
+        >
+          Add option
+        </Button>
+      </div>
+      <p className="text-xs text-slate-500">
+        Required for Dropdown, Radio, and Multi Select. These values appear when generating
+        documents.
+      </p>
+      {options.length === 0 ? (
+        <p className="text-xs text-amber-800">No options yet. Add at least one.</p>
+      ) : (
+        <ul className="space-y-2">
+          {options.map((option, index) => (
+            <li key={`option-${index}`} className="flex gap-2">
+              <Input
+                value={option}
+                placeholder={`Option ${index + 1}`}
+                onChange={(e) => {
+                  const next = [...options];
+                  next[index] = e.target.value;
+                  onChange(next);
+                }}
+                required
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => onChange(options.filter((_, i) => i !== index))}
+              >
+                Remove
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function FieldEditDialog({
   field,
   onClose,
@@ -40,29 +110,31 @@ function FieldEditDialog({
 }) {
   const router = useRouter();
   const [label, setLabel] = useState(field.label);
-  const [inputType, setInputType] = useState<(typeof INPUT_TYPES)[number]>(
-    INPUT_TYPES.includes(field.inputType as (typeof INPUT_TYPES)[number])
-      ? (field.inputType as (typeof INPUT_TYPES)[number])
+  const [inputType, setInputType] = useState<InputType>(
+    INPUT_TYPES.includes(field.inputType as InputType)
+      ? (field.inputType as InputType)
       : "TEXT",
   );
   const [isRequiredDefault, setIsRequiredDefault] = useState(field.isRequiredDefault);
   const [helpText, setHelpText] = useState(field.helpText ?? "");
   const [placeholder, setPlaceholder] = useState(field.placeholder ?? "");
   const [defaultValue, setDefaultValue] = useState(field.defaultValue ?? "");
+  const [options, setOptions] = useState<string[]>(() => optionsFromConfig(field.configurationJson));
   const [message, setMessage] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
     setLabel(field.label);
     setInputType(
-      INPUT_TYPES.includes(field.inputType as (typeof INPUT_TYPES)[number])
-        ? (field.inputType as (typeof INPUT_TYPES)[number])
+      INPUT_TYPES.includes(field.inputType as InputType)
+        ? (field.inputType as InputType)
         : "TEXT",
     );
     setIsRequiredDefault(field.isRequiredDefault);
     setHelpText(field.helpText ?? "");
     setPlaceholder(field.placeholder ?? "");
     setDefaultValue(field.defaultValue ?? "");
+    setOptions(optionsFromConfig(field.configurationJson));
     setMessage(null);
   }, [field]);
 
@@ -90,6 +162,11 @@ function FieldEditDialog({
 
   async function onSave(event: React.FormEvent) {
     event.preventDefault();
+    const cleanedOptions = options.map((item) => item.trim()).filter(Boolean);
+    if (needsOptions(inputType) && cleanedOptions.length === 0) {
+      setMessage("Add at least one option for this input type.");
+      return;
+    }
     const ok = await patchField(
       {
         label,
@@ -98,6 +175,7 @@ function FieldEditDialog({
         helpText: helpText.trim() || null,
         placeholder: placeholder.trim() || null,
         defaultValue: defaultValue.trim() || null,
+        configurationJson: needsOptions(inputType) ? { options: cleanedOptions } : {},
       },
       "Field saved.",
     );
@@ -165,7 +243,11 @@ function FieldEditDialog({
               id="edit-inputType"
               className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
               value={inputType}
-              onChange={(e) => setInputType(e.target.value as (typeof INPUT_TYPES)[number])}
+              onChange={(e) => {
+                const next = e.target.value as InputType;
+                setInputType(next);
+                if (needsOptions(next) && options.length === 0) setOptions([""]);
+              }}
             >
               {INPUT_TYPES.map((type) => (
                 <option key={type} value={type}>
@@ -174,6 +256,14 @@ function FieldEditDialog({
               ))}
             </select>
           </div>
+          {needsOptions(inputType) ? (
+            <FieldOptionsEditor options={options} onChange={setOptions} />
+          ) : null}
+          {inputType === "DATE" ? (
+            <p className="text-xs text-slate-500">
+              Dates appear on generated documents as DD/MMM/YYYY (e.g. 21/Oct/2026).
+            </p>
+          ) : null}
           <label className="flex items-center gap-2 text-sm text-slate-700">
             <input
               type="checkbox"
@@ -245,18 +335,29 @@ export function DocGenFieldsAdmin({ initialFields }: { initialFields: FieldRow[]
   const [pending, setPending] = useState(false);
   const [fieldKey, setFieldKey] = useState("");
   const [label, setLabel] = useState("");
-  const [inputType, setInputType] = useState<(typeof INPUT_TYPES)[number]>("TEXT");
+  const [inputType, setInputType] = useState<InputType>("TEXT");
+  const [options, setOptions] = useState<string[]>([]);
   const [editingField, setEditingField] = useState<FieldRow | null>(null);
 
   async function onCreate(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
+    const cleanedOptions = options.map((item) => item.trim()).filter(Boolean);
+    if (needsOptions(inputType) && cleanedOptions.length === 0) {
+      setError("Add at least one option for Dropdown, Radio, or Multi Select.");
+      return;
+    }
     setPending(true);
     try {
       const response = await fetch("/api/document-generator/fields", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fieldKey, label, inputType }),
+        body: JSON.stringify({
+          fieldKey,
+          label,
+          inputType,
+          configurationJson: needsOptions(inputType) ? { options: cleanedOptions } : {},
+        }),
       });
       const body = (await response.json()) as { message?: string };
       if (!response.ok) {
@@ -265,6 +366,8 @@ export function DocGenFieldsAdmin({ initialFields }: { initialFields: FieldRow[]
       }
       setFieldKey("");
       setLabel("");
+      setInputType("TEXT");
+      setOptions([]);
       router.refresh();
     } finally {
       setPending(false);
@@ -318,7 +421,12 @@ export function DocGenFieldsAdmin({ initialFields }: { initialFields: FieldRow[]
               id="inputType"
               className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
               value={inputType}
-              onChange={(e) => setInputType(e.target.value as (typeof INPUT_TYPES)[number])}
+              onChange={(e) => {
+                const next = e.target.value as InputType;
+                setInputType(next);
+                if (needsOptions(next) && options.length === 0) setOptions([""]);
+                if (!needsOptions(next)) setOptions([]);
+              }}
             >
               {INPUT_TYPES.map((type) => (
                 <option key={type} value={type}>
@@ -328,6 +436,14 @@ export function DocGenFieldsAdmin({ initialFields }: { initialFields: FieldRow[]
             </select>
           </div>
         </div>
+        {needsOptions(inputType) ? (
+          <FieldOptionsEditor options={options} onChange={setOptions} />
+        ) : null}
+        {inputType === "DATE" ? (
+          <p className="text-xs text-slate-500">
+            Dates appear on generated documents as DD/MMM/YYYY (e.g. 21/Oct/2026).
+          </p>
+        ) : null}
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
         <Button type="submit" disabled={pending}>
           {pending ? "Saving…" : "Create field"}
@@ -341,40 +457,51 @@ export function DocGenFieldsAdmin({ initialFields }: { initialFields: FieldRow[]
               <th className="px-4 py-2 font-medium">Key</th>
               <th className="px-4 py-2 font-medium">Label</th>
               <th className="px-4 py-2 font-medium">Type</th>
+              <th className="px-4 py-2 font-medium">Options</th>
               <th className="px-4 py-2 font-medium">Status</th>
             </tr>
           </thead>
           <tbody>
             {initialFields.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-4 py-6 text-center text-slate-500">
+                <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
                   No fields yet. Create your first field above.
                 </td>
               </tr>
             ) : (
-              initialFields.map((field) => (
-                <tr
-                  key={field.id}
-                  className={`border-t border-slate-100 ${
-                    field.status === "INACTIVE" ? "bg-slate-50 text-slate-500" : ""
-                  }`}
-                >
-                  <td className="px-4 py-2">
-                    <button
-                      type="button"
-                      title="Edit field"
-                      className="rounded px-1.5 py-0.5 font-mono text-xs text-emerald-800 underline-offset-2 hover:bg-emerald-50 hover:underline"
-                      onClick={() => setEditingField(field)}
-                      onDoubleClick={() => setEditingField(field)}
-                    >
-                      {field.fieldKey}
-                    </button>
-                  </td>
-                  <td className="px-4 py-2">{field.label}</td>
-                  <td className="px-4 py-2">{field.inputType}</td>
-                  <td className="px-4 py-2">{field.status}</td>
-                </tr>
-              ))
+              initialFields.map((field) => {
+                const fieldOptions = optionsFromConfig(field.configurationJson);
+                return (
+                  <tr
+                    key={field.id}
+                    className={`border-t border-slate-100 ${
+                      field.status === "INACTIVE" ? "bg-slate-50 text-slate-500" : ""
+                    }`}
+                  >
+                    <td className="px-4 py-2">
+                      <button
+                        type="button"
+                        title="Edit field"
+                        className="rounded px-1.5 py-0.5 font-mono text-xs text-emerald-800 underline-offset-2 hover:bg-emerald-50 hover:underline"
+                        onClick={() => setEditingField(field)}
+                        onDoubleClick={() => setEditingField(field)}
+                      >
+                        {field.fieldKey}
+                      </button>
+                    </td>
+                    <td className="px-4 py-2">{field.label}</td>
+                    <td className="px-4 py-2">{field.inputType}</td>
+                    <td className="px-4 py-2 text-xs text-slate-600">
+                      {needsOptions(field.inputType)
+                        ? fieldOptions.length
+                          ? fieldOptions.join(", ")
+                          : "—"
+                        : "—"}
+                    </td>
+                    <td className="px-4 py-2">{field.status}</td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>

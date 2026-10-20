@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, type ClipboardEvent } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  type ClipboardEvent,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { sanitizeLetterHtml } from "@/lib/letter-content";
 import { cn } from "@/lib/utils";
@@ -56,13 +63,29 @@ function selectedTableCell(table: HTMLTableElement): HTMLTableCellElement | null
   return table.rows[0]?.cells[0] ?? null;
 }
 
-export function LetterRichTextEditor({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (html: string) => void;
-}) {
+export type LetterRichTextEditorHandle = {
+  insertHtml: (html: string) => void;
+};
+
+function placeCaretInEditor(el: HTMLDivElement) {
+  const selection = window.getSelection();
+  if (selection && selection.rangeCount > 0 && el.contains(selection.anchorNode)) {
+    return;
+  }
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  range.collapse(false);
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+}
+
+export const LetterRichTextEditor = forwardRef<
+  LetterRichTextEditorHandle,
+  {
+    value: string;
+    onChange: (html: string) => void;
+  }
+>(function LetterRichTextEditor({ value, onChange }, forwardedRef) {
   const ref = useRef<HTMLDivElement>(null);
   const seeded = useRef(false);
 
@@ -77,6 +100,20 @@ export function LetterRichTextEditor({
     onChange(ref.current?.innerHTML ?? "");
   }, [onChange]);
 
+  const insertHtml = useCallback(
+    (html: string) => {
+      const el = ref.current;
+      if (!el) return;
+      el.focus();
+      placeCaretInEditor(el);
+      document.execCommand("insertHTML", false, html);
+      sync();
+    },
+    [sync],
+  );
+
+  useImperativeHandle(forwardedRef, () => ({ insertHtml }), [insertHtml]);
+
   const run = useCallback(
     (command: string, arg?: string) => {
       ref.current?.focus();
@@ -87,10 +124,8 @@ export function LetterRichTextEditor({
   );
 
   const insertTable = useCallback(() => {
-    ref.current?.focus();
-    document.execCommand("insertHTML", false, sanitizeLetterHtml(buildEmptyTable(3, 3)));
-    sync();
-  }, [sync]);
+    insertHtml(sanitizeLetterHtml(buildEmptyTable(3, 3)));
+  }, [insertHtml]);
 
   const withTable = useCallback(
     (mutate: (table: HTMLTableElement, cell: HTMLTableCellElement | null) => void) => {
@@ -248,4 +283,4 @@ export function LetterRichTextEditor({
       />
     </div>
   );
-}
+});

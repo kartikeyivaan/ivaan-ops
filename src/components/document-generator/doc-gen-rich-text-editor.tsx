@@ -1,7 +1,10 @@
 "use client";
 
-import { useCallback, useRef } from "react";
-import { LetterRichTextEditor } from "@/components/letters/letter-editor";
+import { useRef } from "react";
+import {
+  LetterRichTextEditor,
+  type LetterRichTextEditorHandle,
+} from "@/components/letters/letter-editor";
 import { docGenFieldSpanHtml } from "@/lib/doc-gen-rich-text-fields";
 
 export function DocGenRichTextEditor({
@@ -13,16 +16,7 @@ export function DocGenRichTextEditor({
   onChange: (html: string) => void;
   fields: Array<{ id: string; fieldKey: string; label: string }>;
 }) {
-  const latestHtml = useRef(value);
-
-  const insertField = useCallback(
-    (field: { id: string; fieldKey: string; label: string }) => {
-      const html = `${latestHtml.current}${docGenFieldSpanHtml(field)}`;
-      latestHtml.current = html;
-      onChange(html);
-    },
-    [onChange],
-  );
+  const editorRef = useRef<LetterRichTextEditorHandle>(null);
 
   return (
     <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
@@ -36,7 +30,9 @@ export function DocGenRichTextEditor({
               <button
                 type="button"
                 className="w-full rounded px-2 py-1 text-left hover:bg-white"
-                onClick={() => insertField(field)}
+                // Keep the editor selection when clicking the field list.
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => editorRef.current?.insertHtml(docGenFieldSpanHtml(field))}
               >
                 <span className="font-mono text-xs">{field.fieldKey}</span>
                 <span className="block text-slate-600">{field.label}</span>
@@ -45,13 +41,7 @@ export function DocGenRichTextEditor({
           ))}
         </ul>
       </div>
-      <LetterRichTextEditor
-        value={value}
-        onChange={(html) => {
-          latestHtml.current = html;
-          onChange(html);
-        }}
-      />
+      <LetterRichTextEditor ref={editorRef} value={value} onChange={onChange} />
     </div>
   );
 }

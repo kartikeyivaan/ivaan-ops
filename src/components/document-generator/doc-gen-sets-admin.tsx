@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -52,7 +53,10 @@ export function DocGenSetsAdmin({ initialSets }: { initialSets: SetRow[] }) {
           </p>
         </div>
         <Button asChild variant="outline">
-          <Link href="/documentation/document-generator">Dashboard</Link>
+          <Link href="/documentation/document-generator">
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </Link>
         </Button>
       </div>
 

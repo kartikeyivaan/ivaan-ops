@@ -114,6 +114,61 @@ function openTableCellTag(tag: "td" | "th", attrs: string): string {
   return parts.length ? `<${tag} ${parts.join(" ")}>` : `<${tag}>`;
 }
 
+function readStyleDeclarations(attrs: string): Record<string, string> {
+  const styleMatch = attrs.match(/\bstyle\s*=\s*["']([^"']*)["']/i);
+  if (!styleMatch) return {};
+  const out: Record<string, string> = {};
+  for (const part of styleMatch[1]!.split(";")) {
+    const [rawProp, ...rest] = part.split(":");
+    if (!rawProp || rest.length === 0) continue;
+    const prop = rawProp.trim().toLowerCase();
+    const value = rest.join(":").trim().toLowerCase();
+    if (prop && value) out[prop] = value;
+  }
+  return out;
+}
+
+function cssLengthToPt(value: string): number | undefined {
+  const match = value.match(/^(\d+(?:\.\d+)?)(px|pt|em|rem)?$/i);
+  if (!match) return undefined;
+  const amount = Number.parseFloat(match[1]!);
+  if (!Number.isFinite(amount) || amount < 0 || amount > 120) return undefined;
+  const unit = (match[2] ?? "px").toLowerCase();
+  if (unit === "pt") return amount;
+  if (unit === "em" || unit === "rem") return amount * 11;
+  return amount * 0.75;
+}
+
+function sanitizeBlockStyle(attrs: string): string | undefined {
+  const styles = readStyleDeclarations(attrs);
+  const parts: string[] = [];
+  const align = parseTextAlign(attrs);
+  if (align) parts.push(`text-align:${align}`);
+  for (const prop of ["margin-top", "margin-bottom", "padding-left", "font-size"] as const) {
+    const raw = styles[prop];
+    if (!raw) continue;
+    const pt = cssLengthToPt(raw);
+    if (pt === undefined) continue;
+    parts.push(`${prop}:${pt}pt`);
+  }
+  const lineHeight = styles["line-height"];
+  if (lineHeight) {
+    if (lineHeight === "normal") parts.push("line-height:normal");
+    else if (/^\d+(\.\d+)?$/.test(lineHeight)) {
+      const value = Number.parseFloat(lineHeight);
+      if (value >= 1 && value <= 3) parts.push(`line-height:${value}`);
+    }
+  }
+  return parts.length ? parts.join(";") : undefined;
+}
+
+function openDocGenFieldSpan(attrs: string): string | null {
+  const fieldId = attrs.match(/\bdata-doc-gen-field\s*=\s*["']([0-9a-f-]{36})["']/i)?.[1];
+  const fieldKey = attrs.match(/\bdata-doc-gen-key\s*=\s*["']([A-Z][A-Za-z0-9_]*)["']/i)?.[1];
+  if (!fieldId || !fieldKey) return null;
+  return `<span contenteditable="false" data-doc-gen-field="${fieldId}" data-doc-gen-key="${fieldKey}">`;
+}
+
 export function sanitizeLetterHtml(html: string): string {
   const withoutJunk = html
     .replace(/<!--[\s\S]*?-->/g, "")
@@ -126,9 +181,12 @@ export function sanitizeLetterHtml(html: string): string {
     if (closing) return tag === "br" ? "" : `</${tag}>`;
     if (tag === "br") return "<br>";
     if (tag === "td" || tag === "th") return openTableCellTag(tag, attrs);
-    const align = parseTextAlign(attrs);
-    if (align && (tag === "p" || tag === "div" || tag === "li")) {
-      return `<${tag} style="text-align:${align}">`;
+    if (tag === "span") {
+      return openDocGenFieldSpan(attrs) ?? "<span>";
+    }
+    if (tag === "p" || tag === "div" || tag === "li") {
+      const style = sanitizeBlockStyle(attrs);
+      return style ? `<${tag} style="${style}">` : `<${tag}>`;
     }
     return `<${tag}>`;
   });
@@ -149,17 +207,44 @@ export type LetterTableCell = {
   children: LetterInline[];
 };
 
+export type LetterParagraphStyle = {
+  align?: string;
+  marginTopPt?: number;
+  marginBottomPt?: number;
+  paddingLeftPt?: number;
+  fontSize?: number;
+  lineHeight?: number;
+};
+
 export type LetterBlock =
-  | { type: "p"; align?: string; children: LetterInline[] }
+  | ({ type: "p"; children: LetterInline[] } & LetterParagraphStyle)
   | { type: "ul"; items: LetterInline[][] }
   | { type: "ol"; items: LetterInline[][] }
   | { type: "table"; rows: LetterTableCell[][] };
 
+function parseParagraphStyle(attrs: string): LetterParagraphStyle {
+  const styles = readStyleDeclarations(attrs);
+  const style: LetterParagraphStyle = { align: parseTextAlign(attrs) };
+  const marginTop = styles["margin-top"] ? cssLengthToPt(styles["margin-top"]) : undefined;
+  const marginBottom = styles["margin-bottom"] ? cssLengthToPt(styles["margin-bottom"]) : undefined;
+  const paddingLeft = styles["padding-left"] ? cssLengthToPt(styles["padding-left"]) : undefined;
+  const fontSize = styles["font-size"] ? cssLengthToPt(styles["font-size"]) : undefined;
+  if (marginTop !== undefined) style.marginTopPt = marginTop;
+  if (marginBottom !== undefined) style.marginBottomPt = marginBottom;
+  if (paddingLeft !== undefined) style.paddingLeftPt = paddingLeft;
+  if (fontSize !== undefined) style.fontSize = fontSize;
+  const lineHeight = styles["line-height"];
+  if (lineHeight && lineHeight !== "normal" && /^\d+(\.\d+)?$/.test(lineHeight)) {
+    const value = Number.parseFloat(lineHeight);
+    if (value >= 1 && value <= 3) style.lineHeight = value;
+  }
+  return style;
+}
+
 type Marks = { bold: boolean; italic: boolean; underline: boolean };
 
 function pushText(target: LetterInline[], text: string, marks: Marks) {
-  const decoded = decodeEntities(text);
-  if (!decoded) return;
+  if (!text) return;
   const last = target[target.length - 1];
   if (
     last &&
@@ -167,15 +252,29 @@ function pushText(target: LetterInline[], text: string, marks: Marks) {
     Boolean(last.italic) === marks.italic &&
     Boolean(last.underline) === marks.underline
   ) {
-    last.text += decoded;
+    last.text += text;
     return;
   }
   target.push({
-    text: decoded,
+    text,
     bold: marks.bold || undefined,
     italic: marks.italic || undefined,
     underline: marks.underline || undefined,
   });
+}
+
+/** Collapse HTML whitespace so editor newlines do not become PDF hard wraps. */
+function normalizeSoftHtmlText(text: string): string {
+  return decodeEntities(text).replace(/[\r\n\t\f\v]+/g, " ").replace(/ {2,}/g, " ");
+}
+
+function trimParagraphEdges(parts: LetterInline[]): LetterInline[] {
+  if (!parts.length) return parts;
+  const cloned = parts.map((part) => ({ ...part }));
+  cloned[0]!.text = cloned[0]!.text.replace(/^ +/, "");
+  const last = cloned[cloned.length - 1]!;
+  last.text = last.text.replace(/ +$/g, "");
+  return cloned.filter((part) => part.text.length > 0);
 }
 
 export function letterHtmlToBlocks(html: string): LetterBlock[] {
@@ -183,7 +282,7 @@ export function letterHtmlToBlocks(html: string): LetterBlock[] {
   const blocks: LetterBlock[] = [];
   const marks: Marks = { bold: false, italic: false, underline: false };
   let current: LetterInline[] | null = null;
-  let currentAlign: string | undefined;
+  let currentStyle: LetterParagraphStyle = {};
   let listType: "ul" | "ol" | null = null;
   let listItems: LetterInline[][] = [];
   let listItem: LetterInline[] | null = null;
@@ -209,12 +308,22 @@ export function letterHtmlToBlocks(html: string): LetterBlock[] {
   function flushParagraph() {
     if (tableCell || inTable) return;
     if (!current) return;
-    const hasText = current.some((part) => part.text.trim());
-    if (hasText) {
-      blocks.push({ type: "p", align: currentAlign, children: current });
+    const children = trimParagraphEdges(current);
+    const hasVisibleText = children.some((part) => part.text.replace(/\n/g, "").trim());
+    const hasHardBreak = children.some((part) => part.text.includes("\n"));
+    if (hasVisibleText) {
+      blocks.push({ type: "p", ...currentStyle, children });
+    } else if (hasHardBreak || currentStyle.marginTopPt || currentStyle.marginBottomPt) {
+      // Keep blank editor paragraphs so vertical spacing survives PDF conversion.
+      blocks.push({
+        type: "p",
+        ...currentStyle,
+        marginBottomPt: currentStyle.marginBottomPt ?? 10,
+        children: [{ text: " " }],
+      });
     }
     current = null;
-    currentAlign = undefined;
+    currentStyle = {};
   }
 
   function flushList() {
@@ -264,7 +373,8 @@ export function letterHtmlToBlocks(html: string): LetterBlock[] {
   let match: RegExpExecArray | null;
   while ((match = tokenRe.exec(sanitized))) {
     if (match[3] != null) {
-      const text = match[3];
+      const text = normalizeSoftHtmlText(match[3]);
+      if (!text) continue;
       if (inTable && !tableCell) continue;
       const target = inlineTarget();
       if (target) pushText(target, text, marks);
@@ -392,7 +502,7 @@ export function letterHtmlToBlocks(html: string): LetterBlock[] {
       } else {
         flushParagraph();
         current = [];
-        currentAlign = parseTextAlign(attrs);
+        currentStyle = parseParagraphStyle(attrs);
       }
     }
   }

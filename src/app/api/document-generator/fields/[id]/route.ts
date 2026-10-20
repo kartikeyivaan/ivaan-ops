@@ -4,7 +4,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { requireDocGenCompany } from "@/lib/company-scope";
 import { docGenJsonError, mapDocGenRouteError } from "@/lib/doc-gen-api";
-import { updateDocGenField } from "@/lib/doc-gen-field-service";
+import { deleteDocGenField, updateDocGenField } from "@/lib/doc-gen-field-service";
 import { canAdminDocumentGenerator, canViewDocumentGenerator } from "@/lib/document-generator-permissions";
 import { prisma } from "@/lib/prisma";
 
@@ -64,5 +64,24 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json(field);
   } catch (error) {
     return mapDocGenRouteError(error) ?? docGenJsonError("Unable to update field.", 500);
+  }
+}
+
+export async function DELETE(_request: Request, context: RouteContext) {
+  const session = await auth();
+  if (!session?.user || !canAdminDocumentGenerator(session.user.roles)) {
+    return docGenJsonError("Forbidden.", 403);
+  }
+  try {
+    const companyId = requireDocGenCompany(session);
+    const { id } = await context.params;
+    const field = await deleteDocGenField(prisma, {
+      companyId,
+      fieldId: id,
+      userId: session.user.id,
+    });
+    return NextResponse.json({ id: field.id, fieldKey: field.fieldKey });
+  } catch (error) {
+    return mapDocGenRouteError(error) ?? docGenJsonError("Unable to delete field.", 500);
   }
 }

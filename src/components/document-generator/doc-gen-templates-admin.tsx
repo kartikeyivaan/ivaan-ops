@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Modal, ModalBody, ModalFooter, ModalForm, ModalHeader } from "@/components/ui/modal";
 
 type TemplateRow = {
   id: string;
@@ -22,6 +24,80 @@ const EDITOR_TYPES = [
   { value: "RICH_TEXT", label: "Word-like rich text" },
 ] as const;
 
+function RenameTemplateDialog({
+  template,
+  onClose,
+}: {
+  template: TemplateRow;
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const [name, setName] = useState(template.name);
+  const [message, setMessage] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  useEffect(() => {
+    setName(template.name);
+    setMessage(null);
+  }, [template]);
+
+  async function onSave(event: React.FormEvent) {
+    event.preventDefault();
+    const nextName = name.trim();
+    if (!nextName) {
+      setMessage("Template name is required.");
+      return;
+    }
+    setPending(true);
+    setMessage(null);
+    try {
+      const response = await fetch(`/api/document-generator/templates/${template.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: nextName }),
+      });
+      const body = (await response.json()) as { message?: string };
+      if (!response.ok) {
+        setMessage(body.message ?? "Unable to rename template.");
+        return;
+      }
+      router.refresh();
+      onClose();
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Modal onClose={onClose} size="sm">
+      <ModalForm onSubmit={onSave}>
+        <ModalHeader title="Edit template name" onClose={onClose} />
+        <ModalBody className="space-y-3">
+          <div className="space-y-1">
+            <Label htmlFor="rename-template-name">Name</Label>
+            <Input
+              id="rename-template-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              autoFocus
+            />
+          </div>
+          {message ? <p className="text-sm text-red-600">{message}</p> : null}
+        </ModalBody>
+        <ModalFooter className="justify-end">
+          <Button type="button" variant="outline" disabled={pending} onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={pending}>
+            {pending ? "Saving…" : "Save name"}
+          </Button>
+        </ModalFooter>
+      </ModalForm>
+    </Modal>
+  );
+}
+
 export function DocGenTemplatesAdmin({ initialTemplates }: { initialTemplates: TemplateRow[] }) {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -29,6 +105,7 @@ export function DocGenTemplatesAdmin({ initialTemplates }: { initialTemplates: T
     useState<(typeof EDITOR_TYPES)[number]["value"]>("PDF_BACKGROUND");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [renaming, setRenaming] = useState<TemplateRow | null>(null);
 
   async function createTemplate(event: React.FormEvent) {
     event.preventDefault();
@@ -59,7 +136,10 @@ export function DocGenTemplatesAdmin({ initialTemplates }: { initialTemplates: T
           <p className="text-sm text-slate-600">Design and publish MSEB document templates (ISE).</p>
         </div>
         <Button asChild variant="outline">
-          <Link href="/documentation/document-generator">Dashboard</Link>
+          <Link href="/documentation/document-generator">
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </Link>
         </Button>
       </div>
 
@@ -99,12 +179,13 @@ export function DocGenTemplatesAdmin({ initialTemplates }: { initialTemplates: T
               <th className="px-4 py-2 font-medium">Type</th>
               <th className="px-4 py-2 font-medium">Published</th>
               <th className="px-4 py-2 font-medium">Draft</th>
+              <th className="px-4 py-2 font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
             {initialTemplates.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-4 py-6 text-center text-slate-500">
+                <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
                   No templates yet.
                 </td>
               </tr>
@@ -128,12 +209,24 @@ export function DocGenTemplatesAdmin({ initialTemplates }: { initialTemplates: T
                   <td className="px-4 py-2">
                     {row.versions[0] ? `v${row.versions[0].versionNumber}` : "—"}
                   </td>
+                  <td className="px-4 py-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setRenaming(row)}
+                    >
+                      Edit name
+                    </Button>
+                  </td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
       </div>
+
+      {renaming ? <RenameTemplateDialog template={renaming} onClose={() => setRenaming(null)} /> : null}
     </div>
   );
 }

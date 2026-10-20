@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { auth } from "@/lib/auth";
 import {
   getActiveSessionCompany,
@@ -30,12 +31,20 @@ export default async function DocumentGeneratorPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 px-4 py-8">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">MSEB Document Generator</h1>
-        <p className="mt-1 text-sm text-slate-600">
-          Generate customer-specific MSEB Solar Rooftop documents from published templates.
-          Available for Ivaan Solar Energy only.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">MSEB Document Generator</h1>
+          <p className="mt-1 text-sm text-slate-600">
+            Generate customer-specific MSEB Solar Rooftop documents from published templates.
+            Available for Ivaan Solar Energy only.
+          </p>
+        </div>
+        <Button variant="outline" asChild>
+          <Link href="/documentation">
+            <ArrowLeft className="h-4 w-4" />
+            Back to Documentation
+          </Link>
+        </Button>
       </div>
 
       {iseScopeError ? (

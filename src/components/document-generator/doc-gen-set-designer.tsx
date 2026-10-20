@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -289,7 +290,10 @@ export function DocGenSetDesigner({
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline">
-            <Link href="/documentation/document-generator/admin/sets">All sets</Link>
+            <Link href="/documentation/document-generator/admin/sets">
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </Link>
           </Button>
           <Button onClick={validateSet} variant="outline" disabled={pending}>
             Validate

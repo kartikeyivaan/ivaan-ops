@@ -5,7 +5,7 @@ import { PDFDocument as PdfLibDocument, rgb } from "pdf-lib";
 import type { TemplateContent } from "@/lib/doc-gen-template-content";
 import type { PageConfiguration } from "@/lib/doc-gen-template-content";
 import { letterHtmlToBlocks, sanitizeLetterHtml } from "@/lib/letter-content";
-import { setupFonts, createDocOptions } from "@/lib/pdf-theme";
+import { setupFonts } from "@/lib/pdf-theme";
 
 const FONT_PATH = path.join(process.cwd(), "assets", "fonts", "NotoSans-Regular.ttf");
 
@@ -39,44 +39,177 @@ function escapeHtml(value: string): string {
     .replace(/>/g, "&gt;");
 }
 
+type RichInline = {
+  text: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+};
+
+function mmToPt(mm: number): number {
+  return (mm * 72) / 25.4;
+}
+
+/** Split inline runs on intentional hard breaks only (from <br>), never on soft HTML whitespace. */
+function splitByHardBreaks(parts: RichInline[]): RichInline[][] {
+  const lines: RichInline[][] = [[]];
+  for (const part of parts) {
+    const chunks = part.text.split("\n");
+    chunks.forEach((chunk, index) => {
+      if (index > 0) lines.push([]);
+      if (!chunk) return;
+      lines[lines.length - 1]!.push({
+        ...part,
+        text: chunk,
+      });
+    });
+  }
+  return lines.length ? lines : [[]];
+}
+
+function drawRichLine(
+  doc: PDFKit.PDFDocument,
+  fonts: ReturnType<typeof setupFonts>,
+  parts: RichInline[],
+  x: number,
+  y: number,
+  width: number,
+  options: {
+    align?: string;
+    fontSize: number;
+    lineGap: number;
+  },
+): number {
+  const textAlign =
+    options.align === "center" || options.align === "right" || options.align === "justify"
+      ? options.align
+      : "left";
+  const cleaned = parts.filter((part) => part.text.length > 0);
+  doc.fillColor("#20242E").fontSize(options.fontSize);
+
+  if (cleaned.length === 0) {
+    doc.font(fonts.regular).text(" ", x, y, {
+      width,
+      align: textAlign,
+      lineGap: options.lineGap,
+      paragraphGap: 0,
+    });
+    return doc.y;
+  }
+
+  // Same style throughout → one draw call (best alignment + wrapping).
+  const sameStyle = cleaned.every(
+    (part) =>
+      Boolean(part.bold) === Boolean(cleaned[0]!.bold) &&
+      Boolean(part.underline) === Boolean(cleaned[0]!.underline),
+  );
+  if (sameStyle) {
+    doc.font(cleaned[0]!.bold ? fonts.bold : fonts.regular).text(
+      cleaned.map((part) => part.text).join(""),
+      x,
+      y,
+      {
+        width,
+        align: textAlign,
+        underline: Boolean(cleaned[0]!.underline),
+        lineGap: options.lineGap,
+        paragraphGap: 0,
+      },
+    );
+    return doc.y;
+  }
+
+  // Mixed formatting: keep on one flowing line via continued runs (no extra hard breaks).
+  cleaned.forEach((part, index) => {
+    doc.font(part.bold ? fonts.bold : fonts.regular);
+    const textOptions: PDFKit.Mixins.TextOptions = {
+      width,
+      align: textAlign,
+      continued: index < cleaned.length - 1,
+      underline: Boolean(part.underline),
+      lineGap: options.lineGap,
+      paragraphGap: 0,
+    };
+    if (index === 0) doc.text(part.text, x, y, textOptions);
+    else doc.text(part.text, textOptions);
+  });
+  return doc.y;
+}
+
+function drawRichParagraph(
+  doc: PDFKit.PDFDocument,
+  fonts: ReturnType<typeof setupFonts>,
+  parts: RichInline[],
+  x: number,
+  y: number,
+  width: number,
+  options: {
+    align?: string;
+    fontSize: number;
+    lineGap: number;
+  },
+): number {
+  const hardLines = splitByHardBreaks(parts);
+  let cursorY = y;
+  hardLines.forEach((lineParts, index) => {
+    cursorY = drawRichLine(doc, fonts, lineParts, x, cursorY, width, options);
+    if (index < hardLines.length - 1) cursorY += options.lineGap;
+  });
+  return cursorY;
+}
+
 function drawRichTextPdf(html: string, pageConfig: PageConfiguration): Promise<Buffer> {
-  const doc = new PDFDocument(createDocOptions(pageConfig.orientation === "landscape"));
+  // Use pageConfiguration margins only — avoid stacking theme margins on top.
+  const doc = new PDFDocument({
+    size: pageConfig.pageSize,
+    layout: pageConfig.orientation === "landscape" ? "landscape" : "portrait",
+    bufferPages: true,
+    autoFirstPage: true,
+    margins: { top: 0, left: 0, right: 0, bottom: 0 },
+  });
   const fonts = setupFonts(doc);
-  const marginLeft = (pageConfig.marginsMm.left * 72) / 25.4;
-  const marginTop = (pageConfig.marginsMm.top * 72) / 25.4;
-  const marginBottom = (pageConfig.marginsMm.bottom * 72) / 25.4;
+  const marginLeft = mmToPt(pageConfig.marginsMm.left);
+  const marginRight = mmToPt(pageConfig.marginsMm.right);
+  const marginTop = mmToPt(pageConfig.marginsMm.top);
+  const marginBottom = mmToPt(pageConfig.marginsMm.bottom);
   let y = marginTop;
-  const width =
-    doc.page.width - marginLeft - (pageConfig.marginsMm.right * 72) / 25.4;
+  const contentWidth = Math.max(72, doc.page.width - marginLeft - marginRight);
   const pageBottom = doc.page.height - marginBottom;
 
   const blocks = letterHtmlToBlocks(sanitizeLetterHtml(html));
   for (const block of blocks) {
-    if (y > pageBottom - 24) {
+    if (y > pageBottom - 28) {
       doc.addPage();
       y = marginTop;
     }
     if (block.type === "p") {
-      const line = block.children.map((part) => part.text).join("");
-      doc
-        .font(fonts.regular)
-        .fontSize(11)
-        .fillColor("#20242E")
-        .text(line || " ", marginLeft, y, {
-          width,
-          align: (block.align as "left" | "center" | "right" | "justify") ?? "left",
-        });
-      y = doc.y + 6;
+      y += block.marginTopPt ?? 0;
+      const indent = block.paddingLeftPt ?? 0;
+      const fontSize = block.fontSize ?? 11;
+      const lineGap =
+        block.lineHeight && block.lineHeight > 1
+          ? Math.max(0, (block.lineHeight - 1) * fontSize)
+          : 2;
+      const usableWidth = Math.max(48, contentWidth - indent);
+      y = drawRichParagraph(doc, fonts, block.children, marginLeft + indent, y, usableWidth, {
+        align: block.align,
+        fontSize,
+        lineGap,
+      });
+      y += block.marginBottomPt ?? 10;
       continue;
     }
     if (block.type === "ul" || block.type === "ol") {
       block.items.forEach((item, index) => {
         const prefix = block.type === "ol" ? `${index + 1}. ` : "• ";
-        const line = prefix + item.map((part) => part.text).join("");
-        doc.font(fonts.regular).fontSize(11).text(line, marginLeft, y, { width });
-        y = doc.y + 4;
+        const parts = [{ text: prefix, bold: false as const }, ...item];
+        y = drawRichParagraph(doc, fonts, parts, marginLeft, y, contentWidth, {
+          fontSize: 11,
+          lineGap: 2,
+        });
+        y += 6;
       });
-      y += 4;
+      y += 6;
     }
   }
 

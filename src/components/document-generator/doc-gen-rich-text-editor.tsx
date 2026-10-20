@@ -24,6 +24,10 @@ export function DocGenRichTextEditor({
         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
           Insert field
         </p>
+        <p className="mb-2 text-[11px] leading-4 text-slate-500">
+          Click a field to insert. Select the amber chip, then use Bold / Italic / Underline in the
+          toolbar.
+        </p>
         <ul className="max-h-64 space-y-1 overflow-y-auto text-sm">
           {fields.map((field) => (
             <li key={field.id}>

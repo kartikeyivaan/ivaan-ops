@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -114,7 +115,10 @@ export function DocGenGenerationHistory({
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline">
-            <Link href="/documentation/document-generator">Dashboard</Link>
+            <Link href="/documentation/document-generator">
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </Link>
           </Button>
           <Button asChild>
             <Link href="/documentation/document-generator/generate">Generate documents</Link>

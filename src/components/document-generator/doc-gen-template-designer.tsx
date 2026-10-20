@@ -1,8 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Modal, ModalBody, ModalFooter, ModalForm, ModalHeader } from "@/components/ui/modal";
 import { DocGenCanvasEditor } from "@/components/document-generator/doc-gen-canvas-editor";
 import { DocGenRichTextEditor } from "@/components/document-generator/doc-gen-rich-text-editor";
 import type { PageConfiguration, TemplateContent } from "@/lib/doc-gen-template-content";
@@ -39,6 +43,10 @@ export function DocGenTemplateDesigner({
     [fields],
   );
   const [versionId] = useState(draft.id);
+  const [templateName, setTemplateName] = useState(template.name);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameValue, setRenameValue] = useState(template.name);
+  const [renameError, setRenameError] = useState<string | null>(null);
   const [content, setContent] = useState<TemplateContent>(() =>
     templateContentSchema.parse(draft.templateContentJson),
   );
@@ -46,6 +54,33 @@ export function DocGenTemplateDesigner({
   const [issues, setIssues] = useState<Array<{ message: string }>>([]);
   const [busy, setBusy] = useState(false);
   const [hasBackground, setHasBackground] = useState(Boolean(draft.backgroundStoredPdfId));
+
+  async function saveTemplateName(event: React.FormEvent) {
+    event.preventDefault();
+    const nextName = renameValue.trim();
+    if (!nextName) {
+      setRenameError("Template name is required.");
+      return;
+    }
+    setBusy(true);
+    setRenameError(null);
+    try {
+      const response = await fetch(`/api/document-generator/templates/${template.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: nextName }),
+      });
+      const body = (await response.json()) as { message?: string };
+      if (!response.ok) throw new Error(body.message ?? "Unable to rename template.");
+      setTemplateName(nextName);
+      setRenameOpen(false);
+      setMessage("Template name updated.");
+    } catch (cause) {
+      setRenameError(cause instanceof Error ? cause.message : "Unable to rename template.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const saveDraft = useCallback(async () => {
     setBusy(true);
@@ -166,7 +201,22 @@ export function DocGenTemplateDesigner({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-wide text-slate-500">Template designer</p>
-          <h1 className="text-2xl font-bold text-slate-900">{template.name}</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-bold text-slate-900">{templateName}</h1>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                setRenameValue(templateName);
+                setRenameError(null);
+                setRenameOpen(true);
+              }}
+            >
+              Edit name
+            </Button>
+          </div>
           <p className="text-sm text-slate-600">
             {template.editorType.replace("_", " ")} · draft v{draft.versionNumber} ·{" "}
             {template.layoutMode.replace("_", " ")}
@@ -174,7 +224,10 @@ export function DocGenTemplateDesigner({
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline">
-            <Link href="/documentation/document-generator/admin/templates">All templates</Link>
+            <Link href="/documentation/document-generator/admin/templates">
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </Link>
           </Button>
           <Button type="button" variant="outline" disabled={busy} onClick={() => void saveDraft()}>
             Save draft
@@ -249,6 +302,40 @@ export function DocGenTemplateDesigner({
         Preview uses field labels as sample values. Fixed-page layout; overflow is not auto-flowed in
         v1 canvas mode.
       </p>
+
+      {renameOpen ? (
+        <Modal onClose={() => setRenameOpen(false)} size="sm">
+          <ModalForm onSubmit={(event) => void saveTemplateName(event)}>
+            <ModalHeader title="Edit template name" onClose={() => setRenameOpen(false)} />
+            <ModalBody className="space-y-3">
+              <div className="space-y-1">
+                <Label htmlFor="designer-rename-name">Name</Label>
+                <Input
+                  id="designer-rename-name"
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  required
+                  autoFocus
+                />
+              </div>
+              {renameError ? <p className="text-sm text-red-600">{renameError}</p> : null}
+            </ModalBody>
+            <ModalFooter className="justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy}
+                onClick={() => setRenameOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={busy}>
+                {busy ? "Saving…" : "Save name"}
+              </Button>
+            </ModalFooter>
+          </ModalForm>
+        </Modal>
+      ) : null}
     </div>
   );
 }

@@ -164,3 +164,35 @@ export async function updateDocGenField(
   });
   return field;
 }
+
+export async function deleteDocGenField(
+  prisma: PrismaClient,
+  input: {
+    companyId: string;
+    fieldId: string;
+    userId: string;
+  },
+) {
+  const existing = await prisma.docGenField.findFirst({
+    where: { id: input.fieldId, companyId: input.companyId },
+  });
+  if (!existing) throw new Error("NOT_FOUND");
+
+  await prisma.docGenField.delete({ where: { id: existing.id } });
+  await writeDocGenAudit({
+    eventType: DOC_GEN_AUDIT_EVENTS.FIELD_DELETED,
+    tableName: DOC_GEN_AUDIT_TABLES.fields,
+    recordId: existing.id,
+    action: "DELETE",
+    performedBy: input.userId,
+    companyId: input.companyId,
+    reference: existing.fieldKey,
+    oldValue: {
+      fieldKey: existing.fieldKey,
+      label: existing.label,
+      inputType: existing.inputType,
+      status: existing.status,
+    },
+  });
+  return existing;
+}

@@ -15,6 +15,7 @@ export const DOC_GEN_AUDIT_EVENTS = {
   SET_PUBLISHED: "SET_PUBLISHED",
   FIELD_CREATED: "FIELD_CREATED",
   FIELD_UPDATED: "FIELD_UPDATED",
+  FIELD_DELETED: "FIELD_DELETED",
   PROFILE_UPSERTED: "PROFILE_UPSERTED",
 } as const;
 
@@ -27,6 +28,7 @@ export const DOC_GEN_AUDIT_REASONS: Record<DocGenAuditEventType, string> = {
   SET_PUBLISHED: "Document set version published",
   FIELD_CREATED: "Document generator field created",
   FIELD_UPDATED: "Document generator field updated",
+  FIELD_DELETED: "Document generator field deleted",
   PROFILE_UPSERTED: "Document generator profile saved",
 };
 

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -306,10 +307,13 @@ export function DocGenGenerateWizard({ publishedSets }: { publishedSets: Publish
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline">
-            <Link href="/documentation/document-generator/history">History</Link>
+            <Link href="/documentation/document-generator">
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </Link>
           </Button>
           <Button asChild variant="outline">
-            <Link href="/documentation/document-generator">Dashboard</Link>
+            <Link href="/documentation/document-generator/history">History</Link>
           </Button>
         </div>
       </div>

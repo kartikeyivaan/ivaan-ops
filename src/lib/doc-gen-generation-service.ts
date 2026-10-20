@@ -16,6 +16,7 @@ import {
 } from "@/lib/doc-gen-shared-fields";
 import { parseSetFieldConfig } from "@/lib/doc-gen-set-field-config";
 import { formatDocGenFieldValuesForOutput } from "@/lib/doc-gen-date";
+import { buildDocGenFileName } from "@/lib/doc-gen-file-name";
 import { validateFieldValues } from "@/lib/doc-gen-field-values";
 import { mergePdfBuffers } from "@/lib/doc-gen-pdf-merge";
 import { renderTemplatePreviewPdf } from "@/lib/doc-gen-pdf-render";
@@ -93,6 +94,7 @@ export async function runDocGenGeneration(
 
   if (!set?.currentPublishedVersion) throw new Error("NOT_FOUND");
 
+  const customerName = input.customerSnapshot.displayName.trim() || "Customer";
   const fields = await prisma.docGenField.findMany({
     where: { companyId: input.companyId, status: "ACTIVE" },
   });
@@ -119,12 +121,16 @@ export async function runDocGenGeneration(
       status: DocGenGenerationStatus.PROCESSING,
       generatedById: input.userId,
       documents: {
-        create: set.currentPublishedVersion.items.map((item) => ({
-          templateId: item.templateVersion.templateId,
-          templateVersionId: item.templateVersionId,
-          documentName: item.displayName,
-          status: DocGenGenerationStatus.PENDING,
-        })),
+        create: set.currentPublishedVersion.items.map((item) => {
+          const templateName =
+            item.templateVersion.template.name.trim() || item.displayName.trim() || "Document";
+          return {
+            templateId: item.templateVersion.templateId,
+            templateVersionId: item.templateVersionId,
+            documentName: buildDocGenFileName(customerName, templateName),
+            status: DocGenGenerationStatus.PENDING,
+          };
+        }),
       },
     },
     include: { documents: { orderBy: { createdAt: "asc" } } },
@@ -195,13 +201,15 @@ export async function runDocGenGeneration(
         },
       });
 
+      const templateName =
+        item.templateVersion.template.name.trim() || item.displayName.trim() || "Document";
       await prisma.docGenGeneratedDocument.update({
         where: { id: docRecord.id },
         data: {
           status: DocGenGenerationStatus.COMPLETED,
           storedPdfId: stored.id,
           pageCount,
-          documentName: item?.displayName ?? docRecord.documentName,
+          documentName: buildDocGenFileName(customerName, templateName),
         },
       });
       successfulBuffers.push(pdfBuffer);

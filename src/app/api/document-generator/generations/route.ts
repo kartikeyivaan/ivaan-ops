@@ -15,6 +15,7 @@ import { prisma } from "@/lib/prisma";
 
 const customerSchema = z.object({
   displayName: z.string().min(1),
+  registerNumber: z.string().nullable().optional(),
   mobileNumber: z.string().nullable().optional(),
   consumerNumber: z.string().nullable().optional(),
   source: z
@@ -82,6 +83,7 @@ export async function POST(request: Request) {
     const companyId = requireDocGenCompany(session);
     const snapshot: DocGenCustomerSnapshot = {
       displayName: parsed.data.customer.displayName,
+      registerNumber: parsed.data.customer.registerNumber,
       mobileNumber: parsed.data.customer.mobileNumber,
       consumerNumber: parsed.data.customer.consumerNumber,
       fieldValues: parsed.data.fieldValues,

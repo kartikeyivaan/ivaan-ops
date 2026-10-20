@@ -101,8 +101,7 @@ export function DocGenGenerateWizard({ publishedSets }: { publishedSets: Publish
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchHit | null>(null);
   const [displayName, setDisplayName] = useState("");
-  const [mobileNumber, setMobileNumber] = useState("");
-  const [consumerNumber, setConsumerNumber] = useState("");
+  const [registerNumber, setRegisterNumber] = useState("");
   const [profileId, setProfileId] = useState<string | null>(null);
   const [linkedCustomerId, setLinkedCustomerId] = useState<string | null>(null);
   const [linkedServiceId, setLinkedServiceId] = useState<string | null>(null);
@@ -174,8 +173,7 @@ export function DocGenGenerateWizard({ publishedSets }: { publishedSets: Publish
 
   function applyProfile(row: SearchHit["profiles"][number]) {
     setDisplayName(row.displayName);
-    setMobileNumber(row.mobileNumber ?? "");
-    setConsumerNumber(row.consumerNumber ?? "");
+    setRegisterNumber("");
     setProfileId(row.id);
     setLinkedCustomerId(null);
     setLinkedServiceId(null);
@@ -185,8 +183,7 @@ export function DocGenGenerateWizard({ publishedSets }: { publishedSets: Publish
 
   function applyService(row: SearchHit["services"][number]) {
     setDisplayName(row.customerName);
-    setMobileNumber(row.mobileNumber ?? "");
-    setConsumerNumber(row.consumerNumber ?? "");
+    setRegisterNumber("");
     setProfileId(null);
     setLinkedServiceId(row.id);
     setLinkedCustomerId(null);
@@ -209,8 +206,7 @@ export function DocGenGenerateWizard({ publishedSets }: { publishedSets: Publish
 
   function applyCustomer(row: SearchHit["customers"][number]) {
     setDisplayName(row.customerName);
-    setMobileNumber(row.mobile ?? "");
-    setConsumerNumber("");
+    setRegisterNumber(row.customerCode ?? "");
     setProfileId(null);
     setLinkedCustomerId(row.id);
     setLinkedServiceId(null);
@@ -256,8 +252,7 @@ export function DocGenGenerateWizard({ publishedSets }: { publishedSets: Publish
           fieldValues,
           customer: {
             displayName,
-            mobileNumber: mobileNumber || null,
-            consumerNumber: consumerNumber || null,
+            registerNumber: registerNumber || null,
             source: customerSource,
           },
           saveToProfile,
@@ -370,7 +365,7 @@ export function DocGenGenerateWizard({ publishedSets }: { publishedSets: Publish
           <div className="flex flex-wrap gap-2">
             <Input
               className="max-w-md flex-1"
-              placeholder="Search profile, service request, or sales customer"
+              placeholder="Search by name, register number, or service request"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -423,6 +418,9 @@ export function DocGenGenerateWizard({ publishedSets }: { publishedSets: Publish
                         onClick={() => applyCustomer(row)}
                       >
                         {row.customerName}
+                        {row.customerCode ? (
+                          <span className="block text-xs text-slate-500">{row.customerCode}</span>
+                        ) : null}
                       </button>
                     </li>
                   ))}
@@ -431,7 +429,7 @@ export function DocGenGenerateWizard({ publishedSets }: { publishedSets: Publish
             </div>
           ) : null}
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1 sm:col-span-2">
+            <div className="space-y-1">
               <Label htmlFor="displayName">Customer / applicant name</Label>
               <Input
                 id="displayName"
@@ -444,18 +442,21 @@ export function DocGenGenerateWizard({ publishedSets }: { publishedSets: Publish
               />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="mobile">Mobile</Label>
-              <Input id="mobile" value={mobileNumber} onChange={(e) => setMobileNumber(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="consumer">Consumer number</Label>
+              <Label htmlFor="registerNumber">Register number</Label>
               <Input
-                id="consumer"
-                value={consumerNumber}
-                onChange={(e) => setConsumerNumber(e.target.value)}
+                id="registerNumber"
+                value={registerNumber}
+                onChange={(e) => {
+                  setRegisterNumber(e.target.value);
+                  setCustomerSource({ type: "manual" });
+                }}
+                placeholder="Customer register / code"
               />
             </div>
           </div>
+          <p className="text-xs text-slate-500">
+            Mobile, consumer number, and other details are entered in the next Data fields step.
+          </p>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => setStep(0)}>
               Back
@@ -504,6 +505,7 @@ export function DocGenGenerateWizard({ publishedSets }: { publishedSets: Publish
           <h2 className="font-semibold text-slate-900">Review</h2>
           <p className="text-sm">
             <span className="text-slate-500">Customer:</span> {displayName}
+            {registerNumber ? ` · Reg. ${registerNumber}` : ""}
           </p>
           <p className="text-sm">
             <span className="text-slate-500">Set:</span> {formSchema.set.name} —{" "}

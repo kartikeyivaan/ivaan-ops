@@ -2,6 +2,10 @@ import { PdfDocumentType } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { requireDocGenCompany } from "@/lib/company-scope";
 import { docGenJsonError, mapDocGenRouteError } from "@/lib/doc-gen-api";
+import {
+  buildDocGenFileName,
+  customerNameFromSnapshot,
+} from "@/lib/doc-gen-file-name";
 import { canGenerateDocuments } from "@/lib/document-generator-permissions";
 import { pdfInlineResponse } from "@/lib/pdf-cache";
 import { prisma } from "@/lib/prisma";
@@ -21,18 +25,28 @@ export async function GET(request: Request, context: RouteContext) {
 
     const generation = await prisma.docGenGeneration.findFirst({
       where: { id: generationId, companyId },
-      include: { documentSet: { select: { name: true } } },
+      include: {
+        documentSet: { select: { name: true } },
+        documents: {
+          include: { template: { select: { name: true } } },
+        },
+      },
     });
     if (!generation) return docGenJsonError("Not found.", 404);
 
+    const customerName = customerNameFromSnapshot(generation.customerSnapshotJson);
+
     if (documentId) {
-      const doc = await prisma.docGenGeneratedDocument.findFirst({
-        where: { id: documentId, generationId },
-      });
+      const doc = generation.documents.find((row) => row.id === documentId);
       if (!doc?.storedPdfId) return docGenJsonError("PDF not available.", 404);
       const stored = await prisma.storedPdf.findUnique({ where: { id: doc.storedPdfId } });
       if (!stored) return docGenJsonError("PDF not found.", 404);
-      return pdfInlineResponse(Buffer.from(stored.pdfData), doc.documentName);
+      const templateName = doc.template?.name ?? doc.documentName;
+      return pdfInlineResponse(
+        Buffer.from(stored.pdfData),
+        buildDocGenFileName(customerName, templateName),
+        { download: true },
+      );
     }
 
     if (!generation.combinedStoredPdfId) {
@@ -46,7 +60,8 @@ export async function GET(request: Request, context: RouteContext) {
     }
     return pdfInlineResponse(
       Buffer.from(stored.pdfData),
-      `${generation.documentSet.name} — combined`,
+      buildDocGenFileName(customerName, generation.documentSet.name),
+      { download: true },
     );
   } catch (error) {
     return mapDocGenRouteError(error) ?? docGenJsonError("Unable to download PDF.", 500);

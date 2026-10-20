@@ -7,7 +7,11 @@ import {
 
 export type DocGenCustomerSnapshot = {
   displayName: string;
+  /** Customer register / code shown on the generate Customer step. */
+  registerNumber?: string | null;
+  /** @deprecated Prefer data-form fields; kept for older generations. */
   mobileNumber?: string | null;
+  /** @deprecated Prefer data-form fields; kept for older generations. */
   consumerNumber?: string | null;
   fieldValues: Record<string, string>;
   source?: {

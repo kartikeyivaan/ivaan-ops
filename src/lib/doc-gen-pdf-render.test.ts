@@ -16,10 +16,18 @@ describe("doc-gen rich text to PDF helpers", () => {
   });
 
   it("keeps blank paragraphs as vertical spacers", () => {
-    const html = sanitizeLetterHtml(`<p>First</p><p><br></p><p>Second</p>`);
+    const html = sanitizeLetterHtml(`<p>First</p><p><br></p><p></p><p>Second</p>`);
     const blocks = letterHtmlToBlocks(html);
-    expect(blocks).toHaveLength(3);
-    expect(blocks[1]).toMatchObject({ type: "p" });
+    expect(blocks.length).toBeGreaterThanOrEqual(3);
+    expect(blocks.filter((block) => block.type === "p")).toHaveLength(4);
+  });
+
+  it("adds spacing around substituted field values so labels do not glue", () => {
+    const html =
+      `Name:<span data-doc-gen-field="11111111-1111-1111-1111-111111111111" data-doc-gen-key="Customer_Name">Customer_Name</span>Address`;
+    const result = applyFieldValuesToRichHtml(html, { Customer_Name: "Kartikey" });
+    expect(result).toContain("Name: Kartikey");
+    expect(result).toContain("Kartikey Address");
   });
 
   it("preserves alignment styles through sanitize", () => {

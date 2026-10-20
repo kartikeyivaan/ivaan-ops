@@ -310,15 +310,14 @@ export function letterHtmlToBlocks(html: string): LetterBlock[] {
     if (!current) return;
     const children = trimParagraphEdges(current);
     const hasVisibleText = children.some((part) => part.text.replace(/\n/g, "").trim());
-    const hasHardBreak = children.some((part) => part.text.includes("\n"));
     if (hasVisibleText) {
       blocks.push({ type: "p", ...currentStyle, children });
-    } else if (hasHardBreak || currentStyle.marginTopPt || currentStyle.marginBottomPt) {
-      // Keep blank editor paragraphs so vertical spacing survives PDF conversion.
+    } else {
+      // Keep blank editor paragraphs / <br>-only lines so PDF vertical spacing is preserved.
       blocks.push({
         type: "p",
         ...currentStyle,
-        marginBottomPt: currentStyle.marginBottomPt ?? 10,
+        marginBottomPt: currentStyle.marginBottomPt ?? 16,
         children: [{ text: " " }],
       });
     }

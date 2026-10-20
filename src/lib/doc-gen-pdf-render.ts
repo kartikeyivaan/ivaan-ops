@@ -21,13 +21,34 @@ function collectPdfBuffer(doc: PDFKit.PDFDocument): Promise<Buffer> {
   });
 }
 
+/** Insert spaces so labels/values do not glue together (e.g. Name:Kartikey, 123Address). */
+function spacedFieldValue(html: string, matchStart: number, matchEnd: number, value: string): string {
+  if (!value) return value;
+  let out = value;
+  const before = matchStart > 0 ? html[matchStart - 1]! : "";
+  const after = matchEnd < html.length ? html[matchEnd]! : "";
+  if ((before === ":" || /[A-Za-z0-9]/.test(before)) && !/^\s/.test(out)) {
+    out = ` ${out}`;
+  }
+  if (/[A-Za-z0-9]/.test(after) && !/\s$/.test(out)) {
+    out = `${out} `;
+  }
+  return out;
+}
+
 export function applyFieldValuesToRichHtml(html: string, values: FieldValueMap): string {
   let result = html.replace(
     /<span[^>]*data-doc-gen-field="[0-9a-f-]{36}"[^>]*data-doc-gen-key="([^"]+)"[^>]*>[\s\S]*?<\/span>/gi,
-    (_match, fieldKey: string) => escapeHtml(values[fieldKey] ?? ""),
+    (match, fieldKey: string, offset: number) =>
+      spacedFieldValue(html, offset, offset + match.length, escapeHtml(values[fieldKey] ?? "")),
   );
-  result = result.replace(/\{([A-Z][A-Za-z0-9_]*)\}/g, (_match, fieldKey: string) =>
-    escapeHtml(values[fieldKey] ?? `{${fieldKey}}`),
+  result = result.replace(/\{([A-Z][A-Za-z0-9_]*)\}/g, (match, fieldKey: string, offset: number) =>
+    spacedFieldValue(
+      result,
+      offset,
+      offset + match.length,
+      escapeHtml(values[fieldKey] ?? `{${fieldKey}}`),
+    ),
   );
   return result;
 }
@@ -67,6 +88,23 @@ function splitByHardBreaks(parts: RichInline[]): RichInline[][] {
   return lines.length ? lines : [[]];
 }
 
+function measureInlineWidth(
+  doc: PDFKit.PDFDocument,
+  fonts: ReturnType<typeof setupFonts>,
+  parts: RichInline[],
+  fontSize: number,
+): number {
+  doc.fontSize(fontSize);
+  return parts.reduce((sum, part) => {
+    doc.font(part.bold ? fonts.bold : fonts.regular);
+    return sum + doc.widthOfString(part.text);
+  }, 0);
+}
+
+/**
+ * Draw a single visual line. Avoid PDFKit `continued` + center/right alignment —
+ * that stacks each fragment on the same edge and causes overlaps (e.g. Date over 21/Oct/2026).
+ */
 function drawRichLine(
   doc: PDFKit.PDFDocument,
   fonts: ReturnType<typeof setupFonts>,
@@ -85,24 +123,20 @@ function drawRichLine(
       ? options.align
       : "left";
   const cleaned = parts.filter((part) => part.text.length > 0);
+  const lineHeight = options.fontSize + options.lineGap;
   doc.fillColor("#20242E").fontSize(options.fontSize);
 
   if (cleaned.length === 0) {
-    doc.font(fonts.regular).text(" ", x, y, {
-      width,
-      align: textAlign,
-      lineGap: options.lineGap,
-      paragraphGap: 0,
-    });
-    return doc.y;
+    return y + lineHeight;
   }
 
-  // Same style throughout → one draw call (best alignment + wrapping).
   const sameStyle = cleaned.every(
     (part) =>
       Boolean(part.bold) === Boolean(cleaned[0]!.bold) &&
       Boolean(part.underline) === Boolean(cleaned[0]!.underline),
   );
+
+  // Uniform style: one PDFKit call (supports wrapping + alignment reliably).
   if (sameStyle) {
     doc.font(cleaned[0]!.bold ? fonts.bold : fonts.regular).text(
       cleaned.map((part) => part.text).join(""),
@@ -110,7 +144,7 @@ function drawRichLine(
       y,
       {
         width,
-        align: textAlign,
+        align: textAlign === "justify" ? "justify" : textAlign,
         underline: Boolean(cleaned[0]!.underline),
         lineGap: options.lineGap,
         paragraphGap: 0,
@@ -119,21 +153,38 @@ function drawRichLine(
     return doc.y;
   }
 
-  // Mixed formatting: keep on one flowing line via continued runs (no extra hard breaks).
-  cleaned.forEach((part, index) => {
+  // Mixed styles + left: continued runs are safe for left align.
+  if (textAlign === "left" || textAlign === "justify") {
+    cleaned.forEach((part, index) => {
+      doc.font(part.bold ? fonts.bold : fonts.regular);
+      const textOptions: PDFKit.Mixins.TextOptions = {
+        width,
+        align: "left",
+        continued: index < cleaned.length - 1,
+        underline: Boolean(part.underline),
+        lineGap: options.lineGap,
+        paragraphGap: 0,
+      };
+      if (index === 0) doc.text(part.text, x, y, textOptions);
+      else doc.text(part.text, textOptions);
+    });
+    return doc.y;
+  }
+
+  // Mixed styles + center/right: place fragments left-to-right at a computed start X.
+  const totalWidth = measureInlineWidth(doc, fonts, cleaned, options.fontSize);
+  let cursorX =
+    textAlign === "right" ? x + Math.max(0, width - totalWidth) : x + Math.max(0, (width - totalWidth) / 2);
+  for (const part of cleaned) {
     doc.font(part.bold ? fonts.bold : fonts.regular);
-    const textOptions: PDFKit.Mixins.TextOptions = {
-      width,
-      align: textAlign,
-      continued: index < cleaned.length - 1,
+    const partWidth = doc.widthOfString(part.text);
+    doc.text(part.text, cursorX, y, {
+      lineBreak: false,
       underline: Boolean(part.underline),
-      lineGap: options.lineGap,
-      paragraphGap: 0,
-    };
-    if (index === 0) doc.text(part.text, x, y, textOptions);
-    else doc.text(part.text, textOptions);
-  });
-  return doc.y;
+    });
+    cursorX += partWidth;
+  }
+  return y + lineHeight;
 }
 
 function drawRichParagraph(
@@ -151,9 +202,14 @@ function drawRichParagraph(
 ): number {
   const hardLines = splitByHardBreaks(parts);
   let cursorY = y;
-  hardLines.forEach((lineParts, index) => {
+  const blankLineHeight = options.fontSize + options.lineGap;
+  hardLines.forEach((lineParts) => {
+    const isBlank = lineParts.every((part) => !part.text.replace(/\s/g, ""));
+    if (isBlank) {
+      cursorY += blankLineHeight;
+      return;
+    }
     cursorY = drawRichLine(doc, fonts, lineParts, x, cursorY, width, options);
-    if (index < hardLines.length - 1) cursorY += options.lineGap;
   });
   return cursorY;
 }
@@ -189,27 +245,33 @@ function drawRichTextPdf(html: string, pageConfig: PageConfiguration): Promise<B
       const lineGap =
         block.lineHeight && block.lineHeight > 1
           ? Math.max(0, (block.lineHeight - 1) * fontSize)
-          : 2;
+          : Math.max(4, fontSize * 0.45);
       const usableWidth = Math.max(48, contentWidth - indent);
+      const visibleText = block.children.map((part) => part.text).join("").replace(/\s/g, "");
+      if (!visibleText) {
+        // Blank editor line → preserve vertical space in the PDF.
+        y += block.marginBottomPt ?? fontSize + lineGap;
+        continue;
+      }
       y = drawRichParagraph(doc, fonts, block.children, marginLeft + indent, y, usableWidth, {
         align: block.align,
         fontSize,
         lineGap,
       });
-      y += block.marginBottomPt ?? 10;
+      y += block.marginBottomPt ?? Math.max(8, fontSize * 0.55);
       continue;
     }
     if (block.type === "ul" || block.type === "ol") {
       block.items.forEach((item, index) => {
-        const prefix = block.type === "ol" ? `${index + 1}. ` : "• ";
-        const parts = [{ text: prefix, bold: false as const }, ...item];
+        const marker = block.type === "ol" ? `${index + 1}. ` : "• ";
+        const parts = [{ text: marker, bold: false as const }, ...item];
         y = drawRichParagraph(doc, fonts, parts, marginLeft, y, contentWidth, {
           fontSize: 11,
-          lineGap: 2,
+          lineGap: Math.max(4, 11 * 0.45),
         });
-        y += 6;
+        y += 8;
       });
-      y += 6;
+      y += 8;
     }
   }
 

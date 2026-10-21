@@ -277,6 +277,33 @@ function trimParagraphEdges(parts: LetterInline[]): LetterInline[] {
   return cloned.filter((part) => part.text.length > 0);
 }
 
+/**
+ * Keep modest first-line indents from leading &nbsp;/spaces as paddingLeft.
+ * Ignore huge space runs (legacy fake right-align); those should use text-align instead.
+ */
+function takeLeadingIndent(parts: LetterInline[]): {
+  parts: LetterInline[];
+  paddingLeftPt?: number;
+} {
+  if (!parts.length) return { parts };
+  const first = parts[0]!;
+  const match = first.text.match(/^( +)/);
+  if (!match) return { parts: trimParagraphEdges(parts) };
+  const spaces = match[1]!.length;
+  if (spaces > 24) {
+    // Likely fake alignment via spaces — drop them so text-align can work cleanly.
+    return { parts: trimParagraphEdges(parts) };
+  }
+  const rest = parts.map((part, index) =>
+    index === 0 ? { ...part, text: part.text.slice(spaces) } : { ...part },
+  );
+  return {
+    parts: trimParagraphEdges(rest),
+    // ~NotoSans space width at 11pt
+    paddingLeftPt: spaces * 2.8,
+  };
+}
+
 export function letterHtmlToBlocks(html: string): LetterBlock[] {
   const sanitized = sanitizeLetterHtml(html);
   const blocks: LetterBlock[] = [];
@@ -308,16 +335,23 @@ export function letterHtmlToBlocks(html: string): LetterBlock[] {
   function flushParagraph() {
     if (tableCell || inTable) return;
     if (!current) return;
-    const children = trimParagraphEdges(current);
+    const { parts: children, paddingLeftPt } = takeLeadingIndent(current);
     const hasVisibleText = children.some((part) => part.text.replace(/\n/g, "").trim());
     if (hasVisibleText) {
-      blocks.push({ type: "p", ...currentStyle, children });
-    } else {
-      // Keep blank editor paragraphs / <br>-only lines so PDF vertical spacing is preserved.
       blocks.push({
         type: "p",
         ...currentStyle,
-        marginBottomPt: currentStyle.marginBottomPt ?? 16,
+        ...(paddingLeftPt && !currentStyle.paddingLeftPt
+          ? { paddingLeftPt }
+          : {}),
+        children,
+      });
+    } else {
+      // Keep blank editor paragraphs / <br>-only lines so PDF vertical spacing is preserved.
+      // Do not inflate marginBottom — renderer matches editor [&_p]:my-1 spacing.
+      blocks.push({
+        type: "p",
+        ...currentStyle,
         children: [{ text: " " }],
       });
     }

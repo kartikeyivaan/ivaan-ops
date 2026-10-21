@@ -214,6 +214,15 @@ function drawRichParagraph(
   return cursorY;
 }
 
+/** Matches letter-editor `[&_p]:my-1` (0.25rem ≈ 3pt). */
+const EDITOR_PARA_MARGIN_PT = 3;
+
+function isBlankParagraph(
+  block: Extract<ReturnType<typeof letterHtmlToBlocks>[number], { type: "p" }>,
+): boolean {
+  return !block.children.map((part) => part.text).join("").replace(/\s/g, "");
+}
+
 function drawRichTextPdf(html: string, pageConfig: PageConfiguration): Promise<Buffer> {
   // Use pageConfiguration margins only — avoid stacking theme margins on top.
   const doc = new PDFDocument({
@@ -233,24 +242,46 @@ function drawRichTextPdf(html: string, pageConfig: PageConfiguration): Promise<B
   const pageBottom = doc.page.height - marginBottom;
 
   const blocks = letterHtmlToBlocks(sanitizeLetterHtml(html));
-  for (const block of blocks) {
-    if (y > pageBottom - 28) {
-      doc.addPage();
-      y = marginTop;
-    }
+  // CSS-like margin collapse between consecutive paragraphs (editor my-1 collapses).
+  let pendingMarginPt = 0;
+
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index]!;
+    const restAreBlank = blocks.slice(index).every(
+      (row) => row.type === "p" && isBlankParagraph(row),
+    );
+
     if (block.type === "p") {
-      y += block.marginTopPt ?? 0;
       const indent = block.paddingLeftPt ?? 0;
       const fontSize = block.fontSize ?? 11;
       const lineGap =
         block.lineHeight && block.lineHeight > 1
           ? Math.max(0, (block.lineHeight - 1) * fontSize)
-          : Math.max(4, fontSize * 0.45);
+          : Math.max(2, fontSize * 0.25);
+      const blank = isBlankParagraph(block);
+      const marginTopPt = block.marginTopPt ?? EDITOR_PARA_MARGIN_PT;
+      const marginBottomPt = block.marginBottomPt ?? EDITOR_PARA_MARGIN_PT;
+      const collapsedGap = Math.max(pendingMarginPt, marginTopPt);
+
+      // Trailing blank lines that would force an empty next page — drop them.
+      if (blank && restAreBlank && y + collapsedGap + fontSize + lineGap > pageBottom - 28) {
+        break;
+      }
+
+      if (y + collapsedGap > pageBottom - 28) {
+        if (restAreBlank) break;
+        doc.addPage();
+        y = marginTop;
+        pendingMarginPt = 0;
+      } else {
+        y += collapsedGap;
+      }
+
       const usableWidth = Math.max(48, contentWidth - indent);
-      const visibleText = block.children.map((part) => part.text).join("").replace(/\s/g, "");
-      if (!visibleText) {
-        // Blank editor line → preserve vertical space in the PDF.
-        y += block.marginBottomPt ?? fontSize + lineGap;
+      if (blank) {
+        // One editor line box (leading), not an inflated 16pt spacer.
+        y += fontSize + lineGap;
+        pendingMarginPt = marginBottomPt;
         continue;
       }
       y = drawRichParagraph(doc, fonts, block.children, marginLeft + indent, y, usableWidth, {
@@ -258,20 +289,27 @@ function drawRichTextPdf(html: string, pageConfig: PageConfiguration): Promise<B
         fontSize,
         lineGap,
       });
-      y += block.marginBottomPt ?? Math.max(8, fontSize * 0.55);
+      pendingMarginPt = marginBottomPt;
       continue;
     }
+
+    y += pendingMarginPt;
+    pendingMarginPt = 0;
+    if (y > pageBottom - 28) {
+      doc.addPage();
+      y = marginTop;
+    }
     if (block.type === "ul" || block.type === "ol") {
-      block.items.forEach((item, index) => {
-        const marker = block.type === "ol" ? `${index + 1}. ` : "• ";
+      block.items.forEach((item, itemIndex) => {
+        const marker = block.type === "ol" ? `${itemIndex + 1}. ` : "• ";
         const parts = [{ text: marker, bold: false as const }, ...item];
         y = drawRichParagraph(doc, fonts, parts, marginLeft, y, contentWidth, {
           fontSize: 11,
-          lineGap: Math.max(4, 11 * 0.45),
+          lineGap: Math.max(2, 11 * 0.25),
         });
-        y += 8;
+        y += EDITOR_PARA_MARGIN_PT;
       });
-      y += 8;
+      pendingMarginPt = EDITOR_PARA_MARGIN_PT;
     }
   }
 

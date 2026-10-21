@@ -15,11 +15,32 @@ describe("doc-gen rich text to PDF helpers", () => {
     expect(text).not.toContain("\n");
   });
 
-  it("keeps blank paragraphs as vertical spacers", () => {
+  it("keeps blank paragraphs as vertical spacers without inflated margins", () => {
     const html = sanitizeLetterHtml(`<p>First</p><p><br></p><p></p><p>Second</p>`);
     const blocks = letterHtmlToBlocks(html);
     expect(blocks.length).toBeGreaterThanOrEqual(3);
     expect(blocks.filter((block) => block.type === "p")).toHaveLength(4);
+    const blanks = blocks.filter(
+      (block) =>
+        block.type === "p" &&
+        !block.children.map((part) => part.text).join("").replace(/\s/g, ""),
+    );
+    for (const blank of blanks) {
+      if (blank.type !== "p") continue;
+      expect(blank.marginBottomPt).toBeUndefined();
+    }
+  });
+
+  it("converts modest leading spaces into first-line indent", () => {
+    const html = sanitizeLetterHtml(`<p>&nbsp;&nbsp;&nbsp;&nbsp;Indented body</p>`);
+    const blocks = letterHtmlToBlocks(html);
+    expect(blocks[0]).toMatchObject({
+      type: "p",
+      paddingLeftPt: expect.any(Number),
+    });
+    if (blocks[0]?.type !== "p") return;
+    expect(blocks[0].paddingLeftPt).toBeGreaterThan(0);
+    expect(blocks[0].children.map((part) => part.text).join("")).toBe("Indented body");
   });
 
   it("adds spacing around substituted field values so labels do not glue", () => {

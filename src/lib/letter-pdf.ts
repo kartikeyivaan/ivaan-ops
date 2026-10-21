@@ -2,6 +2,7 @@ import PDFDocument from "pdfkit";
 import { formatLetterDate } from "@/lib/utils";
 import {
   letterHtmlToBlocks,
+  resolveTableColumnWidths,
   type LetterInline,
   type LetterTableCell,
 } from "@/lib/letter-content";
@@ -179,11 +180,19 @@ function drawLetterTable(
   if (rows.length === 0) return;
 
   const layout = layoutLetterTable(rows);
-  const colWidth = CONTENT_WIDTH / layout.colCount;
+  const colWidths = resolveTableColumnWidths(rows, CONTENT_WIDTH);
+  const colX = colWidths.reduce<number[]>((acc, _width, index) => {
+    acc.push(index === 0 ? CONTENT_LEFT : acc[index - 1]! + colWidths[index - 1]!);
+    return acc;
+  }, []);
 
   layout.slots.forEach((slot) => {
-    const cellWidth = colWidth * slot.colSpan;
-    const minSlice = measureTableCellHeight(ctx, slot.cell, cellWidth) / slot.rowSpan;
+    const cellWidth = colWidths
+      .slice(slot.col, slot.col + slot.colSpan)
+      .reduce((sum, value) => sum + value, 0);
+    const contentHeight = measureTableCellHeight(ctx, slot.cell, cellWidth);
+    const minHeight = Math.max(contentHeight, slot.cell.heightPt ?? 0);
+    const minSlice = minHeight / slot.rowSpan;
     for (let dr = 0; dr < slot.rowSpan; dr += 1) {
       const rowIndex = slot.row + dr;
       layout.rowHeights[rowIndex] = Math.max(layout.rowHeights[rowIndex]!, minSlice);
@@ -199,8 +208,10 @@ function drawLetterTable(
     layout.slots
       .filter((slot) => slot.row === rowIndex)
       .forEach((slot) => {
-        const x = CONTENT_LEFT + slot.col * colWidth;
-        const width = colWidth * slot.colSpan;
+        const x = colX[slot.col]!;
+        const width = colWidths
+          .slice(slot.col, slot.col + slot.colSpan)
+          .reduce((sum, value) => sum + value, 0);
         const height = layout.rowHeights
           .slice(slot.row, slot.row + slot.rowSpan)
           .reduce((sum, value) => sum + value, 0);

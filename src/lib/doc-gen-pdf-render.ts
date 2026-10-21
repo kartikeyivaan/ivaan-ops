@@ -4,7 +4,13 @@ import PDFDocument from "pdfkit";
 import { PDFDocument as PdfLibDocument, rgb } from "pdf-lib";
 import type { TemplateContent } from "@/lib/doc-gen-template-content";
 import type { PageConfiguration } from "@/lib/doc-gen-template-content";
-import { letterHtmlToBlocks, sanitizeLetterHtml } from "@/lib/letter-content";
+import {
+  letterHtmlToBlocks,
+  resolveTableColumnWidths,
+  sanitizeLetterHtml,
+  type LetterInline,
+  type LetterTableCell,
+} from "@/lib/letter-content";
 import { setupFonts } from "@/lib/pdf-theme";
 
 const FONT_PATH = path.join(process.cwd(), "assets", "fonts", "NotoSans-Regular.ttf");
@@ -216,11 +222,136 @@ function drawRichParagraph(
 
 /** Matches letter-editor `[&_p]:my-1` (0.25rem ≈ 3pt). */
 const EDITOR_PARA_MARGIN_PT = 3;
+const TABLE_CELL_PAD = 4;
+const TABLE_FONT_SIZE = 10;
 
 function isBlankParagraph(
   block: Extract<ReturnType<typeof letterHtmlToBlocks>[number], { type: "p" }>,
 ): boolean {
   return !block.children.map((part) => part.text).join("").replace(/\s/g, "");
+}
+
+function inlinesPlain(parts: LetterInline[]): string {
+  return parts.map((part) => part.text).join("");
+}
+
+function measureTableCellHeight(
+  doc: PDFKit.PDFDocument,
+  fonts: ReturnType<typeof setupFonts>,
+  cell: LetterTableCell,
+  width: number,
+): number {
+  const innerW = Math.max(12, width - TABLE_CELL_PAD * 2);
+  doc.font(cell.header ? fonts.bold : fonts.regular).fontSize(TABLE_FONT_SIZE);
+  const text = inlinesPlain(cell.children).trim() || " ";
+  return doc.heightOfString(text, { width: innerW }) + TABLE_CELL_PAD * 2;
+}
+
+type TableSlot = {
+  cell: LetterTableCell;
+  col: number;
+  row: number;
+  colSpan: number;
+  rowSpan: number;
+};
+
+function layoutRichTextTable(rows: LetterTableCell[][]): {
+  colCount: number;
+  rowCount: number;
+  slots: TableSlot[];
+  rowHeights: number[];
+} {
+  const colCount = Math.max(
+    1,
+    ...rows.map((row) => row.reduce((sum, cell) => sum + (cell.colspan ?? 1), 0)),
+  );
+  const rowCount = rows.length;
+  const occupied = new Set<string>();
+  const slots: TableSlot[] = [];
+
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+    let colIndex = 0;
+    for (const cell of rows[rowIndex]!) {
+      while (occupied.has(`${rowIndex},${colIndex}`)) colIndex += 1;
+      const colSpan = cell.colspan ?? 1;
+      const rowSpan = cell.rowspan ?? 1;
+      slots.push({ cell, col: colIndex, row: rowIndex, colSpan, rowSpan });
+      for (let dr = 0; dr < rowSpan; dr += 1) {
+        for (let dc = 0; dc < colSpan; dc += 1) {
+          occupied.add(`${rowIndex + dr},${colIndex + dc}`);
+        }
+      }
+      colIndex += colSpan;
+    }
+  }
+
+  return { colCount, rowCount, slots, rowHeights: new Array(rowCount).fill(0) };
+}
+
+function drawRichTextTable(
+  doc: PDFKit.PDFDocument,
+  fonts: ReturnType<typeof setupFonts>,
+  rows: LetterTableCell[][],
+  xLeft: number,
+  startY: number,
+  contentWidth: number,
+  pageBottom: number,
+  marginTop: number,
+): number {
+  if (rows.length === 0) return startY;
+
+  const layout = layoutRichTextTable(rows);
+  const colWidths = resolveTableColumnWidths(rows, contentWidth);
+  const colX = colWidths.reduce<number[]>((acc, width, index) => {
+    acc.push(index === 0 ? xLeft : acc[index - 1]! + colWidths[index - 1]!);
+    return acc;
+  }, []);
+
+  layout.slots.forEach((slot) => {
+    const cellWidth = colWidths
+      .slice(slot.col, slot.col + slot.colSpan)
+      .reduce((sum, value) => sum + value, 0);
+    const contentHeight = measureTableCellHeight(doc, fonts, slot.cell, cellWidth);
+    const minHeight = Math.max(contentHeight, slot.cell.heightPt ?? 0);
+    const minSlice = minHeight / slot.rowSpan;
+    for (let dr = 0; dr < slot.rowSpan; dr += 1) {
+      const rowIndex = slot.row + dr;
+      layout.rowHeights[rowIndex] = Math.max(layout.rowHeights[rowIndex]!, minSlice);
+    }
+  });
+
+  let y = startY;
+  for (let rowIndex = 0; rowIndex < layout.rowCount; rowIndex += 1) {
+    const rowHeight = layout.rowHeights[rowIndex]!;
+    if (y + rowHeight > pageBottom - 28) {
+      doc.addPage();
+      y = marginTop;
+    }
+
+    layout.slots
+      .filter((slot) => slot.row === rowIndex)
+      .forEach((slot) => {
+        const x = colX[slot.col]!;
+        const width = colWidths
+          .slice(slot.col, slot.col + slot.colSpan)
+          .reduce((sum, value) => sum + value, 0);
+        const height = layout.rowHeights
+          .slice(slot.row, slot.row + slot.rowSpan)
+          .reduce((sum, value) => sum + value, 0);
+        doc.rect(x, y, width, height).lineWidth(0.5).strokeColor("#CBD5E1").stroke();
+        const cellParts: RichInline[] = slot.cell.header
+          ? slot.cell.children.map((part) => ({ ...part, bold: part.bold ?? true }))
+          : slot.cell.children;
+        drawRichParagraph(doc, fonts, cellParts, x + TABLE_CELL_PAD, y + TABLE_CELL_PAD, width - TABLE_CELL_PAD * 2, {
+          align: slot.cell.align,
+          fontSize: TABLE_FONT_SIZE,
+          lineGap: Math.max(1, TABLE_FONT_SIZE * 0.2),
+        });
+      });
+
+    y += rowHeight;
+  }
+  return y + 6;
 }
 
 function drawRichTextPdf(html: string, pageConfig: PageConfiguration): Promise<Buffer> {
@@ -298,6 +429,20 @@ function drawRichTextPdf(html: string, pageConfig: PageConfiguration): Promise<B
     if (y > pageBottom - 28) {
       doc.addPage();
       y = marginTop;
+    }
+    if (block.type === "table") {
+      y = drawRichTextTable(
+        doc,
+        fonts,
+        block.rows,
+        marginLeft,
+        y,
+        contentWidth,
+        pageBottom,
+        marginTop,
+      );
+      pendingMarginPt = EDITOR_PARA_MARGIN_PT;
+      continue;
     }
     if (block.type === "ul" || block.type === "ol") {
       block.items.forEach((item, itemIndex) => {
@@ -405,9 +550,19 @@ export async function renderTemplatePreviewPdf(input: {
   pageConfiguration: PageConfiguration;
   fieldValues: FieldValueMap;
   backgroundBytes?: Buffer | null;
+  wordBytes?: Buffer | null;
 }): Promise<Buffer> {
   if (input.content.editor === "RICH_TEXT") {
     const html = applyFieldValuesToRichHtml(input.content.html, input.fieldValues);
+    return drawRichTextPdf(html, input.pageConfiguration);
+  }
+  if (input.content.editor === "WORD") {
+    const { docxToHtml, fillDocxTemplate } = await import("@/lib/doc-gen-word");
+    if (!input.wordBytes?.length) {
+      throw new Error("VALIDATION:Upload a Word (.docx) template before generating a PDF.");
+    }
+    const filled = fillDocxTemplate(input.wordBytes, input.fieldValues);
+    const html = await docxToHtml(filled);
     return drawRichTextPdf(html, input.pageConfiguration);
   }
   return renderCanvasPdf(input.content, input.fieldValues, input.backgroundBytes ?? null);

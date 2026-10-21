@@ -15,7 +15,7 @@ import { templateContentSchema } from "@/lib/doc-gen-template-content";
 type TemplateMeta = {
   id: string;
   name: string;
-  editorType: "RICH_TEXT" | "CANVAS" | "PDF_BACKGROUND";
+  editorType: "RICH_TEXT" | "CANVAS" | "PDF_BACKGROUND" | "WORD";
   layoutMode: string;
 };
 
@@ -26,6 +26,8 @@ type DraftVersion = {
   pageConfigurationJson: PageConfiguration;
   backgroundStoredPdfId: string | null;
 };
+
+type WordContent = Extract<TemplateContent, { editor: "WORD" }>;
 
 type FieldRow = { id: string; fieldKey: string; label: string; status: string };
 
@@ -54,6 +56,14 @@ export function DocGenTemplateDesigner({
   const [issues, setIssues] = useState<Array<{ message: string }>>([]);
   const [busy, setBusy] = useState(false);
   const [hasBackground, setHasBackground] = useState(Boolean(draft.backgroundStoredPdfId));
+  const [wordMeta, setWordMeta] = useState<{ fileName: string | null; placeholders: string[] }>(
+    () => {
+      const initial = templateContentSchema.parse(draft.templateContentJson);
+      return initial.editor === "WORD"
+        ? { fileName: initial.fileName, placeholders: initial.placeholders }
+        : { fileName: null, placeholders: [] };
+    },
+  );
 
   async function saveTemplateName(event: React.FormEvent) {
     event.preventDefault();
@@ -196,6 +206,41 @@ export function DocGenTemplateDesigner({
     }
   }
 
+  async function uploadWord(file: File) {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const form = new FormData();
+      form.set("versionId", versionId);
+      form.set("file", file);
+      const response = await fetch(`/api/document-generator/templates/${template.id}/word`, {
+        method: "POST",
+        body: form,
+      });
+      const body = (await response.json()) as {
+        message?: string;
+        fileName?: string;
+        placeholders?: string[];
+      };
+      if (!response.ok) throw new Error(body.message ?? "Upload failed.");
+      const next: WordContent = {
+        editor: "WORD",
+        fileName: body.fileName ?? file.name,
+        placeholders: body.placeholders ?? [],
+      };
+      setContent(next);
+      setWordMeta({ fileName: next.fileName, placeholders: next.placeholders });
+      setHasBackground(true);
+      setMessage(
+        `Word file uploaded (${next.placeholders.length} placeholder(s) found). Preview to check the PDF.`,
+      );
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : "Upload failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-4 py-8">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -278,13 +323,76 @@ export function DocGenTemplateDesigner({
         </div>
       ) : null}
 
+      {template.editorType === "WORD" ? (
+        <div className="grid gap-4 lg:grid-cols-[1fr_240px]">
+          <div className="rounded-lg border border-dashed border-slate-300 bg-white p-4">
+            <p className="text-sm font-medium text-slate-900">Word template (.docx)</p>
+            <p className="mt-1 text-sm text-slate-600">
+              Edit the document in Microsoft Word using placeholders like{" "}
+              <code className="rounded bg-slate-100 px-1">{"{Customer_Name}"}</code>, then upload
+              here. Generation fills those fields and outputs PDF only.
+            </p>
+            <p className="mt-2 text-sm text-slate-600">
+              {wordMeta.fileName
+                ? `Current file: ${wordMeta.fileName} · ${wordMeta.placeholders.length} placeholder(s). Upload again to replace.`
+                : "No Word file attached yet (max 15 MB)."}
+            </p>
+            <input
+              type="file"
+              accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              className="mt-3 block text-sm"
+              disabled={busy}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) void uploadWord(file);
+              }}
+            />
+            {wordMeta.placeholders.length > 0 ? (
+              <div className="mt-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Detected placeholders
+                </p>
+                <ul className="mt-2 flex flex-wrap gap-1.5 text-xs">
+                  {wordMeta.placeholders.map((key) => (
+                    <li
+                      key={key}
+                      className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-slate-800"
+                    >
+                      {`{${key}}`}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Field catalog keys
+            </p>
+            <p className="mb-2 text-[11px] leading-4 text-slate-500">
+              Use these exact keys in Word. Keys are case-sensitive.
+            </p>
+            <ul className="max-h-72 space-y-1 overflow-y-auto text-sm">
+              {activeFields.map((field) => (
+                <li key={field.id}>
+                  <span className="font-mono text-xs">{`{${field.fieldKey}}`}</span>
+                  <span className="block text-slate-600">{field.label}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      ) : null}
+
       {content.editor === "RICH_TEXT" ? (
         <DocGenRichTextEditor
           value={content.html}
           onChange={(html) => setContent({ editor: "RICH_TEXT", html })}
           fields={activeFields}
         />
-      ) : (
+      ) : null}
+
+      {content.editor === "CANVAS" || content.editor === "PDF_BACKGROUND" ? (
         <DocGenCanvasEditor
           pages={content.pages}
           onChange={(pages) =>
@@ -296,11 +404,13 @@ export function DocGenTemplateDesigner({
           fields={activeFields}
           mode={template.editorType === "PDF_BACKGROUND" ? "PDF_BACKGROUND" : "CANVAS"}
         />
-      )}
+      ) : null}
 
       <p className="text-xs text-slate-500">
-        Preview uses field labels as sample values. Fixed-page layout; overflow is not auto-flowed in
-        v1 canvas mode.
+        Preview uses field labels as sample values.
+        {template.editorType === "WORD"
+          ? " Word layout is converted to PDF after field merge; complex Word features (images, text boxes) may be simplified."
+          : " Fixed-page layout; overflow is not auto-flowed in v1 canvas mode."}
       </p>
 
       {renameOpen ? (

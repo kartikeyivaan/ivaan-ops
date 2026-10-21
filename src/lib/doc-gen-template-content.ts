@@ -46,6 +46,11 @@ export const templateContentSchema = z.discriminatedUnion("editor", [
     editor: z.enum(["CANVAS", "PDF_BACKGROUND"]),
     pages: z.array(canvasPageSchema).min(1),
   }),
+  z.object({
+    editor: z.literal("WORD"),
+    fileName: z.string().nullable().default(null),
+    placeholders: z.array(z.string()).default([]),
+  }),
 ]);
 
 export type TemplateContent = z.infer<typeof templateContentSchema>;
@@ -68,10 +73,13 @@ export const pageConfigurationSchema = z.object({
 export type PageConfiguration = z.infer<typeof pageConfigurationSchema>;
 
 export function defaultTemplateContent(
-  editorType: "RICH_TEXT" | "CANVAS" | "PDF_BACKGROUND",
+  editorType: "RICH_TEXT" | "CANVAS" | "PDF_BACKGROUND" | "WORD",
 ): TemplateContent {
   if (editorType === "RICH_TEXT") {
     return { editor: "RICH_TEXT", html: "<p><br></p>" };
+  }
+  if (editorType === "WORD") {
+    return { editor: "WORD", fileName: null, placeholders: [] };
   }
   return {
     editor: editorType === "PDF_BACKGROUND" ? "PDF_BACKGROUND" : "CANVAS",

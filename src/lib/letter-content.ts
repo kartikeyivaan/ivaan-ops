@@ -103,15 +103,70 @@ function parseTableSpan(attrs: string, name: "colspan" | "rowspan"): number | un
   return value;
 }
 
+function parseCssPercent(value: string): number | undefined {
+  const match = value.trim().match(/^(\d+(?:\.\d+)?)%$/i);
+  if (!match) return undefined;
+  const amount = Number.parseFloat(match[1]!);
+  if (!Number.isFinite(amount) || amount < 1 || amount > 100) return undefined;
+  return Math.round(amount * 10) / 10;
+}
+
+/** Table cell/row sizes can be larger than paragraph spacing (up to ~page width). */
+function cssTableLengthToPt(value: string): number | undefined {
+  const match = value.trim().match(/^(\d+(?:\.\d+)?)(px|pt|em|rem)?$/i);
+  if (!match) return undefined;
+  const amount = Number.parseFloat(match[1]!);
+  if (!Number.isFinite(amount) || amount < 0 || amount > 600) return undefined;
+  const unit = (match[2] ?? "px").toLowerCase();
+  if (unit === "pt") return amount;
+  if (unit === "em" || unit === "rem") return amount * 11;
+  return amount * 0.75;
+}
+
+function parseTableCellSize(attrs: string): {
+  widthPercent?: number;
+  widthPt?: number;
+  heightPt?: number;
+} {
+  const styles = readStyleDeclarations(attrs);
+  const out: { widthPercent?: number; widthPt?: number; heightPt?: number } = {};
+  if (styles.width) {
+    const pct = parseCssPercent(styles.width);
+    if (pct !== undefined) out.widthPercent = pct;
+    else {
+      const pt = cssTableLengthToPt(styles.width);
+      if (pt !== undefined) out.widthPt = pt;
+    }
+  }
+  const heightRaw = styles.height ?? styles["min-height"];
+  if (heightRaw) {
+    const pt = cssTableLengthToPt(heightRaw);
+    if (pt !== undefined) out.heightPt = pt;
+  }
+  return out;
+}
+
 function openTableCellTag(tag: "td" | "th", attrs: string): string {
   const parts: string[] = [];
   const colspan = parseTableSpan(attrs, "colspan");
   const rowspan = parseTableSpan(attrs, "rowspan");
   if (colspan) parts.push(`colspan="${colspan}"`);
   if (rowspan) parts.push(`rowspan="${rowspan}"`);
+  const styleParts: string[] = [];
   const align = parseTextAlign(attrs);
-  if (align) parts.push(`style="text-align:${align}"`);
+  if (align) styleParts.push(`text-align:${align}`);
+  const size = parseTableCellSize(attrs);
+  if (size.widthPercent !== undefined) styleParts.push(`width:${size.widthPercent}%`);
+  else if (size.widthPt !== undefined) styleParts.push(`width:${size.widthPt}pt`);
+  if (size.heightPt !== undefined) styleParts.push(`height:${size.heightPt}pt`);
+  if (styleParts.length) parts.push(`style="${styleParts.join(";")}"`);
   return parts.length ? `<${tag} ${parts.join(" ")}>` : `<${tag}>`;
+}
+
+function openTableRowTag(attrs: string): string {
+  const size = parseTableCellSize(attrs);
+  if (size.heightPt === undefined) return "<tr>";
+  return `<tr style="height:${size.heightPt}pt">`;
 }
 
 function readStyleDeclarations(attrs: string): Record<string, string> {
@@ -181,6 +236,7 @@ export function sanitizeLetterHtml(html: string): string {
     if (closing) return tag === "br" ? "" : `</${tag}>`;
     if (tag === "br") return "<br>";
     if (tag === "td" || tag === "th") return openTableCellTag(tag, attrs);
+    if (tag === "tr") return openTableRowTag(attrs);
     if (tag === "span") {
       return openDocGenFieldSpan(attrs) ?? "<span>";
     }
@@ -204,8 +260,93 @@ export type LetterTableCell = {
   align?: string;
   colspan?: number;
   rowspan?: number;
+  /** Preferred column share (1–100). Used when laying out PDF columns. */
+  widthPercent?: number;
+  /** Absolute column width in PDF points when percent is not set. */
+  widthPt?: number;
+  /** Minimum row height in PDF points. */
+  heightPt?: number;
   children: LetterInline[];
 };
+
+/**
+ * Resolve per-column widths for a table. Prefers percentage widths, then absolute
+ * pt widths, then equal split. Always sums to `contentWidth`.
+ */
+export function resolveTableColumnWidths(
+  rows: LetterTableCell[][],
+  contentWidth: number,
+): number[] {
+  const colCount = Math.max(
+    1,
+    ...rows.map((row) => row.reduce((sum, cell) => sum + (cell.colspan ?? 1), 0)),
+  );
+  const percents: (number | undefined)[] = Array.from({ length: colCount });
+  const points: (number | undefined)[] = Array.from({ length: colCount });
+  const occupied = new Set<string>();
+
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+    let colIndex = 0;
+    for (const cell of rows[rowIndex]!) {
+      while (occupied.has(`${rowIndex},${colIndex}`)) colIndex += 1;
+      const colSpan = cell.colspan ?? 1;
+      const rowSpan = cell.rowspan ?? 1;
+      if (colSpan === 1) {
+        if (cell.widthPercent !== undefined) {
+          percents[colIndex] = Math.max(percents[colIndex] ?? 0, cell.widthPercent);
+        } else if (cell.widthPt !== undefined) {
+          points[colIndex] = Math.max(points[colIndex] ?? 0, cell.widthPt);
+        }
+      } else if (cell.widthPercent !== undefined) {
+        const share = cell.widthPercent / colSpan;
+        for (let dc = 0; dc < colSpan; dc += 1) {
+          percents[colIndex + dc] = Math.max(percents[colIndex + dc] ?? 0, share);
+        }
+      } else if (cell.widthPt !== undefined) {
+        const share = cell.widthPt / colSpan;
+        for (let dc = 0; dc < colSpan; dc += 1) {
+          points[colIndex + dc] = Math.max(points[colIndex + dc] ?? 0, share);
+        }
+      }
+      for (let dr = 0; dr < rowSpan; dr += 1) {
+        for (let dc = 0; dc < colSpan; dc += 1) {
+          occupied.add(`${rowIndex + dr},${colIndex + dc}`);
+        }
+      }
+      colIndex += colSpan;
+    }
+  }
+
+  const hasPercent = percents.some((value) => value !== undefined);
+  if (hasPercent) {
+    const known = percents.reduce((sum, value) => sum + (value ?? 0), 0);
+    const unset = percents.filter((value) => value === undefined).length;
+    const remaining = Math.max(0, 100 - known);
+    const fallback = unset > 0 ? remaining / unset : 0;
+    const weights = percents.map((value) => (value !== undefined ? value : fallback) || 0);
+    const total = weights.reduce((sum, value) => sum + value, 0) || colCount;
+    return weights.map((weight) => (contentWidth * weight) / total);
+  }
+
+  const hasPoints = points.some((value) => value !== undefined);
+  if (hasPoints) {
+    const known = points.reduce((sum, value) => sum + (value ?? 0), 0);
+    const unset = points.filter((value) => value === undefined).length;
+    const remaining = Math.max(0, contentWidth - known);
+    const fallback = unset > 0 ? remaining / unset : 0;
+    const widths = points.map((value) => (value !== undefined ? value : fallback));
+    const total = widths.reduce((sum, value) => sum + value, 0) || colCount;
+    if (total <= contentWidth && unset === 0) {
+      // Stretch last column so the table fills the content width.
+      const padded = [...widths];
+      padded[padded.length - 1] = padded[padded.length - 1]! + (contentWidth - total);
+      return padded;
+    }
+    return widths.map((width) => (contentWidth * width) / total);
+  }
+
+  return Array.from({ length: colCount }, () => contentWidth / colCount);
+}
 
 export type LetterParagraphStyle = {
   align?: string;
@@ -318,6 +459,7 @@ export function letterHtmlToBlocks(html: string): LetterBlock[] {
   let tableRow: LetterTableCell[] | null = null;
   let tableCell: LetterInline[] | null = null;
   let tableCellMeta: Omit<LetterTableCell, "children"> = {};
+  let tableRowHeightPt: number | undefined;
 
   function inlineTarget(): LetterInline[] | null {
     if (tableCell) return tableCell;
@@ -371,10 +513,13 @@ export function letterHtmlToBlocks(html: string): LetterBlock[] {
 
   function finishTableCell() {
     if (!tableRow || !tableCell) return;
-    const hasText = tableCell.some((part) => part.text.trim());
-    if (hasText || tableCellMeta.header) {
-      tableRow.push({ ...tableCellMeta, children: tableCell });
-    }
+    // Keep empty cells so column alignment matches the editor grid.
+    const heightPt = tableCellMeta.heightPt ?? tableRowHeightPt;
+    tableRow.push({
+      ...tableCellMeta,
+      ...(heightPt !== undefined ? { heightPt } : {}),
+      children: tableCell,
+    });
     tableCell = null;
     tableCellMeta = {};
   }
@@ -385,6 +530,7 @@ export function letterHtmlToBlocks(html: string): LetterBlock[] {
       tableRows.push(tableRow);
     }
     tableRow = null;
+    tableRowHeightPt = undefined;
   }
 
   function flushTable() {
@@ -394,6 +540,7 @@ export function letterHtmlToBlocks(html: string): LetterBlock[] {
     }
     tableRows = [];
     inTable = false;
+    tableRowHeightPt = undefined;
   }
 
   function cellLineBreak() {
@@ -468,6 +615,7 @@ export function letterHtmlToBlocks(html: string): LetterBlock[] {
       } else {
         finishTableRow();
         tableRow = [];
+        tableRowHeightPt = parseTableCellSize(attrs).heightPt;
       }
       continue;
     }
@@ -480,11 +628,15 @@ export function letterHtmlToBlocks(html: string): LetterBlock[] {
         finishTableCell();
         if (!tableRow) tableRow = [];
         tableCell = [];
+        const size = parseTableCellSize(attrs);
         tableCellMeta = {
           header: tag === "th",
           align: parseTextAlign(attrs),
           colspan: parseTableSpan(attrs, "colspan"),
           rowspan: parseTableSpan(attrs, "rowspan"),
+          ...(size.widthPercent !== undefined ? { widthPercent: size.widthPercent } : {}),
+          ...(size.widthPt !== undefined ? { widthPt: size.widthPt } : {}),
+          ...(size.heightPt !== undefined ? { heightPt: size.heightPt } : {}),
         };
       }
       continue;

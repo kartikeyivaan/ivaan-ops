@@ -14,6 +14,24 @@ export function mapDocGenRouteError(error: unknown): NextResponse | null {
   if (error.message === "NOT_FOUND") {
     return docGenJsonError("Not found.", 404);
   }
+  if (error.message === "TEMPLATE_IN_USE") {
+    return docGenJsonError(
+      "Template cannot be deleted because a version is used by a document set or generated documents.",
+      409,
+    );
+  }
+  if (error.message === "TEMPLATE_VERSION_IN_USE") {
+    return docGenJsonError(
+      "Version cannot be deleted because it is used by a document set or generated documents.",
+      409,
+    );
+  }
+  if (error.message === "LAST_TEMPLATE_VERSION") {
+    return docGenJsonError(
+      "Cannot delete the only version. Delete the template instead.",
+      400,
+    );
+  }
   if (error.message === "DUPLICATE_FIELD_KEY") {
     return docGenJsonError("A field with this key already exists.", 409);
   }
@@ -27,10 +45,19 @@ export function mapDocGenRouteError(error: unknown): NextResponse | null {
     return docGenJsonError("Uploaded file is empty.", 400);
   }
   if (error.message === "FILE_TOO_LARGE") {
-    return docGenJsonError("PDF exceeds the maximum upload size.", 400);
+    return docGenJsonError("Uploaded file exceeds the maximum size (15 MB).", 400);
   }
   if (error.message === "INVALID_PDF") {
     return docGenJsonError("Only valid PDF files are accepted.", 400);
+  }
+  if (error.message === "INVALID_DOCX") {
+    return docGenJsonError("Only valid Word (.docx) files are accepted.", 400);
+  }
+  if (error.message.startsWith("WORD_MERGE_FAILED:")) {
+    return docGenJsonError(
+      `Unable to fill Word template: ${error.message.slice("WORD_MERGE_FAILED:".length)}`,
+      400,
+    );
   }
   if (error.message === "VALIDATION_ISSUES") {
     const issues = (error as Error & { issues?: unknown }).issues;

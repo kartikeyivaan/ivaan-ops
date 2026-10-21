@@ -123,3 +123,33 @@ export function buildProjectProposalWhatsappMessage(input: {
     "Ivaan Solar Energy",
   ].join("\n");
 }
+
+/**
+ * Formats a contact number for display inside a WhatsApp message body
+ * (prefer a readable 10-digit Indian mobile when possible).
+ */
+export function formatWhatsappContactDisplay(raw: string): string {
+  let digits = raw.replace(/\D/g, "").replace(/^0+/, "");
+  if (digits.length === 12 && digits.startsWith("91")) {
+    digits = digits.slice(2);
+  }
+  return digits || raw.trim();
+}
+
+/**
+ * Builds the customer-facing WhatsApp message when a service request is raised
+ * and a service executive has been assigned.
+ */
+export function buildServiceRequestWhatsappMessage(input: {
+  customerName: string;
+  serviceRequestNumber: string;
+  executiveName: string;
+  executiveMobile: string;
+}): string {
+  const mobile = formatWhatsappContactDisplay(input.executiveMobile);
+  return (
+    `Hi ${input.customerName}, your service request ${input.serviceRequestNumber} has been raised. ` +
+    `The service executive ${input.executiveName} (Mobile: ${mobile}) will visit in 1-2 days. ` +
+    `— Ivaan Solar Energy`
+  );
+}

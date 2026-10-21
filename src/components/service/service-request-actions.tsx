@@ -80,6 +80,7 @@ export function ServiceRequestActions({
     request.targetCompletionDate ? request.targetCompletionDate.slice(0, 10) : "",
   );
   const [assignNote, setAssignNote] = useState("");
+  const [notifyOnWhatsapp, setNotifyOnWhatsapp] = useState(true);
 
   // Status form state
   const manualStatuses = getManualNextServiceStatuses(request.status);
@@ -125,17 +126,19 @@ export function ServiceRequestActions({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const data = await parseApiJson<ApiErrorPayload>(response);
+      const data = await parseApiJson<ApiErrorPayload & { whatsappUrl?: string | null }>(
+        response,
+      );
       if (!response.ok) {
         setError(formatApiErrorMessage(data, "Action failed."));
-        return false;
+        return { ok: false as const };
       }
       closeModal();
       router.refresh();
-      return true;
+      return { ok: true as const, whatsappUrl: data.whatsappUrl ?? null };
     } catch {
       setError("Could not reach the server. Check your connection and try again.");
-      return false;
+      return { ok: false as const };
     } finally {
       setSubmitting(false);
     }
@@ -143,11 +146,24 @@ export function ServiceRequestActions({
 
   async function handleAssign(event: React.FormEvent) {
     event.preventDefault();
-    await submit(`/api/service/${request.id}/assign`, {
+    const shouldNotify = notifyOnWhatsapp && Boolean(assignee);
+    const shareWindow = shouldNotify ? window.open("", "_blank") : null;
+    const result = await submit(`/api/service/${request.id}/assign`, {
       assignedToUserId: assignee || null,
       targetCompletionDate: assignTarget || null,
       note: assignNote || undefined,
     });
+    if (!result.ok) {
+      shareWindow?.close();
+      return;
+    }
+    if (shareWindow) {
+      if (result.whatsappUrl) {
+        shareWindow.location.href = result.whatsappUrl;
+      } else {
+        shareWindow.close();
+      }
+    }
   }
 
   async function handleStatus(event: React.FormEvent) {
@@ -343,6 +359,7 @@ export function ServiceRequestActions({
                   : "",
               );
               setAssignNote("");
+              setNotifyOnWhatsapp(true);
               setError(null);
               setOpenModal("assign");
             }}
@@ -409,6 +426,17 @@ export function ServiceRequestActions({
                   onChange={(e) => setAssignNote(e.target.value)}
                 />
               </div>
+              {assignee ? (
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-slate-300"
+                    checked={notifyOnWhatsapp}
+                    onChange={(e) => setNotifyOnWhatsapp(e.target.checked)}
+                  />
+                  Notify customer on WhatsApp
+                </label>
+              ) : null}
               {error ? <p className="text-sm text-red-600">{error}</p> : null}
             </ModalBody>
             <ModalFooter>

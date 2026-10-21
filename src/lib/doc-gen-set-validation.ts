@@ -61,6 +61,11 @@ export function validateDocumentSetVersion(input: {
     const templateIssues = validateTemplateContent(content, input.fields, {
       requireBackground: version.template?.editorType === "PDF_BACKGROUND",
       hasBackground: Boolean(version.backgroundStoredPdfId),
+      requireWordFile: version.template?.editorType === "WORD",
+      hasWordFile:
+        version.template?.editorType === "WORD"
+          ? Boolean(version.backgroundStoredPdfId)
+          : false,
     });
     for (const issue of templateIssues) {
       issues.push({ code: issue.code, message: `${item.displayName}: ${issue.message}` });

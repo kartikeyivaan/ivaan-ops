@@ -3,6 +3,7 @@ import { writeAuditLog, writeAuditLogTx } from "@/lib/audit";
 
 export const DOC_GEN_AUDIT_TABLES = {
   generations: "doc_gen_generations",
+  templates: "doc_gen_templates",
   templateVersions: "doc_gen_template_versions",
   setVersions: "doc_gen_document_set_versions",
   fields: "doc_gen_fields",
@@ -12,6 +13,8 @@ export const DOC_GEN_AUDIT_TABLES = {
 export const DOC_GEN_AUDIT_EVENTS = {
   GENERATION_CREATED: "GENERATION_CREATED",
   TEMPLATE_PUBLISHED: "TEMPLATE_PUBLISHED",
+  TEMPLATE_DELETED: "TEMPLATE_DELETED",
+  TEMPLATE_VERSION_DELETED: "TEMPLATE_VERSION_DELETED",
   SET_PUBLISHED: "SET_PUBLISHED",
   FIELD_CREATED: "FIELD_CREATED",
   FIELD_UPDATED: "FIELD_UPDATED",
@@ -25,6 +28,8 @@ export type DocGenAuditEventType =
 export const DOC_GEN_AUDIT_REASONS: Record<DocGenAuditEventType, string> = {
   GENERATION_CREATED: "MSEB documents generated",
   TEMPLATE_PUBLISHED: "Document template version published",
+  TEMPLATE_DELETED: "Document template deleted",
+  TEMPLATE_VERSION_DELETED: "Document template version deleted",
   SET_PUBLISHED: "Document set version published",
   FIELD_CREATED: "Document generator field created",
   FIELD_UPDATED: "Document generator field updated",

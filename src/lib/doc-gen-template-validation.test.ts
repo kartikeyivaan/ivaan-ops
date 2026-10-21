@@ -74,4 +74,27 @@ describe("doc gen template validation", () => {
     );
     expect(issues.some((issue) => issue.code === "BACKGROUND_REQUIRED")).toBe(true);
   });
+
+  it("requires word file and resolves placeholders from word content", () => {
+    const refs = collectFieldReferences({
+      editor: "WORD",
+      fileName: "wcr.docx",
+      placeholders: ["Customer_Name", "Plant_Capacity"],
+    });
+    expect([...refs.fieldKeys].sort()).toEqual(["Customer_Name", "Plant_Capacity"]);
+
+    const missingFile = validateTemplateContent(
+      { editor: "WORD", fileName: null, placeholders: [] },
+      [baseField({})],
+      { requireWordFile: true, hasWordFile: false },
+    );
+    expect(missingFile.some((issue) => issue.code === "WORD_FILE_REQUIRED")).toBe(true);
+
+    const unknownKey = validateTemplateContent(
+      { editor: "WORD", fileName: "wcr.docx", placeholders: ["Missing_Key"] },
+      [baseField({})],
+      { requireWordFile: true, hasWordFile: true },
+    );
+    expect(unknownKey.some((issue) => issue.code === "UNKNOWN_FIELD_KEY")).toBe(true);
+  });
 });

@@ -7,7 +7,7 @@ import {
   canAdminDocumentGenerator,
   canViewDocumentGenerator,
 } from "@/lib/document-generator-permissions";
-import { getDocGenTemplate } from "@/lib/doc-gen-template-service";
+import { deleteDocGenTemplate, getDocGenTemplate } from "@/lib/doc-gen-template-service";
 import { prisma } from "@/lib/prisma";
 import { DocGenEntityStatus } from "@prisma/client";
 
@@ -61,5 +61,24 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json(template);
   } catch (error) {
     return mapDocGenRouteError(error) ?? docGenJsonError("Unable to update template.", 500);
+  }
+}
+
+export async function DELETE(_request: Request, context: RouteContext) {
+  const session = await auth();
+  if (!session?.user || !canAdminDocumentGenerator(session.user.roles)) {
+    return docGenJsonError("Forbidden.", 403);
+  }
+  try {
+    const companyId = requireDocGenCompany(session);
+    const { id } = await context.params;
+    const template = await deleteDocGenTemplate(prisma, {
+      companyId,
+      templateId: id,
+      userId: session.user.id,
+    });
+    return NextResponse.json(template);
+  } catch (error) {
+    return mapDocGenRouteError(error) ?? docGenJsonError("Unable to delete template.", 500);
   }
 }

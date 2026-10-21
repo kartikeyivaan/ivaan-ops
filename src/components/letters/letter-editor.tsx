@@ -6,6 +6,7 @@ import {
   useEffect,
   useImperativeHandle,
   useRef,
+  useState,
   type ClipboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
@@ -36,7 +37,24 @@ const LINE_SPACINGS = [
 ] as const;
 
 const EDITOR_BODY_CLASS =
-  "min-h-[320px] bg-white px-4 py-4 text-sm leading-6 text-slate-800 outline-none [&_p]:my-1 [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6 [&_table]:my-2 [&_table]:w-full [&_table]:border-collapse [&_td]:min-w-[48px] [&_td]:border [&_td]:border-slate-300 [&_td]:p-2 [&_td]:align-top [&_th]:min-w-[48px] [&_th]:border [&_th]:border-slate-300 [&_th]:bg-slate-50 [&_th]:p-2 [&_th]:align-top [&_th]:font-semibold";
+  "min-h-[320px] bg-white px-4 py-4 text-sm leading-6 text-slate-800 outline-none [&_p]:my-1 [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6 [&_table]:my-2 [&_table]:w-full [&_table]:table-fixed [&_table]:border-collapse [&_td]:min-w-[48px] [&_td]:border [&_td]:border-slate-300 [&_td]:p-2 [&_td]:align-top [&_th]:min-w-[48px] [&_th]:border [&_th]:border-slate-300 [&_th]:bg-slate-50 [&_th]:p-2 [&_th]:align-top [&_th]:font-semibold";
+
+function readCssPercent(value: string): number | undefined {
+  const match = value.trim().match(/^(\d+(?:\.\d+)?)%$/i);
+  if (!match) return undefined;
+  const amount = Number.parseFloat(match[1]!);
+  if (!Number.isFinite(amount) || amount < 1 || amount > 100) return undefined;
+  return Math.round(amount);
+}
+
+function readCssPt(value: string): number | undefined {
+  const match = value.trim().match(/^(\d+(?:\.\d+)?)(px|pt)?$/i);
+  if (!match) return undefined;
+  const amount = Number.parseFloat(match[1]!);
+  if (!Number.isFinite(amount) || amount < 0) return undefined;
+  const unit = (match[2] ?? "px").toLowerCase();
+  return Math.round(unit === "pt" ? amount : amount * 0.75);
+}
 
 function getTableFromSelection(root: HTMLDivElement | null): HTMLTableElement | null {
   const selection = window.getSelection();
@@ -163,6 +181,8 @@ export const LetterRichTextEditor = forwardRef<
 >(function LetterRichTextEditor({ value, onChange }, forwardedRef) {
   const ref = useRef<HTMLDivElement>(null);
   const seeded = useRef(false);
+  const [colWidthPct, setColWidthPct] = useState("");
+  const [rowHeightPt, setRowHeightPt] = useState("");
 
   useEffect(() => {
     const el = ref.current;
@@ -174,6 +194,27 @@ export const LetterRichTextEditor = forwardRef<
   const sync = useCallback(() => {
     onChange(ref.current?.innerHTML ?? "");
   }, [onChange]);
+
+  const refreshTableMetrics = useCallback(() => {
+    const table = getTableFromSelection(ref.current);
+    const cell = table ? selectedTableCell(table) : null;
+    if (!cell) {
+      setColWidthPct("");
+      setRowHeightPt("");
+      return;
+    }
+    const width =
+      readCssPercent(cell.style.width) ??
+      readCssPercent(cell.getAttribute("width") ?? "");
+    setColWidthPct(width !== undefined ? String(width) : "");
+    const height =
+      readCssPt(cell.style.height) ??
+      readCssPt(cell.style.minHeight) ??
+      (cell.parentElement instanceof HTMLTableRowElement
+        ? readCssPt(cell.parentElement.style.height)
+        : undefined);
+    setRowHeightPt(height !== undefined ? String(height) : "");
+  }, []);
 
   const insertHtml = useCallback(
     (html: string) => {
@@ -254,8 +295,48 @@ export const LetterRichTextEditor = forwardRef<
       if (!table) return;
       mutate(table, selectedTableCell(table));
       sync();
+      refreshTableMetrics();
     },
-    [sync],
+    [refreshTableMetrics, sync],
+  );
+
+  const applyColumnWidth = useCallback(
+    (raw: string) => {
+      const parsed = Number.parseFloat(raw);
+      if (!Number.isFinite(parsed) || parsed < 5 || parsed > 100) return;
+      const pct = Math.round(parsed);
+      withTable((table, cell) => {
+        const index = cell?.cellIndex ?? 0;
+        Array.from(table.rows).forEach((row) => {
+          const target = row.cells[index];
+          if (!target) return;
+          target.style.width = `${pct}%`;
+        });
+      });
+      setColWidthPct(String(pct));
+    },
+    [withTable],
+  );
+
+  const applyRowHeight = useCallback(
+    (raw: string) => {
+      const parsed = Number.parseFloat(raw);
+      if (!Number.isFinite(parsed) || parsed < 12 || parsed > 400) return;
+      const pt = Math.round(parsed);
+      withTable((table, cell) => {
+        const row =
+          cell?.parentElement instanceof HTMLTableRowElement
+            ? cell.parentElement
+            : table.rows[0];
+        if (!row) return;
+        row.style.height = `${pt}pt`;
+        Array.from(row.cells).forEach((target) => {
+          target.style.height = `${pt}pt`;
+        });
+      });
+      setRowHeightPt(String(pt));
+    },
+    [withTable],
   );
 
   const handlePaste = useCallback(
@@ -483,7 +564,8 @@ export const LetterRichTextEditor = forwardRef<
                 Array.from(table.rows).forEach((row) => {
                   const clone = row.cells[index] ?? row.cells[row.cells.length - 1];
                   const next = row.insertCell(index + 1);
-                  next.innerHTML = clone?.innerHTML || "&nbsp;";
+                  next.innerHTML = "&nbsp;";
+                  if (clone?.style.height) next.style.height = clone.style.height;
                 });
               })
             }
@@ -521,7 +603,8 @@ export const LetterRichTextEditor = forwardRef<
                 const row = table.insertRow(index + 1);
                 Array.from(source.cells).forEach((sourceCell) => {
                   const next = row.insertCell();
-                  next.innerHTML = sourceCell.innerHTML || "&nbsp;";
+                  next.innerHTML = "&nbsp;";
+                  if (sourceCell.style.width) next.style.width = sourceCell.style.width;
                 });
               })
             }
@@ -559,6 +642,54 @@ export const LetterRichTextEditor = forwardRef<
           >
             Remove table
           </Button>
+
+          <span className="mx-1 h-6 w-px bg-slate-200" aria-hidden />
+
+          <label className="flex items-center gap-1 text-xs text-slate-600">
+            Col %
+            <input
+              type="number"
+              min={5}
+              max={100}
+              step={1}
+              placeholder="auto"
+              value={colWidthPct}
+              className="h-8 w-16 rounded-md border border-slate-300 bg-white px-1 text-xs"
+              title="Column width percent for the selected column"
+              onMouseDown={keepToolbarSelection}
+              onChange={(event) => setColWidthPct(event.target.value)}
+              onBlur={(event) => applyColumnWidth(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  applyColumnWidth((event.target as HTMLInputElement).value);
+                }
+              }}
+            />
+          </label>
+          <label className="flex items-center gap-1 text-xs text-slate-600">
+            Row ht
+            <input
+              type="number"
+              min={12}
+              max={400}
+              step={1}
+              placeholder="auto"
+              value={rowHeightPt}
+              className="h-8 w-16 rounded-md border border-slate-300 bg-white px-1 text-xs"
+              title="Row height in points for the selected row"
+              onMouseDown={keepToolbarSelection}
+              onChange={(event) => setRowHeightPt(event.target.value)}
+              onBlur={(event) => applyRowHeight(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  applyRowHeight((event.target as HTMLInputElement).value);
+                }
+              }}
+            />
+            <span className="text-[10px] text-slate-400">pt</span>
+          </label>
         </div>
       </div>
       <div
@@ -566,7 +697,12 @@ export const LetterRichTextEditor = forwardRef<
         contentEditable
         suppressContentEditableWarning
         className={EDITOR_BODY_CLASS}
-        onInput={sync}
+        onInput={() => {
+          sync();
+          refreshTableMetrics();
+        }}
+        onClick={refreshTableMetrics}
+        onKeyUp={refreshTableMetrics}
         onPaste={handlePaste}
         onBlur={sync}
       />

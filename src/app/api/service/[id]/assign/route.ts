@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canAssignService } from "@/lib/service-permissions";
 import { mapServiceError, resolveServiceAccess, serviceError } from "@/lib/service-api";
+import { buildServiceRequestWhatsappUrl } from "@/lib/service-share";
 import { assignServiceRequest } from "@/lib/service-service";
 import { assignServiceSchema } from "@/lib/service-validations";
 
@@ -33,7 +34,8 @@ export async function POST(request: Request, context: RouteContext) {
       note: parsed.data.note || undefined,
       performedByUserId: session.user.id,
     });
-    return NextResponse.json(updated);
+    const whatsappUrl = buildServiceRequestWhatsappUrl(updated);
+    return NextResponse.json({ ...updated, whatsappUrl });
   } catch (error) {
     return mapServiceError(error);
   }

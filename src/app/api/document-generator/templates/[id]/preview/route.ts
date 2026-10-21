@@ -5,6 +5,7 @@ import { docGenJsonError, mapDocGenRouteError } from "@/lib/doc-gen-api";
 import { canAdminDocumentGenerator } from "@/lib/document-generator-permissions";
 import {
   loadBackgroundPdfBytes,
+  loadWordDocxBytes,
   parsePageConfiguration,
   parseTemplateContent,
 } from "@/lib/doc-gen-template-service";
@@ -42,6 +43,8 @@ export async function POST(request: Request, context: RouteContext) {
     const content = parseTemplateContent(version.templateContentJson);
     const pageConfiguration = parsePageConfiguration(version.pageConfigurationJson);
     const backgroundBytes = await loadBackgroundPdfBytes(prisma, version);
+    const wordBytes =
+      content.editor === "WORD" ? await loadWordDocxBytes(prisma, version) : null;
     const fields = await listDocGenFields(prisma, companyId, { status: "ACTIVE" });
 
     const pdf = await renderTemplatePreviewPdf({
@@ -49,6 +52,7 @@ export async function POST(request: Request, context: RouteContext) {
       pageConfiguration,
       fieldValues: formatDocGenFieldValuesForOutput(parsed.data.fieldValues, fields),
       backgroundBytes,
+      wordBytes,
     });
 
     return pdfInlineResponse(pdf, `${template.name} preview`);

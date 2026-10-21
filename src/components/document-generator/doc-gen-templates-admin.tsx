@@ -18,10 +18,19 @@ type TemplateRow = {
   versions: Array<{ id: string; versionNumber: number }>;
 };
 
+type TemplateVersionRow = {
+  id: string;
+  versionNumber: number;
+  status: string;
+  publishedAt: string | null;
+  createdAt: string;
+};
+
 const EDITOR_TYPES = [
   { value: "PDF_BACKGROUND", label: "PDF background + overlays" },
   { value: "CANVAS", label: "Fixed canvas" },
   { value: "RICH_TEXT", label: "Word-like rich text" },
+  { value: "WORD", label: "Upload Word (.docx)" },
 ] as const;
 
 function RenameTemplateDialog({
@@ -98,6 +107,134 @@ function RenameTemplateDialog({
   );
 }
 
+function TemplateVersionsDialog({
+  template,
+  onClose,
+}: {
+  template: TemplateRow;
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const [versions, setVersions] = useState<TemplateVersionRow[] | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  async function loadVersions() {
+    setMessage(null);
+    try {
+      const response = await fetch(`/api/document-generator/templates/${template.id}`);
+      const body = (await response.json()) as {
+        message?: string;
+        versions?: TemplateVersionRow[];
+      };
+      if (!response.ok) {
+        setMessage(body.message ?? "Unable to load versions.");
+        setVersions([]);
+        return;
+      }
+      setVersions(body.versions ?? []);
+    } catch {
+      setMessage("Unable to load versions.");
+      setVersions([]);
+    }
+  }
+
+  useEffect(() => {
+    setVersions(null);
+    void loadVersions();
+    // Intentionally re-fetch when switching templates in the dialog.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [template.id]);
+
+  async function onDeleteVersion(version: TemplateVersionRow) {
+    const confirmed = window.confirm(
+      `Permanently delete ${template.name} version v${version.versionNumber} (${version.status.toLowerCase()})? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+
+    setPending(true);
+    setMessage(null);
+    try {
+      const response = await fetch(
+        `/api/document-generator/templates/${template.id}/versions/${version.id}`,
+        { method: "DELETE" },
+      );
+      const body = (await response.json()) as { message?: string };
+      if (!response.ok) {
+        setMessage(body.message ?? "Unable to delete version.");
+        return;
+      }
+      await loadVersions();
+      router.refresh();
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Modal onClose={onClose} size="md">
+      <ModalHeader
+        title="Template versions"
+        description={template.name}
+        onClose={onClose}
+      />
+      <ModalBody className="space-y-3">
+        {versions === null ? (
+          <p className="text-sm text-slate-500">Loading versions…</p>
+        ) : versions.length === 0 ? (
+          <p className="text-sm text-slate-500">No versions found.</p>
+        ) : (
+          <div className="overflow-hidden rounded-md border border-slate-200">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-50 text-left text-slate-600">
+                <tr>
+                  <th className="px-3 py-2 font-medium">Version</th>
+                  <th className="px-3 py-2 font-medium">Status</th>
+                  <th className="px-3 py-2 font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {versions.map((version) => (
+                  <tr key={version.id} className="border-t border-slate-100">
+                    <td className="px-3 py-2 font-medium text-slate-900">
+                      v{version.versionNumber}
+                    </td>
+                    <td className="px-3 py-2 capitalize text-slate-600">
+                      {version.status.toLowerCase()}
+                    </td>
+                    <td className="px-3 py-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={pending || versions.length <= 1}
+                        onClick={() => void onDeleteVersion(version)}
+                      >
+                        Delete
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {versions && versions.length <= 1 ? (
+          <p className="text-xs text-slate-500">
+            The only remaining version cannot be deleted. Delete the template instead.
+          </p>
+        ) : null}
+        {message ? <p className="text-sm text-red-600">{message}</p> : null}
+      </ModalBody>
+      <ModalFooter className="justify-end">
+        <Button type="button" variant="outline" disabled={pending} onClick={onClose}>
+          Close
+        </Button>
+      </ModalFooter>
+    </Modal>
+  );
+}
+
 export function DocGenTemplatesAdmin({ initialTemplates }: { initialTemplates: TemplateRow[] }) {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -106,6 +243,8 @@ export function DocGenTemplatesAdmin({ initialTemplates }: { initialTemplates: T
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [renaming, setRenaming] = useState<TemplateRow | null>(null);
+  const [managingVersions, setManagingVersions] = useState<TemplateRow | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   async function createTemplate(event: React.FormEvent) {
     event.preventDefault();
@@ -115,7 +254,11 @@ export function DocGenTemplatesAdmin({ initialTemplates }: { initialTemplates: T
       const response = await fetch("/api/document-generator/templates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, editorType, layoutMode: "FIXED_PAGE" }),
+        body: JSON.stringify({
+          name,
+          editorType,
+          layoutMode: editorType === "WORD" || editorType === "RICH_TEXT" ? "FLOWING" : "FIXED_PAGE",
+        }),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.message ?? "Unable to create template.");
@@ -125,6 +268,29 @@ export function DocGenTemplatesAdmin({ initialTemplates }: { initialTemplates: T
       setError(cause instanceof Error ? cause.message : "Unable to create template.");
     } finally {
       setPending(false);
+    }
+  }
+
+  async function deleteTemplate(template: TemplateRow) {
+    const confirmed = window.confirm(
+      `Permanently delete template "${template.name}" and all of its versions? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+
+    setDeletingId(template.id);
+    setError(null);
+    try {
+      const response = await fetch(`/api/document-generator/templates/${template.id}`, {
+        method: "DELETE",
+      });
+      const body = (await response.json()) as { message?: string };
+      if (!response.ok) {
+        setError(body.message ?? "Unable to delete template.");
+        return;
+      }
+      router.refresh();
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -210,14 +376,33 @@ export function DocGenTemplatesAdmin({ initialTemplates }: { initialTemplates: T
                     {row.versions[0] ? `v${row.versions[0].versionNumber}` : "—"}
                   </td>
                   <td className="px-4 py-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setRenaming(row)}
-                    >
-                      Edit name
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setRenaming(row)}
+                      >
+                        Edit name
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setManagingVersions(row)}
+                      >
+                        Versions
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        disabled={deletingId === row.id}
+                        onClick={() => void deleteTemplate(row)}
+                      >
+                        {deletingId === row.id ? "Deleting…" : "Delete"}
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -227,6 +412,12 @@ export function DocGenTemplatesAdmin({ initialTemplates }: { initialTemplates: T
       </div>
 
       {renaming ? <RenameTemplateDialog template={renaming} onClose={() => setRenaming(null)} /> : null}
+      {managingVersions ? (
+        <TemplateVersionsDialog
+          template={managingVersions}
+          onClose={() => setManagingVersions(null)}
+        />
+      ) : null}
     </div>
   );
 }

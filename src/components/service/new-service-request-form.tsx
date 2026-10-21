@@ -27,7 +27,13 @@ import { ServicePriority, ServiceSystemStatus, type ServiceComplaintSource } fro
 import { cn } from "@/lib/utils";
 
 type WorkTypeOption = { id: string; name: string };
-type ExecutiveOption = { id: string; name: string; email: string };
+type ExecutiveOption = {
+  id: string;
+  name: string;
+  email: string;
+  mobile?: string | null;
+  officialContactNumber?: string | null;
+};
 
 type DuplicateMatch = {
   id: string;
@@ -194,7 +200,7 @@ export function NewServiceRequestForm({
     setCustomerOpen(true);
   }
 
-  async function handleSubmit(event: React.FormEvent) {
+  async function handleSubmit(event: React.FormEvent, notifyCustomer: boolean) {
     event.preventDefault();
     const validationErrors = validateNewServiceRequest(values);
     setErrors(validationErrors);
@@ -203,8 +209,15 @@ export function NewServiceRequestForm({
       return;
     }
 
+    if (notifyCustomer && !values.assignedToUserId) {
+      setMessage("Assign a service executive before notifying the customer on WhatsApp.");
+      return;
+    }
+
     setLoading(true);
     setMessage(null);
+
+    const shareWindow = notifyCustomer ? window.open("", "_blank") : null;
 
     try {
       const response = await fetch("/api/service", {
@@ -212,11 +225,22 @@ export function NewServiceRequestForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(buildCreateServiceRequestPayload(values)),
       });
-      const data = await parseApiJson<ApiErrorPayload & { id?: string }>(response);
+      const data = await parseApiJson<
+        ApiErrorPayload & { id?: string; whatsappUrl?: string | null }
+      >(response);
 
       if (!response.ok) {
+        shareWindow?.close();
         setMessage(formatApiErrorMessage(data, "Failed to create service request."));
         return;
+      }
+
+      if (shareWindow) {
+        if (data.whatsappUrl) {
+          shareWindow.location.href = data.whatsappUrl;
+        } else {
+          shareWindow.close();
+        }
       }
 
       if (data.id) {
@@ -226,6 +250,7 @@ export function NewServiceRequestForm({
       }
       router.refresh();
     } catch {
+      shareWindow?.close();
       setMessage("Could not reach the server. Check your connection and try again.");
     } finally {
       setLoading(false);
@@ -233,7 +258,10 @@ export function NewServiceRequestForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 pb-24 md:pb-0">
+    <form
+      onSubmit={(event) => handleSubmit(event, false)}
+      className="space-y-6 pb-24 md:pb-0"
+    >
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-slate-900">New Service Request</h1>
       </div>
@@ -515,9 +543,18 @@ export function NewServiceRequestForm({
 
       {message ? <p className="text-sm text-red-600">{message}</p> : null}
 
-      <div className="fixed inset-x-0 bottom-0 z-30 flex gap-3 border-t border-slate-200 bg-white p-4 md:static md:z-auto md:border-0 md:bg-transparent md:p-0">
+      <div className="fixed inset-x-0 bottom-0 z-30 flex flex-wrap gap-3 border-t border-slate-200 bg-white p-4 md:static md:z-auto md:border-0 md:bg-transparent md:p-0">
         <Button type="submit" disabled={loading} className="flex-1 md:flex-none">
           {loading ? "Creating..." : "Create Service Request"}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={loading}
+          className="flex-1 md:flex-none"
+          onClick={(event) => handleSubmit(event, true)}
+        >
+          {loading ? "Creating..." : "Create & Notify on WhatsApp"}
         </Button>
         <Button type="button" variant="outline" asChild>
           <Link href="/service/requests">Cancel</Link>

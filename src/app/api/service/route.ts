@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { canCreateService, canViewService } from "@/lib/service-permissions";
 import { mapServiceError, resolveServiceAccess, serviceError } from "@/lib/service-api";
+import { buildServiceRequestWhatsappUrl } from "@/lib/service-share";
 import { createServiceRequest, listServiceRequests } from "@/lib/service-service";
 import { createServiceRequestSchema, serviceListQuerySchema } from "@/lib/service-validations";
 
@@ -61,7 +62,8 @@ export async function POST(request: Request) {
       companyId: access.companyId,
       createdByUserId: session.user.id,
     });
-    return NextResponse.json(created, { status: 201 });
+    const whatsappUrl = buildServiceRequestWhatsappUrl(created);
+    return NextResponse.json({ ...created, whatsappUrl }, { status: 201 });
   } catch (error) {
     return mapServiceError(error);
   }

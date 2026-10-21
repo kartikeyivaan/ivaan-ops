@@ -22,6 +22,7 @@ import { mergePdfBuffers } from "@/lib/doc-gen-pdf-merge";
 import { renderTemplatePreviewPdf } from "@/lib/doc-gen-pdf-render";
 import {
   loadBackgroundPdfBytes,
+  loadWordDocxBytes,
   parsePageConfiguration,
   parseTemplateContent,
 } from "@/lib/doc-gen-template-service";
@@ -166,11 +167,14 @@ export async function runDocGenGeneration(
       const content = parseTemplateContent(version.templateContentJson);
       const pageConfiguration = parsePageConfiguration(version.pageConfigurationJson);
       const backgroundBytes = await loadBackgroundPdfBytes(prisma, version);
+      const wordBytes =
+        content.editor === "WORD" ? await loadWordDocxBytes(prisma, version) : null;
       const pdfBuffer = await renderTemplatePreviewPdf({
         content,
         pageConfiguration,
         fieldValues: formatDocGenFieldValuesForOutput(mergedValues, compiled),
         backgroundBytes,
+        wordBytes,
       });
       const pageCount = await countPdfPages(pdfBuffer);
       const contentVersion = pdfContentVersion([

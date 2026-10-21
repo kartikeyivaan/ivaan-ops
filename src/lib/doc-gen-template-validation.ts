@@ -32,6 +32,10 @@ export function collectFieldReferences(content: TemplateContent): {
         fieldKeys.add(key);
       }
     }
+  } else if (content.editor === "WORD") {
+    for (const key of content.placeholders) {
+      fieldKeys.add(key);
+    }
   } else {
     for (const page of content.pages) {
       for (const element of page.elements) {
@@ -49,7 +53,12 @@ export function collectFieldReferences(content: TemplateContent): {
 export function validateTemplateContent(
   content: TemplateContent,
   fields: DocGenField[],
-  options?: { requireBackground?: boolean; hasBackground?: boolean },
+  options?: {
+    requireBackground?: boolean;
+    hasBackground?: boolean;
+    requireWordFile?: boolean;
+    hasWordFile?: boolean;
+  },
 ): DocGenValidationIssue[] {
   const issues: DocGenValidationIssue[] = [];
   const activeById = new Map(fields.filter((f) => f.status === "ACTIVE").map((f) => [f.id, f]));
@@ -84,6 +93,22 @@ export function validateTemplateContent(
       issues.push({
         code: "UNLINKED_PLACEHOLDER",
         message: "Rich text contains placeholder text that is not linked to the field library.",
+      });
+    }
+  }
+
+  if (content.editor === "WORD") {
+    if (options?.requireWordFile && !options.hasWordFile) {
+      issues.push({
+        code: "WORD_FILE_REQUIRED",
+        message: "Upload a Word (.docx) template before publishing.",
+      });
+    }
+    if (options?.hasWordFile && content.placeholders.length === 0) {
+      issues.push({
+        code: "WORD_NO_PLACEHOLDERS",
+        message:
+          "No {Field_Key} placeholders were found in the Word file. Add placeholders that match your field catalog.",
       });
     }
   }

@@ -28,13 +28,20 @@ import {
 } from "@/lib/service";
 import { formatDate, formatDocumentDate } from "@/lib/utils";
 import { normalizeMobileNumber } from "@/lib/service";
+import { buildServiceRequestWhatsappUrl } from "@/lib/service-share";
 import { ServiceTimeline, type ServiceTimelineEntry } from "@/components/service/service-timeline";
 import {
   ServiceRequestActions,
   type ServiceActionPermissions,
 } from "@/components/service/service-request-actions";
 
-type NamedUser = { id: string; name: string; email?: string } | null;
+type NamedUser = {
+  id: string;
+  name: string;
+  email?: string;
+  mobile?: string | null;
+  officialContactNumber?: string | null;
+} | null;
 
 export type ServiceRequestDetail = {
   id: string;
@@ -131,6 +138,13 @@ export function ServiceRequestDetailView({
   const [copied, setCopied] = useState(false);
   const workTypeName = request.workType?.name ?? request.customWorkType ?? "—";
   const mobile = request.mobileNumber ? normalizeMobileNumber(request.mobileNumber) : "";
+  const whatsappUrl = buildServiceRequestWhatsappUrl({
+    customerName: request.customerName,
+    mobileNumber: request.mobileNumber,
+    serviceRequestNumber: request.serviceRequestNumber,
+    assignedTo: request.assignedTo,
+  });
+  const whatsappHref = whatsappUrl ?? (mobile ? `https://wa.me/91${mobile}` : null);
 
   const visits = request.updates.filter(
     (u) => u.updateType === "VISIT_SCHEDULED" || u.updateType === "SITE_VISIT_COMPLETED",
@@ -220,17 +234,25 @@ export function ServiceRequestDetailView({
                   Call
                 </a>
               </Button>
-              <Button asChild variant="outline" size="sm">
-                <a href={`https://wa.me/91${mobile}`} target="_blank" rel="noreferrer">
-                  <MessageCircle className="h-4 w-4" />
-                  WhatsApp
-                </a>
-              </Button>
+              {whatsappHref ? (
+                <Button asChild variant="outline" size="sm">
+                  <a href={whatsappHref} target="_blank" rel="noreferrer">
+                    <MessageCircle className="h-4 w-4" />
+                    {whatsappUrl ? "Notify on WhatsApp" : "WhatsApp"}
+                  </a>
+                </Button>
+              ) : null}
               <Button type="button" variant="outline" size="sm" onClick={copyMobile}>
                 <Copy className="h-4 w-4" />
                 {copied ? "Copied" : "Copy Number"}
               </Button>
             </div>
+          ) : null}
+          {request.assignedTo && !whatsappUrl && request.mobileNumber ? (
+            <p className="text-xs text-amber-700">
+              Add a mobile or official contact number for {request.assignedTo.name} to
+              include their details in the WhatsApp notification.
+            </p>
           ) : null}
           <dl className="grid gap-4 md:grid-cols-2">
             <InfoRow label="Mobile Number" value={request.mobileNumber ?? "—"} />

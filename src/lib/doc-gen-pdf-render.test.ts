@@ -70,4 +70,38 @@ describe("doc-gen rich text to PDF helpers", () => {
     expect(result).toContain("<strong>Asha Patil</strong>");
     expect(result).toContain(" signed");
   });
+
+  it("parses editor tables into table blocks with cell text", () => {
+    const html = sanitizeLetterHtml(
+      `<p>Intro</p><table><thead><tr><th>Item</th><th>Qty</th></tr></thead><tbody><tr><td>Panel</td><td>10</td></tr><tr><td></td><td>20</td></tr></tbody></table><p>Outro</p>`,
+    );
+    const blocks = letterHtmlToBlocks(html);
+    expect(blocks.map((block) => block.type)).toEqual(["p", "table", "p"]);
+    const table = blocks[1];
+    expect(table?.type).toBe("table");
+    if (table?.type !== "table") return;
+    expect(table.rows).toHaveLength(3);
+    expect(table.rows[0]).toHaveLength(2);
+    expect(table.rows[1]![0]!.children.map((part) => part.text).join("")).toBe("Panel");
+    expect(table.rows[1]![1]!.children.map((part) => part.text).join("")).toBe("10");
+    // Empty cells are kept so columns stay aligned.
+    expect(table.rows[2]).toHaveLength(2);
+    expect(table.rows[2]![0]!.children.map((part) => part.text).join("").trim()).toBe("");
+    expect(table.rows[2]![1]!.children.map((part) => part.text).join("")).toBe("20");
+  });
+
+  it("preserves column width percent and row height through sanitize and parse", () => {
+    const html = sanitizeLetterHtml(
+      `<table><tr style="height:40pt"><th style="width:30%">Item</th><th style="width:70%;height:40pt">Qty</th></tr><tr><td style="width:30%">Panel</td><td style="width:70%">10</td></tr></table>`,
+    );
+    expect(html).toContain('width:30%');
+    expect(html).toContain('width:70%');
+    expect(html).toContain('height:40pt');
+    const blocks = letterHtmlToBlocks(html);
+    expect(blocks[0]?.type).toBe("table");
+    if (blocks[0]?.type !== "table") return;
+    expect(blocks[0].rows[0]![0]).toMatchObject({ widthPercent: 30, heightPt: 40 });
+    expect(blocks[0].rows[0]![1]).toMatchObject({ widthPercent: 70, heightPt: 40 });
+    expect(blocks[0].rows[1]![0]).toMatchObject({ widthPercent: 30 });
+  });
 });

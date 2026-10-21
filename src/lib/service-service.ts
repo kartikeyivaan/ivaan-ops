@@ -39,7 +39,13 @@ import type {
 
 const AUDIT_TABLE = "service_requests";
 
-const userSelect = { id: true, name: true, email: true } as const;
+const userSelect = {
+  id: true,
+  name: true,
+  email: true,
+  mobile: true,
+  officialContactNumber: true,
+} as const;
 
 export const serviceRequestInclude = {
   workType: { select: { id: true, name: true, defaultTargetDays: true, isActive: true } },
@@ -231,7 +237,13 @@ export async function listServiceExecutives(prisma: PrismaClient, companyId: str
       companies: { some: { companyId } },
       roles: { some: { role: { name: { in: [...SERVICE_ASSIGNABLE_ROLES] } } } },
     },
-    select: { id: true, name: true, email: true },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      mobile: true,
+      officialContactNumber: true,
+    },
     orderBy: { name: "asc" },
   });
   return users;

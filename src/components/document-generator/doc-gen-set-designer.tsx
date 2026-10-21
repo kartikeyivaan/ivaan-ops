@@ -97,7 +97,7 @@ export function DocGenSetDesigner({
     [versionById],
   );
 
-  function useLatestTemplateVersion(index: number) {
+  function bumpItemToLatestTemplate(index: number) {
     const item = items[index];
     if (!item) return;
     const current = versionById.get(item.templateVersionId);
@@ -425,7 +425,7 @@ export function DocGenSetDesigner({
                       type="button"
                       size="sm"
                       variant="outline"
-                      onClick={() => useLatestTemplateVersion(index)}
+                      onClick={() => bumpItemToLatestTemplate(index)}
                     >
                       Use latest
                     </Button>

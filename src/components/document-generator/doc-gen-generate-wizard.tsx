@@ -606,8 +606,7 @@ export function DocGenGenerateWizard({ publishedSets }: { publishedSets: Publish
             {generation.combinedStoredPdfId ? (
               <Button asChild>
                 <a
-                  href={`/api/document-generator/generations/${generation.id}/pdf`}
-                  target="_blank"
+                  href={`/api/document-generator/generations/${generation.id}/pdf?download=1`}
                   rel="noreferrer"
                 >
                   Download combined PDF
@@ -636,8 +635,7 @@ export function DocGenGenerateWizard({ publishedSets }: { publishedSets: Publish
                 {doc.status === "COMPLETED" ? (
                   <a
                     className="text-emerald-700 hover:underline"
-                    href={`/api/document-generator/generations/${generation.id}/pdf?documentId=${doc.id}`}
-                    target="_blank"
+                    href={`/api/document-generator/generations/${generation.id}/pdf?documentId=${doc.id}&download=1`}
                     rel="noreferrer"
                   >
                     Download

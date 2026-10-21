@@ -235,8 +235,7 @@ export function DocGenGenerationHistory({
                       {row.combinedStoredPdfId ? (
                         <a
                           className="text-emerald-700 hover:underline"
-                          href={`/api/document-generator/generations/${row.id}/pdf`}
-                          target="_blank"
+                          href={`/api/document-generator/generations/${row.id}/pdf?download=1`}
                           rel="noreferrer"
                         >
                           Combined PDF

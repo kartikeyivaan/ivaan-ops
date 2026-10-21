@@ -22,6 +22,8 @@ export async function GET(request: Request, context: RouteContext) {
     const { id: generationId } = await context.params;
     const params = new URL(request.url).searchParams;
     const documentId = params.get("documentId");
+    // Preview iframes need inline; only force download when explicitly requested.
+    const download = params.get("download") === "1" || params.get("download") === "true";
 
     const generation = await prisma.docGenGeneration.findFirst({
       where: { id: generationId, companyId },
@@ -45,7 +47,7 @@ export async function GET(request: Request, context: RouteContext) {
       return pdfInlineResponse(
         Buffer.from(stored.pdfData),
         buildDocGenFileName(customerName, templateName),
-        { download: true },
+        { download },
       );
     }
 
@@ -61,7 +63,7 @@ export async function GET(request: Request, context: RouteContext) {
     return pdfInlineResponse(
       Buffer.from(stored.pdfData),
       buildDocGenFileName(customerName, generation.documentSet.name),
-      { download: true },
+      { download },
     );
   } catch (error) {
     return mapDocGenRouteError(error) ?? docGenJsonError("Unable to download PDF.", 500);

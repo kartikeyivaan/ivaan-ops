@@ -99,6 +99,7 @@ async function assertDocumentAccess(
       return;
     }
     case "DOC_GEN_TEMPLATE_BACKGROUND":
+    case "DOC_GEN_TEMPLATE_WORD":
     case "DOC_GEN_OUTPUT":
     case "DOC_GEN_COMBINED":
       throw new StoredPdfRegenerateError(

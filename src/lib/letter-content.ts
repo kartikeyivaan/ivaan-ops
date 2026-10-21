@@ -319,23 +319,23 @@ export function resolveTableColumnWidths(
 
   const hasPercent = percents.some((value) => value !== undefined);
   if (hasPercent) {
-    const known = percents.reduce((sum, value) => sum + (value ?? 0), 0);
+    const known = percents.reduce<number>((sum, value) => sum + (value ?? 0), 0);
     const unset = percents.filter((value) => value === undefined).length;
     const remaining = Math.max(0, 100 - known);
     const fallback = unset > 0 ? remaining / unset : 0;
     const weights = percents.map((value) => (value !== undefined ? value : fallback) || 0);
-    const total = weights.reduce((sum, value) => sum + value, 0) || colCount;
+    const total = weights.reduce<number>((sum, value) => sum + value, 0) || colCount;
     return weights.map((weight) => (contentWidth * weight) / total);
   }
 
   const hasPoints = points.some((value) => value !== undefined);
   if (hasPoints) {
-    const known = points.reduce((sum, value) => sum + (value ?? 0), 0);
+    const known = points.reduce<number>((sum, value) => sum + (value ?? 0), 0);
     const unset = points.filter((value) => value === undefined).length;
     const remaining = Math.max(0, contentWidth - known);
     const fallback = unset > 0 ? remaining / unset : 0;
     const widths = points.map((value) => (value !== undefined ? value : fallback));
-    const total = widths.reduce((sum, value) => sum + value, 0) || colCount;
+    const total = widths.reduce<number>((sum, value) => sum + value, 0) || colCount;
     if (total <= contentWidth && unset === 0) {
       // Stretch last column so the table fills the content width.
       const padded = [...widths];

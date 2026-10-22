@@ -7,11 +7,18 @@ import {
 import {
   calculateCustomerOutstanding,
   generateCustomerCode,
+  generateDemoCustomerCode,
   isValidGstFormat,
   normalizeGstNumber,
   type CustomerImportPreviewRow,
   type CustomerImportRow,
 } from "@/lib/customers";
+import {
+  demoCustomerWhere,
+  isDemoCompany,
+  isDemoCustomer,
+  liveCustomerWhere,
+} from "@/lib/demo-mode";
 import { decimalToNumber } from "@/lib/inventory";
 import {
   resolveListPagination,
@@ -19,6 +26,17 @@ import {
   type ListPaginationInput,
   type PaginatedList,
 } from "@/lib/list-pagination";
+
+async function companyCustomerScope(
+  prisma: PrismaClient,
+  companyId: string,
+): Promise<Prisma.CustomerWhereInput> {
+  const company = await prisma.company.findUnique({
+    where: { id: companyId },
+    select: { code: true, isDemo: true },
+  });
+  return isDemoCompany(company) ? demoCustomerWhere() : liveCustomerWhere();
+}
 
 const customerInclude = {
   assignedSalesUser: { select: { id: true, name: true, email: true } },
@@ -85,25 +103,37 @@ export async function listCustomers(
 ): Promise<PaginatedList<CustomerListItem>> {
   const { page, pageSize, skip, take, unpaged } = resolveListPagination(filters);
 
+  const scope = await companyCustomerScope(prisma, companyId);
+
   const where: Prisma.CustomerWhereInput = {
-    ...(filters.status ? { status: filters.status } : {}),
-    ...(filters.customerType ? { customerType: filters.customerType } : {}),
-    ...(filters.assignedSalesUserId
-      ? { assignedSalesUserId: filters.assignedSalesUserId }
-      : {}),
-    ...(filters.city
-      ? { city: { contains: filters.city, mode: "insensitive" } }
-      : {}),
-    ...(filters.q
-      ? {
-          OR: [
-            { customerName: { contains: filters.q, mode: "insensitive" } },
-            { gstNumber: { contains: normalizeGstNumber(filters.q), mode: "insensitive" } },
-            { city: { contains: filters.q, mode: "insensitive" } },
-            { customerCode: { contains: filters.q, mode: "insensitive" } },
-          ],
-        }
-      : {}),
+    AND: [
+      scope,
+      {
+        ...(filters.status ? { status: filters.status } : {}),
+        ...(filters.customerType ? { customerType: filters.customerType } : {}),
+        ...(filters.assignedSalesUserId
+          ? { assignedSalesUserId: filters.assignedSalesUserId }
+          : {}),
+        ...(filters.city
+          ? { city: { contains: filters.city, mode: "insensitive" } }
+          : {}),
+        ...(filters.q
+          ? {
+              OR: [
+                { customerName: { contains: filters.q, mode: "insensitive" } },
+                {
+                  gstNumber: {
+                    contains: normalizeGstNumber(filters.q),
+                    mode: "insensitive",
+                  },
+                },
+                { city: { contains: filters.q, mode: "insensitive" } },
+                { customerCode: { contains: filters.q, mode: "insensitive" } },
+              ],
+            }
+          : {}),
+      },
+    ],
   };
 
   if (filters.outstandingOnly) {
@@ -136,12 +166,24 @@ export async function getCustomerById(
   companyId: string,
   customerId: string,
 ) {
-  const customer = await prisma.customer.findUnique({
-    where: { id: customerId },
-    include: customerInclude,
-  });
+  const [customer, company] = await Promise.all([
+    prisma.customer.findUnique({
+      where: { id: customerId },
+      include: customerInclude,
+    }),
+    prisma.company.findUnique({
+      where: { id: companyId },
+      select: { code: true, isDemo: true },
+    }),
+  ]);
 
-  return customer ? serializeCustomer(prisma, customer, companyId) : null;
+  if (!customer) return null;
+
+  const demoCompany = isDemoCompany(company);
+  const demoCustomer = isDemoCustomer(customer);
+  if (demoCompany !== demoCustomer) return null;
+
+  return serializeCustomer(prisma, customer, companyId);
 }
 
 async function assertUniqueGst(
@@ -192,7 +234,13 @@ export async function createCustomer(
     throw new Error("DUPLICATE_GST");
   }
 
-  const customerCode = await generateCustomerCode(prisma);
+  const creator = await prisma.user.findUnique({
+    where: { id: input.createdById },
+    select: { isDemo: true },
+  });
+  const customerCode = creator?.isDemo
+    ? await generateDemoCustomerCode(prisma)
+    : await generateCustomerCode(prisma);
 
   return prisma.customer.create({
     data: {

@@ -35,6 +35,45 @@ import {
 } from "@/lib/project-stock-service";
 import { getPhysicalWarehouseStockForProduct } from "@/lib/inventory-stock";
 import { assertSerialsClearForNewCycle } from "@/lib/serial-lifecycle";
+import {
+  DEMO_VENDOR_NAME_PREFIX,
+  demoVendorWhere,
+  isDemoCompany,
+  isDemoVendor,
+  liveVendorWhere,
+} from "@/lib/demo-mode";
+
+async function vendorScopeForCompany(
+  prisma: PrismaClient,
+  companyId: string,
+): Promise<Prisma.VendorWhereInput> {
+  const company = await prisma.company.findUnique({
+    where: { id: companyId },
+    select: { code: true, isDemo: true },
+  });
+  return isDemoCompany(company) ? demoVendorWhere() : liveVendorWhere();
+}
+
+async function assertVendorMatchesCompany(
+  prisma: PrismaClient,
+  companyId: string,
+  vendorId: string,
+) {
+  const [company, vendor] = await Promise.all([
+    prisma.company.findUnique({
+      where: { id: companyId },
+      select: { code: true, isDemo: true },
+    }),
+    prisma.vendor.findFirst({
+      where: { id: vendorId, isActive: true },
+    }),
+  ]);
+  if (!vendor) throw new Error("VENDOR_NOT_FOUND");
+  if (isDemoCompany(company) !== isDemoVendor(vendor)) {
+    throw new Error("VENDOR_SCOPE_MISMATCH");
+  }
+  return vendor;
+}
 
 const lotInclude = {
   company: true,
@@ -638,10 +677,7 @@ export async function createIncomingLot(
   });
 
   if (input.vendorId) {
-    const vendor = await prisma.vendor.findFirst({
-      where: { id: input.vendorId, isActive: true },
-    });
-    if (!vendor) throw new Error("VENDOR_NOT_FOUND");
+    await assertVendorMatchesCompany(prisma, input.companyId, input.vendorId);
   }
 
   if (input.purchaseRequestLineId) {
@@ -894,10 +930,7 @@ export async function updateIncomingLot(
   });
 
   if (input.vendorId) {
-    const vendor = await prisma.vendor.findFirst({
-      where: { id: input.vendorId, isActive: true },
-    });
-    if (!vendor) throw new Error("VENDOR_NOT_FOUND");
+    await assertVendorMatchesCompany(prisma, companyId, input.vendorId);
   }
 
   const purchaseInvoiceNo = await validateIncomingLotUniqueness(prisma, {
@@ -1592,16 +1625,46 @@ export async function listLedger(
 
 export async function listVendors(
   prisma: PrismaClient,
-  options?: { includeInactive?: boolean },
+  options: { includeInactive?: boolean; companyId: string },
 ) {
+  const scope = await vendorScopeForCompany(prisma, options.companyId);
   return prisma.vendor.findMany({
-    where: options?.includeInactive ? undefined : { isActive: true },
+    where: {
+      AND: [scope, options.includeInactive ? {} : { isActive: true }],
+    },
     orderBy: { vendorName: "asc" },
   });
 }
 
-export async function getVendorById(prisma: PrismaClient, vendorId: string) {
-  return prisma.vendor.findUnique({ where: { id: vendorId } });
+export async function getVendorById(
+  prisma: PrismaClient,
+  vendorId: string,
+  options?: { companyId?: string },
+) {
+  const vendor = await prisma.vendor.findUnique({ where: { id: vendorId } });
+  if (!vendor) return null;
+  if (options?.companyId) {
+    const company = await prisma.company.findUnique({
+      where: { id: options.companyId },
+      select: { code: true, isDemo: true },
+    });
+    if (isDemoCompany(company) !== isDemoVendor(vendor)) return null;
+  }
+  return vendor;
+}
+
+function ensureDemoVendorMarkers(input: {
+  vendorName: string;
+  gst?: string | null;
+}): { vendorName: string; gst: string | null } {
+  let vendorName = input.vendorName.trim();
+  const gst = input.gst?.trim() || null;
+  if (isDemoVendor({ vendorName, gst })) {
+    return { vendorName, gst };
+  }
+  // Name prefix is the isolation marker for buyer-created demo vendors.
+  vendorName = `${DEMO_VENDOR_NAME_PREFIX} — ${vendorName}`;
+  return { vendorName, gst };
 }
 
 export async function createVendor(
@@ -1613,12 +1676,24 @@ export async function createVendor(
     contactPerson?: string;
     mobile?: string;
     email?: string;
+    forDemo?: boolean;
   },
 ) {
+  const marked = input.forDemo
+    ? ensureDemoVendorMarkers({ vendorName: input.vendorName, gst: input.gst })
+    : {
+        vendorName: input.vendorName.trim(),
+        gst: input.gst || null,
+      };
+
+  if (!input.forDemo && isDemoVendor(marked)) {
+    throw new Error("DEMO_VENDOR_NOT_ALLOWED");
+  }
+
   return prisma.vendor.create({
     data: {
-      vendorName: input.vendorName.trim(),
-      gst: input.gst || null,
+      vendorName: marked.vendorName,
+      gst: marked.gst,
       address: input.address || null,
       contactPerson: input.contactPerson || null,
       mobile: input.mobile || null,
@@ -1638,13 +1713,31 @@ export async function updateVendor(
     mobile?: string;
     email?: string;
     isActive: boolean;
+    forDemo?: boolean;
   },
 ) {
+  const existing = await prisma.vendor.findUnique({ where: { id: vendorId } });
+  if (!existing) throw new Error("NOT_FOUND");
+  if (Boolean(input.forDemo) !== isDemoVendor(existing)) {
+    throw new Error("VENDOR_SCOPE_MISMATCH");
+  }
+
+  const marked = input.forDemo
+    ? ensureDemoVendorMarkers({ vendorName: input.vendorName, gst: input.gst })
+    : {
+        vendorName: input.vendorName.trim(),
+        gst: input.gst || null,
+      };
+
+  if (!input.forDemo && isDemoVendor(marked)) {
+    throw new Error("DEMO_VENDOR_NOT_ALLOWED");
+  }
+
   return prisma.vendor.update({
     where: { id: vendorId },
     data: {
-      vendorName: input.vendorName.trim(),
-      gst: input.gst || null,
+      vendorName: marked.vendorName,
+      gst: marked.gst,
       address: input.address || null,
       contactPerson: input.contactPerson || null,
       mobile: input.mobile || null,

@@ -45,7 +45,7 @@ export default async function PurchaseIncomingPage({ searchParams }: PageProps) 
       orderBy: [{ company: { name: "asc" } }, { name: "asc" }],
       select: { id: true, name: true, companyId: true },
     }),
-    listVendors(prisma),
+    listVendors(prisma, { companyId }),
     prisma.company.findMany({
       where: isSuperAdmin(session.user.roles) ? { isActive: true } : { id: { in: companyIds } },
       orderBy: { name: "asc" },

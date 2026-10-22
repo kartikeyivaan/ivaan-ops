@@ -63,7 +63,7 @@ export default async function IncomingMaterialPage({ searchParams }: PageProps) 
           select: { id: true, name: true, companyId: true },
         })
       : Promise.resolve([]),
-    canEditHistory ? listVendors(prisma) : Promise.resolve([]),
+    canEditHistory ? listVendors(prisma, { companyId }) : Promise.resolve([]),
     showHistory ? Promise.resolve([]) : listPendingIncomingTransfers(prisma, companyId),
   ]);
 

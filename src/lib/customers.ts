@@ -23,6 +23,17 @@ export async function generateCustomerCode(
   return `CUST-${sequence}`;
 }
 
+/** Codes for the shared customer master when created from a demo user. */
+export async function generateDemoCustomerCode(
+  prisma: PrismaClient,
+): Promise<string> {
+  const count = await prisma.customer.count({
+    where: { customerCode: { startsWith: "DEMO-CUST-", mode: "insensitive" } },
+  });
+  const sequence = String(count + 1).padStart(3, "0");
+  return `DEMO-CUST-${sequence}`;
+}
+
 /**
  * Outstanding = PI Value - Payments Received per BR-012.
  * Use getCustomerPiMetrics in pi-service for live values.

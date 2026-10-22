@@ -75,13 +75,36 @@ export async function getWorkQueue(
       },
       orderBy: { piDate: "asc" },
     }),
-    prisma.customer.findMany({
-      where: {
-        ...(salesUserId ? { assignedSalesUserId: salesUserId } : {}),
-      },
-      select: { id: true, customerName: true, updatedAt: true },
-      take: 500,
-    }),
+    (async () => {
+      const { demoCustomerWhere, isDemoCompany, liveCustomerWhere } = await import(
+        "@/lib/demo-mode"
+      );
+      const companyIds = toCompanyIdList(companyId);
+      const companies = await prisma.company.findMany({
+        where: { id: { in: companyIds } },
+        select: { id: true, code: true, isDemo: true },
+      });
+      const anyDemo = companies.some((c) => isDemoCompany(c));
+      const anyLive = companies.some((c) => !isDemoCompany(c));
+      // Demo and live never share a session; prefer the matching customer scope.
+      const scope =
+        anyDemo && !anyLive
+          ? demoCustomerWhere()
+          : anyLive && !anyDemo
+            ? liveCustomerWhere()
+            : liveCustomerWhere();
+
+      return prisma.customer.findMany({
+        where: {
+          AND: [
+            scope,
+            ...(salesUserId ? [{ assignedSalesUserId: salesUserId }] : []),
+          ],
+        },
+        select: { id: true, customerName: true, updatedAt: true },
+        take: 500,
+      });
+    })(),
   ]);
 
   const expiringQuotations: WorkQueueItem[] = expiringRows.map((row) => {

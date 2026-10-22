@@ -10,9 +10,13 @@ Buyer-facing sandbox on the same app (`app.ivaansolar`) as live ops.
 | Flag | `companies.is_demo = true` |
 | Demo login | `demo@ivaansolar.com` / `Demo@Ivaan1` |
 | User flag | `users.is_demo = true` (no Super Admin) |
-| Data | **Per demo user:** 5 fake customers + 5 QT + 5 PI + 5 DC + 5 documentation records |
+| Data | **5 shared Demo Customers** (`DEMO-CUST-001`…`005`) + **5 shared Demo Vendors** + **per demo user:** 5 QT + 5 PI + 5 DC + 5 documentation records |
 
 Demo users see **only** Ivaan Demo. Staff JWTs never include DEMO. Learning Mode is blocked for demo accounts. Live DCR portal automation cannot start from DEMO.
+
+Customers are a global master: demo sessions list only `DEMO-*` customers (never live ISE/PCMV firms). Live company sessions exclude demo customers.
+
+Vendors are also a global master: demo sessions list only Demo Vendors (name/`DEMO` GST markers). Live company sessions exclude those demo supplier rows.
 
 ### Document labelling
 
@@ -42,7 +46,7 @@ Re-seed or refresh demo sample data anytime (idempotent upserts):
 npm run db:seed:demo
 ```
 
-After many buyer walkthroughs leave junk in DEMO, run `db:seed:demo` again. It refreshes company profile, demo user roles/password, and ensures the sample sales chain exists. It does **not** delete buyer-created quotations; for a hard wipe, delete DEMO company-scoped rows in the DB (or restore from backup) then re-run `db:seed:demo`.
+After many buyer walkthroughs leave junk in DEMO, run `db:seed:demo` again. It refreshes company profile, demo user roles/password, ensures the 5 shared Demo Customers and 5 Demo Vendors, detaches any live firms from demo users, and ensures the sample sales chain exists. It does **not** delete buyer-created quotations; for a hard wipe, delete DEMO company-scoped rows in the DB (or restore from backup) then re-run `db:seed:demo`.
 
 ## Isolation rules
 

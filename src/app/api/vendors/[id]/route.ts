@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { isReferentialConstraintError } from "@/lib/api-response";
 import { writeAuditLog } from "@/lib/audit";
+import { isDemoSession } from "@/lib/demo-mode";
 import { getVendorById, updateVendor } from "@/lib/inventory-service";
 import { prisma } from "@/lib/prisma";
+import { requireActiveCompany } from "@/lib/session";
 import { canManageVendors, canViewVendors } from "@/lib/vendor-permissions";
 import { vendorUpdateSchema } from "@/lib/validations";
 
@@ -45,8 +47,9 @@ export async function GET(_request: Request, context: RouteContext) {
     return errorResponse("FORBIDDEN", "You do not have permission for this action.", 403);
   }
 
+  const companyId = requireActiveCompany(session);
   const { id } = await context.params;
-  const vendor = await getVendorById(prisma, id);
+  const vendor = await getVendorById(prisma, id, { companyId });
   if (!vendor) {
     return errorResponse("NOT_FOUND", "Vendor not found.", 404);
   }
@@ -60,8 +63,10 @@ export async function PATCH(request: Request, context: RouteContext) {
     return errorResponse("FORBIDDEN", "You do not have permission for this action.", 403);
   }
 
+  const companyId = requireActiveCompany(session);
+  const forDemo = isDemoSession(session);
   const { id } = await context.params;
-  const existing = await getVendorById(prisma, id);
+  const existing = await getVendorById(prisma, id, { companyId });
   if (!existing) {
     return errorResponse("NOT_FOUND", "Vendor not found.", 404);
   }
@@ -72,7 +77,22 @@ export async function PATCH(request: Request, context: RouteContext) {
     return errorResponse("VALIDATION_ERROR", "Invalid vendor data.", 400, parsed.error.flatten());
   }
 
-  const vendor = await updateVendor(prisma, id, parsed.data);
+  let vendor;
+  try {
+    vendor = await updateVendor(prisma, id, { ...parsed.data, forDemo });
+  } catch (error) {
+    if (error instanceof Error && error.message === "DEMO_VENDOR_NOT_ALLOWED") {
+      return errorResponse(
+        "DEMO_VENDOR_NOT_ALLOWED",
+        "Demo vendor names/GST markers cannot be used in live companies.",
+        400,
+      );
+    }
+    if (error instanceof Error && error.message === "VENDOR_SCOPE_MISMATCH") {
+      return errorResponse("FORBIDDEN", "You cannot edit this vendor from the current company.", 403);
+    }
+    throw error;
+  }
 
   await writeAuditLog({
     tableName: "vendors",
@@ -98,8 +118,10 @@ export async function DELETE(_request: Request, context: RouteContext) {
     return errorResponse("FORBIDDEN", "You do not have permission for this action.", 403);
   }
 
+  const companyId = requireActiveCompany(session);
+  const forDemo = isDemoSession(session);
   const { id } = await context.params;
-  const existing = await getVendorById(prisma, id);
+  const existing = await getVendorById(prisma, id, { companyId });
   if (!existing) {
     return errorResponse("NOT_FOUND", "Vendor not found.", 404);
   }
@@ -137,6 +159,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
       mobile: existing.mobile ?? undefined,
       email: existing.email ?? undefined,
       isActive: false,
+      forDemo,
     });
 
     await writeAuditLog({

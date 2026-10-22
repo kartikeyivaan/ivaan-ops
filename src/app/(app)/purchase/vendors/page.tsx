@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { listVendors } from "@/lib/inventory-service";
 import { prisma } from "@/lib/prisma";
+import { requireActiveCompany } from "@/lib/session";
 import { canManageVendors, canViewVendors } from "@/lib/vendor-permissions";
 import { VendorForm } from "@/components/purchase/vendor-form";
 import { VendorsList } from "@/components/purchase/vendors-list";
@@ -12,8 +13,9 @@ export default async function PurchaseVendorsPage() {
     redirect("/dashboard");
   }
 
+  const companyId = requireActiveCompany(session);
   const canManage = canManageVendors(session.user.roles);
-  const vendors = await listVendors(prisma, { includeInactive: true });
+  const vendors = await listVendors(prisma, { companyId, includeInactive: true });
 
   const serializedVendors = vendors.map((vendor) => ({
     id: vendor.id,

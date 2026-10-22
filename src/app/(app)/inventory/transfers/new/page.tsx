@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { isDemoUser } from "@/lib/demo-mode";
 import {
   canCreateTransfer,
   canViewTransferSerials,
@@ -11,7 +12,7 @@ import { TransferForm } from "@/components/inventory/transfer-form";
 
 export default async function NewTransferPage() {
   const session = await auth();
-  if (!session?.user || !canCreateTransfer(session.user.roles)) {
+  if (!session?.user || !canCreateTransfer(session.user.roles) || isDemoUser(session)) {
     redirect("/inventory/transfers");
   }
 

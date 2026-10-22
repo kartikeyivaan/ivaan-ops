@@ -11,6 +11,8 @@ type DashboardData = {
   totalBalance: number;
   iseTotalBalance: number;
   pcmTotalBalance: number;
+  /** False for demo company sessions — live ISE/PCM labels and balances must not appear. */
+  showLiveFirmBalances?: boolean;
   accountBalances: Array<{
     bankAccountId: string;
     bankName: string;
@@ -97,14 +99,18 @@ export function BankingDashboard() {
           subtitle="Active company accounts"
           value={loading ? "…" : formatCurrency(data?.totalBalance ?? 0)}
         />
-        <MetricCard
-          title="ISE total balance"
-          value={loading ? "…" : formatCurrency(data?.iseTotalBalance ?? 0)}
-        />
-        <MetricCard
-          title="PCM total balance"
-          value={loading ? "…" : formatCurrency(data?.pcmTotalBalance ?? 0)}
-        />
+        {data?.showLiveFirmBalances ? (
+          <>
+            <MetricCard
+              title="ISE total balance"
+              value={formatCurrency(data.iseTotalBalance)}
+            />
+            <MetricCard
+              title="PCM total balance"
+              value={formatCurrency(data.pcmTotalBalance)}
+            />
+          </>
+        ) : null}
         <MetricCard
           title="Unassigned credit"
           value={loading ? "…" : formatCurrency(data?.unassignedCreditAmount ?? 0)}

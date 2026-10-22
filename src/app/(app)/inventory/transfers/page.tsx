@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { isDemoUser } from "@/lib/demo-mode";
 import {
   canCreateTransfer,
   canViewTransfers,
@@ -14,12 +15,14 @@ export default async function TransfersPage() {
     redirect("/dashboard");
   }
 
-  const summary = await getInterCompanyTransferSummary(prisma);
+  const demo = isDemoUser(session);
+  const summary = demo ? [] : await getInterCompanyTransferSummary(prisma);
 
   return (
     <TransferSummary
       rows={JSON.parse(JSON.stringify(summary))}
-      canCreate={canCreateTransfer(session.user.roles)}
+      canCreate={!demo && canCreateTransfer(session.user.roles)}
+      hideLiveFirmLabels={demo}
     />
   );
 }

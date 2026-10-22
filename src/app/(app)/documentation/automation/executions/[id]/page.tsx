@@ -14,6 +14,7 @@ export default async function DcrAutomationExecutionPage({
 }) {
   const session = await auth();
   if (!session?.user || !canViewAutomation(session.user.roles)) redirect("/dashboard");
+  if (session.user.isDemo) redirect("/documentation");
 
   const { id } = await params;
   const execution = await getAutomationExecution(prisma, id);

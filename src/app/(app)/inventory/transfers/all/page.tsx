@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { isDemoUser } from "@/lib/demo-mode";
 import {
   canCreateTransfer,
   canViewTransfers,
@@ -14,6 +15,9 @@ export default async function AllTransfersPage() {
   const session = await auth();
   if (!session?.user || !canViewTransfers(session.user.roles)) {
     redirect("/dashboard");
+  }
+  if (isDemoUser(session)) {
+    redirect("/inventory/transfers");
   }
 
   const companyId = requireActiveCompany(session);

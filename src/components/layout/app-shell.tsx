@@ -106,7 +106,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const showProjectsNav = !activeCompany || isProjectsCompany(activeCompany);
   const showDocGenNav = !activeCompany || isIseCompany(activeCompany);
   const navItems = NAV_ITEMS.filter((item) => canAccessNav(roles, item)).filter((item) => {
-    if (isDemoUser && (item.href === "/help" || item.href.startsWith("/learn"))) return false;
+    if (
+      isDemoUser &&
+      (item.href === "/help" ||
+        item.href.startsWith("/learn") ||
+        item.href.startsWith("/documentation/automation") ||
+        item.href.startsWith("/inventory/transfers"))
+    ) {
+      return false;
+    }
     if (!showProjectsNav && item.href.startsWith("/projects")) return false;
     if (!showDocGenNav && item.href.startsWith("/documentation/document-generator")) return false;
     return true;
@@ -123,7 +131,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <BrandBlock compact />
             </div>
             <div className="flex items-center gap-2">
-              <NotificationBell />
+              {!isDemoUser ? <NotificationBell /> : null}
               <SignOutButton compact />
             </div>
           </div>
@@ -141,7 +149,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           <div className="flex shrink-0 items-center gap-3">
             {showCompanySwitcher ? <CompanySwitcher /> : null}
-            <NotificationBell />
+            {!isDemoUser ? <NotificationBell /> : null}
             <div className="hidden text-right md:block">
               <p className="text-sm font-medium text-slate-900">{session?.user?.name}</p>
               <p className="text-xs text-slate-500">{roles.join(", ")}</p>

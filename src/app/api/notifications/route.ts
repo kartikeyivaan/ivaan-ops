@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { isDemoUser } from "@/lib/demo-mode";
 import { prisma } from "@/lib/prisma";
 import { taskError } from "@/lib/task-api";
 import { listNotifications, markAllNotificationsRead } from "@/lib/task-service";
@@ -8,6 +9,10 @@ export async function GET(request: Request) {
   const session = await auth();
   if (!session?.user) {
     return taskError("FORBIDDEN", "You do not have permission for this action.", 403);
+  }
+
+  if (isDemoUser(session)) {
+    return NextResponse.json({ items: [], unreadCount: 0 });
   }
 
   const searchParams = new URL(request.url).searchParams;
@@ -28,6 +33,10 @@ export async function PATCH() {
   const session = await auth();
   if (!session?.user) {
     return taskError("FORBIDDEN", "You do not have permission for this action.", 403);
+  }
+
+  if (isDemoUser(session)) {
+    return NextResponse.json({ ok: true });
   }
 
   await markAllNotificationsRead(prisma, session.user.id);

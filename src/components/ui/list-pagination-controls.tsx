@@ -20,7 +20,7 @@ export function ListPaginationControls({
   const totalPages = Math.max(1, Math.ceil(total / Math.max(pageSize, 1)));
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+    <div className="flex flex-wrap items-center justify-between gap-3">
       <p className="text-sm text-slate-500">
         Showing {from}–{to} of {total}
       </p>

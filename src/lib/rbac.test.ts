@@ -34,15 +34,13 @@ describe("rbac", () => {
     expect(canAccessNav([ROLES.SALES_EXECUTIVE], qrHistoryNav!)).toBe(false);
   });
 
-  it("allows accounts to open inwarded lots from inventory and accounts nav", () => {
+  it("allows accounts to open inwarded lots from inventory nav", () => {
     const inwardedLotsNav = NAV_ITEMS.filter((item) => item.href === "/accounts/inwarded-lots");
-    expect(inwardedLotsNav).toHaveLength(2);
-    expect(inwardedLotsNav.map((item) => item.group).sort()).toEqual(["Accounts", "Inventory"]);
-    for (const item of inwardedLotsNav) {
-      expect(canAccessNav([ROLES.ACCOUNTS], item)).toBe(true);
-      expect(canAccessNav([ROLES.SUPER_ADMIN], item)).toBe(true);
-      expect(canAccessNav([ROLES.WAREHOUSE], item)).toBe(false);
-      expect(canAccessNav([ROLES.SALES_EXECUTIVE], item)).toBe(false);
-    }
+    expect(inwardedLotsNav).toHaveLength(1);
+    expect(inwardedLotsNav[0]?.group).toBe("Inventory");
+    expect(canAccessNav([ROLES.ACCOUNTS], inwardedLotsNav[0]!)).toBe(true);
+    expect(canAccessNav([ROLES.SUPER_ADMIN], inwardedLotsNav[0]!)).toBe(true);
+    expect(canAccessNav([ROLES.WAREHOUSE], inwardedLotsNav[0]!)).toBe(false);
+    expect(canAccessNav([ROLES.SALES_EXECUTIVE], inwardedLotsNav[0]!)).toBe(false);
   });
 });

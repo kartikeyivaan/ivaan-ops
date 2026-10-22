@@ -3,10 +3,15 @@ import { cn } from "@/lib/utils";
 export function Table({
   className,
   responsive = false,
+  containerClassName,
   ...props
-}: React.HTMLAttributes<HTMLTableElement> & { responsive?: boolean }) {
+}: React.HTMLAttributes<HTMLTableElement> & {
+  responsive?: boolean;
+  /** Extra classes on the scroll wrapper (e.g. when parent already scrolls). */
+  containerClassName?: string;
+}) {
   return (
-    <div className="w-full overflow-auto">
+    <div className={cn("w-full overflow-x-auto", containerClassName)}>
       <table
         className={cn("w-full caption-bottom text-sm", responsive && "responsive-table", className)}
         {...props}
@@ -36,7 +41,7 @@ export function TableHead({ className, ...props }: React.ThHTMLAttributes<HTMLTa
   return (
     <th
       className={cn(
-        "h-11 px-4 text-left align-middle font-medium text-slate-500",
+        "sticky top-0 z-10 h-11 bg-white px-4 text-left align-middle font-medium text-slate-500",
         className,
       )}
       {...props}

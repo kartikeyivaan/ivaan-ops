@@ -142,3 +142,51 @@ export function ModalForm({
     <form className={cn("flex min-h-0 flex-1 flex-col", className)} {...props} />
   );
 }
+
+/**
+ * Right-side filter/detail panel. Same header/body/footer composition as Modal.
+ */
+export function SideSheet({
+  onClose,
+  className,
+  children,
+}: {
+  onClose?: () => void;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  React.useEffect(() => {
+    if (!onClose) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose?.();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50">
+      <button
+        type="button"
+        className="absolute inset-0 bg-black/40"
+        aria-label="Close filters"
+        onClick={onClose}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        className={cn(
+          "absolute inset-y-0 right-0 flex w-full max-w-sm flex-col overflow-hidden border-l border-slate-200 bg-white shadow-xl",
+          className,
+        )}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}

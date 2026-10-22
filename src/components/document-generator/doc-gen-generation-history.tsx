@@ -7,6 +7,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ListPageShell } from "@/components/ui/list-page-shell";
 import { ListPaginationControls } from "@/components/ui/list-pagination-controls";
 
 export type DocGenHistoryItem = {
@@ -105,90 +106,104 @@ export function DocGenGenerationHistory({
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 px-4 py-8">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Generation history</h1>
-          <p className="text-sm text-slate-600">
-            Re-download PDFs pinned to the template and set versions used at generation time.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button asChild variant="outline">
-            <Link href="/documentation/document-generator">
-              <ArrowLeft className="h-4 w-4" />
-              Back
-            </Link>
-          </Button>
-          <Button asChild>
-            <Link href="/documentation/document-generator/generate">Generate documents</Link>
-          </Button>
-        </div>
-      </div>
+    <ListPageShell
+      className="mx-auto max-w-5xl px-4 py-8"
+      toolbar={
+        <>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900">Generation history</h1>
+              <p className="text-sm text-slate-600">
+                Re-download PDFs pinned to the template and set versions used at generation time.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button asChild variant="outline">
+                <Link href="/documentation/document-generator">
+                  <ArrowLeft className="h-4 w-4" />
+                  Back
+                </Link>
+              </Button>
+              <Button asChild>
+                <Link href="/documentation/document-generator/generate">Generate documents</Link>
+              </Button>
+            </div>
+          </div>
 
-      <section className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-3">
-        <div className="space-y-1 sm:col-span-2 lg:col-span-1">
-          <Label htmlFor="historyQ">Search</Label>
-          <Input
-            id="historyQ"
-            placeholder="Customer, set, or user"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="historyStatus">Status</Label>
-          <select
-            id="historyStatus"
-            className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
-            value={status}
-            onChange={(e) => setStatus(e.target.value)}
-          >
-            <option value="">All</option>
-            <option value="COMPLETED">Completed</option>
-            <option value="PARTIAL">Partial</option>
-            <option value="FAILED">Failed</option>
-            <option value="PROCESSING">Processing</option>
-          </select>
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="historySet">Document set</Label>
-          <select
-            id="historySet"
-            className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
-            value={documentSetId}
-            onChange={(e) => setDocumentSetId(e.target.value)}
-          >
-            <option value="">All sets</option>
-            {publishedSets.map((row) => (
-              <option key={row.id} value={row.id}>
-                {row.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="fromDate">From</Label>
-          <Input id="fromDate" type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="toDate">To</Label>
-          <Input id="toDate" type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
-        </div>
-        <div className="flex items-end">
-          <Button type="button" onClick={() => load(1)} disabled={loading}>
-            {loading ? "Loading…" : "Apply filters"}
-          </Button>
-        </div>
-      </section>
+          <section className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="space-y-1 sm:col-span-2 lg:col-span-1">
+              <Label htmlFor="historyQ">Search</Label>
+              <Input
+                id="historyQ"
+                placeholder="Customer, set, or user"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="historyStatus">Status</Label>
+              <select
+                id="historyStatus"
+                className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+              >
+                <option value="">All</option>
+                <option value="COMPLETED">Completed</option>
+                <option value="PARTIAL">Partial</option>
+                <option value="FAILED">Failed</option>
+                <option value="PROCESSING">Processing</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="historySet">Document set</Label>
+              <select
+                id="historySet"
+                className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm"
+                value={documentSetId}
+                onChange={(e) => setDocumentSetId(e.target.value)}
+              >
+                <option value="">All sets</option>
+                {publishedSets.map((row) => (
+                  <option key={row.id} value={row.id}>
+                    {row.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="fromDate">From</Label>
+              <Input id="fromDate" type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="toDate">To</Label>
+              <Input id="toDate" type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+            </div>
+            <div className="flex items-end">
+              <Button type="button" onClick={() => load(1)} disabled={loading}>
+                {loading ? "Loading…" : "Apply filters"}
+              </Button>
+            </div>
+          </section>
 
-      {error ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
-          {error}
-        </div>
-      ) : null}
-
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+          {error ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
+              {error}
+            </div>
+          ) : null}
+        </>
+      }
+      footer={
+        <ListPaginationControls
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          loading={loading}
+          onPageChange={(next) => load(next)}
+        />
+      }
+    >
+      <div className="overflow-x-auto">
         <table className="min-w-full text-left text-sm">
           <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
             <tr>
@@ -249,14 +264,6 @@ export function DocGenGenerationHistory({
           </tbody>
         </table>
       </div>
-
-      <ListPaginationControls
-        page={page}
-        pageSize={pageSize}
-        total={total}
-        loading={loading}
-        onPageChange={(next) => load(next)}
-      />
-    </div>
+    </ListPageShell>
   );
 }

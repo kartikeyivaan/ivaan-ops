@@ -7,6 +7,7 @@ import { parseApiJson } from "@/lib/api-response";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ListPageShell } from "@/components/ui/list-page-shell";
 import { ListPaginationControls } from "@/components/ui/list-pagination-controls";
 import {
   Table,
@@ -140,241 +141,243 @@ export function IncomingReceiptList({
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <Button variant="ghost" size="sm" asChild className="mb-2 px-0">
-            <Link href="/inventory">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to inventory
-            </Link>
-          </Button>
-          <h1 className="text-2xl font-bold text-slate-900">Receive Incoming Material</h1>
-          <p className="text-sm text-slate-500">
-            Record physical receipt of purchase lots and internal stock transfers dispatched to
-            this company.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            variant={showInternalTransfers ? "default" : "outline"}
-            onClick={() => setShowInternalTransfers((current) => !current)}
-          >
-            {showInternalTransfers
-              ? "Hide internal transfer"
-              : "Show internal transfer as well"}
-          </Button>
-          <Button variant="outline" asChild>
-            <Link href={showHistory ? "/inventory/incoming" : "/inventory/incoming?view=history"}>
-              <History className="h-4 w-4" />
-              {showHistory ? "Back to Pending" : "History"}
-            </Link>
-          </Button>
-        </div>
-      </div>
-
-      {!showHistory ? (
-        <Card>
-          <CardContent className="space-y-3 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
+    <div className="flex h-full min-h-0 flex-1 flex-col">
+      <ListPageShell
+        toolbar={
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="text-base font-semibold text-slate-900">
-                  Internal transfers awaiting receipt
-                </h2>
+                <Button variant="ghost" size="sm" asChild className="mb-2 px-0">
+                  <Link href="/inventory">
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    Back to inventory
+                  </Link>
+                </Button>
+                <h1 className="text-2xl font-bold text-slate-900">Receive Incoming Material</h1>
                 <p className="text-sm text-slate-500">
-                  Material dispatched from another warehouse via a manual stock transfer.
+                  Record physical receipt of purchase lots and internal stock transfers dispatched to
+                  this company.
                 </p>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={transfersLoading}
-                onClick={() => void refreshTransfers()}
-              >
-                {transfersLoading ? "Refreshing..." : "Refresh"}
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant={showInternalTransfers ? "default" : "outline"}
+                  onClick={() => setShowInternalTransfers((current) => !current)}
+                >
+                  {showInternalTransfers
+                    ? "Hide internal transfer"
+                    : "Show internal transfer as well"}
+                </Button>
+                <Button variant="outline" asChild>
+                  <Link href={showHistory ? "/inventory/incoming" : "/inventory/incoming?view=history"}>
+                    <History className="h-4 w-4" />
+                    {showHistory ? "Back to Pending" : "History"}
+                  </Link>
+                </Button>
+              </div>
             </div>
 
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Transfer</TableHead>
-                  <TableHead>From → To</TableHead>
-                  <TableHead>Products</TableHead>
-                  <TableHead>Pending</TableHead>
-                  <TableHead>Dispatched</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {transfers.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center text-slate-500">
-                      No internal transfers awaiting receipt.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  transfers.map((row) => {
-                    const productSummary = row.transfer.lines
-                      .map((line) => line.product.displayName)
-                      .join(", ");
-                    const dispatchedAt =
-                      row.transfer.dispatchedAt ?? row.transfer.updatedAt ?? row.transfer.createdAt;
+            {!showHistory ? (
+              <Card>
+                <CardContent className="space-y-3 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h2 className="text-base font-semibold text-slate-900">
+                        Internal transfers awaiting receipt
+                      </h2>
+                      <p className="text-sm text-slate-500">
+                        Material dispatched from another warehouse via a manual stock transfer.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={transfersLoading}
+                      onClick={() => void refreshTransfers()}
+                    >
+                      {transfersLoading ? "Refreshing..." : "Refresh"}
+                    </Button>
+                  </div>
 
-                    return (
-                      <TableRow key={row.transfer.id}>
-                        <TableCell className="font-medium">{row.transfer.transferNumber}</TableCell>
-                        <TableCell className={wrapCell}>
-                          <div>
-                            {row.transfer.fromCompany.code} ({row.fromWarehouseName})
-                          </div>
-                          <div className="text-xs text-slate-500">
-                            → {row.transfer.toCompany.code} ({row.toWarehouseName})
-                          </div>
-                        </TableCell>
-                        <TableCell className={`min-w-[12rem] max-w-[22rem] ${wrapCell}`}>
-                          {productSummary}
-                        </TableCell>
-                        <TableCell className="align-top">{row.pendingQty}</TableCell>
-                        <TableCell className={`align-top ${wrapCell}`}>
-                          {formatDate(dispatchedAt)}
-                        </TableCell>
-                        <TableCell className="align-top">
-                          <Badge variant="warning">{row.transfer.status}</Badge>
-                        </TableCell>
-                        <TableCell className="align-top">
-                          {canReceiveTransfers ? (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setReceivingTransfer(row)}
-                            >
-                              Receive
-                            </Button>
-                          ) : null}
-                        </TableCell>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Transfer</TableHead>
+                        <TableHead>From → To</TableHead>
+                        <TableHead>Products</TableHead>
+                        <TableHead>Pending</TableHead>
+                        <TableHead>Dispatched</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Actions</TableHead>
                       </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      ) : null}
+                    </TableHeader>
+                    <TableBody>
+                      {transfers.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center text-slate-500">
+                            No internal transfers awaiting receipt.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        transfers.map((row) => {
+                          const productSummary = row.transfer.lines
+                            .map((line) => line.product.displayName)
+                            .join(", ");
+                          const dispatchedAt =
+                            row.transfer.dispatchedAt ?? row.transfer.updatedAt ?? row.transfer.createdAt;
 
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
+                          return (
+                            <TableRow key={row.transfer.id}>
+                              <TableCell className="font-medium">{row.transfer.transferNumber}</TableCell>
+                              <TableCell className={wrapCell}>
+                                <div>
+                                  {row.transfer.fromCompany.code} ({row.fromWarehouseName})
+                                </div>
+                                <div className="text-xs text-slate-500">
+                                  → {row.transfer.toCompany.code} ({row.toWarehouseName})
+                                </div>
+                              </TableCell>
+                              <TableCell className={`min-w-[12rem] max-w-[22rem] ${wrapCell}`}>
+                                {productSummary}
+                              </TableCell>
+                              <TableCell className="align-top">{row.pendingQty}</TableCell>
+                              <TableCell className={`align-top ${wrapCell}`}>
+                                {formatDate(dispatchedAt)}
+                              </TableCell>
+                              <TableCell className="align-top">
+                                <Badge variant="warning">{row.transfer.status}</Badge>
+                              </TableCell>
+                              <TableCell className="align-top">
+                                {canReceiveTransfers ? (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => setReceivingTransfer(row)}
+                                  >
+                                    Receive
+                                  </Button>
+                                ) : null}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
+                      )}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            ) : null}
+          </>
+        }
+        footer={
+          <ListPaginationControls
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            loading={loading}
+            onPageChange={(nextPage) => {
+              setPage(nextPage);
+              void refreshLots(nextPage);
+            }}
+          />
+        }
+      >
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Lot</TableHead>
+              <TableHead>Product</TableHead>
+              <TableHead>Vendor Name</TableHead>
+              <TableHead>Warehouse</TableHead>
+              <TableHead>Expected</TableHead>
+              <TableHead>Received</TableHead>
+              <TableHead>Date Received</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {visibleLots.length === 0 ? (
               <TableRow>
-                <TableHead>Lot</TableHead>
-                <TableHead>Product</TableHead>
-                <TableHead>Vendor Name</TableHead>
-                <TableHead>Warehouse</TableHead>
-                <TableHead>Expected</TableHead>
-                <TableHead>Received</TableHead>
-                <TableHead>Date Received</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Actions</TableHead>
+                <TableCell colSpan={9} className="text-center text-slate-500">
+                  {showHistory
+                    ? "No received incoming lots in history."
+                    : "No pending incoming lots to receive."}
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {visibleLots.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={9} className="text-center text-slate-500">
-                    {showHistory
-                      ? "No received incoming lots in history."
-                      : "No pending incoming lots to receive."}
+            ) : (
+              visibleLots.map((lot) => (
+                <TableRow key={lot.id}>
+                  <TableCell className={`font-medium ${wrapCell}`}>
+                    {canEditHistory && showHistory ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="h-auto whitespace-normal p-0 text-left font-medium text-slate-900 hover:bg-transparent hover:underline"
+                        onClick={() => setEditingLot(lot)}
+                      >
+                        {lot.lotNumber}
+                      </Button>
+                    ) : (
+                      lot.lotNumber
+                    )}
                   </TableCell>
-                </TableRow>
-              ) : (
-                visibleLots.map((lot) => (
-                  <TableRow key={lot.id}>
-                    <TableCell className={`font-medium ${wrapCell}`}>
+                  <TableCell className={`min-w-[12rem] max-w-[22rem] ${wrapCell}`}>
+                    {lot.product.displayName}
+                  </TableCell>
+                  <TableCell className={wrapCell}>
+                    {lot.vendor?.vendorName ?? "—"}
+                  </TableCell>
+                  <TableCell className={wrapCell}>
+                    <div>{lot.warehouse.name}</div>
+                    <div className="text-xs text-slate-500">{lot.company.code}</div>
+                  </TableCell>
+                  <TableCell className="align-top">{Number(lot.quantity)}</TableCell>
+                  <TableCell className="align-top">{Number(lot.receivedQuantity)}</TableCell>
+                  <TableCell className={`align-top ${wrapCell}`}>
+                    {lot.receivedAt
+                      ? formatDate(lot.receivedAt)
+                      : Number(lot.receivedQuantity) > 0
+                        ? formatDate(lot.updatedAt)
+                        : "—"}
+                  </TableCell>
+                  <TableCell className="align-top">
+                    <Badge variant={lot.status === "INCOMING" ? "warning" : "success"}>
+                      {lot.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="align-top">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {canInward && lot.status === "INCOMING" ? (
+                        <Button size="sm" variant="outline" asChild>
+                          <Link href={`/inventory/incoming/${lot.id}`}>Receive</Link>
+                        </Button>
+                      ) : null}
                       {canEditHistory && showHistory ? (
                         <Button
-                          type="button"
-                          variant="ghost"
-                          className="h-auto whitespace-normal p-0 text-left font-medium text-slate-900 hover:bg-transparent hover:underline"
+                          size="sm"
+                          variant="outline"
                           onClick={() => setEditingLot(lot)}
                         >
-                          {lot.lotNumber}
+                          Edit
                         </Button>
-                      ) : (
-                        lot.lotNumber
-                      )}
-                    </TableCell>
-                    <TableCell className={`min-w-[12rem] max-w-[22rem] ${wrapCell}`}>
-                      {lot.product.displayName}
-                    </TableCell>
-                    <TableCell className={wrapCell}>
-                      {lot.vendor?.vendorName ?? "—"}
-                    </TableCell>
-                    <TableCell className={wrapCell}>
-                      <div>{lot.warehouse.name}</div>
-                      <div className="text-xs text-slate-500">{lot.company.code}</div>
-                    </TableCell>
-                    <TableCell className="align-top">{Number(lot.quantity)}</TableCell>
-                    <TableCell className="align-top">{Number(lot.receivedQuantity)}</TableCell>
-                    <TableCell className={`align-top ${wrapCell}`}>
-                      {lot.receivedAt
-                        ? formatDate(lot.receivedAt)
-                        : Number(lot.receivedQuantity) > 0
-                          ? formatDate(lot.updatedAt)
-                          : "—"}
-                    </TableCell>
-                    <TableCell className="align-top">
-                      <Badge variant={lot.status === "INCOMING" ? "warning" : "success"}>
-                        {lot.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="align-top">
-                      <div className="flex flex-wrap items-center gap-2">
-                        {canInward && lot.status === "INCOMING" ? (
-                          <Button size="sm" variant="outline" asChild>
-                            <Link href={`/inventory/incoming/${lot.id}`}>Receive</Link>
-                          </Button>
-                        ) : null}
-                        {canEditHistory && showHistory ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setEditingLot(lot)}
-                          >
-                            Edit
-                          </Button>
-                        ) : null}
-                        <IncomingSerialExportButton
-                          lotId={lot.id}
-                          serialTracking={lot.product.serialTracking}
-                          receivedQuantity={Number(lot.receivedQuantity)}
-                          canExport={canExportSerials}
-                        />
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-          <div className="px-4 pb-4">
-            <ListPaginationControls
-              page={page}
-              pageSize={pageSize}
-              total={total}
-              loading={loading}
-              onPageChange={(nextPage) => {
-                setPage(nextPage);
-                void refreshLots(nextPage);
-              }}
-            />
-          </div>
-        </CardContent>
-      </Card>
+                      ) : null}
+                      <IncomingSerialExportButton
+                        lotId={lot.id}
+                        serialTracking={lot.product.serialTracking}
+                        receivedQuantity={Number(lot.receivedQuantity)}
+                        canExport={canExportSerials}
+                      />
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </ListPageShell>
 
       {editingLot ? (
         <IncomingLotEditDialog

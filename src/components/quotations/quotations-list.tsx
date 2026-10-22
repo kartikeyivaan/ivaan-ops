@@ -6,10 +6,10 @@ import { useRouter } from "next/navigation";
 import { FileText, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { CollapsibleFilterCard } from "@/components/ui/collapsible-filter-card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ListPageShell } from "@/components/ui/list-page-shell";
 import { ListPaginationControls } from "@/components/ui/list-pagination-controls";
 import {
   Table,
@@ -127,188 +127,190 @@ export function QuotationsList({
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Quotations</h1>
-          <p className="text-sm text-slate-500">
-            Excel-style quotation builder with 3-day validity and PDF export.
-          </p>
-        </div>
-        {canManage ? (
-          <Button asChild>
-            <Link href="/sales/quotations/new">
-              <Plus className="h-4 w-4" />
-              New Quotation
-            </Link>
-          </Button>
-        ) : null}
-      </div>
-
-      <CollapsibleFilterCard contentClassName="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
-        <div className="space-y-2">
-          <Label htmlFor="q">Search</Label>
-          <Input
-            id="q"
-            value={q}
-            onChange={(event) => setQ(event.target.value)}
-            placeholder="Quotation no or customer"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="status">Status</Label>
-          <select
-            id="status"
-            value={status}
-            onChange={(event) => setStatus(event.target.value)}
-            className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
-          >
-            <option value="">All statuses</option>
-            <option value="DRAFT">Draft</option>
-            <option value="SENT">Sent</option>
-            <option value="EXPIRED">Expired</option>
-            <option value="CONVERTED">Converted</option>
-          </select>
-        </div>
-        {canFilterByExecutive ? (
-          <div className="space-y-2">
-            <Label htmlFor="salesUserId">Sales Executive</Label>
-            <select
-              id="salesUserId"
-              value={salesUserId}
-              onChange={(event) => setSalesUserId(event.target.value)}
-              className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
-            >
-              <option value="">All</option>
-              {salesExecutives.map((user) => (
-                <option key={user.id} value={user.id}>
-                  {user.name}
-                </option>
-              ))}
-            </select>
+    <ListPageShell
+      toolbar={
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900">Quotations</h1>
+              <p className="text-sm text-slate-500">
+                Excel-style quotation builder with 3-day validity and PDF export.
+              </p>
+            </div>
+            {canManage ? (
+              <Button asChild>
+                <Link href="/sales/quotations/new">
+                  <Plus className="h-4 w-4" />
+                  New Quotation
+                </Link>
+              </Button>
+            ) : null}
           </div>
-        ) : null}
-        <div className="space-y-2">
-          <Label htmlFor="fromDate">From date</Label>
-          <Input
-            id="fromDate"
-            type="date"
-            value={fromDate}
-            onChange={(event) => setFromDate(event.target.value)}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="toDate">To date</Label>
-          <Input
-            id="toDate"
-            type="date"
-            value={toDate}
-            onChange={(event) => setToDate(event.target.value)}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="expiry">Expiry</Label>
-          <select
-            id="expiry"
-            value={expiry}
-            onChange={(event) => setExpiry(event.target.value)}
-            className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
-          >
-            <option value="">Any</option>
-            <option value="soon">Expiring soon / expired</option>
-          </select>
-        </div>
-        <div className="flex flex-wrap items-end gap-3">
-          {canViewFirmWide ? (
-            <Button
-              type="button"
-              variant={viewingFirmWide ? "secondary" : "outline"}
-              onClick={toggleFirmWide}
-              disabled={loading}
-            >
-              {viewingFirmWide ? "Show my quotations only" : "See all firm quotations"}
-            </Button>
+
+          <CollapsibleFilterCard contentClassName="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+            <div className="space-y-2">
+              <Label htmlFor="q">Search</Label>
+              <Input
+                id="q"
+                value={q}
+                onChange={(event) => setQ(event.target.value)}
+                placeholder="Quotation no or customer"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="status">Status</Label>
+              <select
+                id="status"
+                value={status}
+                onChange={(event) => setStatus(event.target.value)}
+                className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
+              >
+                <option value="">All statuses</option>
+                <option value="DRAFT">Draft</option>
+                <option value="SENT">Sent</option>
+                <option value="EXPIRED">Expired</option>
+                <option value="CONVERTED">Converted</option>
+              </select>
+            </div>
+            {canFilterByExecutive ? (
+              <div className="space-y-2">
+                <Label htmlFor="salesUserId">Sales Executive</Label>
+                <select
+                  id="salesUserId"
+                  value={salesUserId}
+                  onChange={(event) => setSalesUserId(event.target.value)}
+                  className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
+                >
+                  <option value="">All</option>
+                  {salesExecutives.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+            <div className="space-y-2">
+              <Label htmlFor="fromDate">From date</Label>
+              <Input
+                id="fromDate"
+                type="date"
+                value={fromDate}
+                onChange={(event) => setFromDate(event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="toDate">To date</Label>
+              <Input
+                id="toDate"
+                type="date"
+                value={toDate}
+                onChange={(event) => setToDate(event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="expiry">Expiry</Label>
+              <select
+                id="expiry"
+                value={expiry}
+                onChange={(event) => setExpiry(event.target.value)}
+                className="flex h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
+              >
+                <option value="">Any</option>
+                <option value="soon">Expiring soon / expired</option>
+              </select>
+            </div>
+            <div className="flex flex-wrap items-end gap-3">
+              {canViewFirmWide ? (
+                <Button
+                  type="button"
+                  variant={viewingFirmWide ? "secondary" : "outline"}
+                  onClick={toggleFirmWide}
+                  disabled={loading}
+                >
+                  {viewingFirmWide ? "Show my quotations only" : "See all firm quotations"}
+                </Button>
+              ) : null}
+              <Button onClick={() => void applyFilters()} disabled={loading}>
+                {loading ? "Loading..." : "Apply Filters"}
+              </Button>
+            </div>
+          </CollapsibleFilterCard>
+
+          {viewingFirmWide ? (
+            <p className="text-sm text-slate-600">
+              Showing all firm quotations so you can cover colleagues when needed.
+            </p>
           ) : null}
-          <Button onClick={() => void applyFilters()} disabled={loading}>
-            {loading ? "Loading..." : "Apply Filters"}
-          </Button>
-        </div>
-      </CollapsibleFilterCard>
-
-      {viewingFirmWide ? (
-        <p className="text-sm text-slate-600">
-          Showing all firm quotations so you can cover colleagues when needed.
-        </p>
-      ) : null}
-
-      <Card>
-        <CardContent className="pt-6">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Quotation</TableHead>
-                <TableHead>Customer</TableHead>
-                <TableHead>Executive</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Valid Until</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Total</TableHead>
-                <TableHead />
+        </>
+      }
+      footer={
+        <ListPaginationControls
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          loading={loading}
+          onPageChange={(nextPage) => {
+            setPage(nextPage);
+            void fetchQuotations(nextPage);
+          }}
+        />
+      }
+    >
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Quotation</TableHead>
+            <TableHead>Customer</TableHead>
+            <TableHead>Executive</TableHead>
+            <TableHead>Date</TableHead>
+            <TableHead>Valid Until</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead className="text-right">Total</TableHead>
+            <TableHead />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {quotations.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={8} className="text-center text-slate-500">
+                No quotations found.
+              </TableCell>
+            </TableRow>
+          ) : (
+            quotations.map((quotation) => (
+              <TableRow key={quotation.id}>
+                <TableCell className="font-medium">
+                  {quotation.quotationNo}
+                  {quotation.revisionNo > 1 ? ` (R${quotation.revisionNo})` : ""}
+                </TableCell>
+                <TableCell>{quotation.customer.customerName}</TableCell>
+                <TableCell>{quotation.salesUser.name}</TableCell>
+                <TableCell>{formatDocumentDate(quotation.quotationDate)}</TableCell>
+                <TableCell>{formatDocumentDate(quotation.expiryDate)}</TableCell>
+                <TableCell>
+                  <Badge variant={statusVariant(quotation.status)}>
+                    {formatQuotationStatus(quotation.status)}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-right">
+                  ₹{quotation.totalValue.toLocaleString("en-IN")}
+                </TableCell>
+                <TableCell className="text-right">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => router.push(`/sales/quotations/${quotation.id}`)}
+                  >
+                    <FileText className="h-4 w-4" />
+                    View
+                  </Button>
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {quotations.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center text-slate-500">
-                    No quotations found.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                quotations.map((quotation) => (
-                  <TableRow key={quotation.id}>
-                    <TableCell className="font-medium">
-                      {quotation.quotationNo}
-                      {quotation.revisionNo > 1 ? ` (R${quotation.revisionNo})` : ""}
-                    </TableCell>
-                    <TableCell>{quotation.customer.customerName}</TableCell>
-                    <TableCell>{quotation.salesUser.name}</TableCell>
-                    <TableCell>{formatDocumentDate(quotation.quotationDate)}</TableCell>
-                    <TableCell>{formatDocumentDate(quotation.expiryDate)}</TableCell>
-                    <TableCell>
-                      <Badge variant={statusVariant(quotation.status)}>
-                        {formatQuotationStatus(quotation.status)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      ₹{quotation.totalValue.toLocaleString("en-IN")}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => router.push(`/sales/quotations/${quotation.id}`)}
-                      >
-                        <FileText className="h-4 w-4" />
-                        View
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-          <ListPaginationControls
-            page={page}
-            pageSize={pageSize}
-            total={total}
-            loading={loading}
-            onPageChange={(nextPage) => {
-              setPage(nextPage);
-              void fetchQuotations(nextPage);
-            }}
-          />
-        </CardContent>
-      </Card>
-    </div>
+            ))
+          )}
+        </TableBody>
+      </Table>
+    </ListPageShell>
   );
 }

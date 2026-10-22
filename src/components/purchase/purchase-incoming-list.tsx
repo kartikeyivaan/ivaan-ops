@@ -4,7 +4,7 @@ import { parseApiJson } from "@/lib/api-response";
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { ListPageShell } from "@/components/ui/list-page-shell";
 import { ListPaginationControls } from "@/components/ui/list-pagination-controls";
 import {
   Table,
@@ -106,115 +106,117 @@ export function PurchaseIncomingList({
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Incoming Material</h1>
-        <p className="text-sm text-slate-500">
-          Record expected purchases here. Warehouse teams receive material from Inventory.
-        </p>
-      </div>
+    <div className="flex h-full min-h-0 flex-1 flex-col">
+      <ListPageShell
+        toolbar={
+          <>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900">Incoming Material</h1>
+              <p className="text-sm text-slate-500">
+                Record expected purchases here. Warehouse teams receive material from Inventory.
+              </p>
+            </div>
 
-      {canCreate ? (
-        <IncomingCreateForm
-          companies={companies}
-          products={products}
-          warehouses={warehouses}
-          vendors={vendors}
-          defaultCompanyId={defaultCompanyId}
-          defaults={createDefaults}
-          onCreated={() => {
-            setPage(1);
-            void refreshLots(1);
-          }}
-        />
-      ) : null}
-
-      <Card>
-        <CardContent className="p-0">
-          <Table className="table-fixed">
-            <TableHeader>
+            {canCreate ? (
+              <IncomingCreateForm
+                companies={companies}
+                products={products}
+                warehouses={warehouses}
+                vendors={vendors}
+                defaultCompanyId={defaultCompanyId}
+                defaults={createDefaults}
+                onCreated={() => {
+                  setPage(1);
+                  void refreshLots(1);
+                }}
+              />
+            ) : null}
+          </>
+        }
+        footer={
+          <ListPaginationControls
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            loading={loading}
+            onPageChange={(nextPage) => {
+              setPage(nextPage);
+              void refreshLots(nextPage);
+            }}
+          />
+        }
+      >
+        <Table className="table-fixed">
+          <TableHeader>
+            <TableRow>
+              <TableHead className={wrapHead}>Lot</TableHead>
+              <TableHead className={wrapHead}>Vendor</TableHead>
+              <TableHead className={wrapHead}>Invoice #</TableHead>
+              <TableHead className={wrapHead}>Company</TableHead>
+              <TableHead className={wrapHead}>Product</TableHead>
+              <TableHead className={wrapHead}>Warehouse</TableHead>
+              <TableHead className={wrapHead}>Expected</TableHead>
+              <TableHead className={wrapHead}>Received</TableHead>
+              <TableHead className={wrapHead}>Status</TableHead>
+              <TableHead className={wrapHead}>Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {lots.length === 0 ? (
               <TableRow>
-                <TableHead className={wrapHead}>Lot</TableHead>
-                <TableHead className={wrapHead}>Vendor</TableHead>
-                <TableHead className={wrapHead}>Invoice #</TableHead>
-                <TableHead className={wrapHead}>Company</TableHead>
-                <TableHead className={wrapHead}>Product</TableHead>
-                <TableHead className={wrapHead}>Warehouse</TableHead>
-                <TableHead className={wrapHead}>Expected</TableHead>
-                <TableHead className={wrapHead}>Received</TableHead>
-                <TableHead className={wrapHead}>Status</TableHead>
-                <TableHead className={wrapHead}>Actions</TableHead>
+                <TableCell colSpan={10} className="text-center text-slate-500">
+                  No incoming lots recorded yet.
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {lots.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={10} className="text-center text-slate-500">
-                    No incoming lots recorded yet.
+            ) : (
+              lots.map((lot) => (
+                <TableRow key={lot.id}>
+                  <TableCell className={`font-medium ${wrapCell}`}>
+                    {isEditableIncomingLot(lot, canEditClosedLots) ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="h-auto whitespace-normal p-0 text-left font-medium text-slate-900 hover:bg-transparent hover:underline"
+                        onClick={() => setEditingLot(lot)}
+                      >
+                        {lot.lotNumber}
+                      </Button>
+                    ) : (
+                      lot.lotNumber
+                    )}
+                  </TableCell>
+                  <TableCell className={wrapCell}>
+                    {lot.vendor?.vendorName ?? "—"}
+                  </TableCell>
+                  <TableCell className={wrapCell}>
+                    {lot.purchaseInvoiceNo ?? "—"}
+                  </TableCell>
+                  <TableCell className={wrapCell}>{lot.company.code}</TableCell>
+                  <TableCell className={`min-w-0 ${wrapCell}`}>
+                    {lot.product.displayName}
+                  </TableCell>
+                  <TableCell className={wrapCell}>{lot.warehouse.name}</TableCell>
+                  <TableCell className="align-top">{Number(lot.quantity)}</TableCell>
+                  <TableCell className="align-top">{Number(lot.receivedQuantity)}</TableCell>
+                  <TableCell className="align-top">
+                    <Badge variant={lot.status === "INCOMING" ? "warning" : "success"}>
+                      {lot.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="align-top">
+                    <IncomingSerialExportButton
+                      lotId={lot.id}
+                      serialTracking={lot.product.serialTracking}
+                      receivedQuantity={Number(lot.receivedQuantity)}
+                      canExport={canExportSerials}
+                    />
                   </TableCell>
                 </TableRow>
-              ) : (
-                lots.map((lot) => (
-                  <TableRow key={lot.id}>
-                    <TableCell className={`font-medium ${wrapCell}`}>
-                      {isEditableIncomingLot(lot, canEditClosedLots) ? (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          className="h-auto whitespace-normal p-0 text-left font-medium text-slate-900 hover:bg-transparent hover:underline"
-                          onClick={() => setEditingLot(lot)}
-                        >
-                          {lot.lotNumber}
-                        </Button>
-                      ) : (
-                        lot.lotNumber
-                      )}
-                    </TableCell>
-                    <TableCell className={wrapCell}>
-                      {lot.vendor?.vendorName ?? "—"}
-                    </TableCell>
-                    <TableCell className={wrapCell}>
-                      {lot.purchaseInvoiceNo ?? "—"}
-                    </TableCell>
-                    <TableCell className={wrapCell}>{lot.company.code}</TableCell>
-                    <TableCell className={`min-w-0 ${wrapCell}`}>
-                      {lot.product.displayName}
-                    </TableCell>
-                    <TableCell className={wrapCell}>{lot.warehouse.name}</TableCell>
-                    <TableCell className="align-top">{Number(lot.quantity)}</TableCell>
-                    <TableCell className="align-top">{Number(lot.receivedQuantity)}</TableCell>
-                    <TableCell className="align-top">
-                      <Badge variant={lot.status === "INCOMING" ? "warning" : "success"}>
-                        {lot.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="align-top">
-                      <IncomingSerialExportButton
-                        lotId={lot.id}
-                        serialTracking={lot.product.serialTracking}
-                        receivedQuantity={Number(lot.receivedQuantity)}
-                        canExport={canExportSerials}
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-          <div className="px-4 pb-4">
-            <ListPaginationControls
-              page={page}
-              pageSize={pageSize}
-              total={total}
-              loading={loading}
-              onPageChange={(nextPage) => {
-                setPage(nextPage);
-                void refreshLots(nextPage);
-              }}
-            />
-          </div>
-        </CardContent>
-      </Card>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </ListPageShell>
 
       {editingLot ? (
         <IncomingLotEditDialog

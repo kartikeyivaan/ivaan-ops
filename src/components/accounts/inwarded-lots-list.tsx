@@ -1,16 +1,21 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Search } from "lucide-react";
+import { Filter, Search, X } from "lucide-react";
 import { parseApiJson } from "@/lib/api-response";
 import { InwardedLotDetailDialog } from "@/components/accounts/inwarded-lot-detail-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { CollapsibleFilterCard } from "@/components/ui/collapsible-filter-card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ListPageShell } from "@/components/ui/list-page-shell";
 import { ListPaginationControls } from "@/components/ui/list-pagination-controls";
+import {
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+  SideSheet,
+} from "@/components/ui/modal";
 import {
   Table,
   TableBody,
@@ -48,6 +53,7 @@ export function AccountsInwardedLotsList({
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [showInternalTransfers, setShowInternalTransfers] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [lots, setLots] = useState(initialLots);
   const [total, setTotal] = useState(initialTotal);
   const [page, setPage] = useState(initialPage);
@@ -119,168 +125,217 @@ export function AccountsInwardedLotsList({
     setDateTo("");
   }
 
+  function clearAdvancedFilters() {
+    clearDates();
+  }
+
+  const activeFilterCount = Number(Boolean(dateFrom)) + Number(Boolean(dateTo));
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Inwarded Lots</h1>
-          <p className="text-sm text-slate-600">
-            External purchase lots received into inventory. Internal stock transfers stay hidden
-            unless you turn them on.
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant={showInternalTransfers ? "default" : "outline"}
-          onClick={() => setShowInternalTransfers((current) => !current)}
-        >
-          {showInternalTransfers
-            ? "Hide internal transfer"
-            : "Show internal transfer as well"}
-        </Button>
-      </div>
+    <div className="flex h-full min-h-0 flex-1 flex-col">
+      <ListPageShell
+        toolbar={
+          <>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h1 className="text-2xl font-semibold text-slate-900">Inwarded Lots</h1>
+              <p className="text-sm text-slate-500">
+                {loading ? "Loading…" : `Showing ${lots.length} of ${total} lot${total === 1 ? "" : "s"}`}
+              </p>
+            </div>
 
-      <CollapsibleFilterCard contentClassName="grid gap-4 md:grid-cols-4">
-        <div className="space-y-2 md:col-span-2">
-          <Label htmlFor="inwarded-lot-search">Search</Label>
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <Input
-              id="inwarded-lot-search"
-              className="pl-9"
-              placeholder="Lot number, invoice, vendor or product"
-              value={q}
-              onChange={(event) => setQ(event.target.value)}
-            />
-          </div>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="inwarded-lot-from">Received from</Label>
-          <Input
-            id="inwarded-lot-from"
-            type="date"
-            value={dateFrom}
-            onChange={(event) => setDateFrom(event.target.value)}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="inwarded-lot-to">Received to</Label>
-          <Input
-            id="inwarded-lot-to"
-            type="date"
-            value={dateTo}
-            min={dateFrom || undefined}
-            onChange={(event) => setDateTo(event.target.value)}
-          />
-        </div>
-        <div className="flex flex-wrap items-end gap-2 md:col-span-4">
-          <Button type="button" variant="outline" onClick={clearDates} disabled={!dateFrom && !dateTo}>
-            Clear dates
-          </Button>
-          <p className="text-sm text-slate-500">
-            {loading ? "Loading…" : `Showing ${lots.length} of ${total} lot${total === 1 ? "" : "s"}`}
-          </p>
-        </div>
-      </CollapsibleFilterCard>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative min-w-[220px] flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Input
+                  id="inwarded-lot-search"
+                  className="pl-9"
+                  placeholder="Lot number, invoice, vendor or product"
+                  value={q}
+                  onChange={(event) => setQ(event.target.value)}
+                />
+              </div>
+              <Button type="button" variant="outline" onClick={() => setFiltersOpen(true)}>
+                <Filter className="h-4 w-4" />
+                Filters
+                {activeFilterCount > 0 ? (
+                  <span className="ml-1 rounded-full bg-emerald-600 px-1.5 text-xs text-white">
+                    {activeFilterCount}
+                  </span>
+                ) : null}
+              </Button>
+              <Button
+                type="button"
+                variant={showInternalTransfers ? "default" : "outline"}
+                onClick={() => setShowInternalTransfers((current) => !current)}
+              >
+                {showInternalTransfers
+                  ? "Hide internal transfer"
+                  : "Show internal transfer as well"}
+              </Button>
+            </div>
 
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
+            {activeFilterCount > 0 ? (
+              <div className="flex flex-wrap items-center gap-2">
+                {dateFrom ? (
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-200"
+                    onClick={() => setDateFrom("")}
+                  >
+                    From {dateFrom}
+                    <X className="h-3 w-3" />
+                  </button>
+                ) : null}
+                {dateTo ? (
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-200"
+                    onClick={() => setDateTo("")}
+                  >
+                    To {dateTo}
+                    <X className="h-3 w-3" />
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </>
+        }
+        footer={
+          <ListPaginationControls
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            loading={loading}
+            onPageChange={(nextPage) => setPage(nextPage)}
+          />
+        }
+      >
+        <Table containerClassName="overflow-visible">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Lot</TableHead>
+              <TableHead>Vendor / Invoice</TableHead>
+              <TableHead>Product</TableHead>
+              <TableHead>Warehouse</TableHead>
+              <TableHead>Qty</TableHead>
+              <TableHead>Cost</TableHead>
+              <TableHead>Received</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {lots.length === 0 ? (
               <TableRow>
-                <TableHead>Lot</TableHead>
-                <TableHead>Vendor / Invoice</TableHead>
-                <TableHead>Product</TableHead>
-                <TableHead>Warehouse</TableHead>
-                <TableHead>Qty</TableHead>
-                <TableHead>Cost</TableHead>
-                <TableHead>Received</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Actions</TableHead>
+                <TableCell colSpan={9} className="text-center text-slate-500">
+                  {loading ? "Loading inwarded lots…" : "No inwarded lots found."}
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {lots.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={9} className="text-center text-slate-500">
-                    {loading ? "Loading inwarded lots…" : "No inwarded lots found."}
+            ) : (
+              lots.map((lot) => (
+                <TableRow key={lot.id}>
+                  <TableCell className={`font-medium ${wrapCell}`}>
+                    <button
+                      type="button"
+                      className="text-left font-medium text-emerald-800 hover:underline"
+                      onClick={() => setSelectedLotId(lot.id)}
+                    >
+                      {lot.lotNumber}
+                    </button>
+                  </TableCell>
+                  <TableCell className={wrapCell}>
+                    <div>{lot.vendor?.vendorName ?? "—"}</div>
+                    <div className="text-xs text-slate-500">{lot.purchaseInvoiceNo}</div>
+                  </TableCell>
+                  <TableCell className={`min-w-[12rem] ${wrapCell}`}>
+                    {lot.product.displayName}
+                  </TableCell>
+                  <TableCell className={wrapCell}>
+                    <div>{lot.warehouse.name}</div>
+                    <div className="text-xs text-slate-500">{lot.company.code}</div>
+                  </TableCell>
+                  <TableCell className="align-top">
+                    <div>
+                      {Number(lot.receivedQuantity)} / {Number(lot.quantity)}
+                    </div>
+                    {Number(lot.damagedQuantity) > 0 ? (
+                      <div className="text-xs text-amber-700">
+                        Damaged {Number(lot.damagedQuantity)}
+                      </div>
+                    ) : null}
+                  </TableCell>
+                  <TableCell className="align-top">
+                    <div>{formatCurrency(lot.totalPurchaseCost)}</div>
+                    <div className="text-xs text-slate-500">
+                      {formatCurrency(lot.unitPurchaseRate)} / unit
+                    </div>
+                  </TableCell>
+                  <TableCell className={`align-top ${wrapCell}`}>
+                    {lot.receivedAt
+                      ? formatDate(lot.receivedAt)
+                      : Number(lot.receivedQuantity) > 0
+                        ? formatDate(lot.updatedAt)
+                        : "—"}
+                    <div className="text-xs text-slate-500">
+                      PO {formatDocumentDate(lot.purchaseDate)}
+                    </div>
+                  </TableCell>
+                  <TableCell className="align-top">
+                    <Badge variant={lot.status === "INCOMING" ? "warning" : "success"}>
+                      {lot.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="align-top">
+                    <Button size="sm" variant="outline" onClick={() => setSelectedLotId(lot.id)}>
+                      Details
+                    </Button>
                   </TableCell>
                 </TableRow>
-              ) : (
-                lots.map((lot) => (
-                  <TableRow key={lot.id}>
-                    <TableCell className={`font-medium ${wrapCell}`}>
-                      <button
-                        type="button"
-                        className="text-left font-medium text-emerald-800 hover:underline"
-                        onClick={() => setSelectedLotId(lot.id)}
-                      >
-                        {lot.lotNumber}
-                      </button>
-                    </TableCell>
-                    <TableCell className={wrapCell}>
-                      <div>{lot.vendor?.vendorName ?? "—"}</div>
-                      <div className="text-xs text-slate-500">{lot.purchaseInvoiceNo}</div>
-                    </TableCell>
-                    <TableCell className={`min-w-[12rem] ${wrapCell}`}>
-                      {lot.product.displayName}
-                    </TableCell>
-                    <TableCell className={wrapCell}>
-                      <div>{lot.warehouse.name}</div>
-                      <div className="text-xs text-slate-500">{lot.company.code}</div>
-                    </TableCell>
-                    <TableCell className="align-top">
-                      <div>
-                        {Number(lot.receivedQuantity)} / {Number(lot.quantity)}
-                      </div>
-                      {Number(lot.damagedQuantity) > 0 ? (
-                        <div className="text-xs text-amber-700">
-                          Damaged {Number(lot.damagedQuantity)}
-                        </div>
-                      ) : null}
-                    </TableCell>
-                    <TableCell className="align-top">
-                      <div>{formatCurrency(lot.totalPurchaseCost)}</div>
-                      <div className="text-xs text-slate-500">
-                        {formatCurrency(lot.unitPurchaseRate)} / unit
-                      </div>
-                    </TableCell>
-                    <TableCell className={`align-top ${wrapCell}`}>
-                      {lot.receivedAt
-                        ? formatDate(lot.receivedAt)
-                        : Number(lot.receivedQuantity) > 0
-                          ? formatDate(lot.updatedAt)
-                          : "—"}
-                      <div className="text-xs text-slate-500">
-                        PO {formatDocumentDate(lot.purchaseDate)}
-                      </div>
-                    </TableCell>
-                    <TableCell className="align-top">
-                      <Badge variant={lot.status === "INCOMING" ? "warning" : "success"}>
-                        {lot.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="align-top">
-                      <Button size="sm" variant="outline" onClick={() => setSelectedLotId(lot.id)}>
-                        Details
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-          <div className="px-4 pb-4">
-            <ListPaginationControls
-              page={page}
-              pageSize={pageSize}
-              total={total}
-              loading={loading}
-              onPageChange={(nextPage) => setPage(nextPage)}
-            />
-          </div>
-        </CardContent>
-      </Card>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </ListPageShell>
+
+      {filtersOpen ? (
+        <SideSheet onClose={() => setFiltersOpen(false)}>
+          <ModalHeader title="Filters" onClose={() => setFiltersOpen(false)} />
+          <ModalBody className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="inwarded-lot-from">Received from</Label>
+              <Input
+                id="inwarded-lot-from"
+                type="date"
+                value={dateFrom}
+                onChange={(event) => setDateFrom(event.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="inwarded-lot-to">Received to</Label>
+              <Input
+                id="inwarded-lot-to"
+                type="date"
+                value={dateTo}
+                min={dateFrom || undefined}
+                onChange={(event) => setDateTo(event.target.value)}
+              />
+            </div>
+          </ModalBody>
+          <ModalFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={clearAdvancedFilters}
+              disabled={activeFilterCount === 0}
+            >
+              Clear filters
+            </Button>
+            <Button type="button" onClick={() => setFiltersOpen(false)}>
+              Done
+            </Button>
+          </ModalFooter>
+        </SideSheet>
+      ) : null}
 
       {selectedLotId ? (
         <InwardedLotDetailDialog lotId={selectedLotId} onClose={() => setSelectedLotId(null)} />

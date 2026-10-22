@@ -114,8 +114,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const showCompanySwitcher = !pathname.startsWith("/sales/quotations/new");
 
   return (
-    <div className="min-h-screen w-full bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
+    <div className="flex h-dvh w-full flex-col overflow-hidden bg-slate-50">
+      <header className="z-30 shrink-0 border-b border-slate-200 bg-white">
         <div className="mx-auto w-full max-w-7xl px-4 py-3 sm:hidden">
           <div className="flex items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-2">
@@ -151,8 +151,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <DemoBanner />
-      <LearningBanner />
+      <div className="shrink-0">
+        <DemoBanner />
+        <LearningBanner />
+      </div>
       <LearningFirstLoginPrompt />
       <LearningTourOverlay />
 
@@ -196,14 +198,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </Dialog.Portal>
       </Dialog.Root>
 
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-4 sm:px-6 sm:py-6 lg:flex-row">
+      <div className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col gap-6 overflow-hidden px-4 py-4 sm:px-6 sm:py-6 lg:flex-row">
         <aside
           data-tour="app-nav"
-          className="hidden h-fit w-full shrink-0 rounded-xl border border-slate-200 bg-white p-3 lg:block lg:w-[220px]"
+          className="hidden w-full shrink-0 self-stretch overflow-y-auto rounded-xl border border-slate-200 bg-white p-3 lg:block lg:w-[220px]"
         >
           <NavLinks items={navItems} pathname={pathname} />
         </aside>
-        <main data-tour="page-main" className="min-w-0 w-full flex-1">
+        <main
+          data-tour="page-main"
+          className="flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-y-auto"
+        >
           {children}
         </main>
       </div>

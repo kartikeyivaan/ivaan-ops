@@ -1,4 +1,5 @@
 import PDFDocument from "pdfkit";
+import { isDemoCompany } from "@/lib/demo-mode";
 import type { ProformaInvoiceRecord } from "@/lib/pi-service";
 import { formatDocumentDate } from "@/lib/utils";
 import {
@@ -58,6 +59,8 @@ export async function generateProformaInvoicePdf(pi: ProformaInvoiceRecord): Pro
     title: "Proforma Invoice",
     profile,
     meta,
+    companyCode: pi.company.code,
+    companyIsDemo: pi.company.isDemo,
   });
 
   const customerLines: string[] = [];
@@ -212,7 +215,7 @@ export async function generateProformaInvoicePdf(pi: ProformaInvoiceRecord): Pro
   }
 
   const companyLine = [pi.company.name, profile.phone, profile.email].filter(Boolean).join("  ||  ");
-  drawFooter(ctx, companyLine);
+  drawFooter(ctx, companyLine, { isDemoRecord: isDemoCompany(pi.company) });
 
   return collectPdfBuffer(doc);
 }

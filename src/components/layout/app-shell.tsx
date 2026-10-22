@@ -13,6 +13,7 @@ import { CompanySwitcher } from "@/components/layout/company-switcher";
 import { IvaanLogo } from "@/components/layout/ivaan-logo";
 import { NotificationBell } from "@/components/layout/notification-bell";
 import { SignOutButton } from "@/components/layout/sign-out-button";
+import { DemoBanner } from "@/components/demo/demo-banner";
 import { LearningBanner } from "@/components/learning/learning-banner";
 import { LearningFirstLoginPrompt } from "@/components/learning/learning-first-login-prompt";
 import { LearningTourOverlay } from "@/components/learning/learning-tour-overlay";
@@ -100,10 +101,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { data: session } = useSession();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const roles = session?.user?.roles ?? [];
+  const isDemoUser = Boolean(session?.user?.isDemo);
   const activeCompany = getActiveSessionCompany(session ?? null);
   const showProjectsNav = !activeCompany || isProjectsCompany(activeCompany);
   const showDocGenNav = !activeCompany || isIseCompany(activeCompany);
   const navItems = NAV_ITEMS.filter((item) => canAccessNav(roles, item)).filter((item) => {
+    if (isDemoUser && (item.href === "/help" || item.href.startsWith("/learn"))) return false;
     if (!showProjectsNav && item.href.startsWith("/projects")) return false;
     if (!showDocGenNav && item.href.startsWith("/documentation/document-generator")) return false;
     return true;
@@ -148,6 +151,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
+      <DemoBanner />
       <LearningBanner />
       <LearningFirstLoginPrompt />
       <LearningTourOverlay />

@@ -55,7 +55,9 @@ export function UsersList({
     }
 
     const confirmed = window.confirm(
-      `Delete ${user.name}? Users with existing records will be deactivated instead.`,
+      user.isDemo
+        ? `Delete demo user ${user.name}? Their sample records will be reassigned to another demo user when possible.`
+        : `Delete ${user.name}? Users with existing records will be deactivated instead.`,
     );
     if (!confirmed) return;
 
@@ -105,7 +107,12 @@ export function UsersList({
             <TableBody>
               {users.map((user) => (
                 <TableRow key={user.id}>
-                  <TableCell className="font-medium">{user.name}</TableCell>
+                  <TableCell className="font-medium">
+                    <span className="inline-flex flex-wrap items-center gap-2">
+                      {user.name}
+                      {user.isDemo ? <Badge variant="warning">Demo</Badge> : null}
+                    </span>
+                  </TableCell>
                   <TableCell>{user.email}</TableCell>
                   <TableCell>{user.roles.map((r) => r.role.name).join(", ")}</TableCell>
                   <TableCell>{user.companies.map((c) => c.company.code).join(", ")}</TableCell>

@@ -16,6 +16,8 @@ npm run dev
 
 See [docs/PROMPT_01_FOUNDATION.md](docs/PROMPT_01_FOUNDATION.md) for foundation setup.
 
+Buyer demo sandbox (Ivaan Demo): [docs/DEMO-COMPANY.md](docs/DEMO-COMPANY.md) — `npm run db:seed:demo`
+
 Prompt 02 (Customers) docs: [docs/PROMPT_02_CUSTOMERS.md](docs/PROMPT_02_CUSTOMERS.md)
 
 Prompt 03 (Products) docs: [docs/PROMPT_03_PRODUCTS.md](docs/PROMPT_03_PRODUCTS.md)

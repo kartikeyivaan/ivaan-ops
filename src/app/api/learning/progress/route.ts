@@ -21,7 +21,7 @@ export async function GET() {
   const completedIds = await getCompletedLessonIds(session.user.id);
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { learningPromptDismissedAt: true },
+    select: { learningPromptDismissedAt: true, isDemo: true },
   });
 
   return NextResponse.json({
@@ -34,7 +34,8 @@ export async function GET() {
     completedIds,
     total: lessons.length,
     completedCount: lessons.filter((l) => completedIds.includes(l.id)).length,
-    showFirstLoginPrompt: !user?.learningPromptDismissedAt,
+    showFirstLoginPrompt:
+      !user?.isDemo && !session.user.isDemo && !user?.learningPromptDismissedAt,
     learningMode: Boolean(session.user.learningMode),
   });
 }

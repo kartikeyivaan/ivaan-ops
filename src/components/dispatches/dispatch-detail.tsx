@@ -15,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { DemoCompanyRecordMark } from "@/components/demo/demo-company-record-mark";
 import { formatDispatchStatus } from "@/lib/dispatches";
 import { formatDocumentDate } from "@/lib/utils";
 import { CourierStickersButton } from "@/components/dispatches/courier-stickers-button";
@@ -154,6 +155,7 @@ export function DispatchDetail({
 
   return (
     <div className="space-y-6">
+      <DemoCompanyRecordMark />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">{dispatch.dcNo}</h1>

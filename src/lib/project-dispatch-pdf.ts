@@ -1,4 +1,5 @@
 import PDFDocument from "pdfkit";
+import { isDemoCompany } from "@/lib/demo-mode";
 import type { ProjectDispatchRecord } from "@/lib/project-dispatch-service";
 import { decimalToNumber } from "@/lib/inventory";
 import { formatDocumentDate } from "@/lib/utils";
@@ -172,6 +173,8 @@ export async function generateProjectDispatchPdf(
     title: "Project Dispatch / Delivery Challan",
     profile,
     meta,
+    companyCode: dispatch.company.code,
+    companyIsDemo: dispatch.company.isDemo,
   });
 
   const customerLines = [
@@ -263,7 +266,7 @@ export async function generateProjectDispatchPdf(
   }
 
   const companyLine = [dispatch.company.name, profile.phone, profile.email].filter(Boolean).join("  ||  ");
-  drawFooter(ctx, companyLine);
+  drawFooter(ctx, companyLine, { isDemoRecord: isDemoCompany(dispatch.company) });
 
   return collectPdfBuffer(doc);
 }

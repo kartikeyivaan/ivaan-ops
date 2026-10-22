@@ -6,6 +6,7 @@ export type SessionCompany = {
   name: string;
   code: string;
   isPractice?: boolean;
+  isDemo?: boolean;
 };
 
 export function isPracticeCompany(
@@ -58,5 +59,7 @@ export function mutationBlockReason(
 export function operationalCompanies(
   companies: SessionCompany[],
 ): SessionCompany[] {
+  // Practice is Learning Mode only. Demo firms stay in session for demo users
+  // (staff JWTs never include DEMO — see auth clamp).
   return companies.filter((c) => !isPracticeCompany(c));
 }

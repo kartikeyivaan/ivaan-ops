@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { DEMO_COMPANY_RECORD_LABEL, isDemoCompany } from "@/lib/demo-mode";
 
 /**
  * ---------------------------------------------------------------------------
@@ -272,10 +273,17 @@ export function drawDocumentHeader(
     title: string;
     profile: CompanyProfile;
     meta: Array<[string, string]>;
+    /** When true (or company code/isDemo indicates demo), stamp Demo Company Record. */
+    isDemoRecord?: boolean;
+    companyCode?: string | null;
+    companyIsDemo?: boolean | null;
   },
 ): number {
   const { doc, palette, fonts } = ctx;
   const top = MARGIN_TOP;
+  const demoRecord =
+    Boolean(opts.isDemoRecord) ||
+    isDemoCompany({ code: opts.companyCode, isDemo: opts.companyIsDemo });
 
   if (opts.logo) {
     doc.image(opts.logo, CONTENT_LEFT, top, { fit: [190, 56] });
@@ -335,7 +343,29 @@ export function drawDocumentHeader(
     addrY = doc.y;
   }
 
-  return Math.max(addrY, metaY);
+  let bottom = Math.max(addrY, metaY);
+  if (demoRecord) {
+    bottom = drawDemoCompanyRecordBanner(ctx, bottom + 8);
+  }
+  return bottom;
+}
+
+/** Prominent band used on every demo-company PDF header. */
+export function drawDemoCompanyRecordBanner(ctx: DocContext, top: number): number {
+  const { doc, fonts } = ctx;
+  const bandH = 18;
+  doc.save();
+  doc.rect(CONTENT_LEFT, top, CONTENT_WIDTH, bandH).fill("#0EA5E9");
+  doc
+    .font(fonts.bold)
+    .fontSize(10)
+    .fillColor("#FFFFFF")
+    .text(DEMO_COMPANY_RECORD_LABEL.toUpperCase(), CONTENT_LEFT, top + 4, {
+      width: CONTENT_WIDTH,
+      align: "center",
+    });
+  doc.restore();
+  return top + bandH;
 }
 
 /** Project quote card header: dual logos, PI-style firm block, meta under Waaree, centered title. */
@@ -715,6 +745,7 @@ export function drawLetterheadBand(
 export type FooterOptions = {
   documentNo?: string;
   website?: string;
+  isDemoRecord?: boolean;
 };
 
 /** Footer drawn on every page: company contact line + page numbers. No third-party branding. */
@@ -736,11 +767,14 @@ export function drawFooter(ctx: DocContext, companyLine: string, opts?: FooterOp
       .strokeColor(palette.border)
       .stroke();
 
-    const footerText = opts?.website ? `${companyLine}  |  ${opts.website}` : companyLine;
+    const baseLine = opts?.website ? `${companyLine}  |  ${opts.website}` : companyLine;
+    const footerText = opts?.isDemoRecord
+      ? `${DEMO_COMPANY_RECORD_LABEL}  ·  ${baseLine}`
+      : baseLine;
     doc
       .font(fonts.regular)
       .fontSize(8)
-      .fillColor(palette.muted)
+      .fillColor(opts?.isDemoRecord ? "#0369A1" : palette.muted)
       .text(footerText, CONTENT_LEFT, footerY + 9, {
         width: rightEdge - CONTENT_LEFT,
         align: "center",

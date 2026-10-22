@@ -9,6 +9,7 @@ import {
   formatAllCompaniesLabel,
   isAllCompaniesScope,
 } from "@/lib/company-scope";
+import { isDemoCompany } from "@/lib/demo-mode";
 import { isPracticeCompany, operationalCompanies } from "@/lib/learning/mode";
 
 export function CompanySwitcher({ className }: { className?: string }) {
@@ -20,11 +21,14 @@ export function CompanySwitcher({ className }: { className?: string }) {
   }
 
   const learningMode = Boolean(session.user.learningMode);
+  const demoMode = Boolean(session.user.isDemo);
   const companies = learningMode
     ? session.user.companies.filter((c) => isPracticeCompany(c))
-    : operationalCompanies(session.user.companies);
+    : demoMode
+      ? session.user.companies.filter((c) => isDemoCompany(c))
+      : operationalCompanies(session.user.companies);
 
-  const showAllOption = !learningMode && companies.length > 1;
+  const showAllOption = !learningMode && !demoMode && companies.length > 1;
   const allLabel = formatAllCompaniesLabel(companies);
   const activeIsAll = isAllCompaniesScope(session.user.activeCompanyId);
   const activeCompany =
@@ -32,19 +36,21 @@ export function CompanySwitcher({ className }: { className?: string }) {
     companies[0];
 
   async function handleChange(companyId: string) {
-    if (learningMode) return;
+    if (learningMode || demoMode) return;
     await update({ activeCompanyId: companyId });
     router.refresh();
   }
 
-  if (learningMode || companies.length <= 1) {
+  if (learningMode || demoMode || companies.length <= 1) {
     return (
       <div
         className={cn(
           "flex w-full min-w-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-medium",
           learningMode
             ? "bg-amber-50 text-amber-900"
-            : "bg-emerald-50 text-emerald-800",
+            : demoMode
+              ? "bg-sky-50 text-sky-900"
+              : "bg-emerald-50 text-emerald-800",
           className,
         )}
       >
@@ -54,7 +60,7 @@ export function CompanySwitcher({ className }: { className?: string }) {
         </span>
         <span className="hidden truncate sm:inline">
           {activeCompany?.name ?? companies[0]?.name}
-          {learningMode ? " · Learning" : ""}
+          {learningMode ? " · Learning" : demoMode ? " · Demo" : ""}
         </span>
       </div>
     );

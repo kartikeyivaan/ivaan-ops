@@ -15,6 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { DemoCompanyRecordMark } from "@/components/demo/demo-company-record-mark";
 import { formatDocumentDate } from "@/lib/utils";
 import { formatPricingType } from "@/lib/products";
 import { formatQuotationStatus } from "@/lib/quotations";
@@ -45,6 +46,8 @@ type QuotationDetailData = {
   salesUser: { name: string };
   company: {
     name: string;
+    code?: string;
+    isDemo?: boolean;
     bankDetails?: string | null;
     termsAndConditions?: string | null;
   };
@@ -211,6 +214,7 @@ export function QuotationDetail({
 
   return (
     <div className="space-y-6">
+      <DemoCompanyRecordMark company={quotation.company} />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">{quotation.quotationNo}</h1>

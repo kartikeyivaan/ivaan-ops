@@ -1,4 +1,5 @@
 import PDFDocument from "pdfkit";
+import { isDemoCompany } from "@/lib/demo-mode";
 import type { DispatchRecord } from "@/lib/dispatch-service";
 import { decimalToNumber } from "@/lib/inventory";
 import { formatDocumentDate } from "@/lib/utils";
@@ -169,6 +170,8 @@ export async function generateDispatchPdf(dispatch: DispatchRecord): Promise<Buf
     title: "Delivery Challan",
     profile,
     meta,
+    companyCode: dispatch.company.code,
+    companyIsDemo: dispatch.company.isDemo,
   });
 
   const customerLines: string[] = [];
@@ -257,7 +260,7 @@ export async function generateDispatchPdf(dispatch: DispatchRecord): Promise<Buf
   }
 
   const companyLine = [dispatch.company.name, profile.phone, profile.email].filter(Boolean).join("  ||  ");
-  drawFooter(ctx, companyLine);
+  drawFooter(ctx, companyLine, { isDemoRecord: isDemoCompany(dispatch.company) });
 
   return collectPdfBuffer(doc);
 }

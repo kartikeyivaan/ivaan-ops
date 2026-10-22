@@ -3,6 +3,8 @@ import bcrypt from "bcryptjs";
 import { UserStatus } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { writeAuditLog } from "@/lib/audit";
+import { DEMO_COMPANY_CODE, validateDemoUserCompanyMembership } from "@/lib/demo-mode";
+import { seedDemoUserSampleChain } from "@/lib/demo-sample-chain";
 import { prisma } from "@/lib/prisma";
 import { isSuperAdmin } from "@/lib/rbac";
 import { userSchema } from "@/lib/validations";
@@ -33,6 +35,7 @@ export async function GET() {
       personalContactNumber: user.personalContactNumber,
       digitalVisitingCardUrl: user.digitalVisitingCardUrl,
       status: user.status,
+      isDemo: user.isDemo,
       roles: user.roles.map((r) => r.role),
       companies: user.companies.map((c) => c.company),
       createdAt: user.createdAt,
@@ -76,6 +79,29 @@ export async function POST(request: Request) {
       );
     }
 
+    const [companyRows, roleRows] = await Promise.all([
+      prisma.company.findMany({
+        where: { id: { in: parsed.data.companyIds } },
+        select: { id: true, code: true, isDemo: true, isPractice: true },
+      }),
+      prisma.role.findMany({
+        where: { id: { in: parsed.data.roleIds } },
+        select: { id: true, name: true },
+      }),
+    ]);
+    const membership = validateDemoUserCompanyMembership({
+      isDemo: false,
+      companyIds: parsed.data.companyIds,
+      companies: companyRows,
+      roleNames: roleRows.map((r) => r.name),
+    });
+    if (!membership.ok) {
+      return NextResponse.json(
+        { code: membership.code, message: membership.message },
+        { status: 400 },
+      );
+    }
+
     const passwordHash = await bcrypt.hash(parsed.data.password, 12);
     const user = await prisma.user.create({
       data: {
@@ -87,6 +113,7 @@ export async function POST(request: Request) {
         passwordHash,
         mustChangePassword: true,
         passwordChangedAt: null,
+        isDemo: membership.isDemo,
         status: parsed.data.status as UserStatus,
         roles: {
           create: parsed.data.roleIds.map((roleId) => ({ roleId })),
@@ -110,10 +137,35 @@ export async function POST(request: Request) {
         name: user.name,
         email: user.email,
         status: user.status,
+        isDemo: user.isDemo,
         roles: user.roles.map((r) => r.role.name),
         companies: user.companies.map((c) => c.company.code),
       },
     });
+
+    let sampleChain: { created: number; skipped: number } | null = null;
+    if (membership.isDemo) {
+      const demoCompany =
+        companyRows.find((c) => c.isDemo || c.code === DEMO_COMPANY_CODE) ??
+        (await prisma.company.findUnique({ where: { code: DEMO_COMPANY_CODE } }));
+      const warehouse = demoCompany
+        ? await prisma.warehouse.findFirst({
+            where: { companyId: demoCompany.id },
+            orderBy: { name: "asc" },
+          })
+        : null;
+      if (demoCompany && warehouse) {
+        try {
+          sampleChain = await seedDemoUserSampleChain(prisma, {
+            demoUserId: user.id,
+            companyId: demoCompany.id,
+            warehouseId: warehouse.id,
+          });
+        } catch (chainError) {
+          console.error("[users] demo sample chain seed failed:", chainError);
+        }
+      }
+    }
 
     return NextResponse.json(
       {
@@ -124,8 +176,10 @@ export async function POST(request: Request) {
         personalContactNumber: user.personalContactNumber,
         digitalVisitingCardUrl: user.digitalVisitingCardUrl,
         status: user.status,
+        isDemo: user.isDemo,
         roles: user.roles.map((r) => r.role),
         companies: user.companies.map((c) => c.company),
+        sampleChain,
       },
       { status: 201 },
     );

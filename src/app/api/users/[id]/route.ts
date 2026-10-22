@@ -4,6 +4,8 @@ import { UserStatus } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { isReferentialConstraintError } from "@/lib/api-response";
 import { writeAuditLog } from "@/lib/audit";
+import { DEMO_USER_EMAIL, validateDemoUserCompanyMembership } from "@/lib/demo-mode";
+import { reassignDemoUserOwnership } from "@/lib/demo-sample-chain";
 import { prisma } from "@/lib/prisma";
 import { isSuperAdmin } from "@/lib/rbac";
 import { userSchema } from "@/lib/validations";
@@ -71,6 +73,29 @@ export async function PATCH(request: Request, context: RouteContext) {
     );
   }
 
+  const [companyRows, roleRows] = await Promise.all([
+    prisma.company.findMany({
+      where: { id: { in: parsed.data.companyIds } },
+      select: { id: true, code: true, isDemo: true, isPractice: true },
+    }),
+    prisma.role.findMany({
+      where: { id: { in: parsed.data.roleIds } },
+      select: { id: true, name: true },
+    }),
+  ]);
+  const membership = validateDemoUserCompanyMembership({
+    isDemo: existing.isDemo,
+    companyIds: parsed.data.companyIds,
+    companies: companyRows,
+    roleNames: roleRows.map((r) => r.name),
+  });
+  if (!membership.ok) {
+    return NextResponse.json(
+      { code: membership.code, message: membership.message },
+      { status: 400 },
+    );
+  }
+
   const passwordHash = parsed.data.password
     ? await bcrypt.hash(parsed.data.password, 12)
     : undefined;
@@ -87,6 +112,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         officialContactNumber: parsed.data.officialContactNumber || null,
         personalContactNumber: parsed.data.personalContactNumber || null,
         digitalVisitingCardUrl: parsed.data.digitalVisitingCardUrl || null,
+        isDemo: membership.isDemo,
         status:
           existing.status === UserStatus.LOCKED
             ? UserStatus.LOCKED
@@ -171,6 +197,61 @@ export async function DELETE(_request: Request, context: RouteContext) {
   }
 
   try {
+    if (existing.isDemo) {
+      const fallback =
+        (await prisma.user.findFirst({
+          where: {
+            isDemo: true,
+            id: { not: id },
+            status: { not: UserStatus.INACTIVE },
+            email: DEMO_USER_EMAIL,
+          },
+          select: { id: true },
+        })) ??
+        (await prisma.user.findFirst({
+          where: {
+            isDemo: true,
+            id: { not: id },
+            status: { not: UserStatus.INACTIVE },
+          },
+          orderBy: { createdAt: "asc" },
+          select: { id: true },
+        }));
+
+      if (fallback) {
+        await reassignDemoUserOwnership(prisma, id, fallback.id);
+      } else {
+        // Last demo user: soft-deactivate (records stay under this account).
+        const user = await prisma.user.update({
+          where: { id },
+          data: { status: UserStatus.INACTIVE },
+          include: {
+            roles: { include: { role: true } },
+            companies: { include: { company: true } },
+          },
+        });
+        await writeAuditLog({
+          tableName: "users",
+          recordId: user.id,
+          action: "UPDATE",
+          performedBy: session.user.id,
+          oldValue: { email: existing.email, status: existing.status, isDemo: true },
+          newValue: {
+            status: user.status,
+            deactivated: true,
+            reason: "Last demo user deactivated (no fallback owner for sample records).",
+          },
+        });
+        return NextResponse.json({
+          deleted: false,
+          deactivated: true,
+          isDemo: true,
+          message:
+            "This is the last demo user, so the account was deactivated instead of permanently deleted. Create another demo user first if you need a hard delete.",
+        });
+      }
+    }
+
     await prisma.$transaction(async (tx) => {
       await tx.userRole.deleteMany({ where: { userId: id } });
       await tx.userCompany.deleteMany({ where: { userId: id } });
@@ -186,13 +267,14 @@ export async function DELETE(_request: Request, context: RouteContext) {
         name: existing.name,
         email: existing.email,
         status: existing.status,
+        isDemo: existing.isDemo,
         roles: existing.roles.map((r) => r.role.name),
         companies: existing.companies.map((c) => c.company.code),
         deleted: true,
       },
     });
 
-    return NextResponse.json({ deleted: true });
+    return NextResponse.json({ deleted: true, isDemo: existing.isDemo });
   } catch (error) {
     if (!isReferentialConstraintError(error)) {
       console.error("DELETE /api/users/[id] failed:", error);
@@ -202,6 +284,19 @@ export async function DELETE(_request: Request, context: RouteContext) {
           message: error instanceof Error ? error.message : "Failed to delete user.",
         },
         { status: 500 },
+      );
+    }
+
+    // Demo users: surface the failure instead of silently deactivating when reassignment missed a FK.
+    if (existing.isDemo) {
+      console.error("DELETE demo user failed after reassignment:", error);
+      return NextResponse.json(
+        {
+          code: "DEMO_USER_DELETE_BLOCKED",
+          message:
+            "Demo user still has linked records and could not be deleted. Try again or contact support.",
+        },
+        { status: 409 },
       );
     }
 

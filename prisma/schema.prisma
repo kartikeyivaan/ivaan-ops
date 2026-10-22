@@ -779,6 +779,8 @@ model Company {
   inventoryTrackingStartDate DateTime?             @map("inventory_tracking_start_date")
   /// Sandbox company used only while Learning Mode is on. Never use for real ops.
   isPractice                 Boolean               @default(false) @map("is_practice")
+  /// Buyer demo sandbox company (Ivaan Demo). Isolated from live ops; not Learning Mode.
+  isDemo                     Boolean               @default(false) @map("is_demo")
   isActive                   Boolean               @default(true) @map("is_active")
   signatureImageData         String?               @map("signature_image_data")
   stampImageData             String?               @map("stamp_image_data")
@@ -853,6 +855,8 @@ model User {
   failedLoginAttempts       Int        @default(0) @map("failed_login_attempts")
   lockedUntil               DateTime?  @map("locked_until")
   status                    UserStatus @default(ACTIVE)
+  /// Buyer demo account: session locked to demo company; never Super Admin / live firms.
+  isDemo                    Boolean    @default(false) @map("is_demo")
   learningPromptDismissedAt DateTime?  @map("learning_prompt_dismissed_at")
   createdAt                 DateTime   @default(now()) @map("created_at")
   updatedAt                 DateTime   @updatedAt @map("updated_at")

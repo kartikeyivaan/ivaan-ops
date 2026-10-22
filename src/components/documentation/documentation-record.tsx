@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DemoCompanyRecordMark } from "@/components/demo/demo-company-record-mark";
 import { formatDocumentDate } from "@/lib/utils";
 
 type RecordData = {
@@ -62,6 +63,7 @@ export function DocumentationRecordView({ record, canManage }: {
 
   return (
     <div className="space-y-5">
+      <DemoCompanyRecordMark />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div><h1 className="text-2xl font-bold text-slate-900">{record.customer.customerName}</h1><p className="text-sm text-slate-500">{record.dispatch.dcNo} · {record.ageingDays} days</p></div>
         <Button variant="outline" asChild><Link href="/documentation">Back</Link></Button>

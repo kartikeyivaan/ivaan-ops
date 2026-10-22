@@ -40,7 +40,7 @@ export async function resolveReportCompanyIds(
   const permitted = isSuperAdmin(session.user.roles)
     ? (
         await prisma.company.findMany({
-          where: { isActive: true, isPractice: false },
+          where: { isActive: true, isPractice: false, isDemo: false },
           select: { id: true },
         })
       ).map((company) => company.id)

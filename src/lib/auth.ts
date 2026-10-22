@@ -196,9 +196,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           });
         }
 
+        const isDemoUser = Boolean(user.isDemo);
         const activeCompanies = user.companies
           .map((uc) => uc.company)
-          .filter((c) => c.isActive && !c.isPractice);
+          .filter((c) => {
+            if (!c.isActive) return false;
+            if (isDemoUser) return Boolean(c.isDemo) && !c.isPractice;
+            return !c.isPractice && !c.isDemo;
+          });
 
         await writeAuditLog({
           tableName: "users",
@@ -215,14 +220,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           email: user.email,
           name: user.name,
           roles: roleNames,
+          isDemo: isDemoUser,
           companies: activeCompanies.map((c) => ({
             id: c.id,
             name: c.name,
             code: c.code,
             isPractice: c.isPractice,
+            isDemo: c.isDemo,
           })),
-          activeCompanyId:
-            activeCompanies.length > 1
+          activeCompanyId: isDemoUser
+            ? (activeCompanies[0]?.id ?? null)
+            : activeCompanies.length > 1
               ? ALL_COMPANIES_ID
               : (activeCompanies[0]?.id ?? null),
           mustChangePassword: user.mustChangePassword,

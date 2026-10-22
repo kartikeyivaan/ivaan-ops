@@ -21,6 +21,7 @@ import { generateLotNumber, getFinancialYear } from "../src/lib/inventory";
 import { addDays, toDateOnly } from "../src/lib/quotations";
 import { seedProjectProposalMasters } from "./seed-project-proposal-masters";
 import { seedLearningPractice } from "./seed-learning";
+import { seedIvaanDemo, DEMO_USER_EMAIL, DEMO_USER_PASSWORD } from "./seed-demo";
 import {
   DEFAULT_MASTERY_SLAB_SIZE,
   DEFAULT_NAMED_LEVELS,
@@ -762,6 +763,9 @@ async function main() {
     }
   }
 
+  // Buyer demo sandbox (Ivaan Demo) — isolated fake data; re-run via npm run db:seed:demo
+  await seedIvaanDemo(prisma);
+
   console.log("Seed completed.");
   console.log("Admin login: admin@ivaansolar.com / Admin@123");
   console.log("Sales Manager login: manager@ivaansolar.com / Manager@123");
@@ -773,6 +777,7 @@ async function main() {
     "Documentation login: documentation@ivaansolar.com / Documentation@123",
   );
   console.log("Service login: service@ivaansolar.com / Service@123");
+  console.log(`Demo login: ${DEMO_USER_EMAIL} / ${DEMO_USER_PASSWORD}`);
 }
 
 async function seedSampleQuotations() {

@@ -40,9 +40,9 @@ export async function seedLearningPractice(prisma: PrismaClient) {
     });
   }
 
-  // Ensure all active users can enter Learning Mode without a separate grant step.
+  // Ensure all active staff can enter Learning Mode. Skip buyer demo users.
   const users = await prisma.user.findMany({
-    where: { status: UserStatus.ACTIVE },
+    where: { status: UserStatus.ACTIVE, isDemo: false },
     select: { id: true },
   });
   for (const user of users) {
@@ -55,6 +55,20 @@ export async function seedLearningPractice(prisma: PrismaClient) {
       },
       create: { userId: user.id, companyId: practice.id },
       update: {},
+    });
+  }
+
+  // Keep demo users off the Learning practice company.
+  const demoUsers = await prisma.user.findMany({
+    where: { isDemo: true },
+    select: { id: true },
+  });
+  if (demoUsers.length) {
+    await prisma.userCompany.deleteMany({
+      where: {
+        companyId: practice.id,
+        userId: { in: demoUsers.map((u) => u.id) },
+      },
     });
   }
 

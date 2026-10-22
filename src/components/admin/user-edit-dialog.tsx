@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { normalizeMobileNumber } from "@/lib/phone";
 
 type Role = { id: string; name: string };
-type Company = { id: string; name: string; code: string };
+type Company = { id: string; name: string; code: string; isDemo?: boolean };
 
 export type EditableUser = {
   id: string;
@@ -19,6 +19,7 @@ export type EditableUser = {
   personalContactNumber: string | null;
   digitalVisitingCardUrl: string | null;
   status: "ACTIVE" | "INACTIVE" | "LOCKED";
+  isDemo?: boolean;
   roles: Array<{ role: Role }>;
   companies: Array<{ company: Company }>;
 };
@@ -204,6 +205,9 @@ export function UserEditDialog({
             </div>
             <div className="space-y-2 md:col-span-2">
               <Label>Companies</Label>
+              <p className="text-xs text-slate-500">
+                Ivaan Demo is only for demo buyers — do not mix it with ISE / PCMV.
+              </p>
               <div className="flex flex-wrap gap-2">
                 {companies.map((company) => (
                   <label
@@ -216,6 +220,7 @@ export function UserEditDialog({
                       onChange={() => setCompanyIds(toggleValue(companyIds, company.id))}
                     />
                     {company.name}
+                    {company.isDemo || company.code === "DEMO" ? " (Demo)" : ""}
                   </label>
                 ))}
               </div>

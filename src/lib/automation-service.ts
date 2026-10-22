@@ -208,6 +208,22 @@ export async function startAutomationExecution(
 ) {
   if (!input.companyIds.length) throw new Error("COMPANY_IDS_REQUIRED");
 
+  const demoCompanies = await prisma.company.findMany({
+    where: { id: { in: input.companyIds }, isDemo: true },
+    select: { id: true, code: true },
+  });
+  if (demoCompanies.length) {
+    throw new Error("DEMO_AUTOMATION_BLOCKED");
+  }
+
+  const initiator = await prisma.user.findUnique({
+    where: { id: input.initiatedById },
+    select: { isDemo: true },
+  });
+  if (initiator?.isDemo) {
+    throw new Error("DEMO_AUTOMATION_BLOCKED");
+  }
+
   await syncAutomationQueueForCompanies(prisma, input.companyIds);
 
   const strategy = input.portalStrategy as DcrPortalStrategy;

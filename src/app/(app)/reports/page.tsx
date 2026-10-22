@@ -35,7 +35,7 @@ export default async function ReportsPage() {
 
   const reportCompanies = isAdmin
     ? await prisma.company.findMany({
-        where: { isActive: true, isPractice: false },
+        where: { isActive: true, isPractice: false, isDemo: false },
         select: { id: true, name: true, code: true },
         orderBy: { code: "asc" },
       })

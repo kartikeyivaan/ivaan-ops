@@ -1,6 +1,10 @@
 import PDFDocument from "pdfkit";
 import { COURIER_STICKER_MAX_BOXES } from "@/lib/courier-sticker-constants";
 import {
+  DEMO_COMPANY_RECORD_LABEL,
+  isDemoCompany,
+} from "@/lib/demo-mode";
+import {
   A4,
   companyLogo,
   resolvePalette,
@@ -26,7 +30,11 @@ export type CourierStickerInput = {
   invoiceNumber?: string | null;
   boxCount: number;
   customer: CourierStickerCustomer;
-  company: CompanyProfileSource & { name: string; code: string | null };
+  company: CompanyProfileSource & {
+    name: string;
+    code: string | null;
+    isDemo?: boolean | null;
+  };
 };
 
 const PAGE_MARGIN = 18;
@@ -230,6 +238,7 @@ function drawFilledLabel(
     companyLines: string[];
     companyPhone: string;
     logo: Buffer | null;
+    isDemoRecord?: boolean;
   },
 ) {
   const { x, y, w, h } = opts;
@@ -242,20 +251,32 @@ function drawFilledLabel(
 
   // --- Header ---
   let cursorY = y + LABEL_PAD;
-  const headerH = 16;
+  const headerH = opts.isDemoRecord ? 26 : 16;
   doc
     .save()
-    .fillColor(palette.accentSoft)
+    .fillColor(opts.isDemoRecord ? "#E0F2FE" : palette.accentSoft)
     .roundedRect(innerX, cursorY, innerW, headerH, 2)
     .fill()
     .restore();
 
   const headerTextY = cursorY + 4;
+  if (opts.isDemoRecord) {
+    doc
+      .font(fonts.bold)
+      .fontSize(6.5)
+      .fillColor("#0369A1")
+      .text(DEMO_COMPANY_RECORD_LABEL.toUpperCase(), innerX + 4, headerTextY, {
+        width: innerW - 8,
+        lineBreak: false,
+        ellipsis: true,
+      });
+  }
+  const dcY = opts.isDemoRecord ? headerTextY + 10 : headerTextY;
   doc
     .font(fonts.bold)
     .fontSize(7.5)
     .fillColor(palette.ink)
-    .text(`DC #: ${opts.dcNo}`, innerX + 4, headerTextY, {
+    .text(`DC #: ${opts.dcNo}`, innerX + 4, dcY, {
       width: opts.invoiceNumber ? innerW * 0.58 : innerW - 8,
       lineBreak: false,
       ellipsis: true,
@@ -266,7 +287,7 @@ function drawFilledLabel(
       .font(fonts.bold)
       .fontSize(7.5)
       .fillColor(palette.ink)
-      .text(`Invoice #: ${opts.invoiceNumber}`, innerX + innerW * 0.58, headerTextY, {
+      .text(`Invoice #: ${opts.invoiceNumber}`, innerX + innerW * 0.58, dcY, {
         width: innerW * 0.42 - 4,
         align: "right",
         lineBreak: false,
@@ -445,6 +466,7 @@ export async function generateCourierStickerPdf(input: CourierStickerInput): Pro
         companyLines: formatCourierFromAddressLines(profile.addressLines),
         companyPhone,
         logo,
+        isDemoRecord: isDemoCompany(input.company),
       });
     }
   }

@@ -78,6 +78,10 @@ export async function POST(request: Request) {
       NO_RUNNABLE_ITEMS: { message: "No eligible queue lines to run.", status: 400 },
       COMPANY_IDS_REQUIRED: { message: "Select at least one company.", status: 400 },
       INVALID_PORTAL_STRATEGY: { message: "Invalid portal strategy.", status: 400 },
+      DEMO_AUTOMATION_BLOCKED: {
+        message: "DCR portal automation cannot run from the Ivaan Demo environment.",
+        status: 403,
+      },
     };
     if (cause instanceof Error && messages[cause.message]) {
       return automationJsonError(messages[cause.message].message, messages[cause.message].status);

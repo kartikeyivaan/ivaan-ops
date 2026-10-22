@@ -72,6 +72,7 @@ export type CompanyScopeFields = {
   code?: string | null;
   name?: string | null;
   isPractice?: boolean | null;
+  isDemo?: boolean | null;
 };
 
 function normalizedCode(value: string | null | undefined): string {

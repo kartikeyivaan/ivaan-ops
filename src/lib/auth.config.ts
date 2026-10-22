@@ -1,5 +1,6 @@
 import type { NextAuthConfig } from "next-auth";
 import { ALL_COMPANIES_ID, isAllCompaniesScope } from "@/lib/company-scope";
+import { isDemoCompany } from "@/lib/demo-mode";
 import { getPasswordChangeRequirement } from "@/lib/password-policy";
 import { PRACTICE_COMPANY_CODE } from "@/lib/learning/lessons";
 
@@ -8,6 +9,7 @@ type SessionCompany = {
   name: string;
   code: string;
   isPractice?: boolean;
+  isDemo?: boolean;
 };
 
 function isPractice(company: SessionCompany | undefined): boolean {
@@ -17,6 +19,16 @@ function isPractice(company: SessionCompany | undefined): boolean {
 
 function asCompanies(value: unknown): SessionCompany[] {
   return Array.isArray(value) ? (value as SessionCompany[]) : [];
+}
+
+function clampCompaniesForUser(
+  companies: SessionCompany[],
+  isDemoUser: boolean,
+): SessionCompany[] {
+  if (isDemoUser) {
+    return companies.filter((c) => isDemoCompany(c) && !isPractice(c));
+  }
+  return companies.filter((c) => !isDemoCompany(c));
 }
 
 export const authConfig = {
@@ -34,7 +46,11 @@ export const authConfig = {
       if (user) {
         token.id = user.id as string;
         token.roles = user.roles as string[];
-        token.companies = user.companies as SessionCompany[];
+        token.isDemo = Boolean(user.isDemo);
+        token.companies = clampCompaniesForUser(
+          asCompanies(user.companies),
+          Boolean(user.isDemo),
+        );
         token.activeCompanyId = user.activeCompanyId as string | null;
         token.mustChangePassword = user.mustChangePassword as boolean;
         token.passwordChangedAt = user.passwordChangedAt as string | null;
@@ -44,22 +60,37 @@ export const authConfig = {
 
       if (trigger === "update" && session) {
         if (Array.isArray(session.companies)) {
-          token.companies = session.companies as SessionCompany[];
+          token.companies = clampCompaniesForUser(
+            asCompanies(session.companies),
+            Boolean(token.isDemo),
+          );
         }
 
         if (typeof session.learningMode === "boolean") {
-          token.learningMode = session.learningMode;
+          // Demo users cannot enter Learning Mode.
+          token.learningMode = token.isDemo ? false : session.learningMode;
         }
 
         if (session.learningReturnCompanyId !== undefined) {
-          token.learningReturnCompanyId =
-            (session.learningReturnCompanyId as string | null) ?? null;
+          token.learningReturnCompanyId = token.isDemo
+            ? null
+            : ((session.learningReturnCompanyId as string | null) ?? null);
         }
 
         if (session.activeCompanyId) {
-          const companies = asCompanies(token.companies);
+          const companies = clampCompaniesForUser(
+            asCompanies(token.companies),
+            Boolean(token.isDemo),
+          );
           const companyIds = companies.map((c) => c.id);
-          if (
+          if (token.isDemo) {
+            // Demo users stay on their demo firm only (never All companies).
+            if (companyIds.includes(session.activeCompanyId)) {
+              token.activeCompanyId = session.activeCompanyId;
+            } else if (companies[0]) {
+              token.activeCompanyId = companies[0].id;
+            }
+          } else if (
             session.activeCompanyId === ALL_COMPANIES_ID ||
             companyIds.includes(session.activeCompanyId)
           ) {
@@ -73,15 +104,28 @@ export const authConfig = {
         }
       }
 
-      token.companies = asCompanies(token.companies);
+      const isDemoUser = Boolean(token.isDemo);
+      token.companies = clampCompaniesForUser(asCompanies(token.companies), isDemoUser);
 
-      // Safety: never stay on Practice without Learning Mode.
-      if (!token.learningMode) {
+      if (isDemoUser) {
+        token.learningMode = false;
+        token.learningReturnCompanyId = null;
+        const companies = asCompanies(token.companies);
+        if (
+          isAllCompaniesScope(token.activeCompanyId as string | null) ||
+          !companies.some((c) => c.id === token.activeCompanyId)
+        ) {
+          token.activeCompanyId = companies[0]?.id ?? null;
+        }
+      } else if (!token.learningMode) {
+        // Safety: never stay on Practice without Learning Mode.
         const companies = asCompanies(token.companies);
         if (!isAllCompaniesScope(token.activeCompanyId as string | null)) {
           const active = companies.find((c) => c.id === token.activeCompanyId);
           if (isPractice(active)) {
-            const operational = companies.filter((c) => !isPractice(c));
+            const operational = companies.filter(
+              (c) => !isPractice(c) && !isDemoCompany(c),
+            );
             token.activeCompanyId =
               operational.length > 1
                 ? ALL_COMPANIES_ID
@@ -96,6 +140,7 @@ export const authConfig = {
       if (session.user) {
         session.user.id = token.id as string;
         session.user.roles = Array.isArray(token.roles) ? (token.roles as string[]) : [];
+        session.user.isDemo = Boolean(token.isDemo);
         session.user.companies = asCompanies(token.companies);
         session.user.activeCompanyId = token.activeCompanyId as string | null;
 

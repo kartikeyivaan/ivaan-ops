@@ -6,6 +6,7 @@ type SessionCompany = {
   name: string;
   code: string;
   isPractice?: boolean;
+  isDemo?: boolean;
 };
 
 declare module "next-auth" {
@@ -17,6 +18,7 @@ declare module "next-auth" {
       activeCompanyId: string | null;
       passwordChangeRequired: boolean;
       passwordChangeReason: PasswordChangeReason | null;
+      isDemo?: boolean;
       learningMode?: boolean;
       learningReturnCompanyId?: string | null;
     } & DefaultSession["user"];
@@ -28,6 +30,7 @@ declare module "next-auth" {
     activeCompanyId: string | null;
     mustChangePassword: boolean;
     passwordChangedAt: string | null;
+    isDemo?: boolean;
     learningMode?: boolean;
     learningReturnCompanyId?: string | null;
   }
@@ -41,6 +44,7 @@ declare module "next-auth/jwt" {
     activeCompanyId: string | null;
     mustChangePassword?: boolean;
     passwordChangedAt?: string | null;
+    isDemo?: boolean;
     learningMode?: boolean;
     learningReturnCompanyId?: string | null;
   }

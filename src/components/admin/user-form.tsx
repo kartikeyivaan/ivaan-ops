@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { normalizeMobileNumber } from "@/lib/phone";
 
 type Role = { id: string; name: string };
-type Company = { id: string; name: string; code: string };
+type Company = { id: string; name: string; code: string; isDemo?: boolean };
 
 export function UserForm({
   roles,
@@ -88,7 +88,10 @@ export function UserForm({
       </CardHeader>
       <CardContent>
         <p className="mb-4 text-sm text-slate-600">
-          New users must set their own strong password on first sign-in.
+          New users must set their own strong password on first sign-in. For a
+          buyer demo account, assign only <strong>Ivaan Demo</strong> (not Super
+          Admin) — a sample sales chain (5 quotations / PIs / dispatches) is
+          created automatically.
         </p>
         <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
@@ -150,6 +153,9 @@ export function UserForm({
           </div>
           <div className="space-y-2 md:col-span-2">
             <Label>Companies</Label>
+            <p className="text-xs text-slate-500">
+              Ivaan Demo is only for demo buyers — do not mix it with ISE / PCMV.
+            </p>
             <div className="flex flex-wrap gap-2">
               {companies.map((company) => (
                 <label key={company.id} className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
@@ -159,6 +165,7 @@ export function UserForm({
                     onChange={() => setCompanyIds(toggleValue(companyIds, company.id))}
                   />
                   {company.name}
+                  {company.isDemo || company.code === "DEMO" ? " (Demo)" : ""}
                 </label>
               ))}
             </div>

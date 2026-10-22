@@ -259,6 +259,7 @@ export async function computeDispatchTodayStockCheck(
     where: {
       id: { not: input.companyId },
       isPractice: false,
+      isDemo: false,
     },
     select: { id: true, code: true, name: true },
     orderBy: { code: "asc" },
@@ -325,7 +326,7 @@ export async function validateSourceCoversShortfall(
     throw new Error("INVALID_SOURCE_COMPANY");
   }
   const company = await prisma.company.findFirst({
-    where: { id: input.fromCompanyId, isPractice: false },
+    where: { id: input.fromCompanyId, isPractice: false, isDemo: false },
   });
   if (!company) throw new Error("SOURCE_COMPANY_NOT_FOUND");
 

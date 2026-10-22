@@ -54,6 +54,7 @@ export const quotationInclude = {
       id: true,
       name: true,
       code: true,
+      isDemo: true,
       logoUrl: true,
       digitalSignatureUrl: true,
       address: true,

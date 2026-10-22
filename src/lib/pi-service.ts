@@ -97,6 +97,7 @@ export const piInclude = {
       id: true,
       name: true,
       code: true,
+      isDemo: true,
       address: true,
       city: true,
       state: true,
@@ -791,7 +792,7 @@ async function assessBookingStockCoverage(
   }
 
   const otherCompanies = await prisma.company.findMany({
-    where: { id: { not: input.companyId }, isPractice: false },
+    where: { id: { not: input.companyId }, isPractice: false, isDemo: false },
     select: { id: true, code: true },
     orderBy: { code: "asc" },
   });

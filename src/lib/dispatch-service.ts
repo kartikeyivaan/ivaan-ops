@@ -70,6 +70,7 @@ export const dispatchInclude = {
       id: true,
       name: true,
       code: true,
+      isDemo: true,
       address: true,
       city: true,
       state: true,

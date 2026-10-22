@@ -26,6 +26,16 @@ export async function POST() {
     );
   }
 
+  if (session.user.isDemo) {
+    return NextResponse.json(
+      {
+        code: "DEMO_LEARNING_BLOCKED",
+        message: "Learning Mode is not available on demo accounts.",
+      },
+      { status: 403 },
+    );
+  }
+
   let practice = await prisma.company.findUnique({
     where: { code: PRACTICE_COMPANY_CODE },
   });

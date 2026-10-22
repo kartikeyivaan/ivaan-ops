@@ -1,6 +1,7 @@
 import PDFDocument from "pdfkit";
 import type { QuotationRecord } from "@/lib/quotation-service";
 import { formatDocumentDate } from "@/lib/utils";
+import { isDemoCompany } from "@/lib/demo-mode";
 import {
   CELL_PAD,
   CONTENT_LEFT,
@@ -60,6 +61,8 @@ export async function generateQuotationPdf(quotation: QuotationRecord): Promise<
     title: "Quotation",
     profile,
     meta,
+    companyCode: quotation.company.code,
+    companyIsDemo: quotation.company.isDemo,
   });
 
   // ---- Bill To / Sales executive -----------------------------------------
@@ -226,7 +229,9 @@ export async function generateQuotationPdf(quotation: QuotationRecord): Promise<
   const companyLine = [quotation.company.name, profile.phone, profile.email]
     .filter(Boolean)
     .join("  ||  ");
-  drawFooter(ctx, companyLine);
+  drawFooter(ctx, companyLine, {
+    isDemoRecord: isDemoCompany(quotation.company),
+  });
 
   return collectPdfBuffer(doc);
 }

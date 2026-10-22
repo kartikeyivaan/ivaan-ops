@@ -28,6 +28,7 @@ function minimalQuotation(overrides: Partial<QuotationRecord> = {}): QuotationRe
       id: "c1",
       name: "ISE",
       code: "ISE",
+      isDemo: false,
       logoUrl: null,
       digitalSignatureUrl: null,
       address: null,

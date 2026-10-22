@@ -5,6 +5,7 @@ import { generateQuotationPdf } from "@/lib/quotation-pdf";
 import { quotationPdfContentVersion } from "@/lib/pdf-content-versions";
 import { pdfInlineResponse, resolveStoredPdf } from "@/lib/pdf-cache";
 import { prisma } from "@/lib/prisma";
+import { quotationInclude } from "@/lib/quotation-service";
 import { requireActiveCompany } from "@/lib/session";
 
 function errorResponse(code: string, message: string, status: number) {
@@ -29,71 +30,7 @@ export async function GET(_request: Request, context: RouteContext) {
   const { id } = await context.params;
   const quotation = await prisma.quotation.findFirst({
     where: { id, companyId },
-    include: {
-      company: {
-        select: {
-          id: true,
-          name: true,
-          code: true,
-          logoUrl: true,
-          digitalSignatureUrl: true,
-          address: true,
-          city: true,
-          state: true,
-          pincode: true,
-          phone: true,
-          email: true,
-          gstNumber: true,
-          tagline: true,
-          bankDetails: true,
-          termsAndConditions: true,
-        },
-      },
-      customer: {
-        select: {
-          id: true,
-          customerName: true,
-          customerCode: true,
-          gstNumber: true,
-          address: true,
-          city: true,
-          state: true,
-          mobile: true,
-          email: true,
-        },
-      },
-      salesUser: {
-        select: { id: true, name: true, email: true, mobile: true, officialContactNumber: true },
-      },
-      parentQuotation: {
-        select: { id: true, quotationNo: true, revisionNo: true },
-      },
-      revisions: {
-        select: {
-          id: true,
-          quotationNo: true,
-          revisionNo: true,
-          status: true,
-          createdAt: true,
-        },
-        orderBy: { revisionNo: "asc" },
-      },
-      items: {
-        include: {
-          product: {
-            select: {
-              id: true,
-              displayName: true,
-              pricingType: true,
-              capacity: true,
-              capacityUnit: true,
-              gstRate: true,
-              hsn: true,
-            },
-          },
-        },
-      },
-    },
+    include: quotationInclude,
   });
 
   if (!quotation) {

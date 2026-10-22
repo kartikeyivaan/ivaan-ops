@@ -528,7 +528,7 @@ export function ReportsHub({
                 </div>
                 <p className="text-xs text-slate-500">
                   {companies.length > 1
-                    ? "Leave none selected to include ISE and PCMV."
+                    ? "Leave none selected to include all selected companies."
                     : "Report runs for your company."}
                 </p>
                 <div className="grid max-h-40 gap-2 overflow-y-auto rounded-md border border-slate-200 p-3 sm:grid-cols-2 lg:grid-cols-3">

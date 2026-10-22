@@ -6,6 +6,7 @@ import {
   resolveDashboardCompanyIds,
 } from "@/lib/company-scope";
 import { canViewInwardedLots } from "@/lib/accounts-permissions";
+import { isDemoUser } from "@/lib/demo-mode";
 import {
   canAdjustStock,
   canInwardMaterial,
@@ -55,6 +56,7 @@ export default async function InventoryPage() {
       canViewDamaged={canViewDamagedItems(session.user.roles)}
       canManualStock={canAdjustStock(session.user.roles)}
       canViewInwardedLots={canViewInwardedLots(session.user.roles)}
+      showTransfers={!isDemoUser(session)}
     />
   );
 }

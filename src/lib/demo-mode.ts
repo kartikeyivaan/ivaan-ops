@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import type { Session } from "next-auth";
 import { ROLES } from "@/lib/rbac";
 
@@ -8,6 +9,24 @@ export const DEMO_COMPANY_NAME = "Ivaan Demo";
 export const DEMO_USER_EMAIL = "demo@ivaansolar.com";
 /** Required label on every demo-company document (PDF, UI, notes). */
 export const DEMO_COMPANY_RECORD_LABEL = "Demo Company Record";
+/** Shared seeded demo customer codes (global customer master isolation). */
+export const DEMO_CUSTOMER_CODE_PREFIX = "DEMO-CUST-";
+export const DEMO_CUSTOMER_NAMES = [
+  "Demo Customer 1",
+  "Demo Customer 2",
+  "Demo Customer 3",
+  "Demo Customer 4",
+  "Demo Customer 5",
+] as const;
+/** Shared seeded demo vendor names (global vendor master isolation). */
+export const DEMO_VENDOR_NAME_PREFIX = "Demo Vendor";
+export const DEMO_VENDOR_NAMES = [
+  "Demo Vendor 1 — Solar Components",
+  "Demo Vendor 2 — Module Supply",
+  "Demo Vendor 3 — Inverter Hub",
+  "Demo Vendor 4 — Structure & BOS",
+  "Demo Vendor 5 — Logistics Sample",
+] as const;
 
 export type DemoCompanyFields = {
   id?: string;
@@ -23,6 +42,63 @@ function normalizedCode(value: string | null | undefined): string {
 export function isDemoCompany(company: DemoCompanyFields | null | undefined): boolean {
   if (!company) return false;
   return Boolean(company.isDemo) || normalizedCode(company.code) === DEMO_COMPANY_CODE;
+}
+
+/** Demo sandbox rows on the shared customer master (code and/or GST marker). */
+export function isDemoCustomer(customer: {
+  customerCode?: string | null;
+  gstNumber?: string | null;
+} | null | undefined): boolean {
+  if (!customer) return false;
+  const code = normalizedCode(customer.customerCode);
+  const gst = normalizedCode(customer.gstNumber);
+  return code.startsWith("DEMO-") || gst.includes("DEMO");
+}
+
+/** Prisma filter: only demo-sandbox customers. */
+export function demoCustomerWhere(): Prisma.CustomerWhereInput {
+  return {
+    OR: [
+      { customerCode: { startsWith: "DEMO-", mode: "insensitive" } },
+      { gstNumber: { contains: "DEMO", mode: "insensitive" } },
+    ],
+  };
+}
+
+/** Prisma filter: exclude demo-sandbox customers from live company views. */
+export function liveCustomerWhere(): Prisma.CustomerWhereInput {
+  return {
+    NOT: demoCustomerWhere(),
+  };
+}
+
+/** Demo sandbox rows on the shared vendor master (name and/or GST marker). */
+export function isDemoVendor(vendor: {
+  vendorName?: string | null;
+  gst?: string | null;
+} | null | undefined): boolean {
+  if (!vendor) return false;
+  const name = normalizedCode(vendor.vendorName);
+  const gst = normalizedCode(vendor.gst);
+  return name.startsWith("DEMO VENDOR") || name.startsWith("DEMO-") || gst.includes("DEMO");
+}
+
+/** Prisma filter: only demo-sandbox vendors. */
+export function demoVendorWhere(): Prisma.VendorWhereInput {
+  return {
+    OR: [
+      { vendorName: { startsWith: "Demo Vendor", mode: "insensitive" } },
+      { vendorName: { startsWith: "DEMO-", mode: "insensitive" } },
+      { gst: { contains: "DEMO", mode: "insensitive" } },
+    ],
+  };
+}
+
+/** Prisma filter: exclude demo-sandbox vendors from live company views. */
+export function liveVendorWhere(): Prisma.VendorWhereInput {
+  return {
+    NOT: demoVendorWhere(),
+  };
 }
 
 export function isDemoUser(session: Session | null | undefined): boolean {

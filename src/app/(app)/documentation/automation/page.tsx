@@ -7,6 +7,7 @@ import { operationalCompanies } from "@/lib/learning/mode";
 export default async function DcrAutomationPage() {
   const session = await auth();
   if (!session?.user || !canViewAutomation(session.user.roles)) redirect("/dashboard");
+  if (session.user.isDemo) redirect("/documentation");
 
   const companies = operationalCompanies(session.user.companies ?? []).map((company) => ({
     id: company.id,

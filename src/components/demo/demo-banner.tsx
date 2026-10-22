@@ -19,10 +19,7 @@ export function DemoBanner() {
     <div className="border-b border-sky-200 bg-sky-50">
       <div className="mx-auto flex w-full max-w-7xl items-center gap-2 px-4 py-2 text-sm text-sky-950 sm:px-6">
         <FlaskConical className="h-4 w-4 shrink-0" />
-        <p className="min-w-0">
-          {DEMO_COMPANY_RECORD_LABEL} — sample data only. Changes stay in Ivaan
-          Demo and do not affect live ISE / PCMV operations.
-        </p>
+        <p className="min-w-0">{DEMO_COMPANY_RECORD_LABEL} — sample data only.</p>
       </div>
     </div>
   );

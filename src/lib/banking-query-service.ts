@@ -6,6 +6,7 @@ import {
   type PrismaClient,
 } from "@prisma/client";
 import { ISE_COMPANY_CODE } from "@/lib/company-scope";
+import { isDemoCompany } from "@/lib/demo-mode";
 import { toDateOnly } from "@/lib/proforma-invoices";
 import { isPcmCompany } from "@/lib/quotation-warnings";
 
@@ -294,11 +295,18 @@ export function serializeBankImport(
 }
 
 export async function getBankingDashboard(db: PrismaClient, companyId: string) {
-  const accounts = await db.bankAccount.findMany({
-    where: { companyId, isActive: true },
-    select: { id: true, bankName: true, accountNumberMasked: true, receivedInAccount: true },
-  });
+  const [accounts, activeCompany] = await Promise.all([
+    db.bankAccount.findMany({
+      where: { companyId, isActive: true },
+      select: { id: true, bankName: true, accountNumberMasked: true, receivedInAccount: true },
+    }),
+    db.company.findUnique({
+      where: { id: companyId },
+      select: { code: true, isDemo: true },
+    }),
+  ]);
   const accountIds = accounts.map((a) => a.id);
+  const demoSession = isDemoCompany(activeCompany);
 
   const latestBalances = [];
   let totalBalance = 0;
@@ -327,11 +335,15 @@ export async function getBankingDashboard(db: PrismaClient, companyId: string) {
   const { unassignedCreditAmount, partiallyAssignedCreditAmount } =
     summarizeCreditAvailability(credits);
 
-  const companies = await db.company.findMany({
-    select: { id: true, code: true, name: true },
-  });
-  const iseCompany = companies.find((c) => classifyCompanyForBankDashboard(c) === "ISE");
-  const pcmCompany = companies.find((c) => classifyCompanyForBankDashboard(c) === "PCM");
+  let iseCompany: { id: string } | undefined;
+  let pcmCompany: { id: string } | undefined;
+  if (!demoSession) {
+    const companies = await db.company.findMany({
+      select: { id: true, code: true, name: true },
+    });
+    iseCompany = companies.find((c) => classifyCompanyForBankDashboard(c) === "ISE");
+    pcmCompany = companies.find((c) => classifyCompanyForBankDashboard(c) === "PCM");
+  }
 
   const [iseTotalBalance, pcmTotalBalance, unverifiedManualPayments, openIssues, recentImports, lastImport] =
     await Promise.all([
@@ -383,6 +395,7 @@ export async function getBankingDashboard(db: PrismaClient, companyId: string) {
     totalBalance,
     iseTotalBalance,
     pcmTotalBalance,
+    showLiveFirmBalances: !demoSession,
     accountBalances: latestBalances,
     unassignedCreditAmount,
     partiallyAssignedCreditAmount,

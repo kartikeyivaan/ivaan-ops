@@ -29,7 +29,7 @@ export async function GET(request: Request) {
         ? searchServiceRequestsForDocGen(prisma, companyId, q)
         : Promise.resolve([]),
       source === "all" || source === "customer"
-        ? searchSalesCustomersForDocGen(prisma, q)
+        ? searchSalesCustomersForDocGen(prisma, q, 20, companyId)
         : Promise.resolve([]),
     ]);
 

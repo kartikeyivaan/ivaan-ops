@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { writeAuditLog } from "@/lib/audit";
+import { isDemoSession } from "@/lib/demo-mode";
 import { createVendor, listVendors } from "@/lib/inventory-service";
 import { prisma } from "@/lib/prisma";
+import { requireActiveCompany } from "@/lib/session";
 import { canManageVendors, canViewVendors } from "@/lib/vendor-permissions";
 import { vendorSchema } from "@/lib/validations";
 
@@ -42,10 +44,12 @@ export async function GET(request: Request) {
     return errorResponse("FORBIDDEN", "You do not have permission for this action.", 403);
   }
 
+  const companyId = requireActiveCompany(session);
   const { searchParams } = new URL(request.url);
   const includeInactive = searchParams.get("includeInactive") === "true";
 
   const vendors = await listVendors(prisma, {
+    companyId,
     includeInactive: includeInactive && canManageVendors(session.user.roles),
   });
 
@@ -58,13 +62,30 @@ export async function POST(request: Request) {
     return errorResponse("FORBIDDEN", "You do not have permission for this action.", 403);
   }
 
+  requireActiveCompany(session);
+
   const body = await request.json();
   const parsed = vendorSchema.safeParse(body);
   if (!parsed.success) {
     return errorResponse("VALIDATION_ERROR", "Invalid vendor data.", 400, parsed.error.flatten());
   }
 
-  const vendor = await createVendor(prisma, parsed.data);
+  let vendor;
+  try {
+    vendor = await createVendor(prisma, {
+      ...parsed.data,
+      forDemo: isDemoSession(session),
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message === "DEMO_VENDOR_NOT_ALLOWED") {
+      return errorResponse(
+        "DEMO_VENDOR_NOT_ALLOWED",
+        "Demo vendor names/GST markers cannot be used in live companies.",
+        400,
+      );
+    }
+    throw error;
+  }
 
   await writeAuditLog({
     tableName: "vendors",

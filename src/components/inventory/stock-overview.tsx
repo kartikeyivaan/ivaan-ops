@@ -38,6 +38,7 @@ export function StockOverview({
   canViewDamaged,
   canManualStock,
   canViewInwardedLots = false,
+  showTransfers = true,
 }: {
   initialStock: ProductStockSummary[];
   warehouses: Warehouse[];
@@ -46,6 +47,7 @@ export function StockOverview({
   canViewDamaged?: boolean;
   canManualStock?: boolean;
   canViewInwardedLots?: boolean;
+  showTransfers?: boolean;
 }) {
   const [stock, setStock] = useState(initialStock);
   const [q, setQ] = useState("");
@@ -124,12 +126,14 @@ export function StockOverview({
               </Link>
             </Button>
           ) : null}
-          <Button variant="outline" asChild>
-            <Link href="/inventory/transfers">
-              <ArrowRightLeft className="mr-2 h-4 w-4" />
-              Transfers
-            </Link>
-          </Button>
+          {showTransfers ? (
+            <Button variant="outline" asChild>
+              <Link href="/inventory/transfers">
+                <ArrowRightLeft className="mr-2 h-4 w-4" />
+                Transfers
+              </Link>
+            </Button>
+          ) : null}
           <Button variant="outline" asChild>
             <Link href="/inventory/dispatches">
               <Send className="mr-2 h-4 w-4" />

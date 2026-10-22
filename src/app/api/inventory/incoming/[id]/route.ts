@@ -134,6 +134,13 @@ export async function PATCH(request: Request, context: RouteContext) {
       if (error.message === "VENDOR_NOT_FOUND") {
         return errorResponse("NOT_FOUND", "Vendor not found.", 404);
       }
+      if (error.message === "VENDOR_SCOPE_MISMATCH") {
+        return errorResponse(
+          "VALIDATION_ERROR",
+          "Selected vendor is not available for this company.",
+          400,
+        );
+      }
       if (error.message === "INVALID_QUANTITY") {
         return errorResponse("VALIDATION_ERROR", "Quantity must be greater than zero.", 400);
       }

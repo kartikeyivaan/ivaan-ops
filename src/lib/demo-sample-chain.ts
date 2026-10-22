@@ -1,4 +1,5 @@
 import {
+  CustomerStatus,
   CustomerType,
   DispatchStatus,
   DocumentationStatus,
@@ -11,20 +12,21 @@ import {
   QuotationStatus,
   ReceivedInAccount,
   SerialStatus,
+  UserStatus,
 } from "@prisma/client";
-import { DEMO_COMPANY_CODE, DEMO_COMPANY_RECORD_LABEL } from "@/lib/demo-mode";
+import {
+  DEMO_COMPANY_CODE,
+  DEMO_COMPANY_RECORD_LABEL,
+  DEMO_CUSTOMER_CODE_PREFIX,
+  DEMO_CUSTOMER_NAMES,
+  DEMO_VENDOR_NAMES,
+  demoCustomerWhere,
+} from "@/lib/demo-mode";
 import { getFinancialYear } from "@/lib/inventory";
 import { addDays, toDateOnly } from "@/lib/quotations";
+import { ROLES } from "@/lib/rbac";
 
 export const DEMO_SAMPLE_CHAIN_COUNT = 5;
-
-const SAMPLE_CUSTOMER_NAMES = [
-  "Horizon Solar Traders (Sample)",
-  "Narmada Projects Sample Pvt Ltd",
-  "Deccan Energy Dealers (Sample)",
-  "Sahyadri Power Mart (Sample)",
-  "Godavari Solar Hub (Sample)",
-] as const;
 
 const SAMPLE_CITIES = ["Jalgaon", "Nashik", "Pune", "Aurangabad", "Dhule"] as const;
 
@@ -117,7 +119,241 @@ async function ensureDemoStock(
 }
 
 /**
- * Ensures 5 fake customers + 5 QT / PI / DC / documentation rows for one demo user.
+ * Ensures the 5 shared Demo Customer records (DEMO-CUST-001…005).
+ * Idempotent; safe to re-run. Does not create or modify live ISE/PCMV customers.
+ */
+export async function ensureDemoCustomers(
+  client: PrismaClient,
+  demoUserId: string,
+): Promise<Array<{ id: string; customerCode: string; customerName: string }>> {
+  const customers = [];
+
+  for (let i = 1; i <= DEMO_SAMPLE_CHAIN_COUNT; i++) {
+    const seq = String(i).padStart(3, "0");
+    const customerCode = `${DEMO_CUSTOMER_CODE_PREFIX}${seq}`;
+    // Valid GST shape with DEMO marker so live filters never match these rows.
+    const gstNumber = `27DEMOD${String(i).padStart(4, "0")}A1Z${i}`;
+    const customerName = DEMO_CUSTOMER_NAMES[i - 1] ?? `Demo Customer ${i}`;
+    const mobile = `9000000${String(i).padStart(3, "0")}`;
+    const email = `demo.customer${i}@example.com`;
+
+    const existingByCode = await client.customer.findUnique({
+      where: { customerCode },
+    });
+    const existingByGst = existingByCode
+      ? null
+      : await client.customer.findUnique({ where: { gstNumber } });
+
+    const customer = existingByCode
+      ? await client.customer.update({
+          where: { id: existingByCode.id },
+          data: {
+            customerName,
+            contactPersonName: "Demo Contact",
+            city: SAMPLE_CITIES[i - 1] ?? "Jalgaon",
+            state: "Maharashtra",
+            address: "Demo address — sample data only (not a live customer)",
+            pinCode: "425001",
+            mobile,
+            email,
+            status: CustomerStatus.ACTIVE,
+            assignedSalesUserId: demoUserId,
+            updatedById: demoUserId,
+          },
+        })
+      : existingByGst
+        ? await client.customer.update({
+            where: { id: existingByGst.id },
+            data: {
+              customerCode,
+              customerName,
+              contactPersonName: "Demo Contact",
+              city: SAMPLE_CITIES[i - 1] ?? "Jalgaon",
+              state: "Maharashtra",
+              address: "Demo address — sample data only (not a live customer)",
+              pinCode: "425001",
+              mobile,
+              email,
+              status: CustomerStatus.ACTIVE,
+              assignedSalesUserId: demoUserId,
+              updatedById: demoUserId,
+            },
+          })
+        : await client.customer.create({
+            data: {
+              customerCode,
+              customerName,
+              contactPersonName: "Demo Contact",
+              customerType: CustomerType.DEALER,
+              gstNumber,
+              address: "Demo address — sample data only (not a live customer)",
+              city: SAMPLE_CITIES[i - 1] ?? "Jalgaon",
+              state: "Maharashtra",
+              pinCode: "425001",
+              mobile,
+              email,
+              assignedSalesUserId: demoUserId,
+              createdById: demoUserId,
+              updatedById: demoUserId,
+              status: CustomerStatus.ACTIVE,
+              contacts: {
+                create: {
+                  name: "Demo Contact",
+                  designation: "Owner",
+                  mobile,
+                  email,
+                },
+              },
+            },
+          });
+
+    customers.push({
+      id: customer.id,
+      customerCode: customer.customerCode,
+      customerName: customer.customerName,
+    });
+  }
+
+  return customers;
+}
+
+/**
+ * Ensures the 5 shared Demo Vendor records on the global vendor master.
+ * Idempotent; safe to re-run. Does not create or modify live supplier rows.
+ */
+export async function ensureDemoVendors(
+  client: PrismaClient,
+): Promise<Array<{ id: string; vendorName: string }>> {
+  const vendors = [];
+
+  for (let i = 1; i <= DEMO_SAMPLE_CHAIN_COUNT; i++) {
+    const vendorName = DEMO_VENDOR_NAMES[i - 1] ?? `Demo Vendor ${i}`;
+    // Valid GST shape with DEMO marker so live filters never match these rows.
+    const gst = `27DEMOV${String(i).padStart(4, "0")}A1Z${i}`;
+    const mobile = `9100000${String(i).padStart(3, "0")}`;
+    const email = `demo.vendor${i}@example.com`;
+    const contactPerson = "Demo Supplier Contact";
+    const address = "Demo supplier address — sample data only (not a live vendor)";
+
+    const existingByGst = await client.vendor.findFirst({
+      where: { gst },
+    });
+    const existingByName = existingByGst
+      ? null
+      : await client.vendor.findFirst({
+          where: { vendorName: { equals: vendorName, mode: "insensitive" } },
+        });
+
+    const vendor = existingByGst
+      ? await client.vendor.update({
+          where: { id: existingByGst.id },
+          data: {
+            vendorName,
+            address,
+            contactPerson,
+            mobile,
+            email,
+            isActive: true,
+          },
+        })
+      : existingByName
+        ? await client.vendor.update({
+            where: { id: existingByName.id },
+            data: {
+              vendorName,
+              gst,
+              address,
+              contactPerson,
+              mobile,
+              email,
+              isActive: true,
+            },
+          })
+        : await client.vendor.create({
+            data: {
+              vendorName,
+              gst,
+              address,
+              contactPerson,
+              mobile,
+              email,
+              isActive: true,
+            },
+          });
+
+    vendors.push({ id: vendor.id, vendorName: vendor.vendorName });
+  }
+
+  return vendors;
+}
+
+/**
+ * Detach live ISE/PCMV customers from demo users and hide legacy per-user demo
+ * customer rows that are not the shared DEMO-CUST-001…005 set.
+ */
+export async function scrubLiveCustomersFromDemoUsers(
+  client: PrismaClient,
+): Promise<{ reassigned: number; inactivatedLegacy: number }> {
+  const demoUsers = await client.user.findMany({
+    where: { isDemo: true },
+    select: { id: true },
+  });
+  const demoUserIds = demoUsers.map((u) => u.id);
+  if (demoUserIds.length === 0) {
+    return { reassigned: 0, inactivatedLegacy: 0 };
+  }
+
+  const fallback = await client.user.findFirst({
+    where: {
+      isDemo: false,
+      status: UserStatus.ACTIVE,
+      roles: {
+        some: {
+          role: {
+            name: {
+              in: [ROLES.SALES_EXECUTIVE, ROLES.SALES_MANAGER, ROLES.SUPER_ADMIN],
+            },
+          },
+        },
+      },
+    },
+    select: { id: true },
+    orderBy: { createdAt: "asc" },
+  });
+
+  let reassigned = 0;
+  if (fallback) {
+    const liveOnDemo = await client.customer.findMany({
+      where: {
+        assignedSalesUserId: { in: demoUserIds },
+        NOT: demoCustomerWhere(),
+      },
+      select: { id: true },
+    });
+    if (liveOnDemo.length) {
+      const result = await client.customer.updateMany({
+        where: { id: { in: liveOnDemo.map((c) => c.id) } },
+        data: { assignedSalesUserId: fallback.id, updatedById: fallback.id },
+      });
+      reassigned = result.count;
+    }
+  }
+
+  const legacy = await client.customer.updateMany({
+    where: {
+      AND: [
+        demoCustomerWhere(),
+        { NOT: { customerCode: { startsWith: DEMO_CUSTOMER_CODE_PREFIX, mode: "insensitive" } } },
+      ],
+    },
+    data: { status: CustomerStatus.INACTIVE },
+  });
+
+  return { reassigned, inactivatedLegacy: legacy.count };
+}
+
+/**
+ * Ensures 5 shared Demo Customers + 5 QT / PI / DC / documentation rows for one demo user.
  * Idempotent via stable document numbers scoped by user tag.
  */
 export async function seedDemoUserSampleChain(
@@ -143,6 +379,8 @@ export async function seedDemoUserSampleChain(
     quantity: 80,
   });
 
+  const demoCustomers = await ensureDemoCustomers(client, input.demoUserId);
+
   const quotationDate = toDateOnly(new Date());
   const expiryDate = toDateOnly(addDays(quotationDate, 7));
   const fy = getFinancialYear(quotationDate);
@@ -152,48 +390,10 @@ export async function seedDemoUserSampleChain(
 
   for (let i = 1; i <= DEMO_SAMPLE_CHAIN_COUNT; i++) {
     const seq = padSeq(i);
-    const gstNumber = `27DEMO${tag.slice(0, 4)}${i}A1Z${i}`;
-    const customerCode = `DEMO-${tag}-C${seq}`;
-
-    const mobile = `9${tag.slice(0, 4)}${String(10000 + i).slice(-5)}`;
-    const email = `demo.${tag.toLowerCase()}.c${i}@example.com`;
-
-    const customer = await client.customer.upsert({
-      where: { gstNumber },
-      update: {
-        customerName: SAMPLE_CUSTOMER_NAMES[i - 1] ?? `Demo Customer ${i}`,
-        city: SAMPLE_CITIES[i - 1] ?? "Jalgaon",
-        state: "Maharashtra",
-        mobile,
-        email,
-        assignedSalesUserId: input.demoUserId,
-        updatedById: input.demoUserId,
-      },
-      create: {
-        customerCode,
-        customerName: SAMPLE_CUSTOMER_NAMES[i - 1] ?? `Demo Customer ${i}`,
-        contactPersonName: "Sample Contact",
-        customerType: CustomerType.DEALER,
-        gstNumber,
-        address: "Sample address — demo data only",
-        city: SAMPLE_CITIES[i - 1] ?? "Jalgaon",
-        state: "Maharashtra",
-        pinCode: "425001",
-        mobile,
-        email,
-        assignedSalesUserId: input.demoUserId,
-        createdById: input.demoUserId,
-        updatedById: input.demoUserId,
-        contacts: {
-          create: {
-            name: "Sample Contact",
-            designation: "Owner",
-            mobile,
-            email,
-          },
-        },
-      },
-    });
+    const customer = demoCustomers[i - 1];
+    if (!customer) {
+      throw new Error("DEMO_CUSTOMERS_MISSING");
+    }
 
     const quotationNo = `${DEMO_COMPANY_CODE}-QT-${fy}-${tag}-${seq}`;
     const piNo = `${DEMO_COMPANY_CODE}-PI-${fy}-${tag}-${seq}`;

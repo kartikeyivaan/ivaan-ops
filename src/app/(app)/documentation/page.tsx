@@ -19,7 +19,7 @@ export default async function DocumentationPage() {
     <DocumentationList
       rows={JSON.parse(JSON.stringify(rows))}
       pendingInvoiceCount={pendingInvoiceCount}
-      showAutomationLink={canViewAutomation(session.user.roles)}
+      showAutomationLink={canViewAutomation(session.user.roles) && !session.user.isDemo}
     />
   );
 }

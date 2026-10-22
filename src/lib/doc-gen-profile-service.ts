@@ -85,17 +85,39 @@ export async function searchServiceRequestsForDocGen(
   });
 }
 
-export async function searchSalesCustomersForDocGen(prisma: PrismaClient, q: string, limit = 20) {
+export async function searchSalesCustomersForDocGen(
+  prisma: PrismaClient,
+  q: string,
+  limit = 20,
+  companyId?: string,
+) {
   const query = q.trim();
   if (!query) return [];
 
+  const { demoCustomerWhere, isDemoCompany, liveCustomerWhere } = await import(
+    "@/lib/demo-mode"
+  );
+  let scope = liveCustomerWhere();
+  if (companyId) {
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+      select: { code: true, isDemo: true },
+    });
+    scope = isDemoCompany(company) ? demoCustomerWhere() : liveCustomerWhere();
+  }
+
   return prisma.customer.findMany({
     where: {
-      status: "ACTIVE",
-      OR: [
-        { customerName: { contains: query, mode: "insensitive" } },
-        { mobile: { contains: query, mode: "insensitive" } },
-        { customerCode: { contains: query, mode: "insensitive" } },
+      AND: [
+        scope,
+        { status: "ACTIVE" },
+        {
+          OR: [
+            { customerName: { contains: query, mode: "insensitive" } },
+            { mobile: { contains: query, mode: "insensitive" } },
+            { customerCode: { contains: query, mode: "insensitive" } },
+          ],
+        },
       ],
     },
     orderBy: { customerName: "asc" },

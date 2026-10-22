@@ -14,19 +14,23 @@ export default async function NewRefundPage() {
   }
 
   const companyIds = await getAccessibleRefundCompanyIds(prisma, session);
-  const [firms, customers] = await Promise.all([
-    prisma.company.findMany({
-      where: { id: { in: companyIds } },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
-    // Fallback picker for receipts that were never allocated to a PI.
-    prisma.customer.findMany({
-      where: { status: "ACTIVE" },
-      select: { id: true, customerCode: true, customerName: true },
-      orderBy: { customerName: "asc" },
-    }),
-  ]);
+  const { demoCustomerWhere, isDemoCompany, liveCustomerWhere } = await import(
+    "@/lib/demo-mode"
+  );
+  const firms = await prisma.company.findMany({
+    where: { id: { in: companyIds } },
+    select: { id: true, name: true, code: true, isDemo: true },
+    orderBy: { name: "asc" },
+  });
+  const demoOnly = firms.length > 0 && firms.every((c) => isDemoCompany(c));
+  // Fallback picker for receipts that were never allocated to a PI.
+  const customers = await prisma.customer.findMany({
+    where: {
+      AND: [{ status: "ACTIVE" }, demoOnly ? demoCustomerWhere() : liveCustomerWhere()],
+    },
+    select: { id: true, customerCode: true, customerName: true },
+    orderBy: { customerName: "asc" },
+  });
 
   return (
     <RefundCreateForm

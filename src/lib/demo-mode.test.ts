@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import { ROLES } from "@/lib/rbac";
 import {
   DEMO_COMPANY_CODE,
+  DEMO_CUSTOMER_CODE_PREFIX,
+  DEMO_VENDOR_NAME_PREFIX,
   isDemoCompany,
+  isDemoCustomer,
+  isDemoVendor,
   staffOperationalCompanies,
   validateDemoUserCompanyMembership,
 } from "@/lib/demo-mode";
@@ -16,6 +20,24 @@ describe("demo-mode", () => {
     expect(isDemoCompany(demo)).toBe(true);
     expect(isDemoCompany({ code: "DEMO" })).toBe(true);
     expect(isDemoCompany(ise)).toBe(false);
+  });
+
+  it("detects demo customers by DEMO- code or GST marker", () => {
+    expect(
+      isDemoCustomer({ customerCode: `${DEMO_CUSTOMER_CODE_PREFIX}001`, gstNumber: "27AAAAA0000A1Z5" }),
+    ).toBe(true);
+    expect(isDemoCustomer({ customerCode: "CUST-00001", gstNumber: "27DEMOD0001A1Z1" })).toBe(true);
+    expect(isDemoCustomer({ customerCode: "CUST-00001", gstNumber: "27AAAAA0000A1Z5" })).toBe(false);
+  });
+
+  it("detects demo vendors by Demo Vendor name or GST marker", () => {
+    expect(
+      isDemoVendor({ vendorName: `${DEMO_VENDOR_NAME_PREFIX} 1 — Solar Components`, gst: null }),
+    ).toBe(true);
+    expect(isDemoVendor({ vendorName: "Acme Solar", gst: "27DEMOV0001A1Z1" })).toBe(true);
+    expect(isDemoVendor({ vendorName: "Tata Power Solar Distributor", gst: "27AAAAA0000A1Z5" })).toBe(
+      false,
+    );
   });
 
   it("filters staff operational companies", () => {

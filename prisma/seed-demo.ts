@@ -4,8 +4,9 @@
  * Idempotent upserts. Safe to re-run:
  *   npm run db:seed:demo
  *
- * Does not touch ISE/PCMV live rows. Customers use DEMO-* codes / fake GSTs.
- * Each demo user gets 5 quotations, 5 PIs, 5 dispatches, 5 documentation records.
+ * Does not touch ISE/PCMV live rows. Ensures 5 shared Demo Customers (DEMO-CUST-*)
+ * and 5 Demo Vendors, and detaches any live firms wrongly assigned to demo users.
+ * Shared: 5 Demo Customers + 5 Demo Vendors. Each demo user: 5 QT / 5 PI / 5 DC / 5 docs.
  */
 import bcrypt from "bcryptjs";
 import {
@@ -20,6 +21,9 @@ import {
 } from "../src/lib/demo-mode";
 import {
   DEMO_SAMPLE_CHAIN_COUNT,
+  ensureDemoCustomers,
+  ensureDemoVendors,
+  scrubLiveCustomersFromDemoUsers,
   seedDemoUserSampleChain,
 } from "../src/lib/demo-sample-chain";
 import { ROLES } from "../src/lib/rbac";
@@ -230,6 +234,19 @@ export async function seedIvaanDemo(client: PrismaClient) {
       },
     });
   }
+
+  // Detach any live ISE/PCMV customers incorrectly assigned to demo users,
+  // then ensure the shared Demo Customer 1–5 set.
+  const scrub = await scrubLiveCustomersFromDemoUsers(client);
+  console.log(
+    `[seed-demo] Scrubbed live customers from demo users: reassigned=${scrub.reassigned}, legacyDemoInactivated=${scrub.inactivatedLegacy}`,
+  );
+
+  await ensureDemoCustomers(client, demoUser.id);
+  console.log(`[seed-demo] Ensured ${DEMO_SAMPLE_CHAIN_COUNT} shared Demo Customers (DEMO-CUST-001…005)`);
+
+  await ensureDemoVendors(client);
+  console.log(`[seed-demo] Ensured ${DEMO_SAMPLE_CHAIN_COUNT} shared Demo Vendors`);
 
   // Seed 5× chain for every demo user linked to DEMO (including newly created admins).
   const demoUsers = await client.user.findMany({

@@ -122,7 +122,7 @@ export function ModalFooter({
   return (
     <div
       className={cn(
-        "flex shrink-0 flex-wrap items-center gap-2 border-t border-slate-200 bg-white p-4 sm:px-6",
+        "flex shrink-0 flex-wrap items-center gap-2 border-t border-slate-200 bg-white px-6 py-1",
         className,
       )}
       {...props}

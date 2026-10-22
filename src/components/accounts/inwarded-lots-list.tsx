@@ -134,6 +134,7 @@ export function AccountsInwardedLotsList({
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
       <ListPageShell
+        contentClassName="px-0 pb-0 sm:px-0 sm:pb-0 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
         toolbar={
           <>
             <div className="flex flex-wrap items-center justify-between gap-3">

@@ -41,7 +41,7 @@ export function TableHead({ className, ...props }: React.ThHTMLAttributes<HTMLTa
   return (
     <th
       className={cn(
-        "sticky top-0 z-10 h-11 bg-white px-4 text-left align-middle font-medium text-slate-500",
+        "sticky top-0 z-10 h-11 border-b border-emerald-100 bg-emerald-50 px-4 text-left align-middle font-medium text-emerald-800",
         className,
       )}
       {...props}

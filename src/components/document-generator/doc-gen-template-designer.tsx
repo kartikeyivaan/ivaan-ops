@@ -242,7 +242,13 @@ export function DocGenTemplateDesigner({
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 px-4 py-8">
+    <div
+      className={`mx-auto space-y-6 px-4 py-8 ${
+        template.editorType === "PDF_BACKGROUND" || template.editorType === "CANVAS"
+          ? "max-w-[1600px]"
+          : "max-w-7xl"
+      }`}
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-wide text-slate-500">Template designer</p>
@@ -403,6 +409,9 @@ export function DocGenTemplateDesigner({
           }
           fields={activeFields}
           mode={template.editorType === "PDF_BACKGROUND" ? "PDF_BACKGROUND" : "CANVAS"}
+          templateId={template.id}
+          versionId={versionId}
+          hasBackground={hasBackground}
         />
       ) : null}
 
@@ -410,7 +419,9 @@ export function DocGenTemplateDesigner({
         Preview uses field labels as sample values.
         {template.editorType === "WORD"
           ? " Word layout is converted to PDF after field merge; complex Word features (images, text boxes) may be simplified."
-          : " Fixed-page layout; overflow is not auto-flowed in v1 canvas mode."}
+          : template.editorType === "PDF_BACKGROUND"
+            ? " Overlay text wraps within each field width (line spacing 1) and is clipped by the field height."
+            : " Fixed-page layout; text wraps within field width with line spacing 1."}
       </p>
 
       {renameOpen ? (

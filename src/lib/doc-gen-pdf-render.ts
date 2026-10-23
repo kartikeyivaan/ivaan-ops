@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import fontkit from "@pdf-lib/fontkit";
 import PDFDocument from "pdfkit";
 import { PDFDocument as PdfLibDocument, rgb } from "pdf-lib";
 import type { TemplateContent } from "@/lib/doc-gen-template-content";
@@ -463,30 +464,64 @@ function drawRichTextPdf(html: string, pageConfig: PageConfiguration): Promise<B
 
 async function loadEmbeddedFont(pdfDoc: PdfLibDocument) {
   try {
+    // Custom TTF embedding requires fontkit (Noto Sans for Devanagari / full Unicode).
+    pdfDoc.registerFontkit(fontkit);
     const bytes = fs.readFileSync(FONT_PATH);
-    return pdfDoc.embedFont(bytes, { subset: true });
+    return await pdfDoc.embedFont(bytes, { subset: true });
   } catch {
     return pdfDoc.embedFont("Helvetica");
   }
 }
 
+function breakLongWord(
+  word: string,
+  maxWidth: number,
+  font: { widthOfTextAtSize: (t: string, s: number) => number },
+  fontSize: number,
+): string[] {
+  if (font.widthOfTextAtSize(word, fontSize) <= maxWidth) return [word];
+  const parts: string[] = [];
+  let current = "";
+  for (const char of word) {
+    const next = `${current}${char}`;
+    if (current && font.widthOfTextAtSize(next, fontSize) > maxWidth) {
+      parts.push(current);
+      current = char;
+    } else {
+      current = next;
+    }
+  }
+  if (current) parts.push(current);
+  return parts.length ? parts : [word];
+}
+
+/** Word-wrap within maxWidth; line advance uses line spacing 1 (fontSize). */
 function wrapText(text: string, maxWidth: number, font: { widthOfTextAtSize: (t: string, s: number) => number }, fontSize: number): string[] {
   const words = text.split(/\s+/).filter(Boolean);
   if (!words.length) return [""];
   const lines: string[] = [];
-  let line = words[0]!;
-  for (let i = 1; i < words.length; i += 1) {
-    const next = `${line} ${words[i]!}`;
-    if (font.widthOfTextAtSize(next, fontSize) <= maxWidth) {
-      line = next;
-    } else {
-      lines.push(line);
-      line = words[i]!;
+  let line = "";
+  for (const word of words) {
+    const chunks = breakLongWord(word, maxWidth, font, fontSize);
+    for (const chunk of chunks) {
+      if (!line) {
+        line = chunk;
+        continue;
+      }
+      const next = `${line} ${chunk}`;
+      if (font.widthOfTextAtSize(next, fontSize) <= maxWidth) {
+        line = next;
+      } else {
+        lines.push(line);
+        line = chunk;
+      }
     }
   }
-  lines.push(line);
-  return lines;
+  if (line) lines.push(line);
+  return lines.length ? lines : [""];
 }
+
+const CANVAS_LINE_SPACING = 1;
 
 async function renderCanvasPdf(
   content: Extract<TemplateContent, { editor: "CANVAS" | "PDF_BACKGROUND" }>,
@@ -522,21 +557,21 @@ async function renderCanvasPdf(
           if (element.align === "right") x = element.x + element.width - textWidth;
           const yPdf = pageHeight - yTop - element.fontSize;
           page.drawText(line, { x, y: yPdf, size: element.fontSize, font, color: rgb(0, 0, 0) });
-          yTop += element.fontSize * 1.25;
+          yTop += element.fontSize * CANVAS_LINE_SPACING;
         }
       } else if (element.kind === "field") {
         const value = values[element.fieldKey] ?? "";
         const lines = wrapText(value, element.width, font, element.fontSize);
         let yTop = element.y;
         for (const line of lines) {
+          if (yTop + element.fontSize > element.y + element.height) break;
           const textWidth = font.widthOfTextAtSize(line, element.fontSize);
           let x = element.x;
           if (element.align === "center") x = element.x + (element.width - textWidth) / 2;
           if (element.align === "right") x = element.x + element.width - textWidth;
           const yPdf = pageHeight - yTop - element.fontSize;
           page.drawText(line, { x, y: yPdf, size: element.fontSize, font, color: rgb(0, 0, 0) });
-          yTop += element.fontSize * 1.25;
-          if (yTop > element.y + element.height) break;
+          yTop += element.fontSize * CANVAS_LINE_SPACING;
         }
       }
     }

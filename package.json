@@ -34,6 +34,7 @@
   "dependencies": {
     "@auth/prisma-adapter": "^2.9.1",
     "@hookform/resolvers": "^5.0.1",
+    "@pdf-lib/fontkit": "^1.1.1",
     "@prisma/client": "^6.9.0",
     "@radix-ui/react-avatar": "^1.1.10",
     "@radix-ui/react-dialog": "^1.1.14",
@@ -54,6 +55,7 @@
     "next": "15.3.8",
     "next-auth": "^5.0.0-beta.28",
     "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^4.10.38",
     "pdfkit": "^0.19.1",
     "pizzip": "^3.3.0",
     "react": "^19.1.0",

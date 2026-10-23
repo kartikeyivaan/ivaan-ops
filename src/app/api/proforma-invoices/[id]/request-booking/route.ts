@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { canManageProformaInvoices } from "@/lib/pi-permissions";
-import { requestBooking } from "@/lib/pi-service";
+import {
+  formatInsufficientProjectedStockMessage,
+  parseInsufficientProjectedStockError,
+  requestBooking,
+} from "@/lib/pi-service";
 import { prisma } from "@/lib/prisma";
 import { requestBookingSchema } from "@/lib/validations";
 import { requireActiveCompany } from "@/lib/session";
@@ -70,6 +74,13 @@ export async function POST(request: Request, context: RouteContext) {
       if (error.message === "WAREHOUSE_NOT_FOUND") {
         return errorResponse("NOT_FOUND", "Warehouse not found.", 404);
       }
+      if (error.message === "PROJECTS_WAREHOUSE_NOT_BOOKABLE") {
+        return errorResponse(
+          "PROJECTS_WAREHOUSE_NOT_BOOKABLE",
+          "Projects warehouse stock cannot be used for sales booking.",
+          400,
+        );
+      }
       if (error.message === "CUSTOMER_CREDIT_OVERDUE") {
         return errorResponse(
           "CUSTOMER_CREDIT_OVERDUE",
@@ -81,12 +92,19 @@ export async function POST(request: Request, context: RouteContext) {
         return errorResponse("INSUFFICIENT_STOCK", "Insufficient stock to book order.", 400);
       }
       if (error.message.startsWith("INSUFFICIENT_PROJECTED_STOCK|")) {
-        const [, product, shortage] = error.message.split("|");
+        const parsedShortage = parseInsufficientProjectedStockError(error.message);
+        if (!parsedShortage) {
+          return errorResponse(
+            "INSUFFICIENT_PROJECTED_STOCK",
+            "No stock available for booking.",
+            400,
+          );
+        }
         return errorResponse(
           "INSUFFICIENT_PROJECTED_STOCK",
-          `Projected stock is short by ${shortage} for ${product} during the required dispatch window, and no other company has enough available stock to cover it.`,
+          formatInsufficientProjectedStockMessage(parsedShortage),
           400,
-          { product, shortage: Number(shortage) },
+          parsedShortage,
         );
       }
       if (error.message.startsWith("KIT_BOM_EMPTY|")) {

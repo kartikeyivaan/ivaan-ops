@@ -44,11 +44,20 @@ import {
   canViewProformaInvoices,
 } from "@/lib/pi-permissions";
 import {
+  bookingNetAvailableAfterRequest,
   bookingShortageQty,
+  calendarDaysBetween,
+  encodeInsufficientProjectedStockError,
+  formatInsufficientProjectedStockMessage,
+  isBookingStockInsufficient,
+  isSalesBookingExcludedWarehouse,
+  mergeProjectedAvailableByDate,
+  parseInsufficientProjectedStockError,
   resolveBookingStockDecision,
   resolveCoverageProjectionEndDate,
 } from "@/lib/pi-service";
 import { ROLES } from "@/lib/rbac";
+import type { InventoryProjectionDay } from "@/lib/inventory-projection";
 
 describe("proforma invoice calculations", () => {
   it("calculates advance required from the committed percentage", () => {
@@ -469,7 +478,7 @@ describe("cross-company booking stock decision", () => {
 });
 
 describe("booking coverage projection window", () => {
-  it("extends the coverage end date through pending incoming max dates", () => {
+  it("extends the ETA look-ahead end date through pending incoming max dates", () => {
     expect(
       resolveCoverageProjectionEndDate("2026-08-05", [
         "2026-08-08",
@@ -486,5 +495,111 @@ describe("booking coverage projection window", () => {
     expect(bookingShortageQty(54, -708)).toBe(54);
     expect(bookingShortageQty(54, 10)).toBe(44);
     expect(bookingShortageQty(54, 100)).toBe(0);
+  });
+});
+
+describe("booking day net available check", () => {
+  it("blocks when physical − reserved − request + incoming goes negative", () => {
+    // projectedAvailableOnDay already = Physical − Reserved + Incoming_on_day
+    expect(bookingNetAvailableAfterRequest(10, 15)).toBe(-5);
+    expect(isBookingStockInsufficient(bookingNetAvailableAfterRequest(10, 15))).toBe(
+      true,
+    );
+    expect(isBookingStockInsufficient(bookingNetAvailableAfterRequest(15, 15))).toBe(
+      false,
+    );
+    expect(isBookingStockInsufficient(bookingNetAvailableAfterRequest(20, 15))).toBe(
+      false,
+    );
+  });
+
+  it("computes calendar days until incoming stock", () => {
+    expect(calendarDaysBetween("2026-10-23", "2026-10-28")).toBe(5);
+    expect(calendarDaysBetween("2026-10-23", "2026-10-24")).toBe(1);
+  });
+
+  it("formats no-stock message with incoming ETA when known", () => {
+    expect(
+      formatInsufficientProjectedStockMessage({
+        product: "Module A",
+        shortage: 12,
+        earliestAvailableDate: "2026-10-28",
+        daysUntilAvailable: 5,
+      }),
+    ).toBe(
+      "No stock available for Module A across ISE and PCMV. Stock expected in 5 days (2026-10-28).",
+    );
+    expect(
+      formatInsufficientProjectedStockMessage({
+        product: "Module A",
+        shortage: 12,
+        earliestAvailableDate: "2026-10-24",
+        daysUntilAvailable: 1,
+      }),
+    ).toBe(
+      "No stock available for Module A across ISE and PCMV. Stock expected in 1 day (2026-10-24).",
+    );
+    expect(
+      formatInsufficientProjectedStockMessage({
+        product: "Module A",
+        shortage: 12,
+      }),
+    ).toBe("No stock available for Module A across ISE and PCMV. Short by 12.");
+  });
+
+  it("excludes Projects warehouse from sales booking stock", () => {
+    expect(isSalesBookingExcludedWarehouse("JAL-PRJ")).toBe(true);
+    expect(isSalesBookingExcludedWarehouse("jal-prj")).toBe(true);
+    expect(isSalesBookingExcludedWarehouse("JAL-HO")).toBe(false);
+  });
+
+  it("sums ISE and PCMV projected availability by date", () => {
+    const day = (
+      date: string,
+      projectedAvailableQuantity: number,
+    ): InventoryProjectionDay => ({
+      date,
+      openingQuantity: projectedAvailableQuantity,
+      incomingQuantity: 0,
+      outgoingQuantity: 0,
+      netEventQuantity: 0,
+      projectedAvailableQuantity,
+      events: [],
+    });
+    const merged = mergeProjectedAvailableByDate([
+      [day("2026-10-23", 10), day("2026-10-24", 8)],
+      [day("2026-10-23", 5), day("2026-10-24", 12)],
+    ]);
+    expect(merged.map((row) => row.projectedAvailableQuantity)).toEqual([
+      15, 20,
+    ]);
+  });
+
+  it("round-trips insufficient stock error encoding", () => {
+    const encoded = encodeInsufficientProjectedStockError({
+      productId: "p1",
+      displayName: "Module A",
+      requiredQty: 20,
+      localProjectedAvailable: 8,
+      shortageQty: 12,
+      earliestAvailableDate: "2026-10-28",
+      daysUntilAvailable: 5,
+    });
+    expect(parseInsufficientProjectedStockError(encoded)).toEqual({
+      product: "Module A",
+      shortage: 12,
+      earliestAvailableDate: "2026-10-28",
+      daysUntilAvailable: 5,
+    });
+    expect(
+      parseInsufficientProjectedStockError(
+        "INSUFFICIENT_PROJECTED_STOCK|Module A|12",
+      ),
+    ).toEqual({
+      product: "Module A",
+      shortage: 12,
+      earliestAvailableDate: null,
+      daysUntilAvailable: null,
+    });
   });
 });

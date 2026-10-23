@@ -51,7 +51,12 @@ export default async function ProformaInvoiceDetailPage({ params }: PageProps) {
   const [pi, warehouses, company, dispatchedChallans] = await Promise.all([
     getProformaInvoiceById(prisma, companyId, id),
     prisma.warehouse.findMany({
-      where: { companyId, isActive: true },
+      where: {
+        companyId,
+        isActive: true,
+        // Projects WH is not available for sales booking.
+        NOT: { code: "JAL-PRJ" },
+      },
       select: { id: true, name: true, code: true },
       orderBy: { name: "asc" },
     }),

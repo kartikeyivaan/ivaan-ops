@@ -23,7 +23,6 @@ import {
 } from "@/lib/banking-audit";
 import {
   createOrReplaceCrossCompanyPlan,
-  getCompanyAvailableQty,
   prepareDispatchTodayCrossCompany,
   type SerializedPlan,
 } from "@/lib/cross-company-transfer-service";
@@ -36,8 +35,14 @@ import {
 } from "@/lib/dispatch-today-planned-qty";
 import { decimalToNumber } from "@/lib/inventory";
 import { createEvent } from "@/lib/inventory-event-service";
-import { findFeasibleReservationStartDate } from "@/lib/inventory-projection";
+import {
+  findEarliestAvailabilityDate,
+  findFeasibleReservationStartDate,
+  type InventoryProjectionDay,
+} from "@/lib/inventory-projection";
 import { getInventoryProjection } from "@/lib/inventory-projection-service";
+import { isPcmCompany } from "@/lib/quotation-warnings";
+import { ISE_COMPANY_CODE } from "@/lib/company-scope";
 import {
   explodeItemsForFulfillment,
   mergeFulfillmentQuantities,
@@ -613,7 +618,7 @@ async function bookInventoryForPi(
 ) {
   // Booking is a projected reservation only (PRD C2). Physical / serial on-hand
   // is validated at dispatch; coverage was already checked via projection
-  // (including incoming lots that arrive within the dispatch window).
+  // inside the commercial dispatch window (incoming past max is ETA-only).
   for (const item of input.items) {
     const qty = item.serialTracking ? Math.ceil(item.qty) : item.qty;
     await tx.inventoryTransaction.create({
@@ -640,6 +645,10 @@ export type BookingStockShortage = {
   requiredQty: number;
   localProjectedAvailable: number;
   shortageQty: number;
+  /** First date projected stock can cover required qty (may be after dispatch max). */
+  earliestAvailableDate?: string | null;
+  /** Calendar days from the check day until earliestAvailableDate. */
+  daysUntilAvailable?: number | null;
 };
 
 export type BookingStockCoverage = {
@@ -662,9 +671,9 @@ export function resolveBookingStockDecision(input: {
 }
 
 /**
- * Booking coverage must look through pending purchase incoming dates, not only
- * the commercial dispatch window (READY_STOCK is often "today" and would ignore
- * lots arriving a few days out).
+ * Look-ahead end date for ETA messaging only. Allowance itself stays inside
+ * the commercial dispatch window; this extends past max when incoming lots
+ * arrive later so the error can say "stock expected in X days".
  */
 export function resolveCoverageProjectionEndDate(
   dispatchMaxDate: string,
@@ -677,6 +686,23 @@ export function resolveCoverageProjectionEndDate(
   return end;
 }
 
+/**
+ * Booking-day net after request:
+ * Physical − Reserved(dispatch-today + booked) − requestedQty + incoming_on_day
+ * (those terms are already folded into projectedAvailableOnDay by the projection engine).
+ */
+export function bookingNetAvailableAfterRequest(
+  projectedAvailableOnDay: number,
+  requestedQty: number,
+): number {
+  return roundMoney(projectedAvailableOnDay - requestedQty);
+}
+
+/** True when booking would drive that day's net available below zero. */
+export function isBookingStockInsufficient(netAfterRequest: number): boolean {
+  return netAfterRequest < -1e-9;
+}
+
 /** Units still needed locally after counting only non-negative projected availability. */
 export function bookingShortageQty(
   requiredQty: number,
@@ -685,21 +711,243 @@ export function bookingShortageQty(
   return roundMoney(Math.max(0, requiredQty - Math.max(0, bestProjectedAvailable)));
 }
 
+/** Calendar-day gap between two YYYY-MM-DD values (to − from). */
+export function calendarDaysBetween(fromDate: string, toDate: string): number {
+  const from = Date.parse(`${fromDate}T00:00:00.000Z`);
+  const to = Date.parse(`${toDate}T00:00:00.000Z`);
+  if (!Number.isFinite(from) || !Number.isFinite(to)) {
+    throw new RangeError("Invalid date-only value for calendar day gap.");
+  }
+  return Math.round((to - from) / 86_400_000);
+}
+
+/** User-facing message when combined ISE+PCMV projected stock cannot cover a booking. */
+export function formatInsufficientProjectedStockMessage(input: {
+  product: string;
+  shortage: number;
+  earliestAvailableDate?: string | null;
+  daysUntilAvailable?: number | null;
+}): string {
+  const base = `No stock available for ${input.product} across ISE and PCMV.`;
+  const days = input.daysUntilAvailable;
+  if (
+    days != null &&
+    days > 0 &&
+    input.earliestAvailableDate
+  ) {
+    const dayLabel = days === 1 ? "day" : "days";
+    return `${base} Stock expected in ${days} ${dayLabel} (${input.earliestAvailableDate}).`;
+  }
+  if (input.earliestAvailableDate) {
+    return `${base} Stock expected on ${input.earliestAvailableDate}.`;
+  }
+  return `${base} Short by ${input.shortage}.`;
+}
+
+/** Projects staging warehouse — reserved for project dispatch, not sales booking. */
+export const PROJECTS_WAREHOUSE_CODE = "JAL-PRJ";
+
+/** Sales booking must ignore Projects WH stock (ISE JAL-PRJ and any same-code twin). */
+export function isSalesBookingExcludedWarehouse(code: string | null | undefined): boolean {
+  return (code ?? "").trim().toUpperCase() === PROJECTS_WAREHOUSE_CODE;
+}
+
+/**
+ * Sum projected-available by date across warehouses/companies.
+ * Used for the ISE + PCMV combined booking gate.
+ */
+export function mergeProjectedAvailableByDate(
+  projections: readonly (readonly InventoryProjectionDay[])[],
+): InventoryProjectionDay[] {
+  const byDate = new Map<string, number>();
+  for (const projection of projections) {
+    for (const day of projection) {
+      byDate.set(
+        day.date,
+        roundMoney(
+          (byDate.get(day.date) ?? 0) + day.projectedAvailableQuantity,
+        ),
+      );
+    }
+  }
+  return [...byDate.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, projectedAvailableQuantity]) => ({
+      date,
+      openingQuantity: projectedAvailableQuantity,
+      incomingQuantity: 0,
+      outgoingQuantity: 0,
+      netEventQuantity: 0,
+      projectedAvailableQuantity,
+      events: [],
+    }));
+}
+
+function isBookingStockPairCompany(company: {
+  code: string | null;
+  name?: string | null;
+}): boolean {
+  const code = (company.code ?? "").trim().toUpperCase();
+  if (code === ISE_COMPANY_CODE) return true;
+  return isPcmCompany({
+    id: "booking-pair",
+    code: company.code ?? "",
+    name: company.name ?? "",
+  });
+}
+
+/**
+ * Companies whose stock is pooled for booking availability: live ISE + PCMV.
+ * Demo/practice PIs stay single-company.
+ */
+async function resolveBookingStockCompanyIds(
+  prisma: PrismaClient,
+  piCompanyId: string,
+): Promise<Array<{ id: string; code: string }>> {
+  const piCompany = await prisma.company.findUnique({
+    where: { id: piCompanyId },
+    select: { id: true, code: true, name: true, isPractice: true, isDemo: true },
+  });
+  if (!piCompany) return [{ id: piCompanyId, code: "" }];
+  if (piCompany.isPractice || piCompany.isDemo) {
+    return [{ id: piCompany.id, code: piCompany.code }];
+  }
+
+  const live = await prisma.company.findMany({
+    where: { isPractice: false, isDemo: false },
+    select: { id: true, code: true, name: true },
+    orderBy: { code: "asc" },
+  });
+
+  const pair = live.filter(
+    (company) =>
+      company.id === piCompanyId || isBookingStockPairCompany(company),
+  );
+  if (pair.length === 0) {
+    return [{ id: piCompany.id, code: piCompany.code }];
+  }
+  return pair.map((company) => ({ id: company.id, code: company.code }));
+}
+
+async function loadCombinedBookingProjection(
+  prisma: PrismaClient,
+  input: {
+    companyIds: string[];
+    productId: string;
+    startDate: string;
+    endDate: string;
+  },
+): Promise<InventoryProjectionDay[]> {
+  if (input.companyIds.length === 0) return [];
+
+  const warehouses = await prisma.warehouse.findMany({
+    where: {
+      companyId: { in: input.companyIds },
+      isActive: true,
+      // Projects WH is committed/staging stock — not available for sales booking.
+      NOT: { code: PROJECTS_WAREHOUSE_CODE },
+    },
+    select: { id: true, companyId: true, code: true },
+  });
+  const salesWarehouses = warehouses.filter(
+    (warehouse) => !isSalesBookingExcludedWarehouse(warehouse.code),
+  );
+  if (salesWarehouses.length === 0) return [];
+
+  const projections = await Promise.all(
+    salesWarehouses.map((warehouse) =>
+      getInventoryProjection({
+        companyId: warehouse.companyId,
+        warehouseId: warehouse.id,
+        productId: input.productId,
+        startDate: input.startDate,
+        endDate: input.endDate,
+      }),
+    ),
+  );
+  return mergeProjectedAvailableByDate(projections);
+}
+
+function projectionCoversBookingQty(
+  projection: readonly InventoryProjectionDay[],
+  requiredQty: number,
+): { ok: true; reservationStart: string } | { ok: false; bestProjected: number } {
+  const reservationStart = findFeasibleReservationStartDate(
+    projection,
+    requiredQty,
+  );
+  if (reservationStart) {
+    const day = projection.find((row) => row.date === reservationStart);
+    const netAfterRequest = bookingNetAvailableAfterRequest(
+      day?.projectedAvailableQuantity ?? 0,
+      requiredQty,
+    );
+    if (!isBookingStockInsufficient(netAfterRequest)) {
+      return { ok: true, reservationStart };
+    }
+  }
+  const bestProjected = projection.length
+    ? Math.max(...projection.map((day) => day.projectedAvailableQuantity))
+    : 0;
+  return { ok: false, bestProjected };
+}
+
+/** Encode shortage details for API error parsing. */
+export function encodeInsufficientProjectedStockError(
+  shortage: BookingStockShortage,
+): string {
+  const earliest = shortage.earliestAvailableDate ?? "";
+  const days =
+    shortage.daysUntilAvailable == null ? "" : String(shortage.daysUntilAvailable);
+  return `INSUFFICIENT_PROJECTED_STOCK|${shortage.displayName}|${shortage.shortageQty}|${earliest}|${days}`;
+}
+
+/** Parse encodeInsufficientProjectedStockError / legacy 3-part errors. */
+export function parseInsufficientProjectedStockError(message: string): {
+  product: string;
+  shortage: number;
+  earliestAvailableDate: string | null;
+  daysUntilAvailable: number | null;
+} | null {
+  if (!message.startsWith("INSUFFICIENT_PROJECTED_STOCK|")) return null;
+  const parts = message.split("|");
+  const product = parts[1] ?? "";
+  const shortage = Number(parts[2] ?? NaN);
+  if (!product || !Number.isFinite(shortage)) return null;
+  const earliestRaw = parts[3]?.trim() || "";
+  const daysRaw = parts[4]?.trim() || "";
+  const daysParsed = daysRaw === "" ? NaN : Number(daysRaw);
+  return {
+    product,
+    shortage,
+    earliestAvailableDate: earliestRaw || null,
+    daysUntilAvailable: Number.isFinite(daysParsed) ? daysParsed : null,
+  };
+}
+
 async function loadPendingIncomingMaxByProduct(
   prisma: PrismaClient,
   input: {
-    companyId: string;
-    warehouseId: string;
+    companyIds: string[];
+    /** When set, limits lots to this warehouse (single-company local path). */
+    warehouseId?: string;
     productIds: string[];
     onOrAfterDate: string;
   },
 ): Promise<Map<string, string>> {
-  if (input.productIds.length === 0) return new Map();
+  if (input.productIds.length === 0 || input.companyIds.length === 0) {
+    return new Map();
+  }
 
   const lots = await prisma.inventoryLot.findMany({
     where: {
-      companyId: input.companyId,
-      warehouseId: input.warehouseId,
+      companyId: { in: input.companyIds },
+      ...(input.warehouseId
+        ? { warehouseId: input.warehouseId }
+        : {
+            // Combined ETA look-ahead: ignore Projects WH incoming.
+            warehouse: { code: { not: PROJECTS_WAREHOUSE_CODE } },
+          }),
       productId: { in: input.productIds },
       status: LotStatus.INCOMING,
       expectedMaxDate: {
@@ -743,47 +991,111 @@ async function assessBookingStockCoverage(
     >;
     dispatchMinString: string;
     dispatchMaxString: string;
+    /** Anchor for "stock expected in X days" (usually booking / today). */
+    checkDateString?: string;
   },
 ): Promise<BookingStockCoverage> {
   const shortages: BookingStockShortage[] = [];
   const reservationStartByProduct = new Map<string, string>();
+  const checkDate = input.checkDateString ?? input.dispatchMinString;
+  const stockCompanies = await resolveBookingStockCompanyIds(
+    prisma,
+    input.companyId,
+  );
+  const stockCompanyIds = stockCompanies.map((company) => company.id);
+  const sisterCompanyCodes = stockCompanies
+    .filter((company) => company.id !== input.companyId)
+    .map((company) => company.code)
+    .filter(Boolean);
+
   const incomingMaxByProduct = await loadPendingIncomingMaxByProduct(prisma, {
-    companyId: input.companyId,
-    warehouseId: input.warehouseId,
+    companyIds: stockCompanyIds,
     productIds: [...input.quantitiesByProduct.keys()],
     onOrAfterDate: input.dispatchMinString,
   });
 
+  /** Products that local warehouse cannot cover but ISE+PCMV combined can. */
+  const combinedCoveredProductIds = new Set<string>();
+
   for (const [productId, entry] of input.quantitiesByProduct) {
-    const projectionEnd = resolveCoverageProjectionEndDate(
-      input.dispatchMaxString,
-      [incomingMaxByProduct.get(productId)],
-    );
-    const projection = await getInventoryProjection({
+    // 1) Local selected-warehouse projection (commercial window only).
+    const localProjection = await getInventoryProjection({
       companyId: input.companyId,
       warehouseId: input.warehouseId,
       productId,
       startDate: input.dispatchMinString,
-      endDate: projectionEnd,
+      endDate: input.dispatchMaxString,
     });
-    const reservationStart = findFeasibleReservationStartDate(
-      projection,
-      entry.qty,
-    );
-    if (reservationStart) {
-      reservationStartByProduct.set(productId, reservationStart);
+    const localCover = projectionCoversBookingQty(localProjection, entry.qty);
+    if (localCover.ok) {
+      reservationStartByProduct.set(productId, localCover.reservationStart);
       continue;
     }
 
-    const bestProjected = projection.length
-      ? Math.max(...projection.map((day) => day.projectedAvailableQuantity))
-      : 0;
+    // 2) Combined ISE + PCMV (all active warehouses) — Physical−Reserved+Incoming pooled.
+    const combinedProjection = await loadCombinedBookingProjection(prisma, {
+      companyIds: stockCompanyIds,
+      productId,
+      startDate: input.dispatchMinString,
+      endDate: input.dispatchMaxString,
+    });
+    const combinedCover = projectionCoversBookingQty(
+      combinedProjection,
+      entry.qty,
+    );
+
+    if (combinedCover.ok) {
+      combinedCoveredProductIds.add(productId);
+      shortages.push({
+        productId,
+        displayName: entry.displayName,
+        requiredQty: entry.qty,
+        localProjectedAvailable: localCover.bestProjected,
+        shortageQty: bookingShortageQty(entry.qty, localCover.bestProjected),
+        earliestAvailableDate: null,
+        daysUntilAvailable: null,
+      });
+      continue;
+    }
+
+    // 3) Combined still short — block; ETA may come from later incoming across both firms.
+    const etaEnd = resolveCoverageProjectionEndDate(input.dispatchMaxString, [
+      incomingMaxByProduct.get(productId),
+    ]);
+    let earliestAvailableDate: string | null = null;
+    if (etaEnd > input.dispatchMaxString) {
+      const etaProjection = await loadCombinedBookingProjection(prisma, {
+        companyIds: stockCompanyIds,
+        productId,
+        startDate: input.dispatchMinString,
+        endDate: etaEnd,
+      });
+      earliestAvailableDate = findEarliestAvailabilityDate(
+        etaProjection,
+        entry.qty,
+      );
+    } else {
+      earliestAvailableDate = findEarliestAvailabilityDate(
+        combinedProjection,
+        entry.qty,
+      );
+    }
+
+    const daysUntilAvailable =
+      earliestAvailableDate && earliestAvailableDate > checkDate
+        ? calendarDaysBetween(checkDate, earliestAvailableDate)
+        : earliestAvailableDate
+          ? 0
+          : null;
+
     shortages.push({
       productId,
       displayName: entry.displayName,
       requiredQty: entry.qty,
-      localProjectedAvailable: bestProjected,
-      shortageQty: bookingShortageQty(entry.qty, bestProjected),
+      localProjectedAvailable: combinedCover.bestProjected,
+      shortageQty: bookingShortageQty(entry.qty, combinedCover.bestProjected),
+      earliestAvailableDate,
+      daysUntilAvailable,
     });
   }
 
@@ -791,24 +1103,15 @@ async function assessBookingStockCoverage(
     return { shortages, coveringCompanyCodes: [], reservationStartByProduct };
   }
 
-  const otherCompanies = await prisma.company.findMany({
-    where: { id: { not: input.companyId }, isPractice: false, isDemo: false },
-    select: { id: true, code: true },
-    orderBy: { code: "asc" },
-  });
-
-  const coveringCompanyCodes: string[] = [];
-  for (const company of otherCompanies) {
-    let canCoverAll = true;
-    for (const line of shortages) {
-      const available = await getCompanyAvailableQty(prisma, company.id, line.productId);
-      if (available < line.shortageQty) {
-        canCoverAll = false;
-        break;
-      }
-    }
-    if (canCoverAll) coveringCompanyCodes.push(company.code);
-  }
+  // Sister coverage for approval only when every shortage is coverable by the
+  // combined ISE+PCMV pool (not when combined itself is still short).
+  const allShortagesCombinedCovered = shortages.every((line) =>
+    combinedCoveredProductIds.has(line.productId),
+  );
+  const coveringCompanyCodes =
+    allShortagesCombinedCovered && sisterCompanyCodes.length > 0
+      ? sisterCompanyCodes
+      : [];
 
   return { shortages, coveringCompanyCodes, reservationStartByProduct };
 }
@@ -1919,6 +2222,7 @@ async function completePiStockBooking(
     quantitiesByProduct,
     dispatchMinString,
     dispatchMaxString,
+    checkDateString: bookingDateString,
   });
   const decision = resolveBookingStockDecision({
     shortages: coverage.shortages,
@@ -1927,10 +2231,7 @@ async function completePiStockBooking(
   });
 
   if (decision === "UNAVAILABLE") {
-    const first = coverage.shortages[0]!;
-    throw new Error(
-      `INSUFFICIENT_PROJECTED_STOCK|${first.displayName}|${first.shortageQty}`,
-    );
+    throw new Error(encodeInsufficientProjectedStockError(coverage.shortages[0]!));
   }
   if (decision === "NEED_APPROVAL") {
     throw new Error(
@@ -1940,16 +2241,12 @@ async function completePiStockBooking(
 
   const usingCrossCompanyShortfall = coverage.shortages.length > 0;
 
-  // When coverage waits on incoming lots past the commercial max, stretch the
-  // committed reservation window so expectedMin/Max stay ordered.
+  // Reservation starts stay inside the commercial dispatch window.
   const reservationStarts = [...coverage.reservationStartByProduct.values()];
   const effectiveDispatchMinString = reservationStarts.length
     ? reservationStarts.reduce((a, b) => (a < b ? a : b))
     : dispatchMinString;
-  const effectiveDispatchMaxString = resolveCoverageProjectionEndDate(
-    dispatchMaxString,
-    reservationStarts,
-  );
+  const effectiveDispatchMaxString = dispatchMaxString;
   const effectiveDispatchMinDate = new Date(
     `${effectiveDispatchMinString}T00:00:00.000Z`,
   );
@@ -2154,6 +2451,9 @@ export async function requestBooking(
     where: { id: input.warehouseId, companyId: input.companyId, isActive: true },
   });
   if (!warehouse) throw new Error("WAREHOUSE_NOT_FOUND");
+  if (isSalesBookingExcludedWarehouse(warehouse.code)) {
+    throw new Error("PROJECTS_WAREHOUSE_NOT_BOOKABLE");
+  }
 
   try {
     // Local projected stock sufficient — book immediately.
@@ -2221,6 +2521,7 @@ export async function requestBooking(
       quantitiesByProduct,
       dispatchMinString,
       dispatchMaxString,
+      checkDateString: bookingDateString,
     });
 
     return submitCrossCompanyBookingForApproval(prisma, {

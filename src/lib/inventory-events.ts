@@ -221,6 +221,8 @@ export function applyRemainingPiQtyToBookingReservations(
   remainingByPiId: ReadonlyMap<string, number>,
 ): InventoryEvent[] {
   const adjusted: InventoryEvent[] = [];
+  /** Qty already allocated to earlier reservation events for the same PI. */
+  const usedByPiId = new Map<string, number>();
   for (const event of events) {
     if (
       event.eventType !== "BOOKING_RESERVATION" ||
@@ -231,9 +233,12 @@ export function applyRemainingPiQtyToBookingReservations(
       continue;
     }
 
-    const remaining = remainingByPiId.get(event.sourceId) ?? 0;
+    const piRemaining = remainingByPiId.get(event.sourceId) ?? 0;
+    const alreadyUsed = usedByPiId.get(event.sourceId) ?? 0;
+    const remaining = Math.max(0, piRemaining - alreadyUsed);
     const quantity = Math.max(0, Math.min(event.quantity, remaining));
     if (quantity <= 0) continue;
+    usedByPiId.set(event.sourceId, alreadyUsed + quantity);
     adjusted.push(quantity === event.quantity ? event : { ...event, quantity });
   }
   return adjusted;

@@ -162,33 +162,52 @@ function isDispatchTodayReservation(
 }
 
 /**
- * Reserved baseline is remaining open PI quantity, not the original booking
- * event. Dispatch Today PIs are excluded so they appear as same-day outgoing
- * (Pending) instead of being double-counted. Fully dispatched PIs are excluded
- * because physical stock already reflects the DC.
+ * Reserved = remaining open PI quantity (qty − dispatched) after
+ * {@link applyRemainingPiQtyToBookingReservations}.
+ *
+ * Includes future dispatch-window bookings and partially dispatched PIs so the
+ * metric matches the reserved-qty report / PRD (“allocated but not yet
+ * dispatched”). Pending Dispatch Today rows stay in this total; projection
+ * adds them back into the physical baseline and lists them as today’s
+ * outgoing so they are not double-counted.
  */
 export function computeTimelineReservedQuantity(
   events: readonly InventoryEvent[],
   superseded: ReadonlySet<string>,
-  startDate: string,
-  dispatchTodayByPiId: ReadonlyMap<string, DispatchTodayPiInfo>,
 ): number {
   let reserved = 0;
   for (const event of events) {
     if (superseded.has(event.id)) continue;
     if (event.eventType !== "BOOKING_RESERVATION") continue;
     if (event.quantity <= 0) continue;
-    if (isDispatchTodayReservation(event, dispatchTodayByPiId)) continue;
-    if (getInventoryEventProjectionDate(event) <= startDate) {
-      reserved += event.quantity;
-    }
+    reserved += event.quantity;
   }
   return reserved;
 }
 
+/** Remaining qty on PIs marked Dispatch Today and still Pending. */
+export function sumPendingDispatchTodayQuantity(
+  events: readonly InventoryEvent[],
+  superseded: ReadonlySet<string>,
+  dispatchTodayByPiId: ReadonlyMap<string, DispatchTodayPiInfo>,
+): number {
+  let total = 0;
+  for (const event of events) {
+    if (superseded.has(event.id)) continue;
+    if (event.eventType !== "BOOKING_RESERVATION") continue;
+    if (event.quantity <= 0) continue;
+    if (isDispatchTodayReservation(event, dispatchTodayByPiId)?.status !== "Pending") {
+      continue;
+    }
+    total += event.quantity;
+  }
+  return total;
+}
+
 /**
  * Today’s projection includes Pending Dispatch Today reservations as outgoing.
- * Other same-day reservations stay in the reserved baseline.
+ * Other booking reservations (including future windows) stay in the reserved
+ * baseline and must not appear again as projection decreases.
  */
 export function selectTimelineProjectionEvents(
   events: readonly InventoryEvent[],
@@ -212,6 +231,10 @@ export function selectTimelineProjectionEvents(
       continue;
     }
 
+    // Already counted in the reserved baseline (including future windows).
+    if (event.eventType === "BOOKING_RESERVATION") continue;
+    if (event.eventType === "BOOKING_RELEASE") continue;
+
     const projectionDate = getInventoryEventProjectionDate(event);
     if (projectionDate > startDate) {
       selected.push(event);
@@ -220,8 +243,6 @@ export function selectTimelineProjectionEvents(
     if (projectionDate < startDate) continue;
 
     if (
-      event.eventType !== "BOOKING_RESERVATION" &&
-      event.eventType !== "BOOKING_RELEASE" &&
       event.eventType !== "ACTUAL_DISPATCH" &&
       event.eventType !== "MANUAL_ADJUSTMENT_IN" &&
       event.eventType !== "MANUAL_ADJUSTMENT_OUT"
@@ -464,8 +485,15 @@ export async function loadInventoryTimeline(
     isActive: true,
     ...(input.productId ? { id: input.productId } : {}),
   };
-  const [products, lots, serialGroups, eventRows, safetyRows, inwardRows] =
-    await Promise.all([
+  const [
+    products,
+    lots,
+    serialGroups,
+    eventRows,
+    safetyRows,
+    inwardRows,
+    openReservedItems,
+  ] = await Promise.all([
       client.product.findMany({
         where: productWhere,
         select: {
@@ -551,9 +579,58 @@ export async function loadInventoryTimeline(
           createdAt: true,
         },
       }),
+      // Source of truth for Reserved (same statuses as reserved-qty report).
+      client.proformaInvoiceItem.findMany({
+        where: {
+          ...(input.productId ? { productId: input.productId } : {}),
+          proformaInvoice: {
+            companyId: { in: input.companyIds },
+            warehouseId: { in: warehouseIds },
+            status: {
+              in: [
+                ProformaInvoiceStatus.BOOKED,
+                ProformaInvoiceStatus.PARTIALLY_DISPATCHED,
+              ],
+            },
+          },
+        },
+        select: {
+          productId: true,
+          qty: true,
+          dispatchedQty: true,
+          proformaInvoice: {
+            select: {
+              id: true,
+              companyId: true,
+              warehouseId: true,
+              customer: { select: { customerName: true } },
+            },
+          },
+        },
+      }),
     ]);
 
   const productById = new Map(products.map((product) => [product.id, product]));
+  // Inactive products can still have open bookings; include them so Reserved
+  // matches the reserved-qty report.
+  const missingReservedProductIds = [
+    ...new Set(openReservedItems.map((item) => item.productId)),
+  ].filter((id) => !productById.has(id));
+  if (missingReservedProductIds.length > 0) {
+    const extraProducts = await client.product.findMany({
+      where: { id: { in: missingReservedProductIds } },
+      select: {
+        id: true,
+        displayName: true,
+        serialTracking: true,
+        brand: { select: { name: true } },
+        category: { select: { name: true } },
+      },
+    });
+    for (const product of extraProducts) {
+      productById.set(product.id, product);
+    }
+  }
   const warehouseById = new Map(
     warehouses.map((warehouse) => [warehouse.id, warehouse]),
   );
@@ -579,14 +656,15 @@ export async function loadInventoryTimeline(
     ]),
   );
   const piSourceIds = [
-    ...new Set(
-      eventRows
+    ...new Set([
+      ...eventRows
         .filter(
           (row) =>
             row.sourceType === "PROFORMA_INVOICE" && Boolean(row.sourceId),
         )
         .map((row) => row.sourceId as string),
-    ),
+      ...openReservedItems.map((item) => item.proformaInvoice.id),
+    ]),
   ];
   const piCustomerById = new Map<string, string>();
   const dispatchTodayByPiId = new Map<string, DispatchTodayPiInfo>();
@@ -661,12 +739,13 @@ export async function loadInventoryTimeline(
       (sum, item) => sum + Number(item.qty),
       0,
     );
-    const hasDispatchedDc = pi.dispatches.length > 0;
+    // Only fully dispatched PIs leave the Pending bucket. A partial DC today
+    // must keep remaining qty as Pending outgoing (and in reserved).
     const fullyDispatched = pi.items.every(
       (item) => Number(item.dispatchedQty) >= Number(item.qty),
     );
     dispatchTodayByPiId.set(pi.id, {
-      status: hasDispatchedDc || fullyDispatched ? "Dispatched" : "Pending",
+      status: fullyDispatched ? "Dispatched" : "Pending",
       fullQuantity,
       customerName: pi.customer.customerName,
       piNo: pi.piNo,
@@ -680,6 +759,8 @@ export async function loadInventoryTimeline(
       (sum, item) => sum + Number(item.qty),
       0,
     );
+    // Day-panel listing only. Remaining open qty on partial DCs stays in
+    // reserved — computeTimelineReservedQuantity no longer excludes these.
     dispatchTodayByPiId.set(pi.id, {
       status: "Dispatched",
       fullQuantity,
@@ -783,6 +864,21 @@ export async function loadInventoryTimeline(
     scope.events.push(adjustedEvent);
   }
 
+  /** Group key → reserved qty from open PI items (report source of truth). */
+  const reservedByGroupKey = new Map<string, number>();
+  for (const item of openReservedItems) {
+    const rem = Math.max(0, Number(item.qty) - Number(item.dispatchedQty));
+    if (rem <= 0) continue;
+    const pi = item.proformaInvoice;
+    // Ensure the product appears on the timeline even with no lots/events.
+    getScope(pi.companyId, pi.warehouseId, item.productId);
+    piCustomerById.set(pi.id, pi.customer.customerName);
+    const key = input.combined
+      ? item.productId
+      : `${pi.companyId}:${item.productId}`;
+    reservedByGroupKey.set(key, (reservedByGroupKey.get(key) ?? 0) + rem);
+  }
+
   const grouped = new Map<string, TimelineScope[]>();
   for (const scope of scopeData.values()) {
     if (!productById.has(scope.productId)) continue;
@@ -798,16 +894,17 @@ export async function loadInventoryTimeline(
   for (const [key, scopes] of grouped) {
     const product = productById.get(scopes[0].productId);
     if (!product) continue;
+    const scopeEvents = scopes.flatMap((scope) => scope.events);
     const remainingByPiId = remainingReservedQtyByPiId(sourcePis, product.id);
     const events = applyRemainingPiQtyToBookingReservations(
-      scopes.flatMap((scope) => scope.events),
+      scopeEvents,
       remainingByPiId,
     );
     const superseded = getSupersededInventoryEventIds(events);
-    const reserved = computeTimelineReservedQuantity(
+    const reserved = reservedByGroupKey.get(key) ?? 0;
+    const pendingDispatchTodayQty = sumPendingDispatchTodayQuantity(
       events,
       superseded,
-      input.startDate,
       dispatchTodayByPiId,
     );
     const physical = scopes.reduce((sum, scope) => sum + scope.physical, 0);
@@ -819,8 +916,10 @@ export async function loadInventoryTimeline(
       input.startDate,
       dispatchTodayByPiId,
     );
+    // Reserved includes Pending Dispatch Today; add those units back so they
+    // are only subtracted once via today’s outgoing projection events.
     const projection = calculateInventoryProjection({
-      physicalStock: Math.max(0, physical - reserved),
+      physicalStock: Math.max(0, physical - reserved + pendingDispatchTodayQty),
       safetyStock: safety,
       startDate: input.startDate,
       endDate: input.endDate,
@@ -861,7 +960,8 @@ export async function loadInventoryTimeline(
       incoming,
       safety,
       netAvailableToday:
-        projection[0]?.projectedAvailableQuantity ?? physical - reserved - safety,
+        projection[0]?.projectedAvailableQuantity ??
+        physical - reserved - safety,
       days: projection.map((day) => {
         const dispatched = sumDispatchedQuantityForDay(
           events,

@@ -105,20 +105,17 @@ describe("dispatch today day breakdown", () => {
     ],
   ]);
 
-  it("keeps pending dispatch-today out of reserved and in today’s outgoing", () => {
+  it("counts all remaining bookings as reserved, with pending DT as today’s outgoing", () => {
     const events = [
       reservation("r1", 36, startDate, "pi-pending"),
       reservation("r2", 10, "2026-08-10", "pi-future"),
     ];
     const superseded = new Set<string>();
 
-    const reserved = computeTimelineReservedQuantity(
-      events,
-      superseded,
-      startDate,
-      dispatchTodayByPiId,
-    );
-    expect(reserved).toBe(0);
+    const reserved = computeTimelineReservedQuantity(events, superseded);
+    // Future window + pending Dispatch Today both count as reserved (PRD /
+    // reserved-qty report). Pending DT is also projected as today’s outgoing.
+    expect(reserved).toBe(46);
 
     const projectionEvents = selectTimelineProjectionEvents(
       events,
@@ -126,41 +123,34 @@ describe("dispatch today day breakdown", () => {
       startDate,
       dispatchTodayByPiId,
     );
-    expect(projectionEvents.map((event) => event.id)).toEqual([
-      "r1",
-      "r2",
-    ]);
+    expect(projectionEvents.map((event) => event.id)).toEqual(["r1"]);
 
     const physical = 72;
     const safety = 20;
+    const pendingDispatchTodayQty = 36;
     const projection = calculateInventoryProjection({
-      physicalStock: Math.max(0, physical - reserved),
+      physicalStock: Math.max(0, physical - reserved + pendingDispatchTodayQty),
       safetyStock: safety,
       startDate,
       endDate: startDate,
       events: projectionEvents,
     });
 
+    // 72 physical − 46 reserved − 20 safety = 6 net (DT outgoing offsets the
+    // DT portion that was added back into the baseline).
     expect(projection[0]).toMatchObject({
-      openingQuantity: 52,
+      openingQuantity: 42,
       outgoingQuantity: 36,
-      projectedAvailableQuantity: 16,
+      projectedAvailableQuantity: 6,
     });
   });
 
-  it("still counts non-dispatch-today started bookings as reserved", () => {
+  it("still counts non-dispatch-today bookings as reserved alongside DT", () => {
     const events = [
       reservation("r1", 36, startDate, "pi-pending"),
       reservation("r-other", 10, startDate, "pi-other"),
     ];
-    expect(
-      computeTimelineReservedQuantity(
-        events,
-        new Set(),
-        startDate,
-        dispatchTodayByPiId,
-      ),
-    ).toBe(10);
+    expect(computeTimelineReservedQuantity(events, new Set())).toBe(46);
   });
 
   it("counts only remaining open PI qty as reserved", () => {
@@ -231,34 +221,36 @@ describe("dispatch today day breakdown", () => {
       events,
       remainingByPiId,
     );
-    expect(
-      computeTimelineReservedQuantity(
-        adjusted,
-        new Set(),
-        startDate,
-        dispatchTodayByPiId,
-      ),
-    ).toBe(15);
+    expect(computeTimelineReservedQuantity(adjusted, new Set())).toBe(15);
   });
 
   it("does not treat dispatched dispatch-today as outgoing", () => {
     const events = [reservation("r-done", 12, startDate, "pi-done")];
     const superseded = new Set<string>();
 
-    expect(
-      computeTimelineReservedQuantity(
-        events,
-        superseded,
-        startDate,
-        dispatchTodayByPiId,
-      ),
-    ).toBe(0);
+    // Fully-dispatched DT rows still appear as reservation events until
+    // remaining-qty capping drops them; here qty is left as-is so reserved
+    // counts them, but projection must not treat them as outgoing.
+    expect(computeTimelineReservedQuantity(events, superseded)).toBe(12);
     expect(
       selectTimelineProjectionEvents(
         events,
         superseded,
         startDate,
         dispatchTodayByPiId,
+      ),
+    ).toEqual([]);
+  });
+
+  it("includes future-window reservations in reserved and not in projection events", () => {
+    const events = [reservation("r-future", 360, "2026-08-05", "pi-future")];
+    expect(computeTimelineReservedQuantity(events, new Set())).toBe(360);
+    expect(
+      selectTimelineProjectionEvents(
+        events,
+        new Set(),
+        startDate,
+        new Map(),
       ),
     ).toEqual([]);
   });

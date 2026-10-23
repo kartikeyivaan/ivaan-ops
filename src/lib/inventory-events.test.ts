@@ -227,6 +227,38 @@ describe("inventory events", () => {
     ]);
   });
 
+  it("does not double-count duplicate reservation events for the same PI", () => {
+    const events: InventoryEvent[] = [
+      {
+        id: "reserve-a",
+        eventType: "BOOKING_RESERVATION",
+        status: "ACTIVE",
+        quantity: 40,
+        effectiveDate: "2026-08-07",
+        expectedMinDate: "2026-08-07",
+        sourceType: "PROFORMA_INVOICE",
+        sourceId: "pi-dup",
+      },
+      {
+        id: "reserve-b",
+        eventType: "BOOKING_RESERVATION",
+        status: "ACTIVE",
+        quantity: 40,
+        effectiveDate: "2026-08-08",
+        expectedMinDate: "2026-08-08",
+        sourceType: "PROFORMA_INVOICE",
+        sourceId: "pi-dup",
+      },
+    ];
+
+    expect(
+      applyRemainingPiQtyToBookingReservations(
+        events,
+        new Map([["pi-dup", 40]]),
+      ),
+    ).toEqual([expect.objectContaining({ id: "reserve-a", quantity: 40 })]);
+  });
+
   it("computes remaining reserved qty only for open PI statuses", () => {
     const productId = "prod-610";
     const remaining = remainingReservedQtyByPiId(

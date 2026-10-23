@@ -122,11 +122,32 @@ export function InvoiceQueue({ rows }: { rows: QueueRow[] }) {
               ) : null}
               {canRecordInvoice ? (
                 editing === row.id ? (
-                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                    <div className="space-y-1"><Label>Invoice number</Label><Input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} /></div>
-                    <div className="space-y-1"><Label>Invoice date</Label><Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} /></div>
-                    <div className="flex items-end gap-2"><Button onClick={save}>Record invoice</Button><Button variant="outline" onClick={() => setEditing(null)}>Cancel</Button></div>
-                  </div>
+                  <form
+                    className="mt-4 grid gap-3 sm:grid-cols-3"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void save();
+                    }}
+                  >
+                    <div className="space-y-1">
+                      <Label>Invoice number</Label>
+                      <Input
+                        value={invoiceNumber}
+                        onChange={(e) => setInvoiceNumber(e.target.value)}
+                        autoFocus
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Invoice date</Label>
+                      <Input type="date" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
+                    </div>
+                    <div className="flex items-end gap-2">
+                      <Button type="submit">Record invoice</Button>
+                      <Button type="button" variant="outline" onClick={() => setEditing(null)}>
+                        Cancel
+                      </Button>
+                    </div>
+                  </form>
                 ) : <Button className="mt-3" onClick={() => { setEditing(row.id); setError(""); }}>Record invoice</Button>
               ) : row.dispatch.status === "CANCELLED" || row.dispatch.status === "CANCEL_PENDING" ? (
                 <p className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">

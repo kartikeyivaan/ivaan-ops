@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import fontkit from "@pdf-lib/fontkit";
 import PDFDocument from "pdfkit";
 import { PDFDocument as PdfLibDocument, rgb } from "pdf-lib";
 import type { TemplateContent } from "@/lib/doc-gen-template-content";
@@ -463,8 +464,10 @@ function drawRichTextPdf(html: string, pageConfig: PageConfiguration): Promise<B
 
 async function loadEmbeddedFont(pdfDoc: PdfLibDocument) {
   try {
+    // Custom TTF embedding requires fontkit (Noto Sans for Devanagari / full Unicode).
+    pdfDoc.registerFontkit(fontkit);
     const bytes = fs.readFileSync(FONT_PATH);
-    return pdfDoc.embedFont(bytes, { subset: true });
+    return await pdfDoc.embedFont(bytes, { subset: true });
   } catch {
     return pdfDoc.embedFont("Helvetica");
   }

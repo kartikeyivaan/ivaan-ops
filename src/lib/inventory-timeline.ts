@@ -871,7 +871,9 @@ export async function loadInventoryTimeline(
     if (rem <= 0) continue;
     const pi = item.proformaInvoice;
     // Ensure the product appears on the timeline even with no lots/events.
-    getScope(pi.companyId, pi.warehouseId, item.productId);
+    if (pi.warehouseId) {
+      getScope(pi.companyId, pi.warehouseId, item.productId);
+    }
     piCustomerById.set(pi.id, pi.customer.customerName);
     const key = input.combined
       ? item.productId

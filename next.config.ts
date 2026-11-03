@@ -49,7 +49,42 @@ function tracingKeysFor(route: string): string[] {
   return [...new Set([escaped, starred])];
 }
 
+/**
+ * Baseline security headers. CSP is intentionally not set yet; see the
+ * follow-up list in the commit/PR notes.
+ *
+ * X-Frame-Options is DENY globally. The PDF routes below are embedded in
+ * same-origin <iframe> previews (letter-detail, document-generator wizard and
+ * generation-detail), so they are overridden to SAMEORIGIN. Next applies every
+ * matching header rule, and the later, more specific rule wins for the same key.
+ */
+const securityHeaders = [
+  {
+    key: "Strict-Transport-Security",
+    value: "max-age=31536000; includeSubDomains",
+  },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  // camera stays allowed for the html5-qrcode scanner.
+  { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=()" },
+];
+
+const sameOriginFramePaths = [
+  "/api/letters/:id/pdf",
+  "/api/document-generator/generations/:id/pdf",
+];
+
 const nextConfig: NextConfig = {
+  async headers() {
+    return [
+      { source: "/(.*)", headers: securityHeaders },
+      ...sameOriginFramePaths.map((source) => ({
+        source,
+        headers: [{ key: "X-Frame-Options", value: "SAMEORIGIN" }],
+      })),
+    ];
+  },
   experimental: {
     serverActions: {
       bodySizeLimit: "2mb",

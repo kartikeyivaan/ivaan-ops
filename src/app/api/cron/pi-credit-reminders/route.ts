@@ -1,19 +1,15 @@
 import { NextResponse } from "next/server";
 import { processPiCreditReminders } from "@/lib/pi-credit-service";
 import { prisma } from "@/lib/prisma";
+import { verifyCronRequest } from "@/lib/cron-auth";
 
 /**
  * Daily credit collection reminders (day 3+ after approval) and overdue
- * escalation to Sales Managers. Secure with CRON_SECRET when set.
+ * escalation to Sales Managers. Requires CRON_SECRET; fails closed when unset.
  */
 export async function GET(request: Request) {
-  const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret) {
-    const authHeader = request.headers.get("authorization");
-    if (authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ code: "UNAUTHORIZED", message: "Unauthorized." }, { status: 401 });
-    }
-  }
+  const denied = verifyCronRequest(request);
+  if (denied) return denied;
 
   const result = await processPiCreditReminders(prisma);
   return NextResponse.json({ ok: true, ...result });

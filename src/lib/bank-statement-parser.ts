@@ -4,7 +4,11 @@ import * as XLSX from "xlsx";
 import { looksLikeHdfcStatement, HDFCStatementParser } from "@/lib/bank-parsers/hdfc-statement-parser";
 import { looksLikeIciciStatement, ICICIStatementParser } from "@/lib/bank-parsers/icici-statement-parser";
 import { looksLikeSbiStatement, SBIStatementParser } from "@/lib/bank-parsers/sbi-statement-parser";
-import { parseStatementDate, sheetRowsFromWorkbook } from "@/lib/bank-parsers/parse-utils";
+import {
+  assertStatementRowLimit,
+  parseStatementDate,
+  sheetRowsFromWorkbook,
+} from "@/lib/bank-parsers/parse-utils";
 import {
   BankStatementParseError,
   type BankStatementParser,
@@ -117,6 +121,7 @@ export class FixtureCsvBankStatementParser implements BankStatementParser {
     if (rows.length === 0) {
       throw new BankStatementParseError("No rows found.", "EMPTY_STATEMENT");
     }
+    assertStatementRowLimit(rows.length);
 
     const transactions = rows.map((row, index) => {
       const debit = Number(String(row.debit ?? row.Debit ?? "0").replace(/,/g, "")) || 0;

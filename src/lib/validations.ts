@@ -157,7 +157,7 @@ export const customerImportRowSchema = z.object({
 
 export const customerImportSchema = z.object({
   mode: z.enum(["preview", "import"]),
-  rows: z.array(customerImportRowSchema).min(1),
+  rows: z.array(customerImportRowSchema).min(1).max(2000),
 });
 
 export const kitComponentSchema = z.object({

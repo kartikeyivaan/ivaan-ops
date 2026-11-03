@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { BankStatementParseError } from "@/lib/bank-statement-types";
 
 /** Shared parsing helpers for bank statement spreadsheets. */
 
@@ -159,6 +160,18 @@ export function extractReferenceFromNarration(narration: string): string | null 
   return null;
 }
 
+/** Upper bound on data rows accepted from an uploaded statement sheet. */
+export const MAX_STATEMENT_ROWS = 20000;
+
+export function assertStatementRowLimit(rowCount: number): void {
+  if (rowCount > MAX_STATEMENT_ROWS) {
+    throw new BankStatementParseError(
+      `Statement has too many rows (max ${MAX_STATEMENT_ROWS}).`,
+      "PARSER_ERROR",
+    );
+  }
+}
+
 export function sheetRowsFromWorkbook(workbook: XLSX.WorkBook): {
   sheetName: string;
   rows: unknown[][];
@@ -172,6 +185,7 @@ export function sheetRowsFromWorkbook(workbook: XLSX.WorkBook): {
     defval: "",
     raw: true,
   });
+  assertStatementRowLimit(rows.length);
   return { sheetName, rows };
 }
 

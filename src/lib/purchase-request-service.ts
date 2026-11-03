@@ -157,7 +157,7 @@ export function serializePurchaseRequest(row: RequestRecord): SerializedPurchase
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     lineCount: row.lines.length,
-    projectLink: linkedProject
+    projectLink: linkedProject && linkedProject.proposal
       ? {
           projectId: linkedProject.id,
           projectNo: linkedProject.projectNo,

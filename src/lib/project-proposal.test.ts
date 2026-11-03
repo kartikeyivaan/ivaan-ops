@@ -120,6 +120,7 @@ function createMockPrisma(options: {
     basePrice: number;
     isActive: boolean;
     isComingSoon: boolean;
+    packageType?: string;
   };
   brands: Array<{
     code: string;

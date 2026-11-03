@@ -1231,7 +1231,7 @@ async function listPendingProjectMaterialApprovals(
         type: "PROJECT_MATERIAL" as const,
         moduleId: project.id,
         documentNo: project.projectNo,
-        subjectName: `${project.customerName} · ${project.proposal.proposalNo}`,
+        subjectName: `${project.customerName} · ${project.proposal?.proposalNo ?? "-"}`,
         reason: reasonMap.get(approval.id) ?? "Project material assignment",
         requestedByName: approval.requestedBy.name,
         requestedAt: toIso(approval.createdAt),
@@ -1830,7 +1830,7 @@ async function loadModuleMeta(
     for (const row of rows) {
       map.set(row.id, {
         documentNo: row.projectNo,
-        subjectName: `${row.customerName} · ${row.proposal.proposalNo}`,
+        subjectName: `${row.customerName} · ${row.proposal?.proposalNo ?? "-"}`,
         reason: "Project material assignment",
         href: `/projects/execution/${row.id}`,
       });

@@ -428,7 +428,7 @@ export async function approveProjectMaterialAssignment(
         companyCode: project.company.code,
         projectId: project.id,
         projectNo: project.projectNo,
-        proposalNo: project.proposal.proposalNo,
+        proposalNo: project.proposal?.proposalNo ?? "-",
         materialLineId: line.id,
         productId: line.productId,
         requestedQty: shortfallQty,

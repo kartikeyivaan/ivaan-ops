@@ -101,7 +101,9 @@ export function mapPrismaCustomerError(error: unknown): {
   return null;
 }
 
-export async function parseApiJson<T = Record<string, unknown>>(
+// Callers read ad-hoc fields from untyped JSON bodies; default stays loosely typed.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function parseApiJson<T = Record<string, any>>(
   response: Response,
 ): Promise<T> {
   const rawBody = await response.text();

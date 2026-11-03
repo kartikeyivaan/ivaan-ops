@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { Prisma } from "@prisma/client";
 import { quotationPdfContentVersion } from "@/lib/pdf-content-versions";
 import type { QuotationRecord } from "@/lib/quotation-service";
 
@@ -14,7 +15,7 @@ function minimalQuotation(overrides: Partial<QuotationRecord> = {}): QuotationRe
     parentQuotationId: null,
     quotationDate: new Date("2025-01-01"),
     expiryDate: new Date("2025-01-04"),
-    totalValue: 1000,
+    totalValue: new Prisma.Decimal(1000),
     notes: null,
     deliveryTermMode: "LEGACY",
     bookingAllowed: false,
@@ -46,7 +47,7 @@ function minimalQuotation(overrides: Partial<QuotationRecord> = {}): QuotationRe
       id: "cust1",
       customerName: "Acme",
       customerCode: "ACME",
-      gstNumber: null,
+      gstNumber: "",
       address: null,
       city: null,
       state: null,
@@ -67,18 +68,18 @@ function minimalQuotation(overrides: Partial<QuotationRecord> = {}): QuotationRe
         id: "i1",
         quotationId: "q1",
         productId: "p1",
-        qty: 2,
-        rate: 500,
-        gstRate: 18,
-        lineTotal: 1000,
+        qty: new Prisma.Decimal(2),
+        rate: new Prisma.Decimal(500),
+        gstRate: new Prisma.Decimal(18),
+        lineTotal: new Prisma.Decimal(1000),
         approvalStatus: "APPROVED",
         product: {
           id: "p1",
           displayName: "Panel",
           pricingType: "UNIT",
-          capacity: 550,
-          capacityUnit: "W",
-          gstRate: 18,
+          capacity: new Prisma.Decimal(550),
+          capacityUnit: "WP",
+          gstRate: new Prisma.Decimal(18),
           hsn: "8541",
         },
       },
@@ -95,11 +96,11 @@ describe("quotationPdfContentVersion", () => {
         items: [
           {
             ...minimalQuotation().items[0],
-            qty: 3,
-            lineTotal: 1500,
+            qty: new Prisma.Decimal(3),
+            lineTotal: new Prisma.Decimal(1500),
           },
         ],
-        totalValue: 1500,
+        totalValue: new Prisma.Decimal(1500),
       }),
     );
     expect(after).not.toBe(before);

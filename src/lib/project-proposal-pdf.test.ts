@@ -53,6 +53,7 @@ function buildProposalFixture(): ProjectProposalPdfRecord {
         id: "44444444-4444-4444-4444-444444444444",
         proposalId: "11111111-1111-1111-1111-111111111111",
         revisionNo: 0,
+        batteryCount: 0,
         customerName: "Rahul Sharma",
         customerMobile: "9876543210",
         shortAddress: "Satellite, Ahmedabad",

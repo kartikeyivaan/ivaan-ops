@@ -57,6 +57,35 @@ export function canViewProjectDispatchSerials(userRoles: string[]): boolean {
   return hasRole(userRoles, [...DISPATCH_SERIAL_ROLES]);
 }
 
+/** Warehouse + PM + SA — prepare Simple Project Dispatch drafts / scan serials. */
+const PREPARE_SIMPLE_DISPATCH_ROLES = [
+  ROLES.SUPER_ADMIN,
+  ROLES.WAREHOUSE,
+  ROLES.PROJECTS_MANAGER,
+] as const;
+
+/** PM + SA only — confirm, approve large DCs, cancel + restock. */
+const CONFIRM_SIMPLE_DISPATCH_ROLES = [
+  ROLES.SUPER_ADMIN,
+  ROLES.PROJECTS_MANAGER,
+] as const;
+
+export function canPrepareSimpleProjectDispatch(userRoles: string[]): boolean {
+  return hasRole(userRoles, [...PREPARE_SIMPLE_DISPATCH_ROLES]);
+}
+
+export function canConfirmSimpleProjectDispatch(userRoles: string[]): boolean {
+  return hasRole(userRoles, [...CONFIRM_SIMPLE_DISPATCH_ROLES]);
+}
+
+export function canCancelSimpleProjectDispatch(userRoles: string[]): boolean {
+  return hasRole(userRoles, [...CONFIRM_SIMPLE_DISPATCH_ROLES]);
+}
+
+export function canCreateMinimalProject(userRoles: string[]): boolean {
+  return hasRole(userRoles, [...PREPARE_SIMPLE_DISPATCH_ROLES]);
+}
+
 const CLOSE_PROJECT_ROLES = [ROLES.SUPER_ADMIN, ROLES.PROJECTS_MANAGER] as const;
 
 const RETURN_STOCK_ROLES = [

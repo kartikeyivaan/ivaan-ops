@@ -82,6 +82,7 @@ export async function generateProjectNumber(
 
 export const PROJECT_DISPATCH_STATUS_LABELS: Record<string, string> = {
   DRAFT: "Draft",
+  PENDING_APPROVAL: "Pending Approval",
   DISPATCHED: "Dispatched",
   CANCEL_PENDING: "Cancel Pending",
   CANCELLED: "Cancelled",

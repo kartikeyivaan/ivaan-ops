@@ -81,9 +81,9 @@ export type SerializedProject = {
   id: string;
   projectNo: string;
   companyId: string;
-  proposalId: string;
-  proposalNo: string;
-  revisionId: string;
+  proposalId: string | null;
+  proposalNo: string | null;
+  revisionId: string | null;
   warehouseId: string;
   warehouseName: string;
   customerName: string;
@@ -133,7 +133,7 @@ export function serializeProject(record: ProjectRecord): SerializedProject {
     projectNo: record.projectNo,
     companyId: record.companyId,
     proposalId: record.proposalId,
-    proposalNo: record.proposal.proposalNo,
+    proposalNo: record.proposal?.proposalNo ?? null,
     revisionId: record.revisionId,
     warehouseId: record.warehouseId,
     warehouseName: record.warehouse.name,

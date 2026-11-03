@@ -32,6 +32,32 @@ const SERVICE_ERRORS: Record<string, { message: string; status: number }> = {
     message: "Receiver name and vehicle number are required.",
     status: 400,
   },
+  RECEIVER_NAME_REQUIRED: {
+    message: "Receiver name is required.",
+    status: 400,
+  },
+  PROJECT_NO_REQUIRED: { message: "Project number is required.", status: 400 },
+  CUSTOMER_NAME_REQUIRED: { message: "Customer name is required.", status: 400 },
+  PROJECT_NO_EXISTS: {
+    message: "A project with this project number already exists.",
+    status: 409,
+  },
+  APPROVAL_REQUIRED: {
+    message: "This dispatch has more than 10 serials and must be submitted for approval first.",
+    status: 400,
+  },
+  APPROVAL_NOT_REQUIRED: {
+    message: "This dispatch has 10 or fewer serials — a Projects Manager can confirm it directly.",
+    status: 400,
+  },
+  CANCEL_STOCK_MOVED: {
+    message: "Cannot cancel: one or more serials have moved since dispatch. Resolve manually.",
+    status: 409,
+  },
+  CANCEL_NON_SERIAL_UNSUPPORTED: {
+    message: "Cannot cancel a dispatch that includes non-serial lines.",
+    status: 400,
+  },
   NEGATIVE_STOCK_BLOCKED: {
     message: "Insufficient available stock to complete this dispatch.",
     status: 400,

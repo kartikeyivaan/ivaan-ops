@@ -33,7 +33,7 @@ type ProjectDispatchDetailData = {
     customerName: string;
     customerMobile: string;
     siteAddress: string;
-    proposal: { proposalNo: string };
+    proposal?: { proposalNo: string } | null;
   };
   warehouse: { name: string };
   lines: Array<{
@@ -84,7 +84,10 @@ export function ProjectDispatchDetail({
         <div>
           <h1 className="text-2xl font-bold text-slate-900">{dispatch.dispatchNo}</h1>
           <p className="text-sm text-slate-500">
-            Project {dispatch.project.projectNo} · Proposal {dispatch.project.proposal.proposalNo}
+            Project {dispatch.project.projectNo}
+            {dispatch.project.proposal?.proposalNo
+              ? ` · Proposal ${dispatch.project.proposal.proposalNo}`
+              : ""}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

@@ -893,13 +893,48 @@ export const createProjectDispatchSchema = z.object({
 export const projectDispatchSearchSchema = z.object({
   q: z.string().optional(),
   projectId: z.string().uuid().optional(),
-  status: z.enum(["DRAFT", "DISPATCHED", "CANCEL_PENDING", "CANCELLED"]).optional(),
+  status: z
+    .enum(["DRAFT", "PENDING_APPROVAL", "DISPATCHED", "CANCEL_PENDING", "CANCELLED"])
+    .optional(),
 });
 
 export const lookupProjectDispatchSerialsSchema = z.object({
   projectId: z.string().uuid(),
   productId: z.string().uuid(),
   serialNumbers: serialNumbersPerEntrySchema,
+});
+
+export const createMinimalProjectSchema = z.object({
+  projectNo: z.string().trim().min(1).max(64),
+  customerName: z.string().trim().min(1).max(200),
+});
+
+export const simpleProjectDispatchSerialSchema = z.object({
+  serialId: z.string().uuid(),
+  productId: z.string().uuid(),
+});
+
+export const createSimpleProjectDispatchSchema = z.object({
+  projectId: z.string().uuid(),
+  receiverName: z.string().trim().optional(),
+  remarks: z.string().optional(),
+  serials: z.array(simpleProjectDispatchSerialSchema).min(1).max(MAX_SERIALS_PER_ENTRY),
+});
+
+export const updateSimpleProjectDispatchSchema = z.object({
+  receiverName: z.string().trim().optional(),
+  remarks: z.string().optional(),
+  serials: z.array(simpleProjectDispatchSerialSchema).min(1).max(MAX_SERIALS_PER_ENTRY),
+});
+
+export const lookupSimpleProjectDispatchSerialsSchema = z.object({
+  projectId: z.string().uuid(),
+  serialNumbers: serialNumbersPerEntrySchema,
+});
+
+export const simpleProjectDispatchSearchSchema = z.object({
+  q: z.string().optional(),
+  projectId: z.string().uuid().optional(),
 });
 
 export const returnProjectStockSchema = z.object({

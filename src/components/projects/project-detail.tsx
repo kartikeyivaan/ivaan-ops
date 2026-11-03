@@ -485,14 +485,21 @@ export function ProjectDetailView({
         <div>
           <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">{project.projectNo}</h1>
           <p className="text-sm text-slate-500">
-            Proposal{" "}
-            <Link
-              href={`/projects/proposals/${project.proposalId}`}
-              className="font-medium text-emerald-700 hover:underline"
-            >
-              {project.proposalNo}
-            </Link>{" "}
-            · {project.customerName}
+            {project.proposalId && project.proposalNo ? (
+              <>
+                Proposal{" "}
+                <Link
+                  href={`/projects/proposals/${project.proposalId}`}
+                  className="font-medium text-emerald-700 hover:underline"
+                >
+                  {project.proposalNo}
+                </Link>{" "}
+                ·{" "}
+              </>
+            ) : (
+              <>Simple project · </>
+            )}
+            {project.customerName}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -519,24 +526,30 @@ export function ProjectDetailView({
             </p>
             <p>
               <span className="text-slate-500">Proposal:</span>{" "}
-              <Link
-                href={`/projects/proposals/${project.proposalId}`}
-                className="font-medium text-emerald-700 hover:underline"
-              >
-                {project.proposalNo}
-              </Link>
-              {project.status !== "CLOSED" ? (
+              {project.proposalId && project.proposalNo ? (
                 <>
-                  {" "}
-                  ·{" "}
                   <Link
-                    href={`/projects/proposals/${project.proposalId}/revise`}
-                    className="text-emerald-700 hover:underline"
+                    href={`/projects/proposals/${project.proposalId}`}
+                    className="font-medium text-emerald-700 hover:underline"
                   >
-                    Update after conversion
+                    {project.proposalNo}
                   </Link>
+                  {project.status !== "CLOSED" ? (
+                    <>
+                      {" "}
+                      ·{" "}
+                      <Link
+                        href={`/projects/proposals/${project.proposalId}/revise`}
+                        className="text-emerald-700 hover:underline"
+                      >
+                        Update after conversion
+                      </Link>
+                    </>
+                  ) : null}
                 </>
-              ) : null}
+              ) : (
+                <span>—</span>
+              )}
             </p>
             <p>
               <span className="text-slate-500">Staging warehouse:</span> {project.warehouseName}

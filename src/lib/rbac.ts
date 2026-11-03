@@ -106,6 +106,16 @@ export const NAV_ITEMS: NavItem[] = [
     ],
   },
   {
+    label: "Project Dispatch",
+    href: "/projects/dispatch",
+    group: "Projects",
+    roles: [
+      ROLES.SUPER_ADMIN,
+      ROLES.PROJECTS_MANAGER,
+      ROLES.WAREHOUSE,
+    ],
+  },
+  {
     label: "Projects Quotation",
     href: "/projects/quotations",
     group: "Projects",

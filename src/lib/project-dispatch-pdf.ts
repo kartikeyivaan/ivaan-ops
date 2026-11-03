@@ -164,13 +164,13 @@ export async function generateProjectDispatchPdf(
     ["Challan #", dispatch.dispatchNo],
     ["Date", formatDocumentDate(dispatch.dispatchedAt ?? dispatch.createdAt)],
     ["Project #", dispatch.project.projectNo],
-    ["Proposal #", dispatch.project.proposal.proposalNo],
+    ["Proposal #", dispatch.project.proposal?.proposalNo ?? "—"],
   ];
 
   const headerBottom = drawDocumentHeader(ctx, {
     logo,
     companyName: dispatch.company.name,
-    title: "Project Dispatch / Delivery Challan",
+    title: `Projects Dispatch - ${dispatch.project.projectNo} - ${dispatch.project.customerName}`,
     profile,
     meta,
     companyCode: dispatch.company.code,
@@ -178,9 +178,12 @@ export async function generateProjectDispatchPdf(
   });
 
   const customerLines = [
+    dispatch.project.customerName,
     dispatch.project.siteAddress,
-    `Mobile: ${dispatch.project.customerMobile}`,
-  ].filter(Boolean);
+    dispatch.project.customerMobile
+      ? `Mobile: ${dispatch.project.customerMobile}`
+      : null,
+  ].filter((line): line is string => Boolean(line?.trim()));
 
   const dispatchLines = [dispatch.warehouse.name];
   if (dispatch.vehicleNo) dispatchLines.push(`Vehicle: ${dispatch.vehicleNo}`);

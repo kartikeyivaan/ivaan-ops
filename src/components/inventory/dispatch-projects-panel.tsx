@@ -46,12 +46,20 @@ export function DispatchProjectsPanel({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-semibold text-slate-900">Projects Dispatch</h2>
-        <p className="text-sm text-slate-500">
-          Dispatch material from Jalgaon Projects to the customer site. Search by customer, proposal,
-          site, or project number.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-900">Projects Dispatch (history)</h2>
+          <p className="text-sm text-slate-500">
+            Legacy assignment-based queue kept for history. New work uses{" "}
+            <Link href="/projects/dispatch" className="font-medium text-emerald-700 underline">
+              Simple Project Dispatch
+            </Link>{" "}
+            under Projects.
+          </p>
+        </div>
+        <Button asChild variant="outline">
+          <Link href="/projects/dispatch">Open Simple Project Dispatch</Link>
+        </Button>
       </div>
 
       <div className="relative">
@@ -101,13 +109,10 @@ export function DispatchProjectsPanel({
                       <Button
                         type="button"
                         size="sm"
-                        onClick={() =>
-                          router.push(
-                            `/inventory/dispatches/projects/new?projectId=${project.id}`,
-                          )
-                        }
+                        variant="outline"
+                        onClick={() => router.push(`/projects/dispatch/new`)}
                       >
-                        Dispatch
+                        Simple Dispatch
                       </Button>
                     </TableCell>
                   ) : null}

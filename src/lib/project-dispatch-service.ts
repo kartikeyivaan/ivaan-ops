@@ -48,6 +48,7 @@ export const projectDispatchInclude = {
       proposal: { select: { proposalNo: true } },
     },
   },
+  // proposal may be null for minimal Simple Project Dispatch projects
   warehouse: { select: { id: true, name: true, code: true } },
   company: {
     select: {
@@ -169,6 +170,7 @@ function serializeProjectDispatch(dispatch: ProjectDispatchRecord) {
         serialNumber: entry.serial.serialNumber,
       })),
     })),
+    company: dispatch.company,
   };
 }
 
@@ -319,7 +321,7 @@ export async function listDispatchableProjects(
     result.push({
       id: project.id,
       projectNo: project.projectNo,
-      proposalNo: project.proposal.proposalNo,
+      proposalNo: project.proposal?.proposalNo ?? "—",
       customerName: project.customerName,
       siteAddress: project.siteAddress,
       status: project.status,
@@ -391,7 +393,7 @@ export async function getDispatchableProject(
   return {
     id: project.id,
     projectNo: project.projectNo,
-    proposalNo: project.proposal.proposalNo,
+    proposalNo: project.proposal?.proposalNo ?? "—",
     customerName: project.customerName,
     siteAddress: project.siteAddress,
     status: project.status,
@@ -732,6 +734,7 @@ async function confirmProjectDispatchTx(
 
   const linesByMaterial = new Map<string, typeof dispatch.lines>();
   for (const line of dispatch.lines) {
+    if (!line.materialLineId || !line.materialLine) throw new Error("INVALID_LINE");
     const group = linesByMaterial.get(line.materialLineId) ?? [];
     group.push(line);
     linesByMaterial.set(line.materialLineId, group);
@@ -740,7 +743,7 @@ async function confirmProjectDispatchTx(
   const materialQtyUpdates = new Map<string, number>();
 
   for (const [materialLineId, groupLines] of linesByMaterial) {
-    const materialLine = groupLines[0]!.materialLine;
+    const materialLine = groupLines[0]!.materialLine!;
     if (isKitProduct(materialLine.product) && materialLine.productId) {
       const bom = kitBomMap.get(materialLine.productId) ?? [];
       const kitQty = resolveKitDispatchQty({
@@ -761,6 +764,7 @@ async function confirmProjectDispatchTx(
   for (const line of dispatch.lines) {
     const qty = decimalToNumber(line.qty);
     const materialLine = line.materialLine;
+    if (!materialLine) throw new Error("INVALID_LINE");
 
     await executeProjectDispatchStockMove(tx, {
       projectCompanyId: input.companyId,

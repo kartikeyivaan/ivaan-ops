@@ -501,11 +501,15 @@ export async function executeProjectDispatchStockMove(
     stockSourceLog: unknown;
     performedById: string;
     referenceNote: string;
+    /** When true (Simple Project Dispatch), accept serials from any warehouse/company. */
+    allowAnySourceWarehouse?: boolean;
   },
 ) {
   if (input.qty <= 0) return;
 
-  const pools = await listHoWarehousePools(prisma, input.projectCompanyId);
+  const pools = input.allowAnySourceWarehouse
+    ? []
+    : await listHoWarehousePools(prisma, input.projectCompanyId);
   const batches: TransferBatch[] = [];
 
   if (input.serialTracking) {
@@ -530,26 +534,31 @@ export async function executeProjectDispatchStockMove(
     }
 
     const hoWarehouseIds = new Set(pools.map((pool) => pool.warehouseId));
-    if (
-      serials.some(
-        (serial) =>
-          !isValidProjectDispatchSerialLocation(
-            serial.currentWarehouseId,
-            input.projectsWarehouseId,
-            hoWarehouseIds,
-          ),
-      )
-    ) {
+    if (!input.allowAnySourceWarehouse) {
+      if (
+        serials.some(
+          (serial) =>
+            !isValidProjectDispatchSerialLocation(
+              serial.currentWarehouseId,
+              input.projectsWarehouseId,
+              hoWarehouseIds,
+            ),
+        )
+      ) {
+        throw new Error("INVALID_SERIAL_SELECTION");
+      }
+    } else if (serials.some((serial) => !serial.currentWarehouseId)) {
       throw new Error("INVALID_SERIAL_SELECTION");
     }
 
-    const hoSerials = serials.filter(
+    const remoteSerials = serials.filter(
       (serial) =>
+        serial.currentWarehouseId != null &&
         serial.currentWarehouseId !== input.projectsWarehouseId &&
-        hoWarehouseIds.has(serial.currentWarehouseId!),
+        (input.allowAnySourceWarehouse || hoWarehouseIds.has(serial.currentWarehouseId)),
     );
 
-    for (const group of groupSerialsForDispatch(hoSerials)) {
+    for (const group of groupSerialsForDispatch(remoteSerials)) {
       batches.push({
         fromCompanyId: group.companyId,
         fromWarehouseId: group.warehouseId,

@@ -187,14 +187,21 @@ function splitSpaceSeparatedSerials(line: string): string[] {
 }
 
 /**
- * Split pasted serial text on newlines, commas, semicolons, tabs, and `[QR]`
- * scanner noise. A bare space only separates serials when the whole line reads
- * as a list of standalone serials; see `splitSpaceSeparatedSerials`.
+ * Separators between serials: newlines, commas, semicolons, tabs, and runs of
+ * them. Some label printers emit `.,` between serials, so any dots directly
+ * before a separator (or at the end of the text) are part of the separator.
+ */
+const SERIAL_SEPARATOR = /\.*(?:[\n\r,;\t]+|$)/;
+
+/**
+ * Split pasted serial text on newlines, commas, semicolons, tabs, `.,` and
+ * `[QR]` scanner noise. A bare space only separates serials when the whole line
+ * reads as a list of standalone serials; see `splitSpaceSeparatedSerials`.
  */
 export function parseSerialInput(text: string): string[] {
   return text
     .replace(SERIAL_QR_NOISE, "\n")
-    .split(/[\n\r,;\t]+/)
+    .split(SERIAL_SEPARATOR)
     .flatMap(splitSpaceSeparatedSerials)
     .map((part) => part.trim())
     .filter(Boolean);

@@ -92,6 +92,23 @@ describe("inventory helpers", () => {
     expect(parseSerialInput("[QR]")).toEqual([]);
   });
 
+  it("treats '.,' between serials as a separator", () => {
+    expect(
+      parseSerialInput(
+        "WS11259057978391.,WS11259057979301.,WS11259057979993.,WS11259057980347.",
+      ),
+    ).toEqual([
+      "WS11259057978391",
+      "WS11259057979301",
+      "WS11259057979993",
+      "WS11259057980347",
+    ]);
+    expect(parseSerialInput("[QR] WS11259057978391.,[QR] WS11259057979301")).toEqual([
+      "WS11259057978391",
+      "WS11259057979301",
+    ]);
+  });
+
   it("splits space-separated serials from single-line pastes", () => {
     expect(
       parseSerialInput("[QR] WS08269075967868 [QR] WS08269075967863 [QR] WS08269075949036"),

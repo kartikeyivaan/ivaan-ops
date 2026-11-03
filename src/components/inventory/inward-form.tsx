@@ -44,7 +44,7 @@ function SerialHighlightOverlay({
 }) {
   if (!value) return null;
 
-  const parts = value.split(/(\[QR\]|[,\n;\t]+)/gi);
+  const parts = value.split(/(\[QR\]|\.*[,\n;\t]+)/gi);
 
   return (
     <>
@@ -57,7 +57,7 @@ function SerialHighlightOverlay({
             </span>
           );
         }
-        if (/^[,\n;\t]+$/.test(part)) {
+        if (/^\.*[,\n;\t]+$/.test(part)) {
           return <span key={index}>{part}</span>;
         }
         const trimmed = part.trim();

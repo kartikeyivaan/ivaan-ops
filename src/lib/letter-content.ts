@@ -1,3 +1,5 @@
+import DOMPurify from "isomorphic-dompurify";
+
 export const LETTERHEAD_COMPANY_CODES = ["ISE", "PCMV"] as const;
 export type LetterheadCompanyCode = (typeof LETTERHEAD_COMPANY_CODES)[number];
 
@@ -13,7 +15,14 @@ export const IMAGE_DATA_URL_MAX = 400_000;
 export const LETTER_CONTENT_MAX = 200_000;
 
 const IMAGE_DATA_URL_PATTERN = /^data:image\/(png|jpeg|jpg|webp);base64,/i;
-const ALLOWED_TAGS = new Set([
+
+/**
+ * Explicit allowlist for letter body HTML. DOMPurify removes everything else
+ * (script, style, iframe, svg, img, a, form, on* handlers, javascript: URLs, class, Word o:* tags).
+ * Tags cover what the editor produces; attributes cover table spans, style (re-validated
+ * by the normalizer), legacy align, and the two doc-gen field markers.
+ */
+const LETTER_HTML_ALLOWED_TAGS = [
   "p",
   "br",
   "div",
@@ -33,7 +42,23 @@ const ALLOWED_TAGS = new Set([
   "tr",
   "th",
   "td",
-]);
+] as const;
+const LETTER_HTML_ALLOWED_ATTR = [
+  "style",
+  "colspan",
+  "rowspan",
+  "align",
+  "data-doc-gen-field",
+  "data-doc-gen-key",
+] as const;
+const ALLOWED_TAGS = new Set<string>(LETTER_HTML_ALLOWED_TAGS);
+const DOMPURIFY_LETTER_CONFIG = {
+  ALLOWED_TAGS: [...LETTER_HTML_ALLOWED_TAGS],
+  ALLOWED_ATTR: [...LETTER_HTML_ALLOWED_ATTR],
+  ALLOW_DATA_ATTR: false,
+  ALLOW_ARIA_ATTR: false,
+  KEEP_CONTENT: true,
+};
 const ALIGN_VALUES = new Set(["left", "center", "right", "justify"]);
 
 export function isLetterheadCompanyCode(code: string): code is LetterheadCompanyCode {
@@ -224,12 +249,19 @@ function openDocGenFieldSpan(attrs: string): string | null {
   return `<span contenteditable="false" data-doc-gen-field="${fieldId}" data-doc-gen-key="${fieldKey}">`;
 }
 
+/**
+ * Sanitize untrusted letter HTML (editor output, pasted Word markup, stored content).
+ * DOMPurify enforces the allowlist and removes dangerous elements, attributes and URLs.
+ * The second pass rebuilds the allowed tags into the normalized shape the PDF renderer
+ * and editor expect (validated style values, numeric spans, enum align, field markers).
+ */
 export function sanitizeLetterHtml(html: string): string {
-  const withoutJunk = html
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/<(style|script|xml|head|meta|link|title)[^>]*>[\s\S]*?<\/\1>/gi, "")
-    .replace(/<\/?[a-zA-Z][\w.-]*:[^>]*>/g, "");
-  return withoutJunk.replace(/<\/?([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/g, (match, rawTag: string, attrs: string) => {
+  const purified = String(DOMPurify.sanitize(html, DOMPURIFY_LETTER_CONFIG));
+  return normalizeAllowedLetterMarkup(purified);
+}
+
+function normalizeAllowedLetterMarkup(markup: string): string {
+  return markup.replace(/<\/?([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/g, (match, rawTag: string, attrs: string) => {
     const tag = rawTag.toLowerCase();
     const closing = match.startsWith("</");
     if (!ALLOWED_TAGS.has(tag)) return "";

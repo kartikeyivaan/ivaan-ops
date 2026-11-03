@@ -67,6 +67,49 @@ describe("official letter helpers", () => {
     expect(html).not.toContain("onclick");
   });
 
+  it("blocks XSS payloads with the DOMPurify allowlist", () => {
+    const payloads = [
+      `<img src=x onerror=alert(1)>`,
+      `<script>alert(1)</script>`,
+      `<a href="javascript:alert(1)">click</a>`,
+      `<svg onload=alert(1)><circle/></svg>`,
+      `<iframe src="javascript:alert(1)"></iframe>`,
+      `<style>body{display:none}</style><p>x</p>`,
+      `<p onmouseover="alert(1)">hover</p>`,
+      `<span style="background:url(javascript:alert(1))">s</span>`,
+    ];
+    for (const payload of payloads) {
+      const out = sanitizeLetterHtml(payload).toLowerCase();
+      expect(out).not.toContain("<script");
+      expect(out).not.toContain("<img");
+      expect(out).not.toContain("<svg");
+      expect(out).not.toContain("<iframe");
+      expect(out).not.toContain("<style");
+      expect(out).not.toContain("<a ");
+      expect(out).not.toContain("onerror");
+      expect(out).not.toContain("onload");
+      expect(out).not.toContain("onmouseover");
+      expect(out).not.toContain("javascript:");
+      expect(out).not.toContain("alert(1)");
+      expect(out).not.toContain("url(");
+    }
+  });
+
+  it("keeps normal letter formatting through DOMPurify", () => {
+    const html = sanitizeLetterHtml(
+      `<p style="text-align:right;margin-top:6px" class="x">Ref <b>A1</b> <i>B</i> <u>C</u></p><ol><li>One</li></ol><table><tr><td colspan="2" style="width:50%">Cell</td></tr></table><span data-doc-gen-field="0b8f3a4e-1c2d-4e5f-8a9b-0c1d2e3f4a5b" data-doc-gen-key="ClientName">Name</span>`,
+    );
+    expect(html).toContain("<b>A1</b>");
+    expect(html).toContain("<i>B</i>");
+    expect(html).toContain("<u>C</u>");
+    expect(html).toContain("text-align:right");
+    expect(html).toContain("<ol>");
+    expect(html).toContain('colspan="2"');
+    expect(html).toContain("width:50%");
+    expect(html).toContain('data-doc-gen-key="ClientName"');
+    expect(html).not.toContain("class=");
+  });
+
   it("strips Word paste junk so letter content stays under the save limit", () => {
     const wordHtml = `<html><head><style>.MsoNormal{font-family:Calibri}${ "x".repeat(60_000)}</style></head><body><!--StartFragment--><p class="MsoNormal">Dear team,<o:p></o:p></p><p class="MsoNormal">Please proceed with dispatch.<o:p></o:p></p><!--EndFragment--></body></html>`;
     const html = sanitizeLetterHtml(wordHtml);

@@ -76,7 +76,8 @@ export function SimpleProjectDispatchDetail({
     const data = await parseApiJson(response);
     setLoading(false);
     if (!response.ok) {
-      setError(data.message ?? successMessage ?? "Action failed.");
+      const message = (data as { message?: unknown }).message;
+      setError(typeof message === "string" ? message : (successMessage ?? "Action failed."));
       return;
     }
     router.refresh();

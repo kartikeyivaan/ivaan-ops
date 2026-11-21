@@ -50,7 +50,7 @@
     "docxtemplater": "^3.71.1",
     "dompurify": "^3.4.17",
     "html5-qrcode": "^2.3.8",
-    "isomorphic-dompurify": "^4.6.0",
+    "isomorphic-dompurify": "2.25.0",
     "jsqr": "^1.4.0",
     "lucide-react": "^0.511.0",
     "mammoth": "^1.13.0",

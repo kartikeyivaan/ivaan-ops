@@ -187,6 +187,7 @@ export const NAV_ITEMS: NavItem[] = [
       ROLES.WAREHOUSE,
       ROLES.PURCHASE,
       ROLES.DOCUMENTATION_EXECUTIVE,
+      ROLES.SALES_EXECUTIVE,
     ],
   },
   {

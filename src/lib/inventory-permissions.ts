@@ -36,6 +36,7 @@ const SERIAL_VIEW_ROLES = [
 const QR_HISTORY_ROLES = [
   ...SERIAL_VIEW_ROLES,
   ROLES.DOCUMENTATION_EXECUTIVE,
+  ROLES.SALES_EXECUTIVE,
 ] as const;
 
 export function canViewInventory(userRoles: string[]): boolean {

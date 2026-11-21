@@ -370,10 +370,12 @@ describe("inventory permissions", () => {
     expect(canViewSerialNumbers([ROLES.ACCOUNTS])).toBe(false);
   });
 
-  it("allows documentation executive to check QR history but not other serial views", () => {
+  it("allows documentation and sales executives to check QR history but not other serial views", () => {
     expect(canViewQrHistory([ROLES.DOCUMENTATION_EXECUTIVE])).toBe(true);
     expect(canViewInventory([ROLES.DOCUMENTATION_EXECUTIVE])).toBe(false);
     expect(canViewSerialNumbers([ROLES.DOCUMENTATION_EXECUTIVE])).toBe(false);
+    expect(canViewQrHistory([ROLES.SALES_EXECUTIVE])).toBe(true);
+    expect(canViewSerialNumbers([ROLES.SALES_EXECUTIVE])).toBe(false);
   });
 
   it("allows purchase to create incoming", () => {

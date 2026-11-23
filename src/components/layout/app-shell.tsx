@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Menu, X } from "lucide-react";
 import { getActiveSessionCompany, isIseCompany, isProjectsCompany } from "@/lib/company-scope";
+import { canViewMonthlyAudit } from "@/lib/monthly-serial-audit-permissions";
 import { canAccessNav, NAV_GROUPS, NAV_ITEMS } from "@/lib/rbac";
 import { cn } from "@/lib/utils";
 import { CompanySwitcher } from "@/components/layout/company-switcher";
@@ -105,7 +106,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const activeCompany = getActiveSessionCompany(session ?? null);
   const showProjectsNav = !activeCompany || isProjectsCompany(activeCompany);
   const showDocGenNav = !activeCompany || isIseCompany(activeCompany);
-  const navItems = NAV_ITEMS.filter((item) => canAccessNav(roles, item)).filter((item) => {
+  const canViewMonthly = canViewMonthlyAudit(roles);
+  const [activeMonthly, setActiveMonthly] = useState<{ auditNumber: string } | null>(null);
+
+  // Only shown while a monthly serial audit is open or awaiting approval.
+  useEffect(() => {
+    if (!canViewMonthly) return;
+    let cancelled = false;
+    fetch("/api/inventory/monthly-audits/active", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { active: { auditNumber: string } | null } | null) => {
+        if (!cancelled) setActiveMonthly(data?.active ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setActiveMonthly(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canViewMonthly, pathname]);
+
+  const baseNavItems = NAV_ITEMS.filter((item) => canAccessNav(roles, item)).filter((item) => {
     if (
       isDemoUser &&
       (item.href === "/help" ||
@@ -119,6 +140,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (!showDocGenNav && item.href.startsWith("/documentation/document-generator")) return false;
     return true;
   });
+  const liveNavItems: NavItem[] =
+    canViewMonthly && activeMonthly
+      ? [
+          {
+            label: `Monthly audit ${activeMonthly.auditNumber}`,
+            href: "/inventory/monthly-audits",
+            group: "Inventory",
+            roles: [],
+          },
+        ]
+      : [];
+  const navItems = [...baseNavItems, ...liveNavItems];
   const showCompanySwitcher = !pathname.startsWith("/sales/quotations/new");
 
   return (
@@ -217,6 +250,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           data-tour="page-main"
           className="flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-y-auto"
         >
+          {pathname === "/dashboard" && canViewMonthly && activeMonthly ? (
+            <Link
+              href="/inventory/monthly-audits"
+              className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 hover:bg-amber-100"
+            >
+              <span>
+                <strong>Monthly serial audit {activeMonthly.auditNumber} is in progress.</strong>
+              </span>
+              <span className="shrink-0 font-medium underline">Open</span>
+            </Link>
+          ) : null}
           {children}
         </main>
       </div>

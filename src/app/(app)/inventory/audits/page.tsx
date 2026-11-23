@@ -11,6 +11,7 @@ import {
   listDailyAudits,
   listOpeningAudits,
 } from "@/lib/inventory-audit-service";
+import { canViewMonthlyAudit } from "@/lib/monthly-serial-audit-permissions";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
 import { InventoryAuditHub } from "@/components/inventory/inventory-audit-hub";
@@ -60,6 +61,7 @@ export default async function InventoryAuditsPage() {
       canReset={canResetOpeningStock(session.user.roles)}
       canCreate={canCreateInventoryAudits(session.user.roles)}
       canApprove={canApproveOpeningStock(session.user.roles)}
+      showMonthlyAudit={canViewMonthlyAudit(session.user.roles)}
     />
   );
 }

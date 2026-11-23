@@ -49,6 +49,7 @@ export function InventoryAuditHub({
   canReset,
   canCreate,
   canApprove,
+  showMonthlyAudit,
 }: {
   phase: string;
   inventoryTrackingStartDate: string | null;
@@ -58,6 +59,7 @@ export function InventoryAuditHub({
   canReset: boolean;
   canCreate: boolean;
   canApprove: boolean;
+  showMonthlyAudit: boolean;
   }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -114,6 +116,21 @@ export function InventoryAuditHub({
           Opening Stock baseline and daily Modules/Inverters counts.
         </p>
       </div>
+
+      {showMonthlyAudit ? (
+        <Link
+          href="/inventory/monthly-audits"
+          className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 hover:bg-slate-50"
+        >
+          <div>
+            <p className="font-medium text-slate-900">Monthly Serial Audit</p>
+            <p className="mt-1 text-sm text-slate-500">
+              Start, count and review the company-wide serial audit.
+            </p>
+          </div>
+          <ClipboardCheck className="h-5 w-5 shrink-0 text-slate-500" />
+        </Link>
+      ) : null}
 
       {phase === "IN_PROGRESS" ? (
         <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">

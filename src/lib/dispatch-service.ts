@@ -693,6 +693,7 @@ export async function lookupSerialsForDispatch(
         serialNumber,
         OR: [
           { status: SerialStatus.AVAILABLE },
+          { status: SerialStatus.UNDER_INVESTIGATION },
           {
             status: SerialStatus.BOOKED,
             proformaInvoiceSerials: { some: { piId: input.piId } },
@@ -846,6 +847,7 @@ async function validateDispatchLines(
               productId: line.productId,
               OR: [
                 { status: SerialStatus.AVAILABLE },
+                { status: SerialStatus.UNDER_INVESTIGATION },
                 {
                   status: SerialStatus.BOOKED,
                   proformaInvoiceSerials: { some: { piId: input.piId } },
@@ -892,6 +894,7 @@ async function validateDispatchLines(
           productId: line.productId,
           OR: [
             { status: SerialStatus.AVAILABLE },
+            { status: SerialStatus.UNDER_INVESTIGATION },
             {
               status: SerialStatus.BOOKED,
               proformaInvoiceSerials: { some: { piId: input.piId } },
@@ -962,6 +965,7 @@ export async function createDispatch(
             id: { in: uniqueIds },
             OR: [
               { status: SerialStatus.AVAILABLE },
+              { status: SerialStatus.UNDER_INVESTIGATION },
               {
                 status: SerialStatus.BOOKED,
                 proformaInvoiceSerials: { some: { piId: pi.id } },

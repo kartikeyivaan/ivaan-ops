@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "test-copy",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts-test-copy.js"],
+      "port": 3000
+    }
+  ]
+}

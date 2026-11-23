@@ -75,7 +75,6 @@ export function MonthlyAuditInvestigation({
   }, [load]);
 
   const closed = Boolean(data?.closedAt);
-  const open = (data?.rows ?? []).filter((r) => !r.resolvedAt);
   const selectedRows = (data?.rows ?? []).filter((r) => selected.has(r.id) && !r.resolvedAt);
 
   const allRows = data?.rows ?? [];

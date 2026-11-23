@@ -232,6 +232,14 @@ enum SerialStatus {
   DISPATCHED
   DAMAGE_PENDING
   REMOVED
+  UNDER_INVESTIGATION
+}
+
+enum MonthlyAuditResolution {
+  FOUND
+  SOLD
+  WRITE_OFF
+  ADDED
 }
 
 enum ManualStockEntryAction {
@@ -840,6 +848,8 @@ model Company {
   docGenGenerations         DocGenGeneration[]
 
   @@map("companies")
+  monthlyAuditSnapshots InventoryMonthlyAuditSnapshot[]
+  monthlyAuditQtyLines  InventoryMonthlyAuditQtyLine[]
 }
 
 model User {
@@ -988,6 +998,13 @@ model User {
   docGenGenerationsCreated               DocGenGeneration[]                @relation("DocGenGenerationCreatedBy")
 
   @@map("users")
+  monthlyAuditsStarted   InventoryMonthlyAudit[] @relation("MonthlyAuditStartedBy")
+  monthlyAuditsClosed    InventoryMonthlyAudit[] @relation("MonthlyAuditClosedBy")
+  monthlyAuditsApproved  InventoryMonthlyAudit[] @relation("MonthlyAuditApprovedBy")
+  monthlyAuditsCancelled InventoryMonthlyAudit[] @relation("MonthlyAuditCancelledBy")
+  monthlyAuditsInvestigationClosed InventoryMonthlyAudit[] @relation("MonthlyAuditInvestigationClosedBy")
+  monthlyAuditScans      InventoryMonthlyAuditScan[]
+  monthlyAuditFindingsResolved InventoryMonthlyAuditFinding[]
 }
 
 model Role {
@@ -1066,6 +1083,8 @@ model Warehouse {
 
   @@unique([companyId, name])
   @@map("warehouses")
+  monthlyAuditSnapshots InventoryMonthlyAuditSnapshot[]
+  monthlyAuditQtyLines  InventoryMonthlyAuditQtyLine[]
 }
 
 model AuditLog {
@@ -1261,6 +1280,9 @@ model Product {
   @@index([categoryId])
   @@index([brandId])
   @@map("products")
+  monthlyAuditSnapshots InventoryMonthlyAuditSnapshot[]
+  monthlyAuditFindings  InventoryMonthlyAuditFinding[]
+  monthlyAuditQtyLines  InventoryMonthlyAuditQtyLine[]
 }
 
 /**
@@ -1371,6 +1393,9 @@ model InventorySerial {
   @@index([productId, status])
   @@index([currentWarehouseId])
   @@map("inventory_serials")
+  monthlyAuditSnapshots InventoryMonthlyAuditSnapshot[]
+  monthlyAuditScans     InventoryMonthlyAuditScan[]
+  monthlyAuditFindings  InventoryMonthlyAuditFinding[]
 }
 
 model ManualStockEntry {
@@ -3890,4 +3915,151 @@ model DocGenGeneratedDocument {
 
   @@index([generationId])
   @@map("doc_gen_generated_documents")
+}
+
+enum MonthlyAuditStatus {
+  OPEN
+  CLOSED
+  APPROVED
+  CANCELLED
+}
+
+enum MonthlyAuditScanSource {
+  CAMERA
+  SCANNER
+  PASTE
+}
+
+enum MonthlyAuditScanResult {
+  FOUND
+  ADDITIONAL
+}
+
+enum MonthlyAuditFindingType {
+  MISSING
+  ADDITIONAL
+}
+
+/// Company-wide monthly serial audit run. Covers every company and warehouse.
+model InventoryMonthlyAudit {
+  id            String             @id @default(uuid()) @db.Uuid
+  auditNumber   String             @unique @map("audit_number")
+  status        MonthlyAuditStatus @default(OPEN)
+  startedById   String             @map("started_by") @db.Uuid
+  startedAt     DateTime           @default(now()) @map("started_at")
+  closedAt      DateTime?          @map("closed_at")
+  closedById    String?            @map("closed_by") @db.Uuid
+  approvedAt    DateTime?          @map("approved_at")
+  approvedById  String?            @map("approved_by") @db.Uuid
+  cancelledAt   DateTime?          @map("cancelled_at")
+  cancelledById String?            @map("cancelled_by") @db.Uuid
+  cancelReason  String?            @map("cancel_reason")
+  reopenCount   Int                @default(0) @map("reopen_count")
+  investigationClosedAt   DateTime? @map("investigation_closed_at")
+  investigationClosedById String?   @map("investigation_closed_by") @db.Uuid
+  investigationClosedBy   User?     @relation("MonthlyAuditInvestigationClosedBy", fields: [investigationClosedById], references: [id])
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
+
+  startedBy   User                           @relation("MonthlyAuditStartedBy", fields: [startedById], references: [id])
+  closedBy    User?                          @relation("MonthlyAuditClosedBy", fields: [closedById], references: [id])
+  approvedBy  User?                          @relation("MonthlyAuditApprovedBy", fields: [approvedById], references: [id])
+  cancelledBy User?                          @relation("MonthlyAuditCancelledBy", fields: [cancelledById], references: [id])
+  snapshots   InventoryMonthlyAuditSnapshot[]
+  scans       InventoryMonthlyAuditScan[]
+  findings    InventoryMonthlyAuditFinding[]
+  qtyLines    InventoryMonthlyAuditQtyLine[]
+
+  @@index([status])
+  @@map("inventory_monthly_audits")
+}
+
+/// Expected serials copied at run start. Compared against scans at close.
+model InventoryMonthlyAuditSnapshot {
+  id             String       @id @default(uuid()) @db.Uuid
+  auditId        String       @map("audit_id") @db.Uuid
+  serialId       String       @map("serial_id") @db.Uuid
+  serialNumber   String       @map("serial_number")
+  productId      String       @map("product_id") @db.Uuid
+  companyId      String       @map("company_id") @db.Uuid
+  warehouseId    String       @map("warehouse_id") @db.Uuid
+  snapshotStatus SerialStatus @map("snapshot_status")
+
+  audit     InventoryMonthlyAudit @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  serial    InventorySerial       @relation(fields: [serialId], references: [id])
+  product   Product               @relation(fields: [productId], references: [id])
+  company   Company               @relation(fields: [companyId], references: [id])
+  warehouse Warehouse            @relation(fields: [warehouseId], references: [id])
+
+  @@unique([auditId, serialId])
+  @@index([auditId, serialNumber])
+  @@map("inventory_monthly_audit_snapshots")
+}
+
+/// One recorded scan per serial per run. A second scan of the same serial is
+/// rejected by the unique constraint and reported back as "already scanned".
+model InventoryMonthlyAuditScan {
+  id              String                 @id @default(uuid()) @db.Uuid
+  auditId         String                 @map("audit_id") @db.Uuid
+  serialNumber    String                 @map("serial_number")
+  matchedSerialId String?                @map("matched_serial_id") @db.Uuid
+  result          MonthlyAuditScanResult
+  source          MonthlyAuditScanSource
+  scannedById     String                 @map("scanned_by") @db.Uuid
+  scannedAt       DateTime               @default(now()) @map("scanned_at")
+
+  audit         InventoryMonthlyAudit @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  matchedSerial InventorySerial?      @relation(fields: [matchedSerialId], references: [id])
+  scannedBy     User                  @relation(fields: [scannedById], references: [id])
+
+  @@unique([auditId, serialNumber])
+  @@index([auditId, result])
+  @@map("inventory_monthly_audit_scans")
+}
+
+/// Missing (in record, not scanned) and Additional (scanned, not in record) serials.
+model InventoryMonthlyAuditFinding {
+  id                String                  @id @default(uuid()) @db.Uuid
+  auditId           String                  @map("audit_id") @db.Uuid
+  type              MonthlyAuditFindingType
+  serialId          String?                 @map("serial_id") @db.Uuid
+  serialNumber      String                  @map("serial_number")
+  productId         String?                 @map("product_id") @db.Uuid
+  investigationNote String?                 @map("investigation_note")
+  resolution        MonthlyAuditResolution? @map("resolution")
+  resolutionNote    String?                 @map("resolution_note")
+  resolvedById      String?                 @map("resolved_by") @db.Uuid
+  resolvedAt        DateTime?               @map("resolved_at")
+  createdAt         DateTime                @default(now()) @map("created_at")
+
+  audit      InventoryMonthlyAudit @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  serial     InventorySerial?      @relation(fields: [serialId], references: [id])
+  product    Product?              @relation(fields: [productId], references: [id])
+  resolvedBy User?                 @relation(fields: [resolvedById], references: [id])
+
+  @@index([auditId, type])
+  @@map("inventory_monthly_audit_findings")
+}
+
+/// Non-serialized quantity per product, company and warehouse (section B).
+model InventoryMonthlyAuditQtyLine {
+  id          String   @id @default(uuid()) @db.Uuid
+  auditId     String   @map("audit_id") @db.Uuid
+  productId   String   @map("product_id") @db.Uuid
+  companyId   String   @map("company_id") @db.Uuid
+  warehouseId String   @map("warehouse_id") @db.Uuid
+  recordQty   Decimal  @map("record_qty") @db.Decimal(12, 3)
+  auditQty    Decimal? @map("audit_qty") @db.Decimal(12, 3)
+  varianceQty Decimal? @map("variance_qty") @db.Decimal(12, 3)
+  approved    Boolean  @default(false)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  audit     InventoryMonthlyAudit @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  product   Product               @relation(fields: [productId], references: [id])
+  company   Company               @relation(fields: [companyId], references: [id])
+  warehouse Warehouse            @relation(fields: [warehouseId], references: [id])
+
+  @@unique([auditId, productId, companyId, warehouseId])
+  @@map("inventory_monthly_audit_qty_lines")
 }

@@ -7,6 +7,7 @@ import {
   canViewSerialNumbers,
 } from "@/lib/inventory-permissions";
 import { assertInventoryOpsAllowed } from "@/lib/inventory-audit-service";
+import { assertMonthlyAuditAllowsMovement } from "@/lib/monthly-serial-audit-service";
 import {
   createIncomingLot,
   listIncomingLots,
@@ -80,6 +81,7 @@ export async function POST(request: Request) {
 
   try {
     await assertInventoryOpsAllowed(prisma, parsed.data.companyId);
+    await assertMonthlyAuditAllowsMovement(prisma);
 
     const lot = await createIncomingLot(prisma, {
       companyId: parsed.data.companyId,

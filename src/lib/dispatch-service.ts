@@ -628,7 +628,7 @@ export async function listBookedSerialsForPi(
   return prisma.inventorySerial.findMany({
     where: {
       productId: input.productId,
-      status: SerialStatus.AVAILABLE,
+      status: { in: [SerialStatus.AVAILABLE, SerialStatus.UNDER_INVESTIGATION] },
     },
     select: { id: true, serialNumber: true, status: true },
     orderBy: { serialNumber: "asc" },
@@ -1023,7 +1023,7 @@ export async function createDispatch(
           skipDuplicates: true,
         });
         await tx.inventorySerial.updateMany({
-          where: { id: { in: serialIds }, status: SerialStatus.AVAILABLE },
+          where: { id: { in: serialIds }, status: { in: [SerialStatus.AVAILABLE, SerialStatus.UNDER_INVESTIGATION] } },
           data: { status: SerialStatus.BOOKED },
         });
       }
@@ -1279,6 +1279,11 @@ async function confirmDispatchTx(
       await tx.inventorySerial.updateMany({
         where: { id: { in: serialIds } },
         data: { status: SerialStatus.DISPATCHED },
+      });
+      // A sale of a serial under investigation closes its investigation (resolution SOLD).
+      await tx.inventoryMonthlyAuditFinding.updateMany({
+        where: { serialId: { in: serialIds }, resolvedAt: null },
+        data: { resolution: "SOLD", resolutionNote: `Sold on dispatch ${dispatch.dcNo}`, resolvedAt: new Date() },
       });
     } else {
       await deductNonSerialStock(tx, {

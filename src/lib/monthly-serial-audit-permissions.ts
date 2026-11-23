@@ -61,6 +61,11 @@ const MONTHLY_ERRORS: Record<string, MonthlyAuditApiError> = {
     message: "Enter a reason for cancelling.",
     status: 400,
   },
+  NOTHING_TO_UNDO: {
+    code: "NOTHING_TO_UNDO",
+    message: "None of the selected items have a resolution to undo.",
+    status: 409,
+  },
   INVALID_QUANTITY: { code: "INVALID_QUANTITY", message: "Quantity must be zero or more.", status: 400 },
   QTY_NOT_COUNTED: {
     code: "QTY_NOT_COUNTED",

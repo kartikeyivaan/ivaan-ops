@@ -30,7 +30,10 @@ const RESOLUTION_LABEL: Record<string, string> = {
   SOLD: "Sold (dispatched)",
 };
 
-const DEFAULT_FILTERS = { search: "", status: "ALL" as const, resolution: "ALL", company: "ALL", warehouse: "ALL", product: "ALL" };
+/** A resolved item that can be reverted (SOLD cannot be undone here). */
+const isUndoable = (r: Row) => Boolean(r.resolvedAt && r.resolution && r.resolution !== "SOLD");
+
+const DEFAULT_FILTERS ={ search: "", status: "ALL" as const, resolution: "ALL", company: "ALL", warehouse: "ALL", product: "ALL" };
 
 export function MonthlyAuditInvestigation({
   auditId,
@@ -76,6 +79,7 @@ export function MonthlyAuditInvestigation({
 
   const closed = Boolean(data?.closedAt);
   const selectedRows = (data?.rows ?? []).filter((r) => selected.has(r.id) && !r.resolvedAt);
+  const selectedUndoRows = (data?.rows ?? []).filter((r) => selected.has(r.id) && isUndoable(r));
 
   const allRows = data?.rows ?? [];
   const uniq = (pick: (r: Row) => string) => Array.from(new Set(allRows.map(pick).filter(Boolean))).sort();
@@ -107,9 +111,10 @@ export function MonthlyAuditInvestigation({
 
   function selectPasted() {
     const numbers = pasteText.split(/[\s,;]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
-    const rows = (data?.rows ?? []).filter((r) => !r.resolvedAt && numbers.includes(r.serialNumber.toUpperCase()));
+    const selectable = (r: Row) => !r.resolvedAt || isUndoable(r);
+    const rows = (data?.rows ?? []).filter((r) => selectable(r) && numbers.includes(r.serialNumber.toUpperCase()));
     setSelected(new Set(rows.map((r) => r.id)));
-    const missing = numbers.filter((n) => !(data?.rows ?? []).some((r) => r.serialNumber.toUpperCase() === n && !r.resolvedAt));
+    const missing = numbers.filter((n) => !(data?.rows ?? []).some((r) => r.serialNumber.toUpperCase() === n && selectable(r)));
     setNotice(
       missing.length
         ? `${rows.length} selected. Not open in this tab: ${missing.slice(0, 10).join(", ")}${missing.length > 10 ? "..." : ""}`
@@ -168,6 +173,30 @@ export function MonthlyAuditInvestigation({
       return;
     }
     setNotice(action === "close" ? "Investigation closed." : "Investigation reopened.");
+    await load();
+  }
+
+  async function undoRows(rows: Row[]) {
+    if (rows.length === 0) return;
+    const label = rows.length === 1 ? rows[0].serialNumber : `${rows.length} serial(s)`;
+    const reason = prompt(`Reason for undoing the resolution of ${label} (required):`);
+    if (!reason || reason.trim().length < 3) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    const res = await fetch(`/api/inventory/monthly-audits/${auditId}/investigation/undo`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ findingIds: rows.map((r) => r.id), reason: reason.trim() }),
+    });
+    setBusy(false);
+    if (!res.ok) {
+      setError(await readError(res, "Could not undo the resolution."));
+      await load();
+      return;
+    }
+    const body = await res.json();
+    setNotice(`${body.undone} serial(s) reopened for investigation.`);
     await load();
   }
 
@@ -246,6 +275,16 @@ export function MonthlyAuditInvestigation({
                 >
                   Write off ({selectedRows.length})
                 </button>
+                {canAct && selectedUndoRows.length > 0 && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => undoRows(selectedUndoRows)}
+                    className="rounded-md border border-rose-300 px-3 py-2 text-sm text-rose-700 disabled:opacity-50"
+                  >
+                    Undo selected ({selectedUndoRows.length})
+                  </button>
+                )}
                 {tab === "ADDITIONAL" && (
                   <button
                     type="button"
@@ -371,7 +410,7 @@ export function MonthlyAuditInvestigation({
                 {visibleRows.map((row) => (
                   <tr key={row.id} className="border-t border-slate-100">
                     <td className="px-3 py-2">
-                      {canAct && !row.resolvedAt && (
+                      {canAct && (!row.resolvedAt || isUndoable(row)) && (
                         <input
                           type="checkbox"
                           aria-label={`Select ${row.serialNumber}`}
@@ -387,6 +426,16 @@ export function MonthlyAuditInvestigation({
                     <td className="px-3 py-2">{row.serialStatus ?? "Not in system"}</td>
                     <td className="px-3 py-2">
                       {row.resolution ? RESOLUTION_LABEL[row.resolution] ?? row.resolution : "Open"}
+                      {canAct && row.resolution && row.resolution !== "SOLD" && (
+                        <button
+                          type="button"
+                          onClick={() => undoRows([row])}
+                          disabled={busy}
+                          className="ml-2 text-xs text-rose-600 underline disabled:opacity-50"
+                        >
+                          Undo
+                        </button>
+                      )}
                     </td>
                     <td className="px-3 py-2">{row.resolutionNote ?? "-"}</td>
                   </tr>

@@ -220,3 +220,79 @@ export async function reopenInvestigation(prisma: PrismaClient, input: { auditId
     return updated;
   });
 }
+
+/** Resolutions that can be reverted. SOLD is excluded: the dispatch has already been confirmed. */
+const UNDOABLE_RESOLUTIONS = ["FOUND", "WRITE_OFF", "ADDED"];
+
+/**
+ * Revert a mistaken investigation resolution (Super Admin).
+ * - FOUND: serial goes back from AVAILABLE to UNDER_INVESTIGATION (only if still AVAILABLE).
+ * - WRITE_OFF: serial goes back from REMOVED to UNDER_INVESTIGATION (only if no live copy exists).
+ * - ADDED: no stock change; the item is simply reopened.
+ * The finding is reopened and the reversal is written to the audit log with the reason.
+ */
+export async function undoInvestigationResolution(
+  prisma: PrismaClient,
+  input: { auditId: string; userId: string; findingIds: string[]; reason: string },
+) {
+  const reason = input.reason.trim();
+  if (reason.length < 3) throw new Error("CANCEL_REASON_REQUIRED");
+  if (input.findingIds.length === 0) throw new Error("NO_ITEMS_SELECTED");
+
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM inventory_monthly_audits WHERE id = ${input.auditId}::uuid FOR UPDATE`;
+    const audit = await loadApprovedRun(tx, input.auditId);
+    if (audit.investigationClosedAt) throw new Error("INVESTIGATION_CLOSED");
+
+    const findings = await tx.inventoryMonthlyAuditFinding.findMany({
+      where: { id: { in: input.findingIds }, auditId: input.auditId, resolvedAt: { not: null } },
+    });
+    if (findings.length === 0) throw new Error("NOTHING_TO_UNDO");
+
+    for (const f of findings) {
+      if (!f.resolution || !UNDOABLE_RESOLUTIONS.includes(f.resolution)) throw new Error("ACTION_NOT_ALLOWED");
+
+      if (f.resolution === "FOUND" && f.serialId) {
+        const serial = await tx.inventorySerial.findUnique({
+          where: { id: f.serialId },
+          select: { id: true, status: true },
+        });
+        if (!serial || serial.status !== SerialStatus.AVAILABLE) throw new Error("SERIAL_NOT_UNDER_INVESTIGATION");
+        await tx.inventorySerial.update({ where: { id: serial.id }, data: { status: SerialStatus.UNDER_INVESTIGATION } });
+      } else if (f.resolution === "WRITE_OFF" && f.serialId) {
+        const serial = await tx.inventorySerial.findUnique({
+          where: { id: f.serialId },
+          select: { id: true, status: true, serialNumber: true },
+        });
+        if (!serial || serial.status !== SerialStatus.REMOVED) throw new Error("SERIAL_NOT_UNDER_INVESTIGATION");
+        const other = await tx.inventorySerial.findFirst({
+          where: { serialNumber: serial.serialNumber, id: { not: serial.id }, status: { in: LIVE_STATUSES } },
+          select: { id: true },
+        });
+        if (other) throw new Error("LIVE_COPY_EXISTS");
+        await tx.inventorySerial.update({
+          where: { id: serial.id },
+          data: { status: SerialStatus.UNDER_INVESTIGATION },
+        });
+      }
+
+      await tx.inventoryMonthlyAuditFinding.update({
+        where: { id: f.id },
+        data: { resolution: null, resolutionNote: null, resolvedAt: null, resolvedById: null },
+      });
+    }
+
+    await writeAuditLogTx(tx, {
+      tableName: "inventory_monthly_audits",
+      recordId: input.auditId,
+      action: "UPDATE",
+      newValue: { investigation: "RESOLUTION_UNDONE", count: findings.length, reason },
+      performedBy: input.userId,
+    });
+
+    return { undone: findings.length, requested: input.findingIds.length };
+  }, {
+    timeout: 300_000,
+    maxWait: 10_000,
+  });
+}

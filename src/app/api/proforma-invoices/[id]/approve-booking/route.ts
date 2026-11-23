@@ -8,7 +8,7 @@ import {
 } from "@/lib/pi-service";
 import { prisma } from "@/lib/prisma";
 import { approveBookingSchema } from "@/lib/validations";
-import { requireActiveCompany } from "@/lib/session";
+import { requireApprovalCompany } from "@/lib/session";
 
 function errorResponse(code: string, message: string, status: number, details?: unknown) {
   return NextResponse.json({ code, message, details }, { status });
@@ -24,7 +24,7 @@ export async function POST(request: Request, context: RouteContext) {
 
   let companyId: string;
   try {
-    companyId = requireActiveCompany(session);
+    companyId = requireApprovalCompany(session, request);
   } catch {
     return errorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
   }

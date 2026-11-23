@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { approveCrossCompanyTransferPlan } from "@/lib/cross-company-transfer-service";
 import { canApproveDispatchToday } from "@/lib/pi-permissions";
 import { prisma } from "@/lib/prisma";
-import { requireActiveCompany } from "@/lib/session";
+import { requireApprovalCompany } from "@/lib/session";
 import { z } from "zod";
 
 const schema = z.object({
@@ -24,7 +24,7 @@ export async function POST(request: Request, context: RouteContext) {
 
   let companyId: string;
   try {
-    companyId = requireActiveCompany(session);
+    companyId = requireApprovalCompany(session, request);
   } catch {
     return errorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
   }

@@ -4,7 +4,7 @@ import { canRecordQueuedDispatch } from "@/lib/pi-permissions";
 import { getQueuedPiForDispatch } from "@/lib/pending-dispatch-service";
 import { prisma } from "@/lib/prisma";
 import { restrictSalesUserId } from "@/lib/report-permissions";
-import { requireActiveCompany } from "@/lib/session";
+import { requireApprovalCompany } from "@/lib/session";
 
 function errorResponse(code: string, message: string, status: number) {
   return NextResponse.json({ code, message }, { status });
@@ -12,7 +12,7 @@ function errorResponse(code: string, message: string, status: number) {
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(request: Request, context: RouteContext) {
   const session = await auth();
   if (!session?.user || !canRecordQueuedDispatch(session.user.roles)) {
     return errorResponse("FORBIDDEN", "You do not have permission for this action.", 403);
@@ -20,7 +20,7 @@ export async function GET(_request: Request, context: RouteContext) {
 
   let companyId: string;
   try {
-    companyId = requireActiveCompany(session);
+    companyId = requireApprovalCompany(session, request);
   } catch {
     return errorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
   }

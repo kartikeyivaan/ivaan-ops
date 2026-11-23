@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +31,8 @@ export type PendingDispatchRow = {
   canRecordDispatch: boolean;
   canRequestCancel: boolean;
   canClosePartial: boolean;
+  /** Owning company; sent with actions so "All companies" acts on the right firm. */
+  companyId?: string;
   closeLines: Array<{
     id: string;
     displayName: string;
@@ -56,6 +58,11 @@ export function PendingDispatchesList({
 }) {
   const router = useRouter();
   const [rows, setRows] = useState(initialRows);
+
+  // Pick up fresh rows after a company switch and router.refresh().
+  useEffect(() => {
+    setRows(initialRows);
+  }, [initialRows]);
   const [error, setError] = useState("");
   const [loadingId, setLoadingId] = useState<string | null>(null);
   const [closeRow, setCloseRow] = useState<PendingDispatchRow | null>(null);
@@ -68,7 +75,7 @@ export function PendingDispatchesList({
 
     setLoadingId(row.id);
     setError("");
-    const response = await fetch(`/api/proforma-invoices/${row.id}/request-cancel`, {
+    const response = await fetch(withCompany(`/api/proforma-invoices/${row.id}/request-cancel`, row.companyId), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
@@ -164,7 +171,7 @@ export function PendingDispatchesList({
                       ) : null}
                       {row.canRecordDispatch ? (
                         <Button variant="outline" size="sm" asChild>
-                          <Link href={`/sales/pending-dispatches/${row.id}/record`}>
+                          <Link href={withCompany(`/sales/pending-dispatches/${row.id}/record`, row.companyId)}>
                             Record dispatch
                           </Link>
                         </Button>
@@ -205,6 +212,7 @@ export function PendingDispatchesList({
       {closeRow ? (
         <PiClosePartialDialog
           piId={closeRow.id}
+          companyId={closeRow.companyId}
           piNo={closeRow.piNo}
           lines={closeRow.closeLines}
           open
@@ -220,4 +228,10 @@ export function PendingDispatchesList({
       ) : null}
     </div>
   );
+}
+
+/** Adds the record's company so the server acts on that company, not the session's active one. */
+function withCompany(url: string, companyId: string | undefined): string {
+  if (!companyId) return url;
+  return `${url}?companyId=${encodeURIComponent(companyId)}`;
 }

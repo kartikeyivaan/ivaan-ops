@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { canApproveQuotationPricing } from "@/lib/quotation-permissions";
 import { rejectQuotationPricing } from "@/lib/quotation-service";
 import { prisma } from "@/lib/prisma";
-import { requireActiveCompany } from "@/lib/session";
+import { requireApprovalCompany } from "@/lib/session";
 import { rejectApprovalSchema } from "@/lib/validations";
 
 function errorResponse(code: string, message: string, status: number, details?: unknown) {
@@ -20,7 +20,7 @@ export async function POST(request: Request, context: RouteContext) {
 
   let companyId: string;
   try {
-    companyId = requireActiveCompany(session);
+    companyId = requireApprovalCompany(session, request);
   } catch {
     return errorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
   }

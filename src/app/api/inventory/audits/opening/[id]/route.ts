@@ -16,7 +16,7 @@ import {
   submitOpeningAudit,
 } from "@/lib/inventory-audit-service";
 import { prisma } from "@/lib/prisma";
-import { requireActiveCompany } from "@/lib/session";
+import { requireApprovalCompany, requireActiveCompany } from "@/lib/session";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -53,7 +53,7 @@ export async function POST(request: Request, { params }: Params) {
 
   let companyId: string;
   try {
-    companyId = requireActiveCompany(session);
+    companyId = requireApprovalCompany(session, request);
   } catch {
     return auditErrorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
   }

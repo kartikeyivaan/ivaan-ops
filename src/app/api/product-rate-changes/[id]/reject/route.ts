@@ -4,7 +4,7 @@ import { writeAuditLog } from "@/lib/audit";
 import { canApproveProductRateChange } from "@/lib/product-rate-change-permissions";
 import { rejectProductRateChangeBatch } from "@/lib/product-rate-change-service";
 import { prisma } from "@/lib/prisma";
-import { requireActiveCompany } from "@/lib/session";
+import { requireApprovalCompany } from "@/lib/session";
 import { rejectApprovalSchema } from "@/lib/validations";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -21,7 +21,7 @@ export async function POST(request: Request, context: RouteContext) {
 
   let companyId: string;
   try {
-    companyId = requireActiveCompany(session);
+    companyId = requireApprovalCompany(session, request);
   } catch {
     return errorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
   }

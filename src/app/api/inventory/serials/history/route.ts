@@ -3,7 +3,6 @@ import { auth } from "@/lib/auth";
 import { canViewQrHistory } from "@/lib/inventory-permissions";
 import { prisma } from "@/lib/prisma";
 import { getSerialPhysicalHistory } from "@/lib/serial-history-service";
-import { requireActiveCompany } from "@/lib/session";
 
 function errorResponse(code: string, message: string, status: number) {
   return NextResponse.json({ code, message }, { status });
@@ -15,10 +14,8 @@ export async function GET(request: Request) {
     return errorResponse("FORBIDDEN", "You do not have permission for this action.", 403);
   }
 
-  let companyId: string;
-  try {
-    companyId = requireActiveCompany(session);
-  } catch {
+  const accessibleCompanyIds = session.user.companies.map((c) => c.id);
+  if (accessibleCompanyIds.length === 0) {
     return errorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
   }
 
@@ -27,9 +24,9 @@ export async function GET(request: Request) {
     return errorResponse("VALIDATION_ERROR", "serialNumber is required.", 400);
   }
 
-  const history = await getSerialPhysicalHistory(prisma, companyId, serialNumber);
+  const history = await getSerialPhysicalHistory(prisma, accessibleCompanyIds, serialNumber);
   if (!history) {
-    return errorResponse("NOT_FOUND", "Serial not found for this company.", 404);
+    return errorResponse("NOT_FOUND", "Serial not found for your companies.", 404);
   }
 
   return NextResponse.json(history);

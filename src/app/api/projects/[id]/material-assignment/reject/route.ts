@@ -4,7 +4,7 @@ import { mapProjectError, projectErrorResponse } from "@/lib/project-api";
 import { rejectProjectMaterialAssignment } from "@/lib/project-material-service";
 import { canEditProjectMaterial } from "@/lib/project-permissions";
 import { prisma } from "@/lib/prisma";
-import { requireActiveCompany } from "@/lib/session";
+import { requireApprovalCompany } from "@/lib/session";
 import { rejectProjectProposalSchema } from "@/lib/validations";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -17,7 +17,7 @@ export async function POST(request: Request, context: RouteContext) {
 
   let companyId: string;
   try {
-    companyId = requireActiveCompany(session);
+    companyId = requireApprovalCompany(session, request);
   } catch {
     return projectErrorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
   }

@@ -5,7 +5,9 @@ import { canApprovePiCancel, canViewPendingDispatches } from "@/lib/pi-permissio
 import { listPendingDispatchPis } from "@/lib/pending-dispatch-service";
 import { prisma } from "@/lib/prisma";
 import { restrictSalesUserId } from "@/lib/report-permissions";
-import { requireActiveCompany } from "@/lib/session";
+import { resolveDashboardCompanyIds } from "@/lib/company-scope";
+
+export const dynamic = "force-dynamic";
 
 export default async function PendingDispatchesPage() {
   const session = await auth();
@@ -13,19 +15,26 @@ export default async function PendingDispatchesPage() {
     redirect("/dashboard");
   }
 
-  let companyId: string;
-  try {
-    companyId = requireActiveCompany(session);
-  } catch {
+  // Active company, or every operational company when "All companies" is selected.
+  const companyIds = resolveDashboardCompanyIds(session);
+  if (companyIds.length === 0) {
     redirect("/select-company");
   }
 
   const salesUserId = restrictSalesUserId(session.user.roles, session.user.id);
-  const result = await listPendingDispatchPis(prisma, companyId, { salesUserId });
+  const results = await Promise.all(
+    companyIds.map(async (companyId) => {
+      const result = await listPendingDispatchPis(prisma, companyId, { salesUserId });
+      return result.items.map((item) => ({ ...item, companyId }));
+    }),
+  );
+  const rows = results
+    .flat()
+    .sort((a, b) => (a.queuedAt ?? "").localeCompare(b.queuedAt ?? ""));
 
   return (
     <PendingDispatchesList
-      initialRows={JSON.parse(JSON.stringify(result.items))}
+      initialRows={JSON.parse(JSON.stringify(rows))}
       canApproveCancel={canApprovePiCancel(session.user.roles)}
     />
   );

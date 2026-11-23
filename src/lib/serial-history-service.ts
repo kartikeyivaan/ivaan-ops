@@ -28,6 +28,7 @@ export type SerialHistoryEvent = {
   referenceId: string | null;
   referenceNumber: string | null;
   href: string | null;
+  companyIds: string[];
   notes: string | null;
   actorName: string | null;
 };
@@ -40,6 +41,7 @@ export type SerialPhysicalHistory = {
     createdAt: string;
     product: { id: string; displayName: string };
     currentWarehouse: { id: string; name: string; companyId: string };
+    companyName: string;
     lot: {
       id: string;
       lotNumber: string;
@@ -52,7 +54,7 @@ export type SerialPhysicalHistory = {
 };
 
 function companyTouchesSerial(
-  companyId: string,
+  companyIds: string[],
   serial: {
     lot: { companyId: string };
     currentWarehouse: { companyId: string };
@@ -73,34 +75,34 @@ function companyTouchesSerial(
     }>;
   },
 ): boolean {
-  if (serial.lot.companyId === companyId) return true;
-  if (serial.currentWarehouse.companyId === companyId) return true;
+  if (companyIds.includes(serial.lot.companyId)) return true;
+  if (companyIds.includes(serial.currentWarehouse.companyId)) return true;
   if (
     serial.transferLineSerials.some(
       (row) =>
-        row.line.transfer.fromCompanyId === companyId ||
-        row.line.transfer.toCompanyId === companyId,
+        companyIds.includes(row.line.transfer.fromCompanyId) ||
+        companyIds.includes(row.line.transfer.toCompanyId),
     )
   ) {
     return true;
   }
   if (
     serial.dispatchLineSerials.some(
-      (row) => row.line.dispatch.companyId === companyId,
+      (row) => companyIds.includes(row.line.dispatch.companyId),
     )
   ) {
     return true;
   }
   if (
     serial.projectDispatchLineSerials.some(
-      (row) => row.dispatchLine.dispatch.companyId === companyId,
+      (row) => companyIds.includes(row.dispatchLine.dispatch.companyId),
     )
   ) {
     return true;
   }
-  if (serial.damageReports.some((row) => row.companyId === companyId)) return true;
+  if (serial.damageReports.some((row) => companyIds.includes(row.companyId))) return true;
   if (
-    serial.manualStockEntryLines.some((row) => row.entry.companyId === companyId)
+    serial.manualStockEntryLines.some((row) => companyIds.includes(row.entry.companyId))
   ) {
     return true;
   }
@@ -113,7 +115,7 @@ function companyTouchesSerial(
  */
 export async function getSerialPhysicalHistory(
   prisma: PrismaClient,
-  companyId: string,
+  accessibleCompanyIds: string[],
   serialNumberInput: string,
 ): Promise<SerialPhysicalHistory | null> {
   const serialNumber = normalizeSerialNumber(serialNumberInput);
@@ -123,7 +125,9 @@ export async function getSerialPhysicalHistory(
     where: { serialNumber },
     include: {
       product: { select: { id: true, displayName: true } },
-      currentWarehouse: { select: { id: true, name: true, companyId: true } },
+      currentWarehouse: {
+        select: { id: true, name: true, companyId: true, company: { select: { name: true } } },
+      },
       lot: {
         select: {
           id: true,
@@ -203,7 +207,7 @@ export async function getSerialPhysicalHistory(
     orderBy: { createdAt: "asc" },
   });
 
-  const visible = serials.filter((serial) => companyTouchesSerial(companyId, serial));
+  const visible = serials.filter((serial) => companyTouchesSerial(accessibleCompanyIds, serial));
   if (visible.length === 0) {
     return null;
   }
@@ -241,6 +245,7 @@ export async function getSerialPhysicalHistory(
     referenceType: "LOT",
     referenceId: serial.lot.id,
     referenceNumber: serial.lot.lotNumber,
+    companyIds: [],
     href: `/inventory/incoming/${serial.lot.id}`,
     notes: `Purchase invoice ${serial.lot.purchaseInvoiceNo}`,
     actorName: serial.lot.createdBy.name,
@@ -265,6 +270,7 @@ export async function getSerialPhysicalHistory(
         referenceType: "TRANSFER",
         referenceId: transfer.id,
         referenceNumber: transfer.transferNumber,
+        companyIds: [],
         href: `/inventory/transfers/${transfer.id}`,
         notes: transfer.notes,
         actorName: transfer.dispatchedBy?.name ?? null,
@@ -283,6 +289,7 @@ export async function getSerialPhysicalHistory(
         referenceType: "TRANSFER",
         referenceId: transfer.id,
         referenceNumber: transfer.transferNumber,
+        companyIds: [],
         href: `/inventory/transfers/${transfer.id}`,
         notes: transfer.notes,
         actorName: transfer.receivedBy?.name ?? null,
@@ -308,6 +315,7 @@ export async function getSerialPhysicalHistory(
       referenceType: "DISPATCH",
       referenceId: dispatch.id,
       referenceNumber: dispatch.dcNo,
+      companyIds: [],
       href: `/inventory/dispatches/${dispatch.id}`,
       notes: dispatch.customer.customerName,
       actorName: dispatch.dispatchedBy?.name ?? dispatch.createdBy.name,
@@ -329,6 +337,7 @@ export async function getSerialPhysicalHistory(
       referenceType: "PROJECT_DISPATCH",
       referenceId: dispatch.id,
       referenceNumber: dispatch.dispatchNo,
+      companyIds: [],
       href: `/inventory/dispatches/projects/${dispatch.id}`,
       notes: `${dispatch.project.projectNo} · ${dispatch.project.customerName}`,
       actorName: dispatch.createdBy.name,
@@ -348,6 +357,7 @@ export async function getSerialPhysicalHistory(
       referenceType: "DAMAGE_REPORT",
       referenceId: report.id,
       referenceNumber: null,
+      companyIds: [],
       href: `/inventory/damaged`,
       notes: report.reason,
       actorName: report.requestedBy.name,
@@ -366,6 +376,7 @@ export async function getSerialPhysicalHistory(
         referenceType: "DAMAGE_REPORT",
         referenceId: report.id,
         referenceNumber: null,
+        companyIds: [],
         href: `/inventory/damaged`,
         notes: report.decisionRemarks ?? report.reason,
         actorName: report.decidedBy?.name ?? null,
@@ -385,6 +396,7 @@ export async function getSerialPhysicalHistory(
         referenceType: "DAMAGE_REPORT",
         referenceId: report.id,
         referenceNumber: null,
+        companyIds: [],
         href: `/inventory/damaged`,
         notes: report.decisionRemarks ?? report.reason,
         actorName: report.decidedBy?.name ?? null,
@@ -420,11 +432,35 @@ export async function getSerialPhysicalHistory(
       referenceType: "MANUAL_STOCK",
       referenceId: entry.id,
       referenceNumber: entry.entryNumber,
+      companyIds: [],
       href: `/inventory/manual-stock`,
       notes: entry.notes,
       actorName: entry.createdBy.name,
     });
   }
+  }
+
+  const recordCompanies = new Map<string, string[]>();
+  for (const serial of visible) {
+    recordCompanies.set(serial.lot.id, [serial.lot.companyId]);
+    for (const row of serial.transferLineSerials) {
+      recordCompanies.set(row.line.transfer.id, [row.line.transfer.fromCompanyId, row.line.transfer.toCompanyId]);
+    }
+    for (const row of serial.dispatchLineSerials) {
+      recordCompanies.set(row.line.dispatch.id, [row.line.dispatch.companyId]);
+    }
+    for (const row of serial.projectDispatchLineSerials) {
+      recordCompanies.set(row.dispatchLine.dispatch.id, [row.dispatchLine.dispatch.companyId]);
+    }
+    for (const row of serial.damageReports) {
+      recordCompanies.set(row.id, [row.companyId]);
+    }
+    for (const row of serial.manualStockEntryLines) {
+      recordCompanies.set(row.entry.id, [row.entry.companyId]);
+    }
+  }
+  for (const event of events) {
+    event.companyIds = recordCompanies.get(event.referenceId ?? "") ?? [];
   }
 
   events.sort((a, b) => {
@@ -443,6 +479,7 @@ export async function getSerialPhysicalHistory(
       serialNumber: header.serialNumber,
       status: header.status,
       createdAt: header.createdAt.toISOString(),
+      companyName: header.currentWarehouse.company.name,
       product: header.product,
       currentWarehouse: header.currentWarehouse,
       lot: {

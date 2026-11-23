@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { useCallback, useState } from "react";
 import {
   ArrowLeft,
@@ -216,6 +218,13 @@ function QrHistoryPanel({ canScan }: { canScan: boolean }) {
                 </p>
               </div>
               <div>
+
+                <p className="text-xs text-slate-500">Product is in</p>
+
+                <p className="font-medium text-slate-900">{history.serial.companyName}</p>
+
+              </div>
+              <div>
                 <p className="text-xs text-slate-500">Status</p>
                 <Badge variant={statusBadgeVariant(history.serial.status)}>
                   {history.serial.status}
@@ -296,12 +305,7 @@ function QrHistoryPanel({ canScan }: { canScan: boolean }) {
                           <p className="text-sm text-slate-500">{event.notes}</p>
                         ) : null}
                         {event.href ? (
-                          <Link
-                            href={event.href}
-                            className="text-sm font-medium text-emerald-700 hover:underline"
-                          >
-                            Open record
-                          </Link>
+                          <OpenRecordLink href={event.href} companyIds={event.companyIds} />
                         ) : null}
                       </div>
                     </li>
@@ -603,5 +607,48 @@ export function QrHistoryWorkbench({
         <ProductMovementsPanel products={products} warehouses={warehouses} />
       )}
     </div>
+  );
+}
+
+function OpenRecordLink({ href, companyIds }: { href: string; companyIds: string[] }) {
+  const { data: session, update } = useSession();
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const activeId = session?.user?.activeCompanyId ?? null;
+
+  if (activeId && companyIds.includes(activeId)) {
+    return (
+      <Link href={href} className="text-sm font-medium text-emerald-700 hover:underline">
+        Open record
+      </Link>
+    );
+  }
+
+  const targetId = companyIds.find((id) =>
+    session?.user?.companies?.some((c) => c.id === id),
+  );
+  if (!targetId) {
+    return <p className="text-sm text-slate-500">Record is in a company you cannot access.</p>;
+  }
+
+  async function openInCompany() {
+    setBusy(true);
+    try {
+      await update({ activeCompanyId: targetId });
+      router.push(href);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={openInCompany}
+      disabled={busy}
+      className="text-left text-sm font-medium text-emerald-700 hover:underline disabled:opacity-50"
+    >
+      Open record (switches to its company)
+    </button>
   );
 }

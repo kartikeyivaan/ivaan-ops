@@ -4,7 +4,7 @@ import { assertInventoryOpsAllowed } from "@/lib/inventory-audit-service";
 import { canApprovePanelDamage } from "@/lib/inventory-permissions";
 import { rejectDamageReport } from "@/lib/damage-report-service";
 import { prisma } from "@/lib/prisma";
-import { requireActiveCompany } from "@/lib/session";
+import { requireApprovalCompany } from "@/lib/session";
 import { rejectDamageReportSchema } from "@/lib/validations";
 
 function errorResponse(code: string, message: string, status: number, details?: unknown) {
@@ -22,7 +22,7 @@ export async function POST(
 
   let companyId: string;
   try {
-    companyId = requireActiveCompany(session);
+    companyId = requireApprovalCompany(session, request);
   } catch {
     return errorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
   }

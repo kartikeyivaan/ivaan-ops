@@ -64,6 +64,8 @@ export type PendingApprovalItem = {
   requestedAt: string;
   href: string;
   canReject: boolean;
+  /** Owning company of the record; sent back on decisions so "All companies" works. */
+  companyId?: string;
 };
 
 export type ApprovalHistoryItem = {
@@ -608,9 +610,14 @@ export async function listPendingApprovals(
 ): Promise<PendingApprovalItem[]> {
   const ids = resolveCompanyIds(companyIds);
   const groups = await Promise.all(
-    ids.map((companyId) => listPendingApprovalsForCompany(prisma, companyId, userRoles)),
+    ids.map(async (companyId) =>
+      (await listPendingApprovalsForCompany(prisma, companyId, userRoles)).map((item) => ({
+        ...item,
+        companyId,
+      })),
+    ),
   );
-  let items = groups.flat();
+  let items: PendingApprovalItem[] = groups.flat();
   if (canApproveProductRateChange(userRoles) && userId) {
     items = [...items, ...(await listPendingProductRateChangeApprovals(prisma, userId))];
   }

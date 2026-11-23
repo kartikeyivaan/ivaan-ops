@@ -4,7 +4,7 @@ import { writeAuditLog } from "@/lib/audit";
 import { canApproveProductRateChange } from "@/lib/product-rate-change-permissions";
 import { approveProductRateChangeBatch } from "@/lib/product-rate-change-service";
 import { prisma } from "@/lib/prisma";
-import { requireActiveCompany } from "@/lib/session";
+import { requireApprovalCompany } from "@/lib/session";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -12,7 +12,7 @@ function errorResponse(code: string, message: string, status: number) {
   return NextResponse.json({ code, message }, { status });
 }
 
-export async function POST(_request: Request, context: RouteContext) {
+export async function POST(request: Request, context: RouteContext) {
   const session = await auth();
   if (!session?.user || !canApproveProductRateChange(session.user.roles)) {
     return errorResponse("FORBIDDEN", "You do not have permission for this action.", 403);
@@ -20,7 +20,7 @@ export async function POST(_request: Request, context: RouteContext) {
 
   let companyId: string;
   try {
-    companyId = requireActiveCompany(session);
+    companyId = requireApprovalCompany(session, request);
   } catch {
     return errorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
   }

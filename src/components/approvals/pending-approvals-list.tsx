@@ -28,6 +28,12 @@ import {
 } from "@/components/ui/table";
 import { formatDate } from "@/lib/utils";
 
+/** Adds the record's company so the server acts on that company, not the session's active one. */
+function withCompany(url: string, companyId: string | undefined): string {
+  if (!companyId) return url;
+  return `${url}?companyId=${encodeURIComponent(companyId)}`;
+}
+
 function approveEndpoint(item: PendingApprovalItem): { url: string; body?: object } {
   switch (item.type) {
     case "QUOTATION_PRICE":
@@ -177,7 +183,7 @@ export function PendingApprovalsList({
     setActionLoading(item.id);
     setError(null);
     const { url, body } = approveEndpoint(item);
-    const response = await fetch(url, {
+    const response = await fetch(withCompany(url, item.companyId), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body ?? {}),
@@ -199,7 +205,7 @@ export function PendingApprovalsList({
     setActionLoading(item.id);
     setError(null);
     const { url, body } = rejectEndpoint(item, rejectReason.trim());
-    const response = await fetch(url, {
+    const response = await fetch(withCompany(url, item.companyId), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

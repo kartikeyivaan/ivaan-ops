@@ -152,8 +152,11 @@ export function normalizeSerialNumber(serial: string): string {
   return serial.trim().toUpperCase();
 }
 
-/** Scanner paste often includes this noise; treat it as a separator between serials. */
-const SERIAL_QR_NOISE = /\[QR\]/gi;
+/**
+ * Scanner output often includes format labels such as [QR], [CODE 128] or
+ * [DATA MATRIX]. They are not part of the serial, so treat them as separators.
+ */
+const SERIAL_QR_NOISE = /\[[A-Za-z0-9 _-]{1,20}\]/g;
 
 /** Waaree module serials look like WS07269074147109 (WS + 14 digits). */
 const WAAREE_PANEL_SERIAL_PATTERN = /^WS\d{14}$/;

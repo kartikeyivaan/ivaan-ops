@@ -20,6 +20,7 @@ export type ClosePartialLine = {
 
 export function PiClosePartialDialog({
   piId,
+  companyId,
   piNo,
   lines,
   open,
@@ -27,6 +28,7 @@ export function PiClosePartialDialog({
   onClosed,
 }: {
   piId: string;
+  companyId?: string;
   piNo: string;
   lines: ClosePartialLine[];
   open: boolean;
@@ -43,7 +45,9 @@ export function PiClosePartialDialog({
     setLoading(true);
     setError(null);
 
-    const response = await fetch(`/api/proforma-invoices/${piId}/close-partial`, {
+    const response = await fetch(
+      `/api/proforma-invoices/${piId}/close-partial${companyId ? `?companyId=${encodeURIComponent(companyId)}` : ""}`,
+      {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

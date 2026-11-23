@@ -86,11 +86,13 @@ export function DispatchForm({
   mode = "warehouse",
   lockedPi,
   dateWindow,
+  companyId,
 }: {
   defaultPiId?: string;
   mode?: "warehouse" | "sales";
   lockedPi?: BookablePi;
   dateWindow?: { min: string; max: string };
+  companyId?: string;
 }) {
   const router = useRouter();
   const isSales = mode === "sales";
@@ -373,7 +375,7 @@ export function DispatchForm({
 
     try {
       const endpoint = isSales
-        ? `/api/pending-dispatches/${piId}/dispatch`
+        ? `/api/pending-dispatches/${piId}/dispatch${companyId ? `?companyId=${encodeURIComponent(companyId)}` : ""}`
         : "/api/dispatches";
       const response = await fetch(endpoint, {
         method: "POST",

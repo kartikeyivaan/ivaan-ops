@@ -5,7 +5,7 @@ import { canApproveProjectProposals } from "@/lib/project-proposal-permissions";
 import { approveProjectProposal } from "@/lib/project-proposal-service";
 import { buildProjectProposalSharePayload } from "@/lib/project-proposal-share";
 import { prisma } from "@/lib/prisma";
-import { requireActiveCompany } from "@/lib/session";
+import { requireApprovalCompany } from "@/lib/session";
 import { approveProjectProposalSchema } from "@/lib/validations";
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -22,7 +22,7 @@ export async function POST(request: Request, context: RouteContext) {
 
   let companyId: string;
   try {
-    companyId = requireActiveCompany(session);
+    companyId = requireApprovalCompany(session, request);
   } catch {
     return projectProposalErrorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
   }

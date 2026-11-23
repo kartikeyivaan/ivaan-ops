@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { canApproveIncomingLotEdit } from "@/lib/inventory-permissions";
 import { rejectIncomingLotChangeRequest } from "@/lib/incoming-lot-change-service";
 import { prisma } from "@/lib/prisma";
-import { requireActiveCompany } from "@/lib/session";
+import { requireApprovalCompany } from "@/lib/session";
 
 function errorResponse(code: string, message: string, status: number) {
   return NextResponse.json({ code, message }, { status });
@@ -20,7 +20,7 @@ export async function POST(
 
   let companyId: string;
   try {
-    companyId = requireActiveCompany(session);
+    companyId = requireApprovalCompany(session, request);
   } catch {
     return errorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
   }

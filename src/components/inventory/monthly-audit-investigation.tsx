@@ -97,7 +97,7 @@ export function MonthlyAuditInvestigation({
     if (filters.product !== "ALL" && r.product !== filters.product) return false;
     return true;
   });
-  const visibleOpen = visibleRows.filter((r) => !r.resolvedAt);
+  const visibleSelectable = visibleRows.filter((r) => !r.resolvedAt || isUndoable(r));
   const filtersActive = JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS);
 
   function toggle(id: string) {
@@ -201,7 +201,6 @@ export function MonthlyAuditInvestigation({
   }
 
   const canAct = canManage && !closed;
-  const hasOpenInTab = visibleOpen.length > 0;
 
   return (
     <div className="space-y-6 p-4 md:p-6">
@@ -381,12 +380,14 @@ export function MonthlyAuditInvestigation({
               <thead className="bg-slate-50 text-left text-slate-600">
                 <tr>
                   <th className="px-3 py-2">
-                    {canAct && hasOpenInTab && (
+                    {canAct && visibleSelectable.length > 0 && (
                       <input
                         type="checkbox"
-                        aria-label="Select all open"
-                        checked={selectedRows.length === visibleOpen.length && visibleOpen.length > 0}
-                        onChange={(e) => setSelected(e.target.checked ? new Set(visibleOpen.map((r) => r.id)) : new Set())}
+                        aria-label="Select all visible"
+                        checked={visibleSelectable.every((r) => selected.has(r.id))}
+                        onChange={(e) =>
+                          setSelected(e.target.checked ? new Set(visibleSelectable.map((r) => r.id)) : new Set())
+                        }
                       />
                     )}
                   </th>

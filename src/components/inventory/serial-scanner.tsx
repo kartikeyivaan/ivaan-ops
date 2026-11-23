@@ -1,10 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { Aperture, Barcode, Camera, Flashlight, QrCode, ZoomIn } from "lucide-react";
+import { Aperture, Barcode, Camera, Flashlight, QrCode, X, ZoomIn } from "lucide-react";
 import type { Html5Qrcode } from "html5-qrcode";
 import { Button } from "@/components/ui/button";
-import { Modal, ModalBody, ModalFooter, ModalHeader } from "@/components/ui/modal";
 import { parseSerialInput } from "@/lib/inventory";
 import { captureVideoFrame, decodeQrFromImageData } from "@/lib/qr-decode";
 import { cn } from "@/lib/utils";
@@ -20,8 +19,11 @@ const DUP_NOTICE_MS = 2000;
 /** Preferred zoom steps; clipped to what the device actually supports. */
 const ZOOM_STEPS = [1, 2, 3] as const;
 const DEFAULT_ZOOM = 2;
-/** Square focus box (QR / DataMatrix) as a fraction of the shorter edge. */
-const QR_BOX_FRACTION = 0.78;
+/**
+ * Square focus box (QR / DataMatrix) as a fraction of the shorter screen edge.
+ * Kept below the top and bottom control bars so the box is never covered.
+ */
+const QR_BOX_FRACTION = 0.6;
 const MODE_STORAGE_KEY = "serial-scanner-mode";
 
 export type ScanMode = "qr" | "barcode";
@@ -232,7 +234,7 @@ function squareQrbox(viewfinderWidth: number, viewfinderHeight: number) {
 /** Wide, short strip for 1D barcodes (Code 128, EAN, UPC …). */
 function barcodeStripQrbox(viewfinderWidth: number, viewfinderHeight: number) {
   const width = Math.floor(viewfinderWidth * 0.9);
-  const height = Math.floor(Math.max(90, Math.min(viewfinderHeight * 0.32, width * 0.35)));
+  const height = Math.floor(Math.max(90, Math.min(viewfinderHeight * 0.3, width * 0.35)));
   return { width, height };
 }
 
@@ -300,7 +302,22 @@ export function SerialScanner({
     };
   }, []);
 
-  /** Unlock audio on the first tap inside the modal (iOS requires a user gesture). */
+  /** Full-screen scanner: Escape closes it and page scrolling is locked while open. */
+  useEffect(() => {
+    if (!open) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open, onClose]);
+
+  /** Unlock audio on the first tap inside the scanner (iOS requires a user gesture). */
   const unlockAudio = useCallback(() => {
     getAudioContext();
   }, []);
@@ -567,7 +584,7 @@ export function SerialScanner({
 
       const decoded = decodeQrFromImageData(frame, "full");
       if (!decoded?.text) {
-        failScan("Couldn’t read this QR. Fill the box, hold steady, then Snap again.");
+        failScan("Couldn’t read this QR. Center it in the box, then Snap again.");
         return;
       }
 
@@ -620,23 +637,34 @@ export function SerialScanner({
   const zoomLabel = formatZoomLabel(zoomLevel);
   const controlsReady = !starting && !cameraError;
 
+  const controlButton =
+    "flex h-12 min-w-12 items-center justify-center gap-1.5 rounded-full bg-white/15 px-4 text-sm font-medium text-white backdrop-blur transition-colors hover:bg-white/25 disabled:opacity-50";
+
   return (
-    <Modal onClose={onClose} size="lg" className="max-w-lg">
-      <ModalHeader
-        title={title}
-        description={
-          mode === "barcode"
-            ? "Hold about an arm’s length away and line up the barcode inside the wide box. Tap zoom for 2× or 3× if it looks small."
-            : "Hold about an arm’s length away and center the code in the box. Tap zoom for 2× or 3× if it looks small; for dense pallet labels, tap Snap."
-        }
-        onClose={onClose}
-      />
-      <ModalBody className="space-y-3" onPointerDownCapture={unlockAudio}>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      onPointerDownCapture={unlockAudio}
+      className="fixed inset-0 z-50 flex flex-col overflow-hidden bg-black text-white"
+    >
+      {/* Camera fills the whole screen; overlays sit on top of it. */}
+      <div className="absolute inset-0">
         <div
-          role="group"
-          aria-label="Scan mode"
-          className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1"
-        >
+          id={readerId}
+          className="absolute inset-0 overflow-hidden [&_video]:!h-full [&_video]:!w-full [&_video]:!object-cover"
+        />
+        {starting ? (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/80 text-sm">
+            Starting camera…
+          </div>
+        ) : null}
+      </div>
+
+      {/* Top bar: title, mode toggle, close. */}
+      <div className="relative z-10 flex items-center gap-2 bg-gradient-to-b from-black/80 to-transparent px-3 pb-8 pt-[max(0.5rem,env(safe-area-inset-top))]">
+        <h3 className="min-w-0 flex-1 truncate text-sm font-semibold">{title}</h3>
+        <div role="group" aria-label="Scan mode" className="flex shrink-0 rounded-full bg-white/15 p-1">
           {(["qr", "barcode"] as const).map((option) => {
             const active = mode === option;
             return (
@@ -646,111 +674,103 @@ export function SerialScanner({
                 aria-pressed={active}
                 onClick={() => changeMode(option)}
                 className={cn(
-                  "flex h-11 items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors",
-                  active ? "bg-white text-slate-900 shadow" : "text-slate-600 hover:text-slate-900",
+                  "flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors",
+                  active ? "bg-white text-slate-900" : "text-white",
                 )}
               >
                 {option === "qr" ? (
-                  <QrCode className="h-4 w-4" aria-hidden />
+                  <QrCode className="h-3.5 w-3.5" aria-hidden />
                 ) : (
-                  <Barcode className="h-4 w-4" aria-hidden />
+                  <Barcode className="h-3.5 w-3.5" aria-hidden />
                 )}
-                {option === "qr" ? "QR / DataMatrix" : "Barcode"}
+                {option === "qr" ? "QR" : "Barcode"}
               </button>
             );
           })}
         </div>
-
-        {/* Fixed-height viewfinder: uses viewport height so rotation keeps a sane size. */}
-        <div
-          className="relative w-full overflow-hidden rounded-lg bg-slate-950"
-          style={{ height: "min(62vh, 440px)", minHeight: 240 }}
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close scanner"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/15 hover:bg-white/25"
         >
-          <div
-            id={readerId}
-            className="absolute inset-0 overflow-hidden [&_video]:!h-full [&_video]:!w-full [&_video]:!object-cover"
-          />
-          {starting ? (
-            <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/80 text-sm text-white">
-              Starting camera…
-            </div>
-          ) : null}
-          {feedback ? (
-            <div
-              role="status"
-              aria-live="polite"
-              className={cn(
-                "pointer-events-none absolute inset-x-3 bottom-3 z-20 rounded-md px-3 py-3 text-center text-sm font-semibold shadow-lg",
-                feedback.kind === "success" && "bg-emerald-600 text-white",
-                feedback.kind === "error" && "bg-red-600 text-white",
-                feedback.kind === "info" && "bg-amber-400 text-slate-900",
-              )}
-            >
-              <p className="break-all">{feedback.text}</p>
-            </div>
-          ) : null}
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+
+      <div className="flex-1" />
+
+      {/* Result banner and errors sit just above the bottom bar. */}
+      {feedback ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className={cn(
+            "pointer-events-none relative z-10 mx-3 mb-3 rounded-lg px-3 py-3 text-center text-sm font-semibold shadow-lg",
+            feedback.kind === "success" && "bg-emerald-600 text-white",
+            feedback.kind === "error" && "bg-red-600 text-white",
+            feedback.kind === "info" && "bg-amber-400 text-slate-900",
+          )}
+        >
+          <p className="break-all">{feedback.text}</p>
         </div>
-
-        {controlsReady ? (
-          <div className="flex flex-wrap items-center gap-2">
-            {mode === "qr" ? (
-              <Button
-                type="button"
-                variant="outline"
-                className="h-11 min-w-11 px-4"
-                disabled={snapBusy}
-                onClick={() => void snapDenseQr()}
-                aria-label="Snap a still frame and decode dense QR"
-              >
-                <Aperture className="h-4 w-4" />
-                {snapBusy ? "…" : "Snap"}
-              </Button>
-            ) : null}
-            {zoomSupported ? (
-              <Button
-                type="button"
-                variant="outline"
-                className="h-11 min-w-11 px-4"
-                disabled={controlBusy}
-                onClick={() => void toggleZoom()}
-                aria-label={`Current zoom ${zoomLabel}. Tap to cycle 1×, 2×, 3×`}
-              >
-                <ZoomIn className="h-4 w-4" />
-                {zoomLabel}
-              </Button>
-            ) : null}
-            {torchSupported ? (
-              <Button
-                type="button"
-                variant="outline"
-                className={cn("h-11 min-w-11 px-4", torchOn && "border-amber-400 bg-amber-100")}
-                disabled={controlBusy}
-                onClick={() => void toggleTorch()}
-                aria-label={torchOn ? "Turn torch off" : "Turn torch on"}
-              >
-                <Flashlight className="h-4 w-4" />
-                {torchOn ? "On" : "Off"}
-              </Button>
-            ) : null}
-            <span className="ml-auto text-sm text-slate-600">
-              Scanned: <strong className="tabular-nums">{scannedCount}</strong>
-            </span>
-          </div>
-        ) : null}
-
-        {cameraError ? <p className="text-sm text-red-600">{cameraError}</p> : null}
-        <p className="text-xs text-slate-500">
-          Keep the camera about an arm’s length from the label. The same serial is ignored for 10
-          seconds. Comma-separated serial lists are accepted; paste or
-          type still works if you close the scanner.
+      ) : null}
+      {cameraError ? (
+        <p className="relative z-10 mx-3 mb-3 rounded-lg bg-red-600 px-3 py-2 text-center text-sm">
+          {cameraError}
         </p>
-      </ModalBody>
-      <ModalFooter>
-        <Button type="button" variant="outline" className="h-12 w-full" onClick={onClose}>
+      ) : null}
+
+      {/* Bottom bar: capture controls and Done. */}
+      <div className="relative z-10 flex flex-wrap items-center justify-center gap-2 bg-gradient-to-t from-black/85 to-transparent px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-8">
+        {controlsReady && mode === "qr" ? (
+          <button
+            type="button"
+            className={controlButton}
+            disabled={snapBusy}
+            onClick={() => void snapDenseQr()}
+            aria-label="Snap a still frame and decode dense QR"
+          >
+            <Aperture className="h-4 w-4" />
+            {snapBusy ? "…" : "Snap"}
+          </button>
+        ) : null}
+        {controlsReady && zoomSupported ? (
+          <button
+            type="button"
+            className={controlButton}
+            disabled={controlBusy}
+            onClick={() => void toggleZoom()}
+            aria-label={`Current zoom ${zoomLabel}. Tap to cycle 1×, 2×, 3×`}
+          >
+            <ZoomIn className="h-4 w-4" />
+            {zoomLabel}
+          </button>
+        ) : null}
+        {controlsReady && torchSupported ? (
+          <button
+            type="button"
+            className={cn(controlButton, torchOn && "bg-amber-300 text-slate-900 hover:bg-amber-200")}
+            disabled={controlBusy}
+            onClick={() => void toggleTorch()}
+            aria-label={torchOn ? "Turn torch off" : "Turn torch on"}
+          >
+            <Flashlight className="h-4 w-4" />
+            {torchOn ? "Light on" : "Light"}
+          </button>
+        ) : null}
+        <span className="px-2 text-sm text-white/90">
+          Scanned <strong className="tabular-nums">{scannedCount}</strong>
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex h-12 items-center justify-center rounded-full bg-white px-8 text-sm font-semibold text-slate-900 hover:bg-slate-100"
+        >
           Done
-        </Button>
-      </ModalFooter>
-    </Modal>
+        </button>
+      </div>
+    </div>
   );
 }
 

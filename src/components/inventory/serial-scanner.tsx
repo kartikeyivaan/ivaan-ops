@@ -226,15 +226,24 @@ function buildVideoConstraints(preferredCameraId: string | null): MediaTrackCons
 }
 
 /** Square box for QR / DataMatrix. */
+/** html5-qrcode rejects a focus box under 50px, which happens if the viewfinder is not laid out yet. */
+const MIN_QRBOX_PX = 100;
+
 function squareQrbox(viewfinderWidth: number, viewfinderHeight: number) {
-  const edge = Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * QR_BOX_FRACTION);
+  const edge = Math.max(
+    MIN_QRBOX_PX,
+    Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * QR_BOX_FRACTION),
+  );
   return { width: edge, height: edge };
 }
 
 /** Wide, short strip for 1D barcodes (Code 128, EAN, UPC …). */
 function barcodeStripQrbox(viewfinderWidth: number, viewfinderHeight: number) {
-  const width = Math.floor(viewfinderWidth * 0.9);
-  const height = Math.floor(Math.max(90, Math.min(viewfinderHeight * 0.3, width * 0.35)));
+  const width = Math.max(MIN_QRBOX_PX, Math.floor(viewfinderWidth * 0.9));
+  const height = Math.max(
+    MIN_QRBOX_PX,
+    Math.floor(Math.min(viewfinderHeight * 0.3, width * 0.35)),
+  );
   return { width, height };
 }
 

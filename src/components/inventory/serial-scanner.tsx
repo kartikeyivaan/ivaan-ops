@@ -626,8 +626,8 @@ export function SerialScanner({
         title={title}
         description={
           mode === "barcode"
-            ? "Line up the barcode inside the wide box. Each good scan beeps; a wrong scan vibrates."
-            : "Fill the box with the QR. For dense pallet labels, hold steady or tap Snap."
+            ? "Hold about an arm’s length away and line up the barcode inside the wide box. Tap zoom for 2× or 3× if it looks small."
+            : "Hold about an arm’s length away and center the code in the box. Tap zoom for 2× or 3× if it looks small; for dense pallet labels, tap Snap."
         }
         onClose={onClose}
       />
@@ -740,7 +740,8 @@ export function SerialScanner({
 
         {cameraError ? <p className="text-sm text-red-600">{cameraError}</p> : null}
         <p className="text-xs text-slate-500">
-          Same serial is ignored for 10 seconds. Comma-separated serial lists are accepted; paste or
+          Keep the camera about an arm’s length from the label. The same serial is ignored for 10
+          seconds. Comma-separated serial lists are accepted; paste or
           type still works if you close the scanner.
         </p>
       </ModalBody>

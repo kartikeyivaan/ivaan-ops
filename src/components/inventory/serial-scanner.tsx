@@ -652,7 +652,7 @@ export function SerialScanner({
       <div className="absolute inset-0">
         <div
           id={readerId}
-          className="absolute inset-0 overflow-hidden [&_video]:!h-full [&_video]:!w-full [&_video]:!object-cover"
+          className="absolute inset-0 overflow-hidden [&>div]:!absolute [&>div]:!inset-0 [&>div]:!h-full [&>div]:!w-full [&_video]:!absolute [&_video]:!inset-0 [&_video]:!h-full [&_video]:!w-full [&_video]:!object-cover"
         />
         {starting ? (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/80 text-sm">

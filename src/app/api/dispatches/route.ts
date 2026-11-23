@@ -6,6 +6,7 @@ import {
   canViewDispatches,
 } from "@/lib/dispatch-permissions";
 import { assertInventoryOpsAllowed } from "@/lib/inventory-audit-service";
+import { assertMonthlyAuditAllowsMovement } from "@/lib/monthly-serial-audit-service";
 import { createDispatch, listDispatches } from "@/lib/dispatch-service";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
@@ -86,6 +87,7 @@ export async function POST(request: Request) {
 
   try {
     await assertInventoryOpsAllowed(prisma, companyId);
+    await assertMonthlyAuditAllowsMovement(prisma);
 
     const dispatch = await createDispatch(prisma, {
       companyId,

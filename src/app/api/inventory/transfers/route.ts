@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { assertCompanyAccess } from "@/lib/customer-permissions";
 import { assertInventoryOpsAllowed } from "@/lib/inventory-audit-service";
+import { assertMonthlyAuditAllowsMovement } from "@/lib/monthly-serial-audit-service";
 import {
   canCreateTransfer,
   canViewTransferSerials,
@@ -93,6 +94,7 @@ export async function POST(request: Request) {
 
   try {
     await assertInventoryOpsAllowed(prisma, companyId);
+    await assertMonthlyAuditAllowsMovement(prisma);
 
     const transfer = await createTransfer(prisma, {
       fromCompanyId: companyId,

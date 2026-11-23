@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { auth } from "@/lib/auth";
 import { assertInventoryOpsAllowed } from "@/lib/inventory-audit-service";
+import { assertMonthlyAuditAllowsMovement } from "@/lib/monthly-serial-audit-service";
 import { canRecordQueuedDispatch } from "@/lib/pi-permissions";
 import { createQueuedDispatch } from "@/lib/pending-dispatch-service";
 import { prisma } from "@/lib/prisma";
 import { restrictSalesUserId } from "@/lib/report-permissions";
-import { requireActiveCompany } from "@/lib/session";
+import { requireApprovalCompany } from "@/lib/session";
 import { createQueuedDispatchSchema } from "@/lib/validations";
 
 export const maxDuration = 60;
@@ -25,7 +26,7 @@ export async function POST(request: Request, context: RouteContext) {
 
   let companyId: string;
   try {
-    companyId = requireActiveCompany(session);
+    companyId = requireApprovalCompany(session, request);
   } catch {
     return errorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
   }
@@ -46,6 +47,7 @@ export async function POST(request: Request, context: RouteContext) {
 
   try {
     await assertInventoryOpsAllowed(prisma, companyId);
+    await assertMonthlyAuditAllowsMovement(prisma);
 
     const dispatch = await createQueuedDispatch(prisma, {
       companyId,

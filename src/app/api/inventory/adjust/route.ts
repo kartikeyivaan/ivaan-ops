@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { canAdjustStock } from "@/lib/inventory-permissions";
 import { assertInventoryOpsAllowed } from "@/lib/inventory-audit-service";
+import { assertMonthlyAuditAllowsMovement } from "@/lib/monthly-serial-audit-service";
 import { adjustStock } from "@/lib/inventory-service";
 import { prisma } from "@/lib/prisma";
 import { requireActiveCompany } from "@/lib/session";
@@ -36,6 +37,7 @@ export async function POST(request: Request) {
 
   try {
     await assertInventoryOpsAllowed(prisma, companyId);
+    await assertMonthlyAuditAllowsMovement(prisma);
 
     const transaction = await adjustStock(prisma, {
       companyId,

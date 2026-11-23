@@ -1502,6 +1502,8 @@ export async function adjustStock(
     notes?: string;
     createdById: string;
   },
+  /** Optional: run inside a caller's transaction (used by monthly audit approval). */
+  client?: Prisma.TransactionClient,
 ) {
   if (input.qty === 0) throw new Error("INVALID_QUANTITY");
 
@@ -1523,7 +1525,7 @@ export async function adjustStock(
     }
   }
 
-  return prisma.$transaction(async (tx) => {
+  const run = async (tx: Prisma.TransactionClient) => {
     let lot = await tx.inventoryLot.findFirst({
       where: {
         companyId: input.companyId,
@@ -1586,7 +1588,8 @@ export async function adjustStock(
     });
 
     return transaction;
-  });
+  };
+  return client ? run(client) : prisma.$transaction(run);
 }
 
 export async function listLedger(

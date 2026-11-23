@@ -2107,7 +2107,12 @@ export function ProformaInvoiceDetail({
                 <div key={challan.id} className="space-y-3 rounded-lg border p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <p className="font-semibold text-slate-900">{challan.dcNo}</p>
+                      <Link
+                        href={`/inventory/dispatches/${challan.id}`}
+                        className="font-semibold text-slate-900 hover:text-sky-700 hover:underline"
+                      >
+                        {challan.dcNo}
+                      </Link>
                       <p className="text-sm text-slate-500">
                         Dispatched {formatDocumentDate(challan.dispatchDate)}
                         {challan.dispatchedBy ? ` by ${challan.dispatchedBy.name}` : ""}

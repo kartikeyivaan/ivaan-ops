@@ -659,10 +659,12 @@ export function SerialScanner({
     >
       {/* Camera fills the whole screen; overlays sit on top of it. */}
       <div className="absolute inset-0">
-        <div
-          id={readerId}
-          className="absolute inset-0 overflow-hidden [&>div]:!absolute [&>div]:!inset-0 [&>div]:!h-full [&>div]:!w-full [&_video]:!absolute [&_video]:!inset-0 [&_video]:!h-full [&_video]:!w-full [&_video]:!object-cover"
-        />
+        {/* html5-qrcode injects its own <video>; style it with a scoped rule, not utility classes. */}
+        <style>{`
+          #${readerId}, #${readerId} > div { position: absolute; inset: 0; width: 100%; height: 100%; }
+          #${readerId} video { position: absolute; inset: 0; width: 100% !important; height: 100% !important; object-fit: cover; }
+        `}</style>
+        <div id={readerId} className="absolute inset-0 overflow-hidden" />
         {starting ? (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/80 text-sm">
             Starting camera…

@@ -151,6 +151,8 @@ const EXECUTIVE_SALES_COLUMNS = [
   "srNo",
   "date",
   "seName",
+  "sellerCompanyCode",
+  "sellerCompanyName",
   "companyName",
   "productName",
   "qty",
@@ -164,6 +166,8 @@ const CUSTOMER_SALES_REVENUE_COLUMNS = [
   "customerName",
   "customerType",
   "salesExecutive",
+  "sellerCompanyCode",
+  "sellerCompanyName",
   "salesRevenue",
   "dispatchCount",
   "city",
@@ -313,7 +317,7 @@ export function ReportsHub({
     if (MULTI_COMPANY_REPORTS.has(activeReport) && selectedSalesUserIds.length) {
       params.set("salesUserIds", selectedSalesUserIds.join(","));
     }
-    if (MULTI_COMPANY_REPORTS.has(activeReport) && selectedCompanyIds.length) {
+    if (selectedCompanyIds.length) {
       params.set("companyIds", selectedCompanyIds.join(","));
     }
     if (warehouseId) params.set("warehouseId", warehouseId);
@@ -503,7 +507,7 @@ export function ReportsHub({
               </>
             ) : null}
 
-            {MULTI_COMPANY_REPORTS.has(activeReport) && companies.length > 0 ? (
+            {companies.length > 0 ? (
               <div className="space-y-2 md:col-span-2 xl:col-span-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <Label>Companies</Label>

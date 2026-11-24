@@ -2,7 +2,7 @@ import { canViewCustomerSalesRevenueReport } from "@/lib/report-permissions";
 import {
   parseReportRequest,
   reportError,
-  resolveReportCompanyIds,
+  resolveReportScope,
   respondWithReport,
 } from "@/lib/report-api";
 import { getCustomerSalesRevenueReport } from "@/lib/report-service";
@@ -12,16 +12,12 @@ export async function GET(request: Request) {
   const parsed = await parseReportRequest(request);
   if ("error" in parsed && parsed.error) return parsed.error;
 
-  const { session, filters, format } = parsed;
+  const { session, companyId, filters, format } = parsed;
   if (!canViewCustomerSalesRevenueReport(session!.user.roles)) {
     return reportError("FORBIDDEN", "Super Admin access required for this report.", 403);
   }
 
-  const companyIds = await resolveReportCompanyIds(
-    session!,
-    filters!.companyIds,
-    prisma,
-  );
+  const companyIds = await resolveReportScope(session!, filters!.companyIds, companyId!, prisma);
   if (!Array.isArray(companyIds)) {
     return companyIds;
   }
@@ -46,6 +42,8 @@ export async function GET(request: Request) {
       { key: "customerName", header: "Customer Name" },
       { key: "customerType", header: "Customer Type" },
       { key: "salesExecutive", header: "Sales Executive" },
+      { key: "sellerCompanyCode", header: "Seller Company Code" },
+      { key: "sellerCompanyName", header: "Seller Company" },
       { key: "salesRevenue", header: "Sales Revenue" },
       { key: "dispatchCount", header: "Dispatch Count" },
       { key: "city", header: "City" },
@@ -53,13 +51,14 @@ export async function GET(request: Request) {
       { key: "mobile", header: "Mobile" },
     ],
     pdfColumns: [
-      { header: "Sr", width: 28, align: "right" },
-      { header: "Code", width: 55 },
-      { header: "Customer", width: 95 },
-      { header: "Type", width: 45 },
-      { header: "SE", width: 80 },
+      { header: "Sr", width: 25, align: "right" },
+      { header: "Code", width: 50 },
+      { header: "Customer", width: 85 },
+      { header: "Type", width: 40 },
+      { header: "SE", width: 65 },
+      { header: "Seller Co.", width: 50 },
       { header: "Revenue", width: 65, align: "right" },
-      { header: "DCs", width: 35, align: "right" },
+      { header: "DCs", width: 30, align: "right" },
     ],
     toPdfRow: (row) => [
       String(row.srNo),
@@ -67,6 +66,7 @@ export async function GET(request: Request) {
       String(row.customerName),
       String(row.customerType),
       String(row.salesExecutive),
+      String(row.sellerCompanyCode),
       String(row.salesRevenue),
       String(row.dispatchCount),
     ],

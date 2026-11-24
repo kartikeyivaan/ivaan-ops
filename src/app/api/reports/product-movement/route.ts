@@ -1,5 +1,11 @@
 import { canViewProductMovementReport } from "@/lib/report-permissions";
-import { parseReportRequest, reportError, respondWithReport } from "@/lib/report-api";
+import {
+  parseReportRequest,
+  reportError,
+  resolveReportScope,
+  respondWithReport,
+  runReportAcrossCompanies,
+} from "@/lib/report-api";
 import { getProductMovementReport } from "@/lib/report-service";
 import { prisma } from "@/lib/prisma";
 
@@ -12,16 +18,22 @@ export async function GET(request: Request) {
     return reportError("FORBIDDEN", "You do not have permission for this report.", 403);
   }
 
-  const rows = await getProductMovementReport(prisma, companyId!, {
-    fromDate: filters!.fromDate,
-    toDate: filters!.toDate,
-    warehouseId: filters!.warehouseId,
-    productId: filters!.productId,
-    q: filters!.q,
-  });
+  const companyIds = await resolveReportScope(session!, filters!.companyIds, companyId!, prisma);
+  if (!Array.isArray(companyIds)) return companyIds;
+
+  const rows = await runReportAcrossCompanies(prisma, companyIds, (scopedCompanyId) =>
+    getProductMovementReport(prisma, scopedCompanyId, {
+      fromDate: filters!.fromDate,
+      toDate: filters!.toDate,
+      warehouseId: filters!.warehouseId,
+      productId: filters!.productId,
+      q: filters!.q,
+    }),
+  );
 
   return respondWithReport({
     reportKey: "product-movement",
+    companyColumns: true,
     title: "Product Movement Report",
     subtitle: [filters!.fromDate, filters!.toDate].filter(Boolean).join(" to "),
     rows,

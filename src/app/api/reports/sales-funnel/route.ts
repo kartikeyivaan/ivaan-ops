@@ -1,5 +1,11 @@
 import { canViewSalesFunnelReport } from "@/lib/report-permissions";
-import { parseReportRequest, reportError, respondWithReport } from "@/lib/report-api";
+import {
+  parseReportRequest,
+  reportError,
+  resolveReportScope,
+  respondWithReport,
+  runReportAcrossCompanies,
+} from "@/lib/report-api";
 import { getSalesFunnelReport } from "@/lib/report-service";
 import { formatCurrency } from "@/lib/quotations";
 import { prisma } from "@/lib/prisma";
@@ -13,15 +19,21 @@ export async function GET(request: Request) {
     return reportError("FORBIDDEN", "You do not have permission for this report.", 403);
   }
 
-  const rows = await getSalesFunnelReport(prisma, companyId!, {
-    fromDate: filters!.fromDate,
-    toDate: filters!.toDate,
-    salesUserId: filters!.salesUserId,
-    customerType: filters!.customerType,
-  });
+  const companyIds = await resolveReportScope(session!, filters!.companyIds, companyId!, prisma);
+  if (!Array.isArray(companyIds)) return companyIds;
+
+  const rows = await runReportAcrossCompanies(prisma, companyIds, (scopedCompanyId) =>
+    getSalesFunnelReport(prisma, scopedCompanyId, {
+      fromDate: filters!.fromDate,
+      toDate: filters!.toDate,
+      salesUserId: filters!.salesUserId,
+      customerType: filters!.customerType,
+    }),
+  );
 
   return respondWithReport({
     reportKey: "sales-funnel",
+    companyColumns: true,
     title: "Sales Funnel Report",
     subtitle: [filters!.fromDate, filters!.toDate].filter(Boolean).join(" to "),
     rows,

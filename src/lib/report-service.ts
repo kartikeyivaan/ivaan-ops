@@ -969,6 +969,7 @@ export async function getExecutiveSalesReport(
         : {}),
     },
     include: {
+      company: { select: { code: true, name: true } },
       customer: { select: { customerName: true } },
       proformaInvoice: {
         select: {
@@ -982,13 +983,15 @@ export async function getExecutiveSalesReport(
         },
       },
     },
-    orderBy: [{ dispatchDate: "asc" }, { dcNo: "asc" }],
+    orderBy: [{ company: { code: "asc" } }, { dispatchDate: "asc" }, { dcNo: "asc" }],
   });
 
   const rows: Array<{
     srNo: number;
     date: string;
     seName: string;
+    sellerCompanyCode: string;
+    sellerCompanyName: string;
     companyName: string;
     productName: string;
     qty: number;
@@ -1004,6 +1007,8 @@ export async function getExecutiveSalesReport(
         srNo,
         date: dispatch.dispatchDate.toISOString().slice(0, 10),
         seName: dispatch.proformaInvoice.salesUser.name,
+        sellerCompanyCode: dispatch.company.code,
+        sellerCompanyName: dispatch.company.name,
         companyName: dispatch.customer.customerName,
         productName: line.product.displayName,
         qty: decimalToNumber(line.qty),
@@ -1042,6 +1047,8 @@ export async function getCustomerSalesRevenueReport(
     },
     select: {
       customerId: true,
+      companyId: true,
+      company: { select: { code: true, name: true } },
       customer: {
         select: {
           customerCode: true,
@@ -1093,23 +1100,27 @@ export async function getCustomerSalesRevenueReport(
     state: string;
     mobile: string;
     salesExecutive: string;
+    sellerCompanyCode: string;
+    sellerCompanyName: string;
     salesRevenue: number;
     dispatchCount: number;
   };
 
-  const byCustomer = new Map<string, Aggregate>();
+  // One row per customer per selling company, so each company's sales stay distinct.
+  const byCustomerAndCompany = new Map<string, Aggregate>();
 
   for (const dispatch of dispatches) {
     const revenue = roundMoney(
       sumCommercialValueFromDispatchLines(dispatch.lines, kitBomMap),
     );
-    const existing = byCustomer.get(dispatch.customerId);
+    const key = `${dispatch.customerId}|${dispatch.companyId}`;
+    const existing = byCustomerAndCompany.get(key);
     if (existing) {
       existing.salesRevenue = roundMoney(existing.salesRevenue + revenue);
       existing.dispatchCount += 1;
       continue;
     }
-    byCustomer.set(dispatch.customerId, {
+    byCustomerAndCompany.set(key, {
       customerCode: dispatch.customer.customerCode,
       customerName: dispatch.customer.customerName,
       customerType: dispatch.customer.customerType,
@@ -1117,12 +1128,13 @@ export async function getCustomerSalesRevenueReport(
       state: dispatch.customer.state ?? "",
       mobile: dispatch.customer.mobile ?? "",
       salesExecutive: dispatch.customer.assignedSalesUser.name,
+      sellerCompanyCode: dispatch.company.code,
+      sellerCompanyName: dispatch.company.name,
       salesRevenue: revenue,
       dispatchCount: 1,
     });
   }
-
-  return Array.from(byCustomer.values())
+  return Array.from(byCustomerAndCompany.values())
     .filter((row) => row.salesRevenue > 0)
     .sort((a, b) => {
       if (b.salesRevenue !== a.salesRevenue) {

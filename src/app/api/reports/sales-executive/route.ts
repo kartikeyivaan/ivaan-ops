@@ -1,5 +1,11 @@
 import { canViewSalesExecutiveReport } from "@/lib/report-permissions";
-import { parseReportRequest, reportError, respondWithReport } from "@/lib/report-api";
+import {
+  parseReportRequest,
+  reportError,
+  resolveReportScope,
+  respondWithReport,
+  runReportAcrossCompanies,
+} from "@/lib/report-api";
 import { getSalesExecutiveReport } from "@/lib/report-service";
 import { formatCurrency } from "@/lib/quotations";
 import { prisma } from "@/lib/prisma";
@@ -13,15 +19,21 @@ export async function GET(request: Request) {
     return reportError("FORBIDDEN", "You do not have permission for this report.", 403);
   }
 
-  const rows = await getSalesExecutiveReport(prisma, companyId!, {
-    fromDate: filters!.fromDate,
-    toDate: filters!.toDate,
-    salesUserId: filters!.salesUserId,
-    customerType: filters!.customerType,
-  });
+  const companyIds = await resolveReportScope(session!, filters!.companyIds, companyId!, prisma);
+  if (!Array.isArray(companyIds)) return companyIds;
+
+  const rows = await runReportAcrossCompanies(prisma, companyIds, (scopedCompanyId) =>
+    getSalesExecutiveReport(prisma, scopedCompanyId, {
+      fromDate: filters!.fromDate,
+      toDate: filters!.toDate,
+      salesUserId: filters!.salesUserId,
+      customerType: filters!.customerType,
+    }),
+  );
 
   return respondWithReport({
     reportKey: "sales-executive",
+    companyColumns: true,
     title: "Sales Executive Report",
     subtitle: [filters!.fromDate, filters!.toDate].filter(Boolean).join(" to "),
     rows,

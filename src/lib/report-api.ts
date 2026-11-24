@@ -63,6 +63,58 @@ export async function resolveReportCompanyIds(
   return selected;
 }
 
+/**
+ * Companies a report should run for. With no selection the report uses the
+ * active company only (as before). With a selection, every selected company
+ * is checked against the user's access.
+ */
+export async function resolveReportScope(
+  session: Session,
+  requestedCompanyIds: string[] | undefined,
+  activeCompanyId: string,
+  prisma: PrismaClient,
+): Promise<string[] | ReturnType<typeof reportError>> {
+  if (!requestedCompanyIds?.length) return [activeCompanyId];
+  return resolveReportCompanyIds(session, requestedCompanyIds, prisma);
+}
+
+/**
+ * Runs a single-company report for each company and stacks the rows.
+ * Every row is tagged with its company code and name. Rows that carry a
+ * serial number (srNo) are renumbered across the combined output.
+ */
+export async function runReportAcrossCompanies<T extends object>(
+  prisma: PrismaClient,
+  companyIds: string[],
+  run: (companyId: string) => Promise<T[]>,
+): Promise<Array<T & { companyCode: string; companyName: string }>> {
+  const companies = await prisma.company.findMany({
+    where: { id: { in: companyIds } },
+    select: { id: true, code: true, name: true },
+  });
+  const byId = new Map(companies.map((company) => [company.id, company]));
+  const ordered = [...companyIds].sort((a, b) =>
+    (byId.get(a)?.code ?? "").localeCompare(byId.get(b)?.code ?? ""),
+  );
+
+  const combined: Array<T & { companyCode: string; companyName: string }> = [];
+  for (const companyId of ordered) {
+    const company = byId.get(companyId);
+    const rows = await run(companyId);
+    for (const row of rows) {
+      combined.push({
+        ...row,
+        companyCode: company?.code ?? "",
+        companyName: company?.name ?? "",
+      });
+    }
+  }
+
+  return combined.map((row, index) =>
+    "srNo" in row ? { ...row, srNo: index + 1 } : row,
+  );
+}
+
 export async function parseReportRequest(request: Request) {
   const session = await auth();
   if (!session?.user) {
@@ -127,9 +179,25 @@ export function respondWithReport<T extends Record<string, unknown>>(input: {
   pdfColumns: PdfColumn[];
   format: string;
   toPdfRow: (row: T) => string[];
+  /** Adds Company Code / Company columns first (rows from runReportAcrossCompanies). */
+  companyColumns?: boolean;
 }) {
+  const columns: ExportColumn<T>[] = input.companyColumns
+    ? [
+        { key: "companyCode", header: "Company Code" } as ExportColumn<T>,
+        { key: "companyName", header: "Company" } as ExportColumn<T>,
+        ...input.columns,
+      ]
+    : input.columns;
+  const pdfColumns: PdfColumn[] = input.companyColumns
+    ? [{ header: "Co.", width: 40 }, ...input.pdfColumns]
+    : input.pdfColumns;
+  const toPdfRow = input.companyColumns
+    ? (row: T) => [String(row.companyCode ?? ""), ...input.toPdfRow(row)]
+    : input.toPdfRow;
+
   if (input.format === "xlsx") {
-    const buffer = buildExcelBuffer(input.rows, input.title, input.columns);
+    const buffer = buildExcelBuffer(input.rows, input.title, columns);
     return new NextResponse(new Uint8Array(buffer), {
       headers: {
         "Content-Type":
@@ -144,8 +212,8 @@ export function respondWithReport<T extends Record<string, unknown>>(input: {
       generateTabularReportPdf({
         title: input.title,
         subtitle: input.subtitle,
-        columns: input.pdfColumns,
-        rows: input.rows.map(input.toPdfRow),
+        columns: pdfColumns,
+        rows: input.rows.map(toPdfRow),
       }).then(
         (buffer) =>
           new NextResponse(new Uint8Array(buffer), {

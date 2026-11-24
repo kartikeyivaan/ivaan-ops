@@ -1,5 +1,11 @@
 import { canViewBookedAvailableReport } from "@/lib/report-permissions";
-import { parseReportRequest, reportError, respondWithReport } from "@/lib/report-api";
+import {
+  parseReportRequest,
+  reportError,
+  resolveReportScope,
+  respondWithReport,
+  runReportAcrossCompanies,
+} from "@/lib/report-api";
 import { getBookedAvailableReport } from "@/lib/report-service";
 import { prisma } from "@/lib/prisma";
 
@@ -12,13 +18,19 @@ export async function GET(request: Request) {
     return reportError("FORBIDDEN", "You do not have permission for this report.", 403);
   }
 
-  const rows = await getBookedAvailableReport(prisma, companyId!, {
-    warehouseId: filters!.warehouseId,
-    q: filters!.q,
-  });
+  const companyIds = await resolveReportScope(session!, filters!.companyIds, companyId!, prisma);
+  if (!Array.isArray(companyIds)) return companyIds;
+
+  const rows = await runReportAcrossCompanies(prisma, companyIds, (scopedCompanyId) =>
+    getBookedAvailableReport(prisma, scopedCompanyId, {
+      warehouseId: filters!.warehouseId,
+      q: filters!.q,
+    }),
+  );
 
   return respondWithReport({
     reportKey: "booked-available",
+    companyColumns: true,
     title: "Booked vs Available Stock",
     rows,
     format: format!,

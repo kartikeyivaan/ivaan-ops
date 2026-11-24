@@ -1,5 +1,11 @@
 import { canViewSalesPerformanceReport } from "@/lib/report-permissions";
-import { parseReportRequest, reportError, respondWithReport } from "@/lib/report-api";
+import {
+  parseReportRequest,
+  reportError,
+  resolveReportScope,
+  respondWithReport,
+  runReportAcrossCompanies,
+} from "@/lib/report-api";
 import { getSalesPerformanceReport } from "@/lib/report-service";
 import { formatCurrency } from "@/lib/quotations";
 import { prisma } from "@/lib/prisma";
@@ -13,14 +19,18 @@ export async function GET(request: Request) {
     return reportError("FORBIDDEN", "You do not have permission for this report.", 403);
   }
 
-  const rows = (
-    await getSalesPerformanceReport(prisma, companyId!, {
-      fromDate: filters!.fromDate,
-      toDate: filters!.toDate,
-      salesUserId: filters!.salesUserId,
-      customerType: filters!.customerType,
-    })
-  ).map((row) => ({
+  const companyIds = await resolveReportScope(session!, filters!.companyIds, companyId!, prisma);
+  if (!Array.isArray(companyIds)) return companyIds;
+
+  const rows = await runReportAcrossCompanies(prisma, companyIds, async (scopedCompanyId) =>
+    (
+      await getSalesPerformanceReport(prisma, scopedCompanyId, {
+        fromDate: filters!.fromDate,
+        toDate: filters!.toDate,
+        salesUserId: filters!.salesUserId,
+        customerType: filters!.customerType,
+      })
+    ).map((row) => ({
     executiveName: row.executiveName,
     quotationValueActual: row.quotationValue.actual,
     quotationValue: row.quotationValue.counted,
@@ -38,10 +48,12 @@ export async function GET(request: Request) {
     otherUnits: row.otherUnits.counted,
     newCustomersActual: row.newCustomers.actual,
     newCustomers: row.newCustomers.counted,
-  }));
+    })),
+  );
 
   return respondWithReport({
     reportKey: "sales-performance",
+    companyColumns: true,
     title: "Sales Performance Report",
     subtitle: [filters!.fromDate, filters!.toDate].filter(Boolean).join(" to "),
     rows,

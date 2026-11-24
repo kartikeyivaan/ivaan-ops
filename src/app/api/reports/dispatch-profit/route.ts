@@ -1,5 +1,11 @@
 import { canViewDispatchProfitReport } from "@/lib/report-permissions";
-import { parseReportRequest, reportError, respondWithReport } from "@/lib/report-api";
+import {
+  parseReportRequest,
+  reportError,
+  resolveReportScope,
+  respondWithReport,
+  runReportAcrossCompanies,
+} from "@/lib/report-api";
 import { getDispatchProfitReport } from "@/lib/report-service";
 import { formatCurrency } from "@/lib/quotations";
 import { prisma } from "@/lib/prisma";
@@ -13,14 +19,19 @@ export async function GET(request: Request) {
     return reportError("FORBIDDEN", "You do not have permission for this report.", 403);
   }
 
-  const rows = await getDispatchProfitReport(prisma, companyId!, {
-    fromDate: filters!.fromDate,
-    toDate: filters!.toDate,
-    salesUserId: filters!.salesUserId,
-    warehouseId: filters!.warehouseId,
-    customerId: filters!.customerId,
-    q: filters!.q,
-  });
+  const companyIds = await resolveReportScope(session!, filters!.companyIds, companyId!, prisma);
+  if (!Array.isArray(companyIds)) return companyIds;
+
+  const rows = await runReportAcrossCompanies(prisma, companyIds, (scopedCompanyId) =>
+    getDispatchProfitReport(prisma, scopedCompanyId, {
+      fromDate: filters!.fromDate,
+      toDate: filters!.toDate,
+      salesUserId: filters!.salesUserId,
+      warehouseId: filters!.warehouseId,
+      customerId: filters!.customerId,
+      q: filters!.q,
+    }),
+  );
 
   const dateLabel =
     filters!.fromDate && filters!.toDate && filters!.fromDate === filters!.toDate
@@ -29,6 +40,7 @@ export async function GET(request: Request) {
 
   return respondWithReport({
     reportKey: "dispatch-profit",
+    companyColumns: true,
     title: "Dispatch Profit Report (ex-GST)",
     subtitle: dateLabel,
     rows,

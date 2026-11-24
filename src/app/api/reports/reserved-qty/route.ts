@@ -1,5 +1,11 @@
 import { canViewReservedQtyReport } from "@/lib/report-permissions";
-import { parseReportRequest, reportError, respondWithReport } from "@/lib/report-api";
+import {
+  parseReportRequest,
+  reportError,
+  resolveReportScope,
+  respondWithReport,
+  runReportAcrossCompanies,
+} from "@/lib/report-api";
 import { getReservedQtyReport } from "@/lib/report-service";
 import { formatCurrency } from "@/lib/quotations";
 import { prisma } from "@/lib/prisma";
@@ -13,14 +19,20 @@ export async function GET(request: Request) {
     return reportError("FORBIDDEN", "You do not have permission for this report.", 403);
   }
 
-  const rows = await getReservedQtyReport(prisma, companyId!, {
-    productId: filters!.productId,
-    warehouseId: filters!.warehouseId,
-    q: filters!.q,
-  });
+  const companyIds = await resolveReportScope(session!, filters!.companyIds, companyId!, prisma);
+  if (!Array.isArray(companyIds)) return companyIds;
+
+  const rows = await runReportAcrossCompanies(prisma, companyIds, (scopedCompanyId) =>
+    getReservedQtyReport(prisma, scopedCompanyId, {
+      productId: filters!.productId,
+      warehouseId: filters!.warehouseId,
+      q: filters!.q,
+    }),
+  );
 
   return respondWithReport({
     reportKey: "reserved-qty",
+    companyColumns: true,
     title: "Reserved Qty by Product",
     rows,
     format: format!,

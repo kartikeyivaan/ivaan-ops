@@ -44,6 +44,7 @@ export type SerialPhysicalHistory = {
     companyName: string;
     lot: {
       id: string;
+      status: string;
       lotNumber: string;
       purchaseInvoiceNo: string;
       companyId: string;
@@ -131,6 +132,7 @@ export async function getSerialPhysicalHistory(
       lot: {
         select: {
           id: true,
+          status: true,
           lotNumber: true,
           purchaseInvoiceNo: true,
           companyId: true,
@@ -246,7 +248,11 @@ export async function getSerialPhysicalHistory(
     referenceId: serial.lot.id,
     referenceNumber: serial.lot.lotNumber,
     companyIds: [],
-    href: `/inventory/incoming/${serial.lot.id}`,
+    // The inward page only opens INCOMING lots; received (CLOSED) lots live in the history view.
+    href:
+      serial.lot.status === "INCOMING"
+        ? `/inventory/incoming/${serial.lot.id}`
+        : "/inventory/incoming?view=history",
     notes: `Purchase invoice ${serial.lot.purchaseInvoiceNo}`,
     actorName: serial.lot.createdBy.name,
   });
@@ -484,6 +490,7 @@ export async function getSerialPhysicalHistory(
       currentWarehouse: header.currentWarehouse,
       lot: {
         id: header.lot.id,
+        status: header.lot.status,
         lotNumber: header.lot.lotNumber,
         purchaseInvoiceNo: header.lot.purchaseInvoiceNo,
         companyId: header.lot.companyId,

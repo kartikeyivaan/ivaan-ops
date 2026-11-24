@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { ArrowLeft, Download, MessageCircle, PackageX, Pencil, Send, ShieldCheck, Trash2, Truck, Undo2, XCircle } from "lucide-react";
+import { ArrowLeft, Download, MessageCircle, PackageX, Pencil, RotateCcw, Send, ShieldCheck, Trash2, Truck, Undo2, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -208,6 +208,7 @@ export function ProformaInvoiceDetail({
   whatsappUrl,
   dispatchedChallans = [],
   canManage,
+  canReopenPartial = false,
   canRecordPayments,
   canAllocateBankPayments = false,
   canApproveBooking,
@@ -225,6 +226,7 @@ export function ProformaInvoiceDetail({
   whatsappUrl?: string | null;
   dispatchedChallans?: DispatchedChallan[];
   canManage: boolean;
+  canReopenPartial?: boolean;
   canRecordPayments: boolean;
   canAllocateBankPayments?: boolean;
   canApproveBooking: boolean;
@@ -914,6 +916,27 @@ export function ProformaInvoiceDetail({
     router.refresh();
   }
 
+  async function handleReopenPartial() {
+    const confirmed = window.confirm(
+      "Reopen this PI for dispatch? Its status returns to Partially Dispatched. Booking reservations released at close are NOT restored, so the remaining quantity must be booked again. Continue?",
+    );
+    if (!confirmed) return;
+    setLoading(true);
+    setError("");
+    const response = await fetch(`/api/proforma-invoices/${pi.id}/reopen-partial`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const data = await response.json();
+    setLoading(false);
+    if (!response.ok) {
+      setError(data.message ?? "Unable to reopen this PI.");
+      return;
+    }
+    router.refresh();
+  }
+
   async function handleApproveEdit() {
     setLoading(true);
     setError("");
@@ -1085,6 +1108,12 @@ export function ProformaInvoiceDetail({
             >
               <PackageX className="h-4 w-4" />
               Close Partial Dispatch
+            </Button>
+          ) : null}
+          {canReopenPartial && pi.status === "CLOSED_PARTIAL" ? (
+            <Button variant="outline" disabled={loading} onClick={handleReopenPartial}>
+              <RotateCcw className="h-4 w-4" />
+              Reopen Dispatch
             </Button>
           ) : null}
           {canApproveEdit && pi.pendingEdit ? (

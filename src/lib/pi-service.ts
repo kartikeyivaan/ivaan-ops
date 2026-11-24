@@ -3883,6 +3883,62 @@ export async function closePartialDispatchPi(
   });
 }
 
+/**
+ * Super admin only: reopens a PI closed with partial dispatch back to
+ * PARTIALLY_DISPATCHED so the remaining quantity can be dispatched again.
+ * Booking reservations released at close are NOT restored automatically.
+ */
+export async function reopenPartialDispatchPi(
+  prisma: PrismaClient,
+  input: {
+    companyId: string;
+    piId: string;
+    performedById: string;
+    remarks?: string;
+  },
+) {
+  const pi = await prisma.proformaInvoice.findFirst({
+    where: { id: input.piId, companyId: input.companyId },
+    select: { id: true, piNo: true, status: true },
+  });
+  if (!pi) throw new Error("NOT_FOUND");
+  if (pi.status !== ProformaInvoiceStatus.CLOSED_PARTIAL) {
+    throw new Error("INVALID_STATUS");
+  }
+
+  const remarks = input.remarks?.trim() || null;
+
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.proformaInvoice.update({
+      where: { id: pi.id },
+      data: {
+        status: ProformaInvoiceStatus.PARTIALLY_DISPATCHED,
+        closedAt: null,
+        closedById: null,
+        closedRemarks: null,
+      },
+      include: piInclude,
+    });
+
+    await writeAuditLogTx(tx, {
+      tableName: "proforma_invoices",
+      recordId: pi.id,
+      action: "UPDATE",
+      oldValue: { status: ProformaInvoiceStatus.CLOSED_PARTIAL },
+      newValue: {
+        status: ProformaInvoiceStatus.PARTIALLY_DISPATCHED,
+        reopenedPartial: true,
+        remarks,
+      },
+      performedBy: input.performedById,
+      companyId: input.companyId,
+      reference: pi.piNo,
+    });
+
+    return serializePi(updated, { pendingDispatchTodayApproval: false });
+  });
+}
+
 export async function requestPiCancel(
   prisma: PrismaClient,
   input: {

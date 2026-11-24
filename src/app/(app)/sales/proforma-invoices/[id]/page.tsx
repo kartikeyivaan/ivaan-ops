@@ -21,6 +21,7 @@ import { buildProformaInvoiceWhatsappUrl } from "@/lib/pi-share";
 import { getProformaInvoiceById } from "@/lib/pi-service";
 import { prisma } from "@/lib/prisma";
 import { resolveDashboardCompanyIds } from "@/lib/company-scope";
+import { isSuperAdmin } from "@/lib/rbac";
 import { ProformaInvoiceDetail } from "@/components/proforma-invoices/proforma-invoice-detail";
 
 type PageProps = {
@@ -99,6 +100,7 @@ export default async function ProformaInvoiceDetailPage({ params }: PageProps) {
       whatsappUrl={whatsappUrl}
       dispatchedChallans={dispatchedChallanDetails}
       canManage={canManageProformaInvoices(session.user.roles)}
+      canReopenPartial={isSuperAdmin(session.user.roles)}
       canRecordPayments={canRecordPayments(session.user.roles)}
       canAllocateBankPayments={canAllocateBankPayments(session.user.roles)}
       canApproveBooking={canApproveBooking(session.user.roles)}

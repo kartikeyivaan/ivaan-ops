@@ -393,6 +393,7 @@ export async function getLotById(prisma: PrismaClient, lotId: string, companyId:
 }
 
 export type IncomingLotRecordedSerial = {
+  serialId: string;
   serialNumber: string;
   createdAt: Date;
   status: SerialStatus;
@@ -414,6 +415,7 @@ export async function getIncomingLotRecordedSerials(
     productId: string;
     warehouseId: string;
     serials: Array<{
+      id: string;
       serialNumber: string;
       createdAt: Date;
       status: SerialStatus;
@@ -421,6 +423,7 @@ export async function getIncomingLotRecordedSerials(
   },
 ): Promise<IncomingLotRecordedSerial[]> {
   const current: IncomingLotRecordedSerial[] = lot.serials.map((serial) => ({
+    serialId: serial.id,
     serialNumber: serial.serialNumber,
     createdAt: serial.createdAt,
     status: serial.status,
@@ -472,6 +475,7 @@ export async function getIncomingLotRecordedSerials(
       ],
     },
     select: {
+      id: true,
       serialNumber: true,
       createdAt: true,
       status: true,
@@ -483,6 +487,7 @@ export async function getIncomingLotRecordedSerials(
     if (currentNumbers.has(serial.serialNumber)) continue;
     currentNumbers.add(serial.serialNumber);
     current.push({
+      serialId: serial.id,
       serialNumber: serial.serialNumber,
       createdAt: serial.createdAt,
       status: serial.status,

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { canViewInwardedLots } from "@/lib/accounts-permissions";
 import { lotHasInwardActivity } from "@/lib/inventory";
+import { canCorrectInwardedSerial } from "@/lib/inventory-permissions";
 import {
   getIncomingLotRecordedSerials,
   getLotById,
@@ -39,7 +40,9 @@ export async function GET(_request: Request, context: RouteContext) {
 
   return NextResponse.json({
     ...serializeLotForRole(lot, false),
+    canCorrectSerials: canCorrectInwardedSerial(session.user.roles),
     recordedSerials: recordedSerials.map((serial) => ({
+      serialId: serial.serialId,
       serialNumber: serial.serialNumber,
       createdAt: serial.createdAt.toISOString(),
       status: serial.status,

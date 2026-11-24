@@ -5,6 +5,7 @@ import { parseApiJson } from "@/lib/api-response";
 import { IncomingSerialExportButton } from "@/components/inventory/incoming-serial-export-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Modal, ModalBody, ModalFooter, ModalHeader } from "@/components/ui/modal";
 import {
   Table,
@@ -19,6 +20,7 @@ import { formatCurrency } from "@/lib/quotations";
 import { formatDate, formatDocumentDate } from "@/lib/utils";
 
 export type InwardedLotRecordedSerial = {
+  serialId: string;
   serialNumber: string;
   createdAt: string;
   status: string;
@@ -28,6 +30,7 @@ export type InwardedLotRecordedSerial = {
 
 export type InwardedLotDetail = SerializedInventoryLot & {
   recordedSerials: InwardedLotRecordedSerial[];
+  canCorrectSerials?: boolean;
 };
 
 export function InwardedLotDetailDialog({
@@ -40,6 +43,36 @@ export function InwardedLotDetailDialog({
   const [detail, setDetail] = useState<InwardedLotDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [editing, setEditing] = useState<InwardedLotRecordedSerial | null>(null);
+  const [newSerialNumber, setNewSerialNumber] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [editError, setEditError] = useState("");
+
+  async function saveCorrection() {
+    if (!editing || !detail) return;
+    setSaving(true);
+    setEditError("");
+    const response = await fetch("/api/inventory/serials/correct", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ serialId: editing.serialId, newSerialNumber }),
+    });
+    const data = await parseApiJson<{ serialNumber?: string; message?: string }>(response);
+    setSaving(false);
+    if (!response.ok || !data.serialNumber) {
+      setEditError(data.message ?? "Unable to correct serial number.");
+      return;
+    }
+    const corrected = data.serialNumber;
+    setDetail({
+      ...detail,
+      recordedSerials: detail.recordedSerials.map((row) =>
+        row.serialId === editing.serialId ? { ...row, serialNumber: corrected } : row,
+      ),
+    });
+    setEditing(null);
+    setNewSerialNumber("");
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -139,7 +172,8 @@ export function InwardedLotDetailDialog({
                 />
               </div>
               {detail.product.serialTracking ? (
-                serials.length ? (
+                <>
+                {serials.length ? (
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -148,11 +182,12 @@ export function InwardedLotDetailDialog({
                         <TableHead>Recorded</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Current lot</TableHead>
+                        {detail.canCorrectSerials ? <TableHead>Correction</TableHead> : null}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {serials.map((serial, index) => (
-                        <TableRow key={serial.serialNumber}>
+                        <TableRow key={serial.serialId}>
                           <TableCell>{index + 1}</TableCell>
                           <TableCell className="font-medium">{serial.serialNumber}</TableCell>
                           <TableCell>{formatDate(serial.createdAt)}</TableCell>
@@ -164,13 +199,61 @@ export function InwardedLotDetailDialog({
                           <TableCell>
                             {serial.stillOnLot ? detail.lotNumber : serial.currentLotNumber}
                           </TableCell>
+                          {detail.canCorrectSerials ? (
+                            <TableCell>
+                              {serial.stillOnLot && serial.status === "AVAILABLE" ? (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setEditing(serial);
+                                    setNewSerialNumber(serial.serialNumber);
+                                    setEditError("");
+                                  }}
+                                >
+                                  Correct
+                                </Button>
+                              ) : null}
+                            </TableCell>
+                          ) : null}
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
-                ) : (
+                ) : null}
+                {editing ? (
+                  <div className="space-y-2 rounded-lg border border-slate-200 p-3">
+                    <p className="text-sm font-medium text-slate-900">
+                      Correct serial {editing.serialNumber}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Input
+                        value={newSerialNumber}
+                        onChange={(event) => setNewSerialNumber(event.target.value)}
+                        placeholder="Correct serial number"
+                        className="max-w-xs"
+                      />
+                      <Button onClick={() => void saveCorrection()} disabled={saving}>
+                        {saving ? "Saving…" : "Save correction"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setEditing(null);
+                          setEditError("");
+                        }}
+                        disabled={saving}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                    {editError ? <p className="text-sm text-red-600">{editError}</p> : null}
+                  </div>
+                ) : null}
+                {!serials.length ? (
                   <p className="text-sm text-slate-500">No serial numbers recorded on this lot.</p>
-                )
+                ) : null}
+                </>
               ) : (
                 <p className="text-sm text-slate-500">This product is not serial-tracked.</p>
               )}

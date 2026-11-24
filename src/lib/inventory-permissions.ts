@@ -61,6 +61,11 @@ export function canCorrectReceivedLotProduct(userRoles: string[]): boolean {
   return isSuperAdmin(userRoles);
 }
 
+/** Super Admin only: replace a wrongly entered serial number on an inwarded lot. */
+export function canCorrectInwardedSerial(userRoles: string[]): boolean {
+  return isSuperAdmin(userRoles);
+}
+
 /** Purchase applies receive-field edits immediately; warehouse may propose them. */
 export function canProposeIncomingLotReceiveEdit(userRoles: string[]): boolean {
   return canInwardMaterial(userRoles);

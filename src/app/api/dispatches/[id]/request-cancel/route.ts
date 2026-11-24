@@ -51,13 +51,6 @@ export async function POST(request: Request, context: RouteContext) {
       if (error.message === "CANCEL_ALREADY_REQUESTED") {
         return errorResponse("CANCEL_ALREADY_REQUESTED", "Cancellation already pending.", 400);
       }
-      if (error.message === "PI_CLOSED") {
-        return errorResponse(
-          "PI_CLOSED",
-          "This delivery challan belongs to a PI closed with partial dispatch and cannot be cancelled.",
-          400,
-        );
-      }
     }
     throw error;
   }

@@ -1507,9 +1507,6 @@ export async function requestDispatchCancel(
   });
   if (!dispatch) throw new Error("NOT_FOUND");
   if (dispatch.status !== DispatchStatus.DISPATCHED) throw new Error("INVALID_STATUS");
-  if (dispatch.proformaInvoice.status === ProformaInvoiceStatus.CLOSED_PARTIAL) {
-    throw new Error("PI_CLOSED");
-  }
 
   const existing = await prisma.approvalRequest.findFirst({
     where: {

@@ -106,6 +106,7 @@ function serializeProductRecord(
     displayName: product.displayName,
     pricingType: product.pricingType,
     hsn: product.hsn,
+    groupCategory: product.groupCategory,
     gstRate: decimalToNumber(product.gstRate),
     serialTracking: product.serialTracking,
     isActive: product.isActive,
@@ -313,6 +314,7 @@ export async function createProduct(
     capacity?: number;
     capacityUnit?: CapacityUnit;
     hsn?: string;
+    groupCategory?: string;
     gstRate: number;
     isActive?: boolean;
     kitComponents?: KitComponentInput[];
@@ -375,6 +377,7 @@ export async function createProduct(
         hsn: input.hsn,
         gstRate: input.gstRate,
         serialTracking: resolveSerialTracking(category.name),
+        groupCategory: input.groupCategory?.trim() || null,
         isActive: input.isActive ?? true,
       },
     });
@@ -414,6 +417,7 @@ export async function updateProduct(
     capacity?: number;
     capacityUnit?: CapacityUnit;
     hsn?: string;
+    groupCategory?: string;
     gstRate?: number;
     isActive?: boolean;
     kitComponents?: KitComponentInput[];
@@ -500,6 +504,9 @@ export async function updateProduct(
         pricingType: resolvePricingType(category.name),
         serialTracking: resolveSerialTracking(category.name),
         hsn: input.hsn,
+        ...(input.groupCategory !== undefined
+          ? { groupCategory: input.groupCategory.trim() || null }
+          : {}),
         gstRate: input.gstRate,
         isActive: input.isActive,
       },

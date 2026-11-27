@@ -34,6 +34,7 @@ import {
   type DispatchTodayPlannedLineInput,
 } from "@/lib/dispatch-today-planned-qty";
 import { decimalToNumber } from "@/lib/inventory";
+import { isSameGroupProductSwapOnly } from "@/lib/product-group";
 import { createEvent } from "@/lib/inventory-event-service";
 import {
   findEarliestAvailabilityDate,
@@ -486,6 +487,36 @@ async function buildProposedPiEditLines(
     ...line,
     displayName: nameMap.get(line.productId) ?? "Product",
   }));
+}
+
+async function isPiEditSameGroupSwapOnly(
+  prisma: PrismaClient | Prisma.TransactionClient,
+  currentItems: Array<{ productId: string; qty: unknown; rate: unknown }>,
+  proposedLines: ProposedPiEditLine[],
+): Promise<boolean> {
+  const productIds = [
+    ...new Set([
+      ...currentItems.map((item) => item.productId),
+      ...proposedLines.map((line) => line.productId),
+    ]),
+  ];
+  const products = await prisma.product.findMany({
+    where: { id: { in: productIds } },
+    select: { id: true, groupCategory: true },
+  });
+  return isSameGroupProductSwapOnly(
+    currentItems.map((item) => ({
+      productId: item.productId,
+      qty: decimalToNumber(item.qty as Parameters<typeof decimalToNumber>[0]),
+      rate: decimalToNumber(item.rate as Parameters<typeof decimalToNumber>[0]),
+    })),
+    proposedLines.map((line) => ({
+      productId: line.productId,
+      qty: line.qty,
+      rate: line.rate,
+    })),
+    new Map(products.map((product) => [product.id, product.groupCategory])),
+  );
 }
 
 function normalizePiNotes(notes?: string | null) {
@@ -1409,7 +1440,12 @@ export async function requestProformaInvoiceEdit(
     throw new Error("NO_CHANGES");
   }
 
-  if (input.applyImmediately) {
+  // Swapping a product for another in the same interchange group needs no approval.
+  const applyNow =
+    input.applyImmediately ||
+    (await isPiEditSameGroupSwapOnly(prisma, pi.items, proposedLines));
+
+  if (applyNow) {
     return prisma.$transaction(async (tx) => {
       await applyProformaInvoiceEditTx(tx, {
         companyId: input.companyId,

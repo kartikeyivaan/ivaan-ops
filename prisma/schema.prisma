@@ -1243,6 +1243,9 @@ model Product {
   hsn            String?
   gstRate        Decimal      @map("gst_rate") @db.Decimal(5, 2)
   serialTracking Boolean      @map("serial_tracking")
+  /// Interchange group (e.g. "Topcon-DCR 570/575/580/585/590"). Products in the same
+  /// group can be swapped on a PI without approval. Null = own group.
+  groupCategory  String?      @map("group_category")
   isActive       Boolean      @default(true) @map("is_active")
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")

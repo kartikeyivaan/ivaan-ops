@@ -87,6 +87,7 @@ export async function POST(request: Request) {
       capacity: parsed.data.capacity,
       capacityUnit: parsed.data.capacityUnit as CapacityUnit | undefined,
       hsn: parsed.data.hsn,
+      groupCategory: parsed.data.groupCategory,
       gstRate: parsed.data.gstRate,
       isActive: parsed.data.isActive,
       kitComponents: parsed.data.kitComponents,

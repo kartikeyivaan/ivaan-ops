@@ -58,6 +58,7 @@ export function ProductForm({
     capacity: string;
     capacityUnit: CapacityUnit;
     hsn: string;
+    groupCategory?: string;
     gstRate: string;
     isActive: boolean;
     kitComponents?: Array<{
@@ -80,6 +81,7 @@ export function ProductForm({
     initialValues?.capacityUnit ?? CapacityUnit.WP,
   );
   const [hsn, setHsn] = useState(initialValues?.hsn ?? "");
+  const [groupCategory, setGroupCategory] = useState(initialValues?.groupCategory ?? "");
   const [gstRate, setGstRate] = useState(initialValues?.gstRate ?? "12");
   const [isActive, setIsActive] = useState(initialValues?.isActive ?? true);
   const [landingCost, setLandingCost] = useState("");
@@ -239,6 +241,7 @@ export function ProductForm({
     const payload: Record<string, unknown> = {
       categoryId,
       hsn: hsn || undefined,
+      groupCategory: groupCategory.trim(),
       gstRate: Number(gstRate),
       isActive,
     };
@@ -374,6 +377,18 @@ export function ProductForm({
           <div className="space-y-2">
             <Label htmlFor="hsn">HSN</Label>
             <Input id="hsn" value={hsn} onChange={(e) => setHsn(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="groupCategory">Interchange group</Label>
+            <Input
+              id="groupCategory"
+              value={groupCategory}
+              placeholder="e.g. Topcon-DCR 570/575/580/585/590"
+              onChange={(e) => setGroupCategory(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Products in the same group can be swapped on a PI without approval. Leave blank to keep this product in its own group.
+            </p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="gstRate">GST Rate (%)</Label>

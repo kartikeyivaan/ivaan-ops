@@ -172,6 +172,8 @@ export const productSchema = z.object({
   capacity: z.coerce.number().positive().optional(),
   capacityUnit: z.enum(["WP", "KW", "KVA", "NOS", "METER"]).optional(),
   hsn: z.string().optional(),
+  /** Interchange group. Blank = product is its own group. */
+  groupCategory: z.string().trim().max(120).optional(),
   gstRate: z.coerce.number().min(0).max(100),
   isActive: z.boolean().default(true),
   kitComponents: z.array(kitComponentSchema).optional(),

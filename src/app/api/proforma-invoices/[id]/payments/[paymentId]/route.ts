@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { canRecordPayments } from "@/lib/pi-permissions";
+import { canDecideManualPayments, canRecordPayments } from "@/lib/pi-permissions";
+import { isManualEntryBlocked } from "@/lib/manual-payment-service";
 import { deletePayment, updatePayment } from "@/lib/pi-service";
 import { toDateOnly } from "@/lib/proforma-invoices";
 import { prisma } from "@/lib/prisma";
@@ -68,6 +69,14 @@ export async function PATCH(request: Request, context: RouteContext) {
     return errorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
   }
 
+  if (!canDecideManualPayments(session.user.roles) && (await isManualEntryBlocked(prisma, companyId))) {
+    return errorResponse(
+      "MANUAL_ENTRY_BLOCKED",
+      "Manual payment changes are blocked. Ask Accounts to allow manual entry.",
+      403,
+    );
+  }
+
   const { id, paymentId } = await context.params;
   const body = await request.json();
   const parsed = updatePaymentSchema.safeParse(body);
@@ -112,6 +121,14 @@ export async function DELETE(_request: Request, context: RouteContext) {
     companyId = requireActiveCompany(session);
   } catch {
     return errorResponse("COMPANY_REQUIRED", "Select a company to continue.", 400);
+  }
+
+  if (!canDecideManualPayments(session.user.roles) && (await isManualEntryBlocked(prisma, companyId))) {
+    return errorResponse(
+      "MANUAL_ENTRY_BLOCKED",
+      "Manual payment changes are blocked. Ask Accounts to allow manual entry.",
+      403,
+    );
   }
 
   const { id, paymentId } = await context.params;

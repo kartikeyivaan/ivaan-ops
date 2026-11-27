@@ -54,6 +54,18 @@ type DispatchedChallan = {
   whatsappUrl: string | null;
 };
 
+type PendingManualRequest = {
+  id: string;
+  amount: string | number;
+  paymentDate: string;
+  paymentMode: string;
+  receivedInAccount: string | null;
+  referenceNo: string;
+  notes: string | null;
+  requestedBy: string | null;
+  createdAt: string;
+};
+
 type ProformaInvoiceDetailData = {
   id: string;
   piNo: string;
@@ -220,6 +232,9 @@ export function ProformaInvoiceDetail({
   canRequestCredit,
   canApproveCreditSm,
   canApproveCreditAccounts,
+  canDecideManualPayments = false,
+  manualEntryBlocked = true,
+  pendingManualRequests = [],
 }: {
   pi: ProformaInvoiceDetailData;
   warehouses: Warehouse[];
@@ -238,6 +253,9 @@ export function ProformaInvoiceDetail({
   canRequestCredit: boolean;
   canApproveCreditSm: boolean;
   canApproveCreditAccounts: boolean;
+  canDecideManualPayments?: boolean;
+  manualEntryBlocked?: boolean;
+  pendingManualRequests?: PendingManualRequest[];
 }) {
   const router = useRouter();
   const [error, setError] = useState("");
@@ -252,6 +270,7 @@ export function ProformaInvoiceDetail({
   const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
   const [showManualPaymentForm, setShowManualPaymentForm] = useState(false);
   const [showLinkBankForm, setShowLinkBankForm] = useState(false);
+  const [paymentNotice, setPaymentNotice] = useState("");
   const [linkPaymentCode, setLinkPaymentCode] = useState("");
   const [linkAmount, setLinkAmount] = useState("");
   const [linkPreview, setLinkPreview] = useState<{
@@ -293,6 +312,14 @@ export function ProformaInvoiceDetail({
   >([]);
   const [crossCompanyWarning, setCrossCompanyWarning] = useState(false);
   const [earlyWarning, setEarlyWarning] = useState(false);
+  /** Sales roles must send manual payments for Accounts approval while entry is blocked. */
+  const entryBlockedForMe = manualEntryBlocked && !canDecideManualPayments;
+  const unlinkedManualCount = pi.payments.filter(
+    (payment) =>
+      payment.verificationStatus !== "BANK_VERIFIED" &&
+      !payment.bankTransactionId &&
+      !payment.hasActiveBankAllocation,
+  ).length;
   const canManagePayments =
     canRecordPayments && canManageExistingPiPayment(pi.status);
   const showRecordPayment =
@@ -358,8 +385,56 @@ export function ProformaInvoiceDetail({
     setReferenceNo(payment.referenceNo ?? "");
   }
 
+  async function handleToggleManualEntry() {
+    const nextBlocked = !manualEntryBlocked;
+    const message = nextBlocked
+      ? "Block manual payment entry? Sales will send payments for Accounts approval instead."
+      : "Allow manual payment entry? Sales can record payments directly until you block it again. Still match them to bank using the payment code.";
+    if (!window.confirm(message)) return;
+    setError("");
+    setLoading(true);
+    const response = await fetch("/api/payment-entry-policy", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ manualEntryBlocked: nextBlocked }),
+    });
+    const data = await response.json();
+    setLoading(false);
+    if (!response.ok) {
+      setError(data.message ?? "Unable to change manual payment entry.");
+      return;
+    }
+    router.refresh();
+  }
+
+  async function handleDecideManualRequest(requestId: string, decision: "approve" | "reject") {
+    setError("");
+    let remarks: string | undefined;
+    if (decision === "approve") {
+      if (!window.confirm("Approve this manual payment? It will be recorded against this PI.")) return;
+    } else {
+      const answer = window.prompt("Reason for rejecting (optional)");
+      if (answer === null) return;
+      remarks = answer;
+    }
+    setLoading(true);
+    const response = await fetch(`/api/manual-payment-requests/${requestId}/${decision}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ remarks }),
+    });
+    const data = await response.json();
+    setLoading(false);
+    if (!response.ok) {
+      setError(data.message ?? "Unable to update this request.");
+      return;
+    }
+    router.refresh();
+  }
+
   async function handleRecordPayment() {
     setError("");
+    setPaymentNotice("");
     if (!paymentAmount || Number(paymentAmount) <= 0) {
       setError("Amount is required.");
       return;
@@ -381,6 +456,15 @@ export function ProformaInvoiceDetail({
       return;
     }
 
+    if (
+      entryBlockedForMe &&
+      !editingPaymentId &&
+      !window.confirm(
+        "Manual entry is blocked. This will be sent to Accounts for approval and will not count until approved. Use the payment code from Daily Receipts when you can. Send for approval?",
+      )
+    ) {
+      return;
+    }
     setLoading(true);
     const payload = {
       amount: Number(paymentAmount),
@@ -401,6 +485,12 @@ export function ProformaInvoiceDetail({
     );
     const data = await response.json();
     setLoading(false);
+    if (response.status === 202) {
+      resetPaymentForm();
+      setPaymentNotice(data.message ?? "Sent to Accounts for approval.");
+      router.refresh();
+      return;
+    }
     if (!response.ok) {
       setError(data.message ?? (editingPaymentId ? "Unable to update payment." : "Unable to record payment."));
       return;
@@ -1472,7 +1562,18 @@ export function ProformaInvoiceDetail({
                   setError("");
                 }}
               >
-                + Add Manual Payment
+                {entryBlockedForMe ? "+ Request Manual Payment" : "+ Add Manual Payment"}
+              </Button>
+            ) : null}
+            {canDecideManualPayments ? (
+              <Button
+                type="button"
+                size="sm"
+                variant={manualEntryBlocked ? "outline" : "default"}
+                disabled={loading}
+                onClick={() => void handleToggleManualEntry()}
+              >
+                {manualEntryBlocked ? "Manual entry: Blocked (Allow)" : "Manual entry: Allowed (Block)"}
               </Button>
             ) : null}
             {showBankActions && showRecordPayment ? (
@@ -1492,6 +1593,76 @@ export function ProformaInvoiceDetail({
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          {paymentNotice ? (
+            <p role="status" className="rounded-md border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+              {paymentNotice}
+            </p>
+          ) : null}
+          {pendingManualRequests.length > 0 ? (
+            <div className="space-y-2 rounded-md border border-slate-300 bg-slate-50 p-3">
+              <p className="text-sm font-medium text-slate-700">
+                Manual payments awaiting Accounts approval
+              </p>
+              {pendingManualRequests.map((row) => (
+                <div
+                  key={row.id}
+                  className="flex flex-wrap items-center justify-between gap-2 text-sm"
+                >
+                  <span>
+                    {formatCurrency(Number(row.amount))} · {row.paymentDate} · Ref {row.referenceNo}
+                    {row.requestedBy ? ` · requested by ${row.requestedBy}` : ""}
+                  </span>
+                  {canDecideManualPayments ? (
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={loading}
+                        onClick={() => void handleDecideManualRequest(row.id, "approve")}
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={loading}
+                        onClick={() => void handleDecideManualRequest(row.id, "reject")}
+                      >
+                        Reject
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {unlinkedManualCount > 0 ? (
+            <div
+              role="status"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+            >
+              <span>
+                {unlinkedManualCount} manual payment{unlinkedManualCount === 1 ? "" : "s"} not yet
+                matched to a bank transaction. Link {unlinkedManualCount === 1 ? "it" : "them"} with
+                the payment code copied from Daily Receipts.
+              </span>
+              {showBankActions && showRecordPayment ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={loading}
+                  onClick={() => {
+                    resetPaymentForm();
+                    setShowLinkBankForm(true);
+                    setError("");
+                  }}
+                >
+                  Link Bank Payment
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
           {pi.payments.length === 0 ? (
             <p className="text-sm text-slate-500">No payments recorded yet.</p>
           ) : (
@@ -1548,7 +1719,7 @@ export function ProformaInvoiceDetail({
                       {canManagePayments || showBankActions ? (
                         <TableCell className="text-right">
                           <div className="flex flex-wrap justify-end gap-1">
-                            {canManagePayments && !bankLinked ? (
+                            {canManagePayments && !bankLinked && !entryBlockedForMe ? (
                               <>
                                 <Button
                                   type="button"
@@ -1734,6 +1905,11 @@ export function ProformaInvoiceDetail({
                   <p className="text-xs text-slate-500">
                     Saved as Manual Unverified until matched with a bank transaction.
                   </p>
+                  {entryBlockedForMe ? (
+                    <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                      Manual entry is blocked. This goes to Accounts for approval and counts only once approved. Use the payment code from Daily Receipts when you can.
+                    </p>
+                  ) : null}
                 </div>
               )}
               <div className="space-y-2">
@@ -1806,7 +1982,11 @@ export function ProformaInvoiceDetail({
               </div>
               <div className="flex items-end gap-2">
                 <Button disabled={loading} onClick={handleRecordPayment}>
-                  {editingPaymentId ? "Update Payment" : "Save Manual Payment"}
+                  {editingPaymentId
+                    ? "Update Payment"
+                    : entryBlockedForMe
+                      ? "Send for Accounts Approval"
+                      : "Save Manual Payment"}
                 </Button>
                 <Button type="button" variant="outline" disabled={loading} onClick={resetPaymentForm}>
                   Cancel

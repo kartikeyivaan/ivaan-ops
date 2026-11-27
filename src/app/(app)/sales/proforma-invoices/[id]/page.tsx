@@ -5,6 +5,7 @@ import { listPiDispatchedChallans } from "@/lib/dispatch-service";
 import { canAllocateBankPayments } from "@/lib/banking-permissions";
 import {
   canApproveBooking,
+  canDecideManualPayments,
   canApproveDispatchToday,
   canApprovePiCancel,
   canApprovePiEdit,
@@ -18,6 +19,10 @@ import {
   canViewProformaInvoices,
 } from "@/lib/pi-permissions";
 import { buildProformaInvoiceWhatsappUrl } from "@/lib/pi-share";
+import {
+  isManualEntryBlocked,
+  listPendingManualPaymentRequests,
+} from "@/lib/manual-payment-service";
 import { getProformaInvoiceById } from "@/lib/pi-service";
 import { prisma } from "@/lib/prisma";
 import { resolveDashboardCompanyIds } from "@/lib/company-scope";
@@ -49,7 +54,8 @@ export default async function ProformaInvoiceDetailPage({ params }: PageProps) {
   }
   const companyId = scoped.companyId;
 
-  const [pi, warehouses, company, dispatchedChallans] = await Promise.all([
+  const [pi, warehouses, company, dispatchedChallans, manualEntryBlocked, pendingManualRequests] =
+    await Promise.all([
     getProformaInvoiceById(prisma, companyId, id),
     prisma.warehouse.findMany({
       where: {
@@ -66,6 +72,8 @@ export default async function ProformaInvoiceDetailPage({ params }: PageProps) {
       select: { name: true },
     }),
     listPiDispatchedChallans(prisma, companyId, id),
+    isManualEntryBlocked(prisma, companyId),
+    listPendingManualPaymentRequests(prisma, companyId, id),
   ]);
 
   if (!pi || !company) {
@@ -112,6 +120,23 @@ export default async function ProformaInvoiceDetailPage({ params }: PageProps) {
       canRequestCredit={canRequestPiCredit(session.user.roles)}
       canApproveCreditSm={canApprovePiCreditSm(session.user.roles)}
       canApproveCreditAccounts={canApprovePiCreditAccounts(session.user.roles)}
+      canDecideManualPayments={canDecideManualPayments(session.user.roles)}
+      manualEntryBlocked={manualEntryBlocked}
+      pendingManualRequests={JSON.parse(
+        JSON.stringify(
+          pendingManualRequests.map((row) => ({
+            id: row.id,
+            amount: row.amount,
+            paymentDate: row.paymentDate.toISOString().slice(0, 10),
+            paymentMode: row.paymentMode,
+            receivedInAccount: row.receivedInAccount,
+            referenceNo: row.referenceNo,
+            notes: row.notes,
+            requestedBy: row.requestedBy.name,
+            createdAt: row.createdAt.toISOString(),
+          })),
+        ),
+      )}
     />
   );
 }

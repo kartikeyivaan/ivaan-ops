@@ -114,3 +114,10 @@ export function canApprovePiCreditAccounts(userRoles: string[]): boolean {
 export function canApprovePiCredit(userRoles: string[]): boolean {
   return canApprovePiCreditSm(userRoles) || canApprovePiCreditAccounts(userRoles);
 }
+
+const DECIDE_MANUAL_PAYMENT_ROLES = [ROLES.SUPER_ADMIN, ROLES.ACCOUNTS] as const;
+
+/** Accounts (and super admin) can switch manual entry on or off and approve manual payments. */
+export function canDecideManualPayments(userRoles: string[]): boolean {
+  return hasRole(userRoles, [...DECIDE_MANUAL_PAYMENT_ROLES]);
+}
